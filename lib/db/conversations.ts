@@ -4,6 +4,7 @@
  * This file contains all database operations related to the conversations table and messages table.
  * Updated to use unified data service and Result type.
  */
+import { getPgPool } from '@lib/server/pg/pool';
 import { dataService } from '@lib/services/db/data-service';
 import { Result, failure, success } from '@lib/types/result';
 
@@ -291,28 +292,27 @@ export async function permanentlyDeleteConversation(
   conversationId: string
 ): Promise<Result<boolean>> {
   try {
-    // First delete all related messages
-    const messagesResult = await dataService.query(async () => {
-      const { error } = await dataService['supabase']
-        .from('messages')
-        .delete()
-        .eq('conversation_id', conversationId);
-
-      if (error) throw error;
-      return true;
-    });
-
-    if (!messagesResult.success) {
-      return failure(messagesResult.error);
+    const pool = getPgPool();
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('DELETE FROM messages WHERE conversation_id = $1', [
+        conversationId,
+      ]);
+      await client.query('DELETE FROM conversations WHERE id = $1', [
+        conversationId,
+      ]);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
 
-    // Delete conversation
-    const conversationResult = await dataService.delete(
-      'conversations',
-      conversationId
-    );
-
-    return success(conversationResult.success);
+    dataService.clearCache('messages');
+    dataService.clearCache('conversations');
+    return success(true);
   } catch (error) {
     console.error('Failed to physically delete conversation:', error);
     return failure(error instanceof Error ? error : new Error(String(error)));
@@ -352,7 +352,7 @@ export async function createEmptyConversation(
  */
 export async function updateConversationMetadata(
   conversationId: string,
-  metadata: Record<string, any>
+  metadata: Record<string, unknown>
 ): Promise<Result<boolean>> {
   const result = await dataService.update<Conversation>(
     'conversations',

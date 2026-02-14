@@ -4,9 +4,10 @@
  * Handles message-related data operations, optimized for pagination and sorting.
  * Uses database-level sorting to avoid complex client-side logic.
  */
+import { getPgPool } from '@lib/server/pg/pool';
 import { ChatMessage } from '@lib/stores/chat-store';
 import { Message, MessageStatus } from '@lib/types/database';
-import { Result, failure, success } from '@lib/types/result';
+import { Result, success } from '@lib/types/result';
 
 import { extractMainContentForPreview } from '../../utils/index';
 import { cacheService } from './cache-service';
@@ -22,6 +23,18 @@ export interface MessagePage {
 export interface PaginationCursor {
   timestamp: string;
   id: string;
+}
+
+function normalizeMessageRow(row: Record<string, unknown>): Message {
+  const createdAt =
+    row.created_at instanceof Date
+      ? row.created_at.toISOString()
+      : String(row.created_at);
+
+  return {
+    ...row,
+    created_at: createdAt,
+  } as Message;
 }
 
 export class MessageService {
@@ -67,7 +80,6 @@ export class MessageService {
 
     return dataService.query(
       async () => {
-        // Parse cursor
         let cursorData: PaginationCursor | null = null;
         if (cursor) {
           try {
@@ -77,42 +89,43 @@ export class MessageService {
           }
         }
 
-        // Build query
-        let query = dataService['supabase']
-          .from('messages')
-          .select('*')
-          .eq('conversation_id', conversationId)
-          .order('created_at', { ascending: false })
-          .order('sequence_index', { ascending: false })
-          .order('id', { ascending: false }); // Ensure stable sorting
+        const params: unknown[] = [conversationId];
+        const whereClauses = ['conversation_id = $1'];
+        let nextParamIndex = 2;
 
-        // Apply cursor conditions
         if (cursorData) {
+          const timestampParam = `$${nextParamIndex}`;
+          const idParam = `$${nextParamIndex + 1}`;
+          params.push(cursorData.timestamp, cursorData.id);
+
           if (direction === 'older') {
-            query = query.or(
-              `created_at.lt.${cursorData.timestamp},and(created_at.eq.${cursorData.timestamp},id.lt.${cursorData.id})`
+            whereClauses.push(
+              `(created_at < ${timestampParam} OR (created_at = ${timestampParam} AND id < ${idParam}))`
             );
           } else {
-            query = query.or(
-              `created_at.gt.${cursorData.timestamp},and(created_at.eq.${cursorData.timestamp},id.gt.${cursorData.id})`
+            whereClauses.push(
+              `(created_at > ${timestampParam} OR (created_at = ${timestampParam} AND id > ${idParam}))`
             );
           }
+          nextParamIndex += 2;
         }
 
-        // Apply pagination limit (+1 to check if there is more data)
-        query = query.limit(limit + 1);
+        params.push(limit + 1);
+        const limitParam = `$${nextParamIndex}`;
+        const pool = getPgPool();
+        const sql = `
+          SELECT *
+          FROM messages
+          WHERE ${whereClauses.join(' AND ')}
+          ORDER BY created_at DESC, sequence_index DESC, id DESC
+          LIMIT ${limitParam}
+        `;
+        const queryResult = await pool.query(sql, params);
+        const rows = queryResult.rows.map(row => normalizeMessageRow(row));
 
-        const { data: messages, error } = await query;
+        const hasMore = rows.length > limit;
+        const actualMessages = hasMore ? rows.slice(0, limit) : rows;
 
-        if (error) {
-          throw error;
-        }
-
-        // Check if there is more data
-        const hasMore = messages.length > limit;
-        const actualMessages = hasMore ? messages.slice(0, limit) : messages;
-
-        // Generate next cursor
         let nextCursor: string | undefined;
         if (hasMore && actualMessages.length > 0) {
           const lastMessage = actualMessages[actualMessages.length - 1];
@@ -123,7 +136,6 @@ export class MessageService {
           nextCursor = btoa(JSON.stringify(cursorObj));
         }
 
-        // Get total count if needed
         let totalCount: number | undefined;
         if (includeCount) {
           const countResult = await dataService.count('messages', {
@@ -155,19 +167,28 @@ export class MessageService {
     options: { cache?: boolean } = {}
   ): Promise<Result<Message[]>> {
     const { cache = true } = options;
-    // Query supabase directly with sorting
-    const { data, error } = await dataService['supabase']
-      .from('messages')
-      .select('*')
-      .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: true })
-      .order('sequence_index', { ascending: true })
-      .order('id', { ascending: true })
-      .limit(limit);
-    if (error) {
-      return failure(error);
-    }
-    return success(data || []);
+
+    return dataService.query(
+      async () => {
+        const pool = getPgPool();
+        const queryResult = await pool.query(
+          `
+            SELECT *
+            FROM messages
+            WHERE conversation_id = $1
+            ORDER BY created_at ASC, sequence_index ASC, id ASC
+            LIMIT $2
+          `,
+          [conversationId, limit]
+        );
+
+        return queryResult.rows.map(row => normalizeMessageRow(row));
+      },
+      cache
+        ? `conversation:messages:latest:${conversationId}:${limit}`
+        : undefined,
+      { cache }
+    );
   }
 
   /**
@@ -179,7 +200,7 @@ export class MessageService {
     user_id?: string | null;
     role: 'user' | 'assistant' | 'system';
     content: string;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
     status?: MessageStatus;
     external_id?: string | null;
     token_count?: number | null;
@@ -204,17 +225,14 @@ export class MessageService {
     if (message.role === 'assistant') {
       return dataService.query(async () => {
         // 1. Save the message
-        const { data: savedMessage, error: messageError } = await dataService[
-          'supabase'
-        ]
-          .from('messages')
-          .insert(messageData)
-          .select()
-          .single();
-
-        if (messageError) {
-          throw messageError;
+        const savedMessageResult = await dataService.create<Message>(
+          'messages',
+          messageData
+        );
+        if (!savedMessageResult.success) {
+          throw savedMessageResult.error;
         }
+        const savedMessage = savedMessageResult.data;
 
         // 2. Extract main content for preview
         const mainContent = extractMainContentForPreview(message.content);
@@ -226,18 +244,19 @@ export class MessageService {
         }
 
         // 4. Update conversation preview (in the same transaction)
-        const { error: conversationError } = await dataService['supabase']
-          .from('conversations')
-          .update({
+        const conversationUpdateResult = await dataService.update(
+          'conversations',
+          message.conversation_id,
+          {
             last_message_preview: previewText,
             updated_at: new Date().toISOString(),
-          })
-          .eq('id', message.conversation_id);
+          }
+        );
 
-        if (conversationError) {
+        if (!conversationUpdateResult.success) {
           console.warn(
             '[MessageService] Failed to update conversation preview:',
-            conversationError
+            conversationUpdateResult.error
           );
           // Do not throw error, since the message has already been saved
         }
@@ -272,7 +291,7 @@ export class MessageService {
       user_id?: string | null;
       role: 'user' | 'assistant' | 'system';
       content: string;
-      metadata?: Record<string, any>;
+      metadata?: Record<string, unknown>;
       status?: MessageStatus;
       external_id?: string | null;
       token_count?: number | null;
@@ -297,14 +316,51 @@ export class MessageService {
               : 1,
       }));
 
-      const { data, error } = await dataService['supabase']
-        .from('messages')
-        .insert(messageData)
-        .select('id');
+      const columns = [
+        'conversation_id',
+        'user_id',
+        'role',
+        'content',
+        'metadata',
+        'status',
+        'external_id',
+        'token_count',
+        'is_synced',
+        'sequence_index',
+      ] as const;
 
-      if (error) {
-        throw error;
-      }
+      const params: unknown[] = [];
+      const valueRows: string[] = [];
+      messageData.forEach(msg => {
+        const rowValues = [
+          msg.conversation_id,
+          msg.user_id ?? null,
+          msg.role,
+          msg.content,
+          JSON.stringify(msg.metadata),
+          msg.status,
+          msg.external_id ?? null,
+          msg.token_count ?? null,
+          msg.is_synced,
+          msg.sequence_index,
+        ];
+
+        const placeholderStart = params.length + 1;
+        rowValues.forEach(value => params.push(value));
+        valueRows.push(
+          `(${rowValues
+            .map((_, index) => `$${placeholderStart + index}`)
+            .join(', ')})`
+        );
+      });
+
+      const sql = `
+        INSERT INTO messages (${columns.join(', ')})
+        VALUES ${valueRows.join(', ')}
+        RETURNING id
+      `;
+      const pool = getPgPool();
+      const queryResult = await pool.query<{ id: string }>(sql, params);
 
       // Clear related cache
       const conversationIds = new Set(messages.map(m => m.conversation_id));
@@ -312,7 +368,7 @@ export class MessageService {
         cacheService.deletePattern(`conversation:messages:${convId}:*`);
       });
 
-      return data.map((item: { id: string }) => item.id);
+      return queryResult.rows.map(item => item.id);
     });
   }
 
@@ -442,42 +498,45 @@ export class MessageService {
         throw totalResult.error;
       }
 
-      // Get count by role
-      const { data: roleStats, error: roleError } = await dataService[
-        'supabase'
-      ]
-        .from('messages')
-        .select('role')
-        .eq('conversation_id', conversationId);
-
-      if (roleError) {
-        throw roleError;
-      }
-
+      const pool = getPgPool();
+      const roleStatsResult = await pool.query<{
+        role: string;
+        total: number;
+      }>(
+        `
+          SELECT role, COUNT(*)::int AS total
+          FROM messages
+          WHERE conversation_id = $1
+          GROUP BY role
+        `,
+        [conversationId]
+      );
       const byRole: Record<string, number> = {};
-      roleStats.forEach((item: { role: string }) => {
-        byRole[item.role] = (byRole[item.role] || 0) + 1;
+      roleStatsResult.rows.forEach(item => {
+        byRole[item.role] = Number(item.total || 0);
       });
 
-      // Get last message time
-      const { data: lastMessage, error: lastError } = await dataService[
-        'supabase'
-      ]
-        .from('messages')
-        .select('created_at')
-        .eq('conversation_id', conversationId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (lastError) {
-        throw lastError;
-      }
+      const lastMessageResult = await pool.query<{ created_at: Date | string }>(
+        `
+          SELECT created_at
+          FROM messages
+          WHERE conversation_id = $1
+          ORDER BY created_at DESC, sequence_index DESC, id DESC
+          LIMIT 1
+        `,
+        [conversationId]
+      );
+      const lastMessage = lastMessageResult.rows[0];
+      const lastMessageAt = lastMessage
+        ? lastMessage.created_at instanceof Date
+          ? lastMessage.created_at.toISOString()
+          : String(lastMessage.created_at)
+        : undefined;
 
       return {
         total: totalResult.data,
         byRole,
-        lastMessageAt: lastMessage?.created_at,
+        lastMessageAt,
       };
     });
   }

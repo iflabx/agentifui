@@ -1,10 +1,10 @@
 /**
  * Unified Data Service Layer
  *
- * Integrates cache, error handling, retry logic, and Result type.
- * Provides a unified interface for all database operations.
+ * PostgreSQL-based implementation with cache, retries, and Result wrappers.
+ * Keeps the same API surface used by legacy callers.
  */
-import { createClient } from '@lib/supabase/client';
+import { getPgPool } from '@lib/server/pg/pool';
 import {
   DatabaseError,
   Result,
@@ -26,17 +26,36 @@ interface QueryOptions {
 interface RealtimeOptions {
   subscribe?: boolean;
   subscriptionKey?: string;
-  onUpdate?: (payload: any) => void;
+  onUpdate?: (payload: unknown) => void;
+}
+
+type OrderByOption = { column: string; ascending?: boolean };
+type PaginationOption = { offset: number; limit: number };
+type WhereClause = {
+  clause: string;
+  params: unknown[];
+};
+
+const IDENTIFIER_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
+function assertIdentifier(identifier: string, label: string): string {
+  if (!IDENTIFIER_PATTERN.test(identifier)) {
+    throw new DatabaseError(`Invalid ${label}: ${identifier}`, 'sql_guard');
+  }
+  return identifier;
+}
+
+function quoteIdentifier(identifier: string): string {
+  return `"${identifier}"`;
 }
 
 export class DataService {
   private static instance: DataService;
-  private supabase = createClient();
 
   private constructor() {}
 
   /**
-   * Get the singleton instance of the data service
+   * Get the singleton instance of the data service.
    */
   public static getInstance(): DataService {
     if (!DataService.instance) {
@@ -46,7 +65,7 @@ export class DataService {
   }
 
   /**
-   * General query method with cache and error handling
+   * General query method with cache and error handling.
    */
   async query<T>(
     operation: () => Promise<T>,
@@ -55,12 +74,11 @@ export class DataService {
   ): Promise<Result<T>> {
     const {
       cache = false,
-      cacheTTL = 5 * 60 * 1000, // 5 minutes
+      cacheTTL = 5 * 60 * 1000,
       retries = 3,
       retryDelay = 1000,
     } = options;
 
-    // Use cache if enabled and cacheKey is provided
     if (cache && cacheKey) {
       try {
         return success(await cacheService.get(cacheKey, operation, cacheTTL));
@@ -71,20 +89,17 @@ export class DataService {
       }
     }
 
-    // Retry logic if not using cache
-    for (let attempt = 1; attempt <= retries; attempt++) {
+    for (let attempt = 1; attempt <= retries; attempt += 1) {
       const result = await wrapAsync(operation);
 
       if (result.success) {
         return result;
       }
 
-      // Return failure if last attempt or non-retryable error
       if (attempt === retries || this.isNonRetryableError(result.error)) {
         return result;
       }
 
-      // Wait and retry
       await this.delay(retryDelay * attempt);
       console.log(
         `[DataService] Retry attempt ${attempt}, error:`,
@@ -97,9 +112,6 @@ export class DataService {
     );
   }
 
-  /**
-   * Determine if the error is non-retryable
-   */
   private isNonRetryableError(error: Error): boolean {
     const message = error.message.toLowerCase();
     return (
@@ -112,63 +124,66 @@ export class DataService {
     );
   }
 
-  /**
-   * Delay helper
-   */
   private delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   /**
-   * Execute a Supabase query and return Result
+   * Legacy compatibility helper.
+   * Existing callers used to pass a Supabase query builder; now pass an async function.
    */
   async executeQuery<T>(
-    queryBuilder: any,
+    queryBuilder: (() => Promise<T>) | Promise<T>,
     operation: string,
     cacheKey?: string,
     options: QueryOptions = {}
   ): Promise<Result<T>> {
+    const operationRunner =
+      typeof queryBuilder === 'function'
+        ? (queryBuilder as () => Promise<T>)
+        : async () => queryBuilder;
+
     return this.query(
       async () => {
-        const { data, error } = await queryBuilder;
-
-        if (error) {
+        try {
+          return await operationRunner();
+        } catch (error) {
           throw new DatabaseError(
-            `${operation} failed: ${error.message}`,
+            `${operation} failed: ${error instanceof Error ? error.message : String(error)}`,
             operation,
-            error
+            error instanceof Error ? error : undefined
           );
         }
-
-        return data as T;
       },
       cacheKey,
       options
     );
   }
 
-  /**
-   * Get a single record
-   */
   async findOne<T>(
     table: string,
-    filters: Record<string, any>,
+    filters: Record<string, unknown>,
     options: QueryOptions & RealtimeOptions = {}
   ): Promise<Result<T | null>> {
+    const safeTable = assertIdentifier(table, 'table');
     const filterStr = Object.entries(filters)
       .map(([key, value]) => `${key}=${value}`)
       .join('&');
-
     const cacheKey = options.cache ? `${table}:one:${filterStr}` : undefined;
 
-    const result = await this.executeQuery<T>(
-      this.supabase.from(table).select('*').match(filters).maybeSingle(),
-      `Query ${table}`,
+    const result = await this.query(
+      async () => {
+        const { clause, params } = this.buildWhereClause(filters, 1);
+        const sql = `SELECT * FROM ${quoteIdentifier(safeTable)} ${clause} LIMIT 1`;
+        const pool = getPgPool();
+        const queryResult = await pool.query(sql, params);
+        const row = queryResult.rows[0];
+        return row ? this.normalizeRow<T>(row) : null;
+      },
       cacheKey,
       options
     );
 
-    // Setup realtime subscription
     if (options.subscribe && options.subscriptionKey && options.onUpdate) {
       realtimeService.subscribe(
         options.subscriptionKey,
@@ -180,20 +195,17 @@ export class DataService {
     return result;
   }
 
-  /**
-   * Get multiple records
-   */
   async findMany<T>(
     table: string,
-    filters: Record<string, any> = {},
-    orderBy?: { column: string; ascending?: boolean },
-    pagination?: { offset: number; limit: number },
+    filters: Record<string, unknown> = {},
+    orderBy?: OrderByOption,
+    pagination?: PaginationOption,
     options: QueryOptions & RealtimeOptions = {}
   ): Promise<Result<T[]>> {
+    const safeTable = assertIdentifier(table, 'table');
     const filterStr = Object.entries(filters)
       .map(([key, value]) => `${key}=${value}`)
       .join('&');
-
     const orderStr = orderBy
       ? `${orderBy.column}:${orderBy.ascending ? 'asc' : 'desc'}`
       : '';
@@ -204,34 +216,28 @@ export class DataService {
       ? `${table}:many:${filterStr}:${orderStr}:${pageStr}`
       : undefined;
 
-    let query = this.supabase.from(table).select('*');
+    const result = await this.query(
+      async () => {
+        const { clause, params } = this.buildWhereClause(filters, 1);
+        const orderClause = this.buildOrderByClause(orderBy);
+        const paginationClause = this.buildPaginationClause(pagination);
+        const sql = [
+          `SELECT * FROM ${quoteIdentifier(safeTable)}`,
+          clause,
+          orderClause,
+          paginationClause,
+        ]
+          .filter(Boolean)
+          .join(' ');
 
-    // Apply filters
-    if (Object.keys(filters).length > 0) {
-      query = query.match(filters);
-    }
-
-    // Apply ordering
-    if (orderBy) {
-      query = query.order(orderBy.column, { ascending: orderBy.ascending });
-    }
-
-    // Apply pagination
-    if (pagination) {
-      query = query.range(
-        pagination.offset,
-        pagination.offset + pagination.limit - 1
-      );
-    }
-
-    const result = await this.executeQuery<T[]>(
-      query,
-      `Query ${table} list`,
+        const pool = getPgPool();
+        const queryResult = await pool.query(sql, params);
+        return queryResult.rows.map(row => this.normalizeRow<T>(row));
+      },
       cacheKey,
       options
     );
 
-    // Setup realtime subscription
     if (options.subscribe && options.subscriptionKey && options.onUpdate) {
       realtimeService.subscribe(
         options.subscriptionKey,
@@ -243,22 +249,44 @@ export class DataService {
     return result;
   }
 
-  /**
-   * Create a record
-   */
   async create<T>(
     table: string,
     data: Partial<T>,
     options: QueryOptions = {}
   ): Promise<Result<T>> {
-    const result = await this.executeQuery<T>(
-      this.supabase.from(table).insert(data).select().single(),
-      `Create ${table}`,
+    const safeTable = assertIdentifier(table, 'table');
+
+    const result = await this.query(
+      async () => {
+        const keys = Object.keys(data as Record<string, unknown>).filter(
+          key => (data as Record<string, unknown>)[key] !== undefined
+        );
+        if (keys.length === 0) {
+          throw new DatabaseError('Create data is empty', 'create');
+        }
+
+        keys.forEach(key => assertIdentifier(key, 'column'));
+        const columnsSql = keys.map(key => quoteIdentifier(key)).join(', ');
+        const values = keys.map(key =>
+          this.toSqlValue((data as Record<string, unknown>)[key])
+        );
+        const placeholders = values
+          .map((_, index) => `$${index + 1}`)
+          .join(', ');
+        const sql = `INSERT INTO ${quoteIdentifier(safeTable)} (${columnsSql}) VALUES (${placeholders}) RETURNING *`;
+
+        const pool = getPgPool();
+        const queryResult = await pool.query(sql, values);
+        const row = queryResult.rows[0];
+        if (!row) {
+          throw new DatabaseError('Create returned no row', 'create');
+        }
+        return this.normalizeRow<T>(row);
+      },
       undefined,
       options
     );
 
-    // Clear related cache
     if (result.success) {
       cacheService.deletePattern(`${table}:*`);
     }
@@ -266,23 +294,47 @@ export class DataService {
     return result;
   }
 
-  /**
-   * Update a record
-   */
   async update<T>(
     table: string,
     id: string,
     data: Partial<T>,
     options: QueryOptions = {}
   ): Promise<Result<T>> {
-    const result = await this.executeQuery<T>(
-      this.supabase.from(table).update(data).eq('id', id).select().single(),
-      `Update ${table}`,
+    const safeTable = assertIdentifier(table, 'table');
+
+    const result = await this.query(
+      async () => {
+        const keys = Object.keys(data as Record<string, unknown>).filter(
+          key => (data as Record<string, unknown>)[key] !== undefined
+        );
+        if (keys.length === 0) {
+          throw new DatabaseError('Update data is empty', 'update');
+        }
+
+        keys.forEach(key => assertIdentifier(key, 'column'));
+        const setClauses = keys.map(
+          (key, index) => `${quoteIdentifier(key)} = $${index + 1}`
+        );
+        const values = keys.map(key =>
+          this.toSqlValue((data as Record<string, unknown>)[key])
+        );
+        values.push(id);
+
+        const sql = `UPDATE ${quoteIdentifier(safeTable)} SET ${setClauses.join(', ')} WHERE id = $${values.length} RETURNING *`;
+        const pool = getPgPool();
+        const queryResult = await pool.query(sql, values);
+        const row = queryResult.rows[0];
+
+        if (!row) {
+          throw new DatabaseError(`Record not found: ${id}`, 'update');
+        }
+
+        return this.normalizeRow<T>(row);
+      },
       undefined,
       options
     );
 
-    // Clear related cache
     if (result.success) {
       cacheService.deletePattern(`${table}:*`);
     }
@@ -290,22 +342,23 @@ export class DataService {
     return result;
   }
 
-  /**
-   * Delete a record
-   */
   async delete(
     table: string,
     id: string,
     options: QueryOptions = {}
   ): Promise<Result<void>> {
-    const result = await this.executeQuery<void>(
-      this.supabase.from(table).delete().eq('id', id),
-      `Delete ${table}`,
+    const safeTable = assertIdentifier(table, 'table');
+
+    const result = await this.query(
+      async () => {
+        const sql = `DELETE FROM ${quoteIdentifier(safeTable)} WHERE id = $1`;
+        const pool = getPgPool();
+        await pool.query(sql, [id]);
+      },
       undefined,
       options
     );
 
-    // Clear related cache
     if (result.success) {
       cacheService.deletePattern(`${table}:*`);
     }
@@ -313,101 +366,149 @@ export class DataService {
     return result;
   }
 
-  /**
-   * Soft delete a record (set status to 'deleted')
-   */
   async softDelete<T>(
     table: string,
     id: string,
     options: QueryOptions = {}
   ): Promise<Result<T>> {
-    const result = await this.executeQuery<T>(
-      this.supabase
-        .from(table)
-        .update({
-          status: 'deleted',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', id)
-        .select()
-        .single(),
-      `Soft delete ${table}`,
-      undefined,
-      options
-    );
+    const softDeletePatch = {
+      status: 'deleted',
+      updated_at: new Date().toISOString(),
+    } as unknown as Partial<T>;
 
-    // Clear related cache
-    if (result.success) {
-      cacheService.deletePattern(`${table}:*`);
-    }
-
-    return result;
+    return this.update<T>(table, id, softDeletePatch, options);
   }
 
-  /**
-   * Get record count
-   */
   async count(
     table: string,
-    filters: Record<string, any> = {},
+    filters: Record<string, unknown> = {},
     options: QueryOptions = {}
   ): Promise<Result<number>> {
+    const safeTable = assertIdentifier(table, 'table');
     const filterStr = Object.entries(filters)
       .map(([key, value]) => `${key}=${value}`)
       .join('&');
-
     const cacheKey = options.cache ? `${table}:count:${filterStr}` : undefined;
-
-    let query = this.supabase
-      .from(table)
-      .select('*', { count: 'exact', head: true });
-
-    // Apply filters
-    if (Object.keys(filters).length > 0) {
-      query = query.match(filters);
-    }
 
     return this.query(
       async () => {
-        const { count, error } = await query;
-
-        if (error) {
-          throw new DatabaseError(
-            `Failed to get ${table} count: ${error.message}`,
-            'count',
-            error
-          );
-        }
-
-        return count || 0;
+        const { clause, params } = this.buildWhereClause(filters, 1);
+        const sql = `SELECT COUNT(*)::int AS total FROM ${quoteIdentifier(safeTable)} ${clause}`;
+        const pool = getPgPool();
+        const queryResult = await pool.query<{ total: number }>(sql, params);
+        return Number(queryResult.rows[0]?.total || 0);
       },
       cacheKey,
       options
     );
   }
 
-  /**
-   * Clear all cache for a specific table
-   */
   clearCache(table: string): number {
     return cacheService.deletePattern(`${table}:*`);
   }
 
-  /**
-   * Clear all cache
-   */
   clearAllCache(): void {
     cacheService.clear();
   }
 
-  /**
-   * Destroy the service
-   */
   destroy(): void {
     cacheService.destroy();
     realtimeService.destroy();
   }
+
+  private buildWhereClause(
+    filters: Record<string, unknown>,
+    startIndex: number
+  ): WhereClause {
+    const whereClauses: string[] = [];
+    const params: unknown[] = [];
+    let index = startIndex;
+
+    Object.entries(filters).forEach(([key, rawValue]) => {
+      if (rawValue === undefined) {
+        return;
+      }
+
+      const safeColumn = assertIdentifier(key, 'column');
+      if (rawValue === null) {
+        whereClauses.push(`${quoteIdentifier(safeColumn)} IS NULL`);
+        return;
+      }
+
+      whereClauses.push(`${quoteIdentifier(safeColumn)} = $${index}`);
+      params.push(this.toSqlValue(rawValue));
+      index += 1;
+    });
+
+    if (whereClauses.length === 0) {
+      return { clause: '', params: [] };
+    }
+
+    return {
+      clause: `WHERE ${whereClauses.join(' AND ')}`,
+      params,
+    };
+  }
+
+  private buildOrderByClause(orderBy?: OrderByOption): string {
+    if (!orderBy) {
+      return '';
+    }
+
+    const safeColumn = assertIdentifier(orderBy.column, 'column');
+    return `ORDER BY ${quoteIdentifier(safeColumn)} ${orderBy.ascending ? 'ASC' : 'DESC'}`;
+  }
+
+  private buildPaginationClause(pagination?: PaginationOption): string {
+    if (!pagination) {
+      return '';
+    }
+
+    const offset = Math.max(0, Number(pagination.offset || 0));
+    const limit = Math.max(0, Number(pagination.limit || 0));
+    return `LIMIT ${limit} OFFSET ${offset}`;
+  }
+
+  private toSqlValue(value: unknown): unknown {
+    if (value === undefined) {
+      return null;
+    }
+
+    if (value instanceof Date) {
+      return value;
+    }
+
+    if (value && typeof value === 'object') {
+      return JSON.stringify(value);
+    }
+
+    return value;
+  }
+
+  private normalizeRow<T>(row: unknown): T {
+    return this.normalizeValue(row) as T;
+  }
+
+  private normalizeValue(value: unknown): unknown {
+    if (value instanceof Date) {
+      return value.toISOString();
+    }
+
+    if (Array.isArray(value)) {
+      return value.map(item => this.normalizeValue(item));
+    }
+
+    if (value && typeof value === 'object') {
+      const record = value as Record<string, unknown>;
+      const normalized: Record<string, unknown> = {};
+      Object.entries(record).forEach(([key, entryValue]) => {
+        normalized[key] = this.normalizeValue(entryValue);
+      });
+      return normalized;
+    }
+
+    return value;
+  }
 }
 
-// Export singleton instance
 export const dataService = DataService.getInstance();
