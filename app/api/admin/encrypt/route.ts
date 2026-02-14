@@ -1,37 +1,7 @@
+import { requireAdmin } from '@lib/services/admin/require-admin';
 import { encryptApiKey } from '@lib/utils/encryption';
 
-import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
-
-import { CookieOptions, createServerClient } from '@supabase/ssr';
-
-/**
- * Creates a Supabase client for server-side operations.
- * This is a helper function to abstract the client creation process.
- * @returns A Supabase client instance.
- */
-function createClient() {
-  const cookieStore = cookies();
-
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        async get(name: string) {
-          const cookie = await (await cookieStore).get(name);
-          return cookie?.value;
-        },
-        async set(name: string, value: string, options: CookieOptions) {
-          (await cookieStore).set({ name, value, ...options });
-        },
-        async remove(name: string, options: CookieOptions) {
-          (await cookieStore).set({ name, value: '', ...options });
-        },
-      },
-    }
-  );
-}
 
 /**
  * POST handler for encrypting an API key.
@@ -41,28 +11,8 @@ function createClient() {
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createClient();
-
-    // authenticate user
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // check if user is admin
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single();
-
-    if (!profile || profile.role !== 'admin') {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 });
-    }
+    const authResult = await requireAdmin();
+    if (!authResult.ok) return authResult.response;
 
     // get request data
     const { apiKey } = await request.json();

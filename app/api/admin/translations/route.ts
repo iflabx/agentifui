@@ -2,6 +2,7 @@ import {
   getSupportedLocales,
   isValidLocale,
 } from '@lib/config/language-config';
+import { requireAdmin } from '@lib/services/admin/require-admin';
 import { promises as fs } from 'fs';
 import path from 'path';
 
@@ -163,6 +164,9 @@ function setNestedValue(
 // GET: read translation content
 export async function GET(request: NextRequest) {
   try {
+    const authResult = await requireAdmin();
+    if (!authResult.ok) return authResult.response;
+
     const { searchParams } = new URL(request.url);
     const locale = searchParams.get('locale');
     const section = searchParams.get('section');
@@ -214,6 +218,9 @@ export async function GET(request: NextRequest) {
 // PUT: update translation content
 export async function PUT(request: NextRequest) {
   try {
+    const authResult = await requireAdmin();
+    if (!authResult.ok) return authResult.response;
+
     const body = await request.json();
     const { locale, section, updates, mode = 'merge' } = body;
 
@@ -295,6 +302,9 @@ export async function PUT(request: NextRequest) {
 // POST: batch update multiple language translations
 export async function POST(request: NextRequest) {
   try {
+    const authResult = await requireAdmin();
+    if (!authResult.ok) return authResult.response;
+
     const body = await request.json();
     const { section, updates, mode = 'merge' } = body;
 

@@ -1,4 +1,4 @@
-import { createClient } from '@lib/supabase/server';
+import { requireAdmin } from '@lib/services/admin/require-admin';
 
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -10,33 +10,10 @@ import { NextRequest, NextResponse } from 'next/server';
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
+    const authResult = await requireAdmin();
+    if (!authResult.ok) return authResult.response;
 
-    // get current user
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized access' },
-        { status: 401 }
-      );
-    }
-
-    // check if user is admin
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single();
-
-    if (profile?.role !== 'admin') {
-      return NextResponse.json(
-        { error: 'Insufficient permissions' },
-        { status: 403 }
-      );
-    }
+    const supabase = authResult.supabase;
 
     // parse request parameters
     const body = await request.json();

@@ -1,4 +1,5 @@
 import { getActiveProviders, getServiceInstancesByProvider } from '@lib/db';
+import { requireAdmin } from '@lib/services/admin/require-admin';
 
 import { NextResponse } from 'next/server';
 
@@ -7,6 +8,9 @@ import { NextResponse } from 'next/server';
  */
 export async function GET() {
   try {
+    const authResult = await requireAdmin();
+    if (!authResult.ok) return authResult.response;
+
     // check if there are active service providers
     const providersResult = await getActiveProviders();
 

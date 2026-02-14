@@ -1,0 +1,83 @@
+name: agentifui-test-stack
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: agentifui-test-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${TEST_PG_DB:-agentifui}
+      POSTGRES_USER: ${TEST_PG_USER:-agentif}
+      POSTGRES_PASSWORD: ${TEST_PG_PASSWORD:-agentif}
+      TZ: UTC
+    ports:
+      - '${TEST_PG_PORT:-5432}:5432'
+    volumes:
+      - test_stack_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'pg_isready -U ${TEST_PG_USER:-agentif} -d ${TEST_PG_DB:-agentifui}',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: agentifui-test-redis
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes', '--save', '60', '1000']
+    ports:
+      - '${TEST_REDIS_PORT:-6379}:6379'
+    volumes:
+      - test_stack_redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    container_name: agentifui-test-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${TEST_MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${TEST_MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BROWSER_REDIRECT_URL: http://127.0.0.1:${TEST_MINIO_CONSOLE_PORT:-9001}
+    ports:
+      - '${TEST_MINIO_API_PORT:-9000}:9000'
+      - '${TEST_MINIO_CONSOLE_PORT:-9001}:9001'
+    volumes:
+      - test_stack_minio_data:/data
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: agentifui-test-minio-init
+    restart: 'no'
+    depends_on:
+      - minio
+    environment:
+      MINIO_ROOT_USER: ${TEST_MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${TEST_MINIO_ROOT_PASSWORD:-minioadmin}
+      TEST_MINIO_BUCKET: ${TEST_MINIO_BUCKET:-agentifui}
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        set -e
+        until mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"; do
+          echo "Waiting for MinIO..."
+          sleep 1
+        done
+        mc mb --ignore-existing "local/$TEST_MINIO_BUCKET"
+        mc anonymous set download "local/$TEST_MINIO_BUCKET" >/dev/null 2>&1 || true
+        echo "MinIO bucket initialized: $TEST_MINIO_BUCKET"
+
+volumes:
+  test_stack_pg_data:
+  test_stack_redis_data:
+  test_stack_minio_data:
