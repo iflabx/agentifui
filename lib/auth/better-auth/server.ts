@@ -4,8 +4,12 @@ import { memoryAdapter } from 'better-auth/adapters/memory';
 import { nextCookies } from 'better-auth/next-js';
 import { genericOAuth } from 'better-auth/plugins/generic-oauth';
 import type { GenericOAuthConfig } from 'better-auth/plugins/generic-oauth';
+import { phoneNumber } from 'better-auth/plugins/phone-number';
 import { Pool } from 'pg';
 
+import { sendResetPasswordEmail } from './password-reset';
+import { getPhoneNumberPluginOptions } from './phone-otp';
+import { createBetterAuthSecondaryStorage } from './secondary-storage';
 import { parseSsoProvidersFromEnv, toDefaultSsoConfig } from './sso-providers';
 
 const BETTER_AUTH_BASE_PATH = '/api/auth/better';
@@ -37,6 +41,72 @@ function getSecret(): string {
   }
 
   return 'dev-only-better-auth-secret-change-me';
+}
+
+function parseBooleanEnv(
+  value: string | undefined,
+  fallback: boolean
+): boolean {
+  if (!value) {
+    return fallback;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+    return true;
+  }
+
+  if (['0', 'false', 'no', 'off'].includes(normalized)) {
+    return false;
+  }
+
+  return fallback;
+}
+
+function parsePositiveIntegerEnv(
+  value: string | undefined
+): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return undefined;
+  }
+
+  return Math.floor(parsed);
+}
+
+function parseNonNegativeIntegerEnv(
+  value: string | undefined
+): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return undefined;
+  }
+
+  return Math.floor(parsed);
+}
+
+function shouldUseStrictSsoValidation(): boolean {
+  const override = process.env.BETTER_AUTH_SSO_STRICT;
+  if (typeof override === 'string' && override.trim().length > 0) {
+    return parseBooleanEnv(override, false);
+  }
+
+  return (
+    process.env.NODE_ENV === 'production' ||
+    parseBooleanEnv(process.env.CI, false)
+  );
+}
+
+function isPhoneNumberAuthEnabled(): boolean {
+  return parseBooleanEnv(process.env.AUTH_PHONE_OTP_ENABLED, true);
 }
 
 function getMemoryDb() {
@@ -134,8 +204,67 @@ function getAuthDatabaseConfig() {
   return memoryAdapter(getMemoryDb(), {});
 }
 
+function getAuthSecondaryStorage() {
+  const hasRedisConfig = Boolean(
+    process.env.REDIS_URL?.trim() || process.env.REDIS_HOST?.trim()
+  );
+
+  if (!hasRedisConfig) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'REDIS_URL (or REDIS_HOST) is required in production when better-auth secondary storage is enabled'
+      );
+    }
+
+    console.warn(
+      '[better-auth] REDIS_URL/REDIS_HOST is missing; secondary storage disabled (dev/test only)'
+    );
+    return undefined;
+  }
+
+  return createBetterAuthSecondaryStorage();
+}
+
+function getAuthSessionConfig() {
+  const expiresIn = parsePositiveIntegerEnv(
+    process.env.BETTER_AUTH_SESSION_EXPIRES_IN_SECONDS
+  );
+  const updateAge = parseNonNegativeIntegerEnv(
+    process.env.BETTER_AUTH_SESSION_UPDATE_AGE_SECONDS
+  );
+
+  const sessionConfig = {
+    modelName: 'auth_sessions',
+    fields: {
+      expiresAt: 'expires_at',
+      createdAt: 'created_at',
+      updatedAt: 'updated_at',
+      ipAddress: 'ip_address',
+      userAgent: 'user_agent',
+      userId: 'user_id',
+    },
+    storeSessionInDatabase: parseBooleanEnv(
+      process.env.BETTER_AUTH_STORE_SESSION_IN_DB,
+      true
+    ),
+    preserveSessionInDatabase: parseBooleanEnv(
+      process.env.BETTER_AUTH_PRESERVE_SESSION_IN_DB,
+      false
+    ),
+  } as const;
+
+  return {
+    ...sessionConfig,
+    ...(typeof expiresIn === 'number' ? { expiresIn } : {}),
+    ...(typeof updateAge === 'number' ? { updateAge } : {}),
+  };
+}
+
 const parsedSsoProviders = parseSsoProvidersFromEnv(
-  process.env.BETTER_AUTH_SSO_PROVIDERS_JSON
+  process.env.BETTER_AUTH_SSO_PROVIDERS_JSON,
+  {
+    strictCasBridge: shouldUseStrictSsoValidation(),
+  }
 );
 
 parsedSsoProviders.warnings.forEach(message => {
@@ -308,6 +437,7 @@ export const auth = betterAuth({
   basePath: BETTER_AUTH_BASE_PATH,
   secret: getSecret(),
   database: getAuthDatabaseConfig(),
+  secondaryStorage: getAuthSecondaryStorage(),
   user: {
     modelName: 'auth_users',
     fields: {
@@ -316,17 +446,7 @@ export const auth = betterAuth({
       updatedAt: 'updated_at',
     },
   },
-  session: {
-    modelName: 'auth_sessions',
-    fields: {
-      expiresAt: 'expires_at',
-      createdAt: 'created_at',
-      updatedAt: 'updated_at',
-      ipAddress: 'ip_address',
-      userAgent: 'user_agent',
-      userId: 'user_id',
-    },
-  },
+  session: getAuthSessionConfig(),
   account: {
     modelName: 'auth_accounts',
     fields: {
@@ -357,9 +477,14 @@ export const auth = betterAuth({
   },
   emailAndPassword: {
     enabled: true,
+    sendResetPassword: sendResetPasswordEmail,
+    revokeSessionsOnPasswordReset: true,
   },
   plugins: [
     nextCookies(),
+    ...(isPhoneNumberAuthEnabled()
+      ? [phoneNumber(getPhoneNumberPluginOptions())]
+      : []),
     ...(parsedGenericOAuthProviders.providers.length > 0
       ? [genericOAuth({ config: parsedGenericOAuthProviders.providers })]
       : []),

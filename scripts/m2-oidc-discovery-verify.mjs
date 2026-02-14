@@ -7,6 +7,23 @@ const REQUIRED_FIELDS = [
   'jwks_uri',
 ];
 
+function parseBooleanFlag(value, fallback = false) {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return fallback;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+    return true;
+  }
+
+  if (['0', 'false', 'no', 'off'].includes(normalized)) {
+    return false;
+  }
+
+  return fallback;
+}
+
 function normalizeIssuer(issuer) {
   return issuer.endsWith('/') ? issuer.slice(0, -1) : issuer;
 }
@@ -62,6 +79,10 @@ function parseProviderList(rawValue) {
           ? provider.mode
           : 'native',
       issuer,
+      casIssuer:
+        typeof provider.casIssuer === 'string' && provider.casIssuer.trim()
+          ? provider.casIssuer.trim()
+          : null,
       discoveryEndpoint:
         typeof provider.discoveryEndpoint === 'string'
           ? provider.discoveryEndpoint
@@ -92,9 +113,22 @@ function missingFields(payload) {
 
 async function main() {
   const timeoutMs = Number(process.env.OIDC_DISCOVERY_TIMEOUT_MS || 8000);
+  const requireProviders = parseBooleanFlag(
+    process.env.OIDC_VERIFY_REQUIRE_PROVIDERS,
+    false
+  );
+  const strictMode =
+    parseBooleanFlag(process.env.OIDC_VERIFY_STRICT, false) ||
+    parseBooleanFlag(process.env.CI, false);
   const providers = parseProviderList(process.env.BETTER_AUTH_SSO_PROVIDERS_JSON);
 
   if (providers.length === 0) {
+    if (requireProviders) {
+      throw new Error(
+        'OIDC providers are required but BETTER_AUTH_SSO_PROVIDERS_JSON is empty'
+      );
+    }
+
     console.log(
       '[m2:oidc:verify] No providers configured in BETTER_AUTH_SSO_PROVIDERS_JSON'
     );
@@ -109,6 +143,17 @@ async function main() {
     process.stdout.write(`${prefix} -> ${discoveryUrl} ... `);
 
     try {
+      if (provider.mode === 'cas-bridge' && !provider.casIssuer) {
+        const reason =
+          'cas-bridge provider missing casIssuer (source CAS issuer)';
+
+        if (strictMode) {
+          throw new Error(reason);
+        }
+
+        process.stdout.write(`warn (${reason}); `);
+      }
+
       const payload = await fetchDiscovery(discoveryUrl, timeoutMs);
       const missing = missingFields(payload);
       if (missing.length > 0) {

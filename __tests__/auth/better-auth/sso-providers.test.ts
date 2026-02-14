@@ -52,6 +52,25 @@ describe('sso provider env parser', () => {
     expect(parsed.warnings).toHaveLength(1);
   });
 
+  it('throws when strict mode and cas-bridge provider misses casIssuer', () => {
+    const envValue = JSON.stringify([
+      {
+        providerId: 'campus-cas',
+        domain: 'campus.edu',
+        issuer: 'https://bridge.example.com/campus',
+        clientId: 'client-id',
+        clientSecret: 'client-secret',
+        mode: 'cas-bridge',
+      },
+    ]);
+
+    expect(() =>
+      parseSsoProvidersFromEnv(envValue, {
+        strictCasBridge: true,
+      })
+    ).toThrow('cas-bridge but casIssuer is missing');
+  });
+
   it('converts providers to better-auth defaultSSO format', () => {
     const envValue = JSON.stringify([
       {

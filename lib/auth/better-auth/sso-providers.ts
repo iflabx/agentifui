@@ -19,6 +19,10 @@ interface EnvSsoProvider {
   casIssuer?: string;
 }
 
+export interface ParseSsoProvidersOptions {
+  strictCasBridge?: boolean;
+}
+
 export interface ParsedSsoProvider {
   providerId: string;
   domain: string;
@@ -67,7 +71,8 @@ function toOidcConfig(input: EnvSsoProvider): OIDCConfig {
 function parseProvider(
   raw: unknown,
   index: number,
-  warnings: string[]
+  warnings: string[],
+  options?: ParseSsoProvidersOptions
 ): ParsedSsoProvider {
   if (!raw || typeof raw !== 'object') {
     throw new Error(`SSO provider item at index ${index} must be an object`);
@@ -114,9 +119,13 @@ function parseProvider(
   };
 
   if (parsedMode === 'cas-bridge' && !provider.casIssuer) {
-    warnings.push(
-      `[better-auth] provider "${provider.providerId}" is cas-bridge but casIssuer is missing`
-    );
+    const message = `[better-auth] provider "${provider.providerId}" is cas-bridge but casIssuer is missing`;
+
+    if (options?.strictCasBridge) {
+      throw new Error(message);
+    }
+
+    warnings.push(message);
   }
 
   return {
@@ -130,7 +139,10 @@ function parseProvider(
   };
 }
 
-export function parseSsoProvidersFromEnv(envValue: string | undefined): {
+export function parseSsoProvidersFromEnv(
+  envValue: string | undefined,
+  options?: ParseSsoProvidersOptions
+): {
   providers: ParsedSsoProvider[];
   warnings: string[];
 } {
@@ -152,9 +164,9 @@ export function parseSsoProvidersFromEnv(envValue: string | undefined): {
   }
 
   const warnings: string[] = [];
-  const providers = rawList.map((item, index) =>
-    parseProvider(item, index, warnings)
-  );
+  const providers = rawList.map((item, index) => {
+    return parseProvider(item, index, warnings, options);
+  });
 
   return { providers, warnings };
 }
