@@ -1,5 +1,6 @@
 'use client';
 
+import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
 import { useChatWidth, useInputHeightReset } from '@lib/hooks';
 import { useChatInputRouteSync } from '@lib/hooks/use-chat-input-route-sync';
 import { useCurrentApp } from '@lib/hooks/use-current-app';
@@ -13,7 +14,6 @@ import { useChatLayoutStore } from '@lib/stores/chat-layout-store';
 import { INITIAL_INPUT_HEIGHT } from '@lib/stores/chat-layout-store';
 import { useChatScrollStore } from '@lib/stores/chat-scroll-store';
 import { useNotificationStore } from '@lib/stores/ui/notification-store';
-import { useSupabaseAuth } from '@lib/supabase/hooks';
 import { cn } from '@lib/utils';
 import { ArrowUpIcon, Loader2, Square } from 'lucide-react';
 import { create } from 'zustand';
@@ -191,7 +191,7 @@ export const ChatInput = ({
   ); // attachmentBarHeight removed from dependencies
 
   // User ID and App ID information
-  const { session } = useSupabaseAuth();
+  const { session } = useAuthSession();
   const {
     currentAppId,
     isValidating: isValidatingAppConfig, // New: validation state

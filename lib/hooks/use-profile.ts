@@ -1,5 +1,5 @@
+import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
 import { createClient } from '@lib/supabase/client';
-import { useSupabaseAuth } from '@lib/supabase/hooks';
 import type { UserRole } from '@lib/types/database';
 import {
   safeJsonParse,
@@ -195,7 +195,7 @@ export function useProfile(userId?: string): UseProfileResult {
   const [isLoading, setIsLoading] = useState(false); // Initial value is false
 
   // Get current user info from auth hook
-  const { session } = useSupabaseAuth();
+  const { session } = useAuthSession();
 
   // Use global loading state
   const setPageLoading = useLoadingStore(state => state.setPageLoading);

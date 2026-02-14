@@ -6,11 +6,11 @@
  * 2. Temporary conversations from the frontend store (via usePendingConversationStore)
  *
  */
+import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
 import {
   PendingConversation,
   usePendingConversationStore,
 } from '@lib/stores/pending-conversation-store';
-import { useSupabaseAuth } from '@lib/supabase/hooks';
 import { Conversation } from '@lib/types/database';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -54,7 +54,7 @@ export function useCombinedConversations() {
   } = useSidebarConversations(20);
 
   // Get the current logged-in user ID
-  const { session } = useSupabaseAuth();
+  const { session } = useAuthSession();
   const currentUserId = session?.user?.id;
 
   // Get the temporary conversation list

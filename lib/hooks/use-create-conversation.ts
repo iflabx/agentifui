@@ -15,6 +15,7 @@
  * - Automatic conversation title generation
  * - Favorite apps management
  */
+import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
 import { createConversation } from '@lib/db';
 import { updateConversation } from '@lib/db/conversations';
 import { streamDifyChat } from '@lib/services/dify/chat-service';
@@ -39,7 +40,6 @@ import { useChatStore } from '@lib/stores/chat-store';
 import { useAutoAddFavoriteApp } from '@lib/stores/favorite-apps-store';
 import { usePendingConversationStore } from '@lib/stores/pending-conversation-store';
 import { useSidebarStore } from '@lib/stores/sidebar-store';
-import { useSupabaseAuth } from '@lib/supabase/hooks';
 
 import { useCallback, useState } from 'react';
 
@@ -106,7 +106,7 @@ export function useCreateConversation(): UseCreateConversationReturn {
     state => state.startTitleTypewriter
   );
 
-  const { session } = useSupabaseAuth();
+  const { session } = useAuthSession();
   const currentUserId = session?.user?.id;
   const setCurrentChatConversationId = useChatStore(
     state => state.setCurrentConversationId

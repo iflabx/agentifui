@@ -1,5 +1,5 @@
+import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
 import { getCurrentUserProfile } from '@lib/db';
-import { useSupabaseAuth } from '@lib/supabase/hooks';
 
 import { useEffect, useState } from 'react';
 
@@ -31,7 +31,7 @@ export function useAdminAuth(
   redirectOnFailure: boolean = true
 ): AdminAuthResult {
   const router = useRouter();
-  const { session, loading: sessionLoading } = useSupabaseAuth();
+  const { session, loading: sessionLoading } = useAuthSession();
 
   const [isAdmin, setIsAdmin] = useState(false);
   const [isLoading, setIsLoading] = useState(true);

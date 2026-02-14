@@ -15,8 +15,8 @@
  * - File upload support
  * - Error handling and retry
  */
+import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
 import { getConversationByExternalId } from '@lib/db/conversations';
-// Assume Supabase Auth Hook
 import { useCurrentApp } from '@lib/hooks/use-current-app';
 import {
   stopDifyStreamingTask,
@@ -42,7 +42,6 @@ import type {
 import { useChatInputStore } from '@lib/stores/chat-input-store';
 import { selectIsProcessing, useChatStore } from '@lib/stores/chat-store';
 import { usePendingConversationStore } from '@lib/stores/pending-conversation-store';
-import { useSupabaseAuth } from '@lib/supabase/hooks';
 import type { ServiceInstance } from '@lib/types/database';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -88,7 +87,7 @@ export function useChatInterface(
   const { isWelcomeScreen, setIsWelcomeScreen } = useChatInputStore();
 
   // Get authentication state and current app info using new hook
-  const { session } = useSupabaseAuth();
+  const { session } = useAuthSession();
   const currentUserId = session?.user?.id;
   const {
     currentAppId,
