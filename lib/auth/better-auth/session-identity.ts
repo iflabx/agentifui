@@ -1,6 +1,7 @@
 import { auth, getAuthProviderIssuer } from '@lib/auth/better-auth/server';
 import {
   type UpsertProfileExternalAttributesInput,
+  getProfileExternalAttributes,
   getUserIdentityByIssuerSubject,
   upsertProfileExternalAttributes,
   upsertUserIdentity,
@@ -13,6 +14,14 @@ const INTERNAL_AUTH_ISSUER = 'urn:agentifui:better-auth';
 const INTERNAL_AUTH_PROVIDER = 'better-auth';
 const PROVIDER_ISSUER_PREFIX = 'urn:better-auth:provider:';
 const LEGACY_MAPPING_LOCK_PREFIX = 'legacy-auth-user';
+const DEFAULT_EXTERNAL_ATTRIBUTES_SYNC_INTERVAL_MS = 15 * 60 * 1000;
+const EXTERNAL_ATTRIBUTES_SYNC_INTERVAL_MS = (() => {
+  const parsed = Number(process.env.EXTERNAL_ATTRIBUTES_SYNC_INTERVAL_MS);
+  if (Number.isFinite(parsed) && parsed >= 0) {
+    return parsed;
+  }
+  return DEFAULT_EXTERNAL_ATTRIBUTES_SYNC_INTERVAL_MS;
+})();
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -628,6 +637,31 @@ async function syncExternalAttributes(
     return;
   }
 
+  const existingAttributes = await getProfileExternalAttributes(userId);
+  if (!existingAttributes.success) {
+    console.warn(
+      '[SessionIdentity] failed to load existing external attributes:',
+      existingAttributes.error
+    );
+  } else if (existingAttributes.data) {
+    const normalizedIssuer = payload.source_issuer.trim().toLowerCase();
+    const sameSource =
+      existingAttributes.data.source_issuer.trim().toLowerCase() ===
+        normalizedIssuer &&
+      existingAttributes.data.source_provider.trim() ===
+        payload.source_provider.trim();
+
+    if (sameSource) {
+      const syncedAtMs = Date.parse(existingAttributes.data.synced_at);
+      const isFresh =
+        Number.isFinite(syncedAtMs) &&
+        Date.now() - syncedAtMs < EXTERNAL_ATTRIBUTES_SYNC_INTERVAL_MS;
+      if (isFresh) {
+        return;
+      }
+    }
+  }
+
   const upsert = await upsertProfileExternalAttributes(payload);
   if (!upsert.success) {
     console.warn(
@@ -683,8 +717,8 @@ export async function resolveSessionIdentity(
       resolvedUserId.data.userId,
       sessionUser
     );
-    await syncExternalAttributes(resolvedUserId.data.userId, sessionUser);
   }
+  await syncExternalAttributes(resolvedUserId.data.userId, sessionUser);
 
   return success({
     session: session as NonNullable<AuthSession>,
