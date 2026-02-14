@@ -20,7 +20,7 @@
 3. OIDC Discovery 连通性校验：
    - `scripts/m2-oidc-discovery-verify.mjs`
    - `pnpm m2:oidc:verify`
-4. Mock OIDC SSO 端到端验收（含冲突拒绝）：
+4. Mock OIDC SSO 端到端验收（含 `native` + `cas-bridge` + 冲突拒绝）：
    - `scripts/m2-sso-mock-e2e-verify.mjs`
    - `pnpm m2:sso:mock:verify`
 5. 解析器单测：
@@ -52,4 +52,11 @@ pnpm m2:gate:verify
 OIDC_DISCOVERY_TIMEOUT_MS=12000 pnpm m2:oidc:verify
 ```
 
-若有 provider discovery 不可达，命令会以非 0 退出，便于 CI 阻断。
+默认要求至少存在一个 provider（`OIDC_VERIFY_REQUIRE_PROVIDERS` 默认 `true`）。
+如需本地临时放宽，可显式设置：
+
+```bash
+OIDC_VERIFY_REQUIRE_PROVIDERS=0 pnpm m2:oidc:verify
+```
+
+若 provider discovery 不可达，命令会以非 0 退出，便于 CI 阻断。

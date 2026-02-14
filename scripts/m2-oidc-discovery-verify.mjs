@@ -115,12 +115,14 @@ async function main() {
   const timeoutMs = Number(process.env.OIDC_DISCOVERY_TIMEOUT_MS || 8000);
   const requireProviders = parseBooleanFlag(
     process.env.OIDC_VERIFY_REQUIRE_PROVIDERS,
-    false
+    true
   );
   const strictMode =
     parseBooleanFlag(process.env.OIDC_VERIFY_STRICT, false) ||
     parseBooleanFlag(process.env.CI, false);
-  const providers = parseProviderList(process.env.BETTER_AUTH_SSO_PROVIDERS_JSON);
+  const providers = parseProviderList(
+    process.env.BETTER_AUTH_SSO_PROVIDERS_JSON
+  );
 
   if (providers.length === 0) {
     if (requireProviders) {

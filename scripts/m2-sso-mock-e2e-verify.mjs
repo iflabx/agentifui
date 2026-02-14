@@ -202,6 +202,29 @@ async function requestJson(jar, path, method, body) {
   };
 }
 
+async function getSessionUserId(jar) {
+  const sessionResponse = await requestWithCookies(
+    jar,
+    `${appBase}/api/auth/better/get-session`,
+    {
+      method: 'GET',
+    }
+  );
+
+  const sessionPayload = await sessionResponse.json().catch(() => null);
+  const userId =
+    sessionResponse.status === 200 &&
+    typeof sessionPayload?.user?.id === 'string' &&
+    sessionPayload.user.id.length > 0
+      ? sessionPayload.user.id
+      : null;
+
+  return {
+    status: sessionResponse.status,
+    userId,
+  };
+}
+
 async function followSsoSignIn({
   jar,
   providerId,
@@ -262,24 +285,40 @@ async function main() {
     process.env.S3_ENDPOINT?.trim() ||
     process.env.M2_SSO_S3_ENDPOINT?.trim() ||
     fallbackS3Endpoint;
-  const providerId = process.env.M2_SSO_PROVIDER_ID?.trim() || 'mock-oidc';
+  const nativeProviderId =
+    process.env.M2_SSO_PROVIDER_ID?.trim() || 'mock-oidc-native';
+  const casBridgeProviderId =
+    process.env.M2_SSO_CAS_PROVIDER_ID?.trim() || 'mock-oidc-cas-bridge';
   const providerDomain =
     process.env.M2_SSO_PROVIDER_DOMAIN?.trim() || 'example.com';
   const providerClientId =
     process.env.M2_SSO_PROVIDER_CLIENT_ID?.trim() || 'mock-oidc-client';
   const providerClientSecret =
     process.env.M2_SSO_PROVIDER_CLIENT_SECRET?.trim() || 'mock-oidc-secret';
+  const casIssuer =
+    process.env.M2_SSO_CAS_ISSUER?.trim() || 'https://cas.example.internal';
 
   const ssoProviders = [
     {
-      providerId,
+      providerId: nativeProviderId,
       domain: providerDomain,
       issuer: oauthBase,
       discoveryEndpoint: `${oauthBase}/.well-known/openid-configuration`,
       clientId: providerClientId,
       clientSecret: providerClientSecret,
       mode: 'native',
-      displayName: 'Mock OIDC',
+      displayName: 'Mock OIDC Native',
+    },
+    {
+      providerId: casBridgeProviderId,
+      domain: providerDomain,
+      issuer: oauthBase,
+      discoveryEndpoint: `${oauthBase}/.well-known/openid-configuration`,
+      clientId: providerClientId,
+      clientSecret: providerClientSecret,
+      mode: 'cas-bridge',
+      casIssuer,
+      displayName: 'Mock OIDC CAS Bridge',
     },
   ];
 
@@ -361,7 +400,7 @@ async function main() {
     const successEmail = `m2-sso-ok-${suffix}@${providerDomain}`;
     const successRedirect = await followSsoSignIn({
       jar,
-      providerId,
+      providerId: nativeProviderId,
       callbackURL: '/chat/new',
       errorCallbackURL: '/auth/error',
       loginHint: successEmail,
@@ -372,19 +411,8 @@ async function main() {
       );
     }
 
-    const sessionAfterSso = await requestWithCookies(
-      jar,
-      `${appBase}/api/auth/better/get-session`,
-      {
-        method: 'GET',
-      }
-    );
-    assertStatus(sessionAfterSso, [200], 'get-session after successful sso');
-    const sessionAfterSsoPayload = await sessionAfterSso
-      .json()
-      .catch(() => null);
-    const happyPathUserId = sessionAfterSsoPayload?.user?.id;
-    if (!happyPathUserId) {
+    const sessionAfterNativeSso = await getSessionUserId(jar);
+    if (!sessionAfterNativeSso.userId) {
       throw new Error('SSO happy-path did not create an authenticated session');
     }
 
@@ -426,7 +454,7 @@ async function main() {
 
     const conflictRedirect = await followSsoSignIn({
       jar,
-      providerId,
+      providerId: nativeProviderId,
       callbackURL: '/chat/new',
       errorCallbackURL: '/auth/error',
       loginHint: conflictEmail,
@@ -447,22 +475,31 @@ async function main() {
       );
     }
 
-    const sessionAfterConflict = await requestWithCookies(
-      jar,
-      `${appBase}/api/auth/better/get-session`,
-      {
-        method: 'GET',
-      }
-    );
-    const sessionAfterConflictPayload = await sessionAfterConflict
-      .json()
-      .catch(() => null);
-    const conflictHasSession =
-      sessionAfterConflict.status === 200 &&
-      Boolean(sessionAfterConflictPayload?.user?.id);
-    if (conflictHasSession) {
+    const sessionAfterConflict = await getSessionUserId(jar);
+    if (sessionAfterConflict.userId) {
       throw new Error(
         'SSO conflict-path should not result in an authenticated session'
+      );
+    }
+
+    const casBridgeEmail = `m2-sso-cas-bridge-${suffix}@${providerDomain}`;
+    const casBridgeRedirect = await followSsoSignIn({
+      jar,
+      providerId: casBridgeProviderId,
+      callbackURL: '/chat/new',
+      errorCallbackURL: '/auth/error',
+      loginHint: casBridgeEmail,
+    });
+    if (!casBridgeRedirect || casBridgeRedirect.includes('error=')) {
+      throw new Error(
+        `CAS-bridge SSO happy-path returned unexpected redirect: ${casBridgeRedirect || 'empty'}`
+      );
+    }
+
+    const sessionAfterCasBridgeSso = await getSessionUserId(jar);
+    if (!sessionAfterCasBridgeSso.userId) {
+      throw new Error(
+        'CAS-bridge SSO happy-path did not create an authenticated session'
       );
     }
 
@@ -472,11 +509,14 @@ async function main() {
           ok: true,
           checks: {
             oidcDiscoveryRequireProviders: true,
-            ssoHappyPath: true,
+            ssoHappyPathNative: true,
+            ssoHappyPathCasBridge: true,
             ssoConflictRejected: true,
           },
-          providerId,
-          happyPathUserId,
+          nativeProviderId,
+          casBridgeProviderId,
+          nativeHappyPathUserId: sessionAfterNativeSso.userId,
+          casBridgeHappyPathUserId: sessionAfterCasBridgeSso.userId,
           conflictEmail,
         },
         null,
