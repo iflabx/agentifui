@@ -11,6 +11,10 @@ const fallbackDatabaseUrl =
 const fallbackRedisUrl = 'redis://172.20.0.1:6379/0';
 const fallbackS3Endpoint = 'http://172.20.0.1:9000';
 
+function randomSuffix() {
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
 class CookieJar {
   constructor() {
     this.cookies = new Map();
@@ -19,9 +23,7 @@ class CookieJar {
   updateFromResponse(response) {
     const headers = response.headers;
     const setCookies =
-      typeof headers.getSetCookie === 'function'
-        ? headers.getSetCookie()
-        : [];
+      typeof headers.getSetCookie === 'function' ? headers.getSetCookie() : [];
 
     for (const line of setCookies) {
       const [pair, ...attrs] = line.split(';');
@@ -35,9 +37,7 @@ class CookieJar {
       const maxAgeAttr = attrs.find(attr =>
         attr.trim().toLowerCase().startsWith('max-age=')
       );
-      const maxAge = maxAgeAttr
-        ? Number(maxAgeAttr.split('=')[1])
-        : Number.NaN;
+      const maxAge = maxAgeAttr ? Number(maxAgeAttr.split('=')[1]) : Number.NaN;
 
       if (Number.isFinite(maxAge) && maxAge <= 0) {
         this.cookies.delete(name);
@@ -101,24 +101,22 @@ async function requestWithCookies(jar, url, init = {}) {
 }
 
 async function main() {
-  const oauthProc = startProcess(
-    'node',
-    ['scripts/mock-oauth-provider.mjs'],
-    {
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        MOCK_OAUTH_PORT: String(oauthPort),
-        MOCK_OAUTH_HOST: '127.0.0.1',
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    }
-  );
+  const loginHint = `m3-oauth-${randomSuffix()}@example.com`;
+
+  const oauthProc = startProcess('node', ['scripts/mock-oauth-provider.mjs'], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      MOCK_OAUTH_PORT: String(oauthPort),
+      MOCK_OAUTH_HOST: '127.0.0.1',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
 
   const genericProviders = [
     {
       providerId: 'github',
-      authorizationUrl: `${oauthBase}/oauth/authorize`,
+      authorizationUrl: `${oauthBase}/oauth/authorize?login_hint=${encodeURIComponent(loginHint)}`,
       tokenUrl: `${oauthBase}/oauth/token`,
       userInfoUrl: `${oauthBase}/oauth/userinfo`,
       clientId: 'mock-github-client',
@@ -127,52 +125,49 @@ async function main() {
     },
   ];
 
-  const appProc = startProcess(
-    'pnpm',
-    ['next', 'dev', '-p', String(appPort)],
-    {
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        NODE_ENV: 'development',
-        NEXT_PUBLIC_APP_URL: appBase,
-        BETTER_AUTH_URL: appBase,
-        BETTER_AUTH_SECRET:
-          process.env.BETTER_AUTH_SECRET ||
-          'mock-oauth-e2e-secret-not-for-production',
-        BETTER_AUTH_GENERIC_OAUTH_PROVIDERS_JSON: JSON.stringify(
-          genericProviders
-        ),
-        DATABASE_URL:
-          process.env.DATABASE_URL ||
-          process.env.MOCK_OAUTH_DATABASE_URL ||
-          fallbackDatabaseUrl,
-        REDIS_URL:
-          process.env.REDIS_URL ||
-          process.env.MOCK_OAUTH_REDIS_URL ||
-          fallbackRedisUrl,
-        S3_ENDPOINT:
-          process.env.S3_ENDPOINT ||
-          process.env.MOCK_OAUTH_S3_ENDPOINT ||
-          fallbackS3Endpoint,
-        S3_ACCESS_KEY_ID:
-          process.env.S3_ACCESS_KEY_ID ||
-          process.env.MOCK_OAUTH_S3_ACCESS_KEY_ID ||
-          'minioadmin',
-        S3_SECRET_ACCESS_KEY:
-          process.env.S3_SECRET_ACCESS_KEY ||
-          process.env.MOCK_OAUTH_S3_SECRET_ACCESS_KEY ||
-          'minioadmin',
-        S3_BUCKET:
-          process.env.S3_BUCKET || process.env.MOCK_OAUTH_S3_BUCKET || 'agentifui',
-        S3_ENABLE_PATH_STYLE:
-          process.env.S3_ENABLE_PATH_STYLE ||
-          process.env.MOCK_OAUTH_S3_ENABLE_PATH_STYLE ||
-          '1',
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    }
-  );
+  const appProc = startProcess('pnpm', ['next', 'dev', '-p', String(appPort)], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      NODE_ENV: 'development',
+      NEXT_PUBLIC_APP_URL: appBase,
+      BETTER_AUTH_URL: appBase,
+      BETTER_AUTH_SECRET:
+        process.env.BETTER_AUTH_SECRET ||
+        'mock-oauth-e2e-secret-not-for-production',
+      BETTER_AUTH_GENERIC_OAUTH_PROVIDERS_JSON:
+        JSON.stringify(genericProviders),
+      DATABASE_URL:
+        process.env.DATABASE_URL ||
+        process.env.MOCK_OAUTH_DATABASE_URL ||
+        fallbackDatabaseUrl,
+      REDIS_URL:
+        process.env.REDIS_URL ||
+        process.env.MOCK_OAUTH_REDIS_URL ||
+        fallbackRedisUrl,
+      S3_ENDPOINT:
+        process.env.S3_ENDPOINT ||
+        process.env.MOCK_OAUTH_S3_ENDPOINT ||
+        fallbackS3Endpoint,
+      S3_ACCESS_KEY_ID:
+        process.env.S3_ACCESS_KEY_ID ||
+        process.env.MOCK_OAUTH_S3_ACCESS_KEY_ID ||
+        'minioadmin',
+      S3_SECRET_ACCESS_KEY:
+        process.env.S3_SECRET_ACCESS_KEY ||
+        process.env.MOCK_OAUTH_S3_SECRET_ACCESS_KEY ||
+        'minioadmin',
+      S3_BUCKET:
+        process.env.S3_BUCKET ||
+        process.env.MOCK_OAUTH_S3_BUCKET ||
+        'agentifui',
+      S3_ENABLE_PATH_STYLE:
+        process.env.S3_ENABLE_PATH_STYLE ||
+        process.env.MOCK_OAUTH_S3_ENABLE_PATH_STYLE ||
+        '1',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
 
   const stopAll = async exitCode => {
     oauthProc.kill('SIGTERM');
@@ -284,6 +279,7 @@ async function main() {
         {
           ok: true,
           oauthProvider: 'github(mock)',
+          loginHint,
           signedInUserId: userId,
           signOutVerified: isSignedOut,
         },

@@ -1,11 +1,52 @@
 #!/usr/bin/env node
+import { createHash, randomUUID } from 'node:crypto';
 import http from 'node:http';
-import { randomUUID } from 'node:crypto';
 
 const port = Number(process.env.MOCK_OAUTH_PORT || 3901);
 const host = process.env.MOCK_OAUTH_HOST || '127.0.0.1';
 
 const codeToUser = new Map();
+const defaultUserEmail = 'mock.github.user@example.com';
+
+function normalizeEmail(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim().toLowerCase();
+  if (!trimmed || !trimmed.includes('@')) {
+    return null;
+  }
+
+  return trimmed;
+}
+
+function buildStableAccountId(email) {
+  const hash = createHash('sha256').update(email).digest('hex').slice(0, 16);
+  return `mock-gh-${hash}`;
+}
+
+function profileFromLoginHint(loginHint) {
+  const email = normalizeEmail(loginHint) || defaultUserEmail;
+  const accountId = buildStableAccountId(email);
+  const loginName = `mock-${accountId.slice(-8)}`;
+
+  return {
+    id: accountId,
+    sub: accountId,
+    login: loginName,
+    preferred_username: loginName,
+    name: 'Mock GitHub User',
+    email,
+    image: 'https://example.com/mock-avatar.png',
+    emailVerified: true,
+    email_verified: true,
+  };
+}
+
+function getBaseUrl() {
+  return `http://${host}:${port}`;
+}
 
 function json(res, status, body) {
   const payload = JSON.stringify(body);
@@ -33,20 +74,38 @@ function parseBody(req) {
   });
 }
 
-function profileFromCode(code) {
-  return {
-    id: `mock-gh-${code.slice(0, 8)}`,
-    login: 'mock-github-user',
-    name: 'Mock GitHub User',
-    email: 'mock.github.user@example.com',
-    image: 'https://example.com/mock-avatar.png',
-    emailVerified: true,
-  };
-}
-
 const server = http.createServer(async (req, res) => {
   const method = req.method || 'GET';
   const requestUrl = new URL(req.url || '/', `http://${host}:${port}`);
+  const baseUrl = getBaseUrl();
+
+  if (
+    method === 'GET' &&
+    requestUrl.pathname === '/.well-known/openid-configuration'
+  ) {
+    json(res, 200, {
+      issuer: baseUrl,
+      authorization_endpoint: `${baseUrl}/oauth/authorize`,
+      token_endpoint: `${baseUrl}/oauth/token`,
+      userinfo_endpoint: `${baseUrl}/oauth/userinfo`,
+      jwks_uri: `${baseUrl}/oauth/jwks`,
+      response_types_supported: ['code'],
+      grant_types_supported: ['authorization_code'],
+      subject_types_supported: ['public'],
+      id_token_signing_alg_values_supported: ['RS256'],
+      token_endpoint_auth_methods_supported: [
+        'client_secret_post',
+        'client_secret_basic',
+      ],
+      scopes_supported: ['openid', 'profile', 'email'],
+    });
+    return;
+  }
+
+  if (method === 'GET' && requestUrl.pathname === '/oauth/jwks') {
+    json(res, 200, { keys: [] });
+    return;
+  }
 
   if (method === 'GET' && requestUrl.pathname === '/oauth/authorize') {
     const redirectUri = requestUrl.searchParams.get('redirect_uri');
@@ -56,8 +115,9 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    const loginHint = requestUrl.searchParams.get('login_hint');
     const code = randomUUID();
-    codeToUser.set(code, profileFromCode(code));
+    codeToUser.set(code, profileFromLoginHint(loginHint));
 
     const callback = new URL(redirectUri);
     callback.searchParams.set('code', code);
