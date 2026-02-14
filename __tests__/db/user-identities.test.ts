@@ -124,4 +124,38 @@ describe('upsertUserIdentity', () => {
     expect(mockedRawQuery).toHaveBeenCalledTimes(1);
     expect(mockedDeletePattern).toHaveBeenCalledWith('user_identities:*');
   });
+
+  it('rejects switching to a different external provider on same identity', async () => {
+    mockedFindMany.mockResolvedValueOnce({
+      success: true,
+      data: [
+        {
+          id: 'existing-identity-id',
+          user_id: '00000000-0000-4000-8000-000000000001',
+          issuer: 'urn:agentifui:better-auth',
+          provider: 'github',
+          subject: '00000000-0000-4000-8000-000000000001',
+          email: 'test@example.com',
+          email_verified: true,
+          given_name: 'Test',
+          family_name: 'User',
+          preferred_username: 'test-user',
+          raw_claims: {},
+          created_at: '2026-02-14T00:00:00.000Z',
+          updated_at: '2026-02-14T00:00:00.000Z',
+          last_login_at: '2026-02-14T00:00:00.000Z',
+        },
+      ],
+    });
+
+    const result = await upsertUserIdentity({
+      user_id: '00000000-0000-4000-8000-000000000001',
+      issuer: 'urn:agentifui:better-auth',
+      provider: 'gitlab',
+      subject: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(result.success).toBe(false);
+    expect(mockedRawQuery).not.toHaveBeenCalled();
+  });
 });

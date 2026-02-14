@@ -134,7 +134,13 @@ describe('resolveSessionIdentity', () => {
     expect(result.data.userId).toBe('00000000-0000-4000-8000-000000000001');
     expect(result.data.role).toBe('user');
     expect(result.data.status).toBe('active');
-    expect(mockedUpsertUserIdentity).not.toHaveBeenCalled();
+    expect(mockedUpsertUserIdentity).toHaveBeenCalledTimes(1);
+    expect(mockedUpsertUserIdentity.mock.calls[0]?.[0].issuer).toBe(
+      'urn:agentifui:better-auth'
+    );
+    expect(mockedUpsertUserIdentity.mock.calls[0]?.[0].subject).toBe(
+      '00000000-0000-4000-8000-000000000001'
+    );
     expect(mockedUpsertProfileExternalAttributes).not.toHaveBeenCalled();
     expect(queryMock).toHaveBeenCalledTimes(1);
   });

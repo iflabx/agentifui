@@ -184,6 +184,42 @@ function buildSourceIssuer(providerId: string): string {
   );
 }
 
+async function upsertPrimarySessionIdentity(
+  userId: string,
+  sessionUser: SessionUser
+): Promise<Result<void>> {
+  const fullName = readString(sessionUser.name);
+  const split = splitName(fullName);
+  const provider = inferProvider(sessionUser);
+  const upsertIdentity = await upsertUserIdentity({
+    user_id: userId,
+    issuer: INTERNAL_AUTH_ISSUER,
+    provider,
+    subject: userId,
+    email: normalizeEmail(sessionUser.email),
+    email_verified: Boolean(sessionUser.emailVerified),
+    given_name: split.givenName,
+    family_name: split.familyName,
+    preferred_username: readFirstString(sessionUser, [
+      'preferred_username',
+      'preferredUsername',
+      'username',
+      'login',
+    ]),
+    raw_claims: {
+      ...sessionUser,
+      _identity_source: 'better-auth/session',
+      _provider_hint: provider,
+    },
+  });
+
+  if (!upsertIdentity.success) {
+    return failure(upsertIdentity.error);
+  }
+
+  return success(undefined);
+}
+
 async function withLegacyMappingLock<T>(
   authUserId: string,
   callback: () => Promise<Result<T>>
@@ -225,6 +261,14 @@ async function resolveInternalUserId(
   sessionUser: SessionUser
 ): Promise<Result<ResolveUserIdResult>> {
   if (isUuid(authUserId)) {
+    const upsertIdentity = await upsertPrimarySessionIdentity(
+      authUserId,
+      sessionUser
+    );
+    if (!upsertIdentity.success) {
+      return failure(upsertIdentity.error);
+    }
+
     return success({
       userId: authUserId,
       createdLegacyMapping: false,

@@ -10,6 +10,8 @@ import { dataService } from '@lib/services/db/data-service';
 import { ProfileExternalAttributes, UserIdentity } from '@lib/types/identity';
 import { Result, failure, success } from '@lib/types/result';
 
+const INTERNAL_AUTH_PROVIDER = 'better-auth';
+
 export interface UpsertUserIdentityInput {
   user_id: string;
   issuer: string;
@@ -152,6 +154,24 @@ export async function upsertUserIdentity(
     );
   }
 
+  if (existingIdentity) {
+    const existingProvider = normalizeProvider(existingIdentity.provider);
+    const existingIsInternal = existingProvider === INTERNAL_AUTH_PROVIDER;
+    const incomingIsInternal = provider === INTERNAL_AUTH_PROVIDER;
+
+    if (
+      !existingIsInternal &&
+      !incomingIsInternal &&
+      existingProvider !== provider
+    ) {
+      return failure(
+        new Error(
+          `User ${userId} is already bound to IdP provider ${existingProvider}`
+        )
+      );
+    }
+  }
+
   const queryResult = await dataService.rawQuery<UserIdentity>(
     `
       INSERT INTO user_identities (
@@ -173,7 +193,13 @@ export async function upsertUserIdentity(
       DO UPDATE SET
         -- Keep the original owner for a given external identity to avoid
         -- accidental reassignment under concurrent first-login races.
-        provider = EXCLUDED.provider,
+        -- Keep existing external provider when the fallback local login path
+        -- reports an internal provider.
+        provider = CASE
+          WHEN EXCLUDED.provider = '${INTERNAL_AUTH_PROVIDER}'
+          THEN user_identities.provider
+          ELSE EXCLUDED.provider
+        END,
         email = EXCLUDED.email,
         email_verified = EXCLUDED.email_verified,
         given_name = EXCLUDED.given_name,
