@@ -1,4 +1,3 @@
-import { auth } from '@lib/auth/better-auth/server';
 import {
   createCorsHeaders,
   handleCorsPreflightRequest,
@@ -7,10 +6,25 @@ import {
   AUTH_SYSTEM_ERRORS,
   getAccountStatusError,
 } from '@lib/constants/auth-errors';
-import { getPgPool } from '@lib/server/pg/pool';
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+
+const BETTER_AUTH_BASE_PATH = '/api/auth/better';
+const INTERNAL_PROFILE_STATUS_PATH = '/api/internal/auth/profile-status';
+
+type BetterAuthSessionPayload = {
+  user?: {
+    id?: string;
+    [key: string]: unknown;
+  } | null;
+  [key: string]: unknown;
+};
+
+type ProfileStatusPayload = {
+  role: string | null;
+  status: string | null;
+};
 
 // This middleware intercepts all requests.
 // Uses better-auth + PostgreSQL profile checks for route protection.
@@ -56,15 +70,17 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(newChatUrl);
   }
 
-  // Get current session from better-auth.
-  let session: Awaited<ReturnType<typeof auth.api.getSession>> | null = null;
-  try {
-    session = await auth.api.getSession({
-      headers: request.headers,
-    });
-  } catch (authError) {
-    console.log(`[Middleware] Auth verification failed: ${authError}`);
+  // Auth API endpoints must remain free from profile/status checks to avoid auth loop.
+  if (
+    pathname.startsWith(BETTER_AUTH_BASE_PATH) ||
+    pathname.startsWith(INTERNAL_PROFILE_STATUS_PATH) ||
+    pathname.startsWith('/api/auth/sso/providers')
+  ) {
+    return response;
   }
+
+  // Get current session via better-auth HTTP API to keep middleware edge-safe.
+  const session = await getSessionFromAuthApi(request);
   const user = session?.user ?? null;
 
   // Route protection logic based on user session status
@@ -97,15 +113,10 @@ export async function middleware(request: NextRequest) {
   }
 
   // 🔒 Check user account status and admin permissions for authenticated users
-  // Query profile once to get both status and role for performance optimization
+  // Query profile once to get both status and role for performance optimization.
   if (user) {
     try {
-      const pool = getPgPool();
-      const profileResult = await pool.query<{
-        role: string | null;
-        status: string | null;
-      }>('SELECT role, status FROM profiles WHERE id = $1 LIMIT 1', [user.id]);
-      const profile = profileResult.rows[0] ?? null;
+      const profile = await getProfileStatusFromApi(request);
 
       // 🔒 Defense: Handle missing profile (should never happen but defensive)
       if (!profile) {
@@ -181,25 +192,18 @@ async function signOutAndRedirect(request: NextRequest, url: URL) {
   const redirectResponse = NextResponse.redirect(url);
 
   try {
-    const signOutResponse = await auth.api.signOut({
-      headers: request.headers,
-      asResponse: true,
+    const signOutUrl = new URL(
+      `${BETTER_AUTH_BASE_PATH}/sign-out`,
+      request.url
+    );
+    const signOutResponse = await fetch(signOutUrl.toString(), {
+      method: 'POST',
+      headers: createAuthProxyHeaders(request),
     });
 
-    const headersWithGetSetCookie = signOutResponse.headers as Headers & {
-      getSetCookie?: () => string[];
-    };
-    const setCookies = headersWithGetSetCookie.getSetCookie?.() || [];
-
-    if (setCookies.length > 0) {
-      for (const cookie of setCookies) {
-        redirectResponse.headers.append('set-cookie', cookie);
-      }
-    } else {
-      const singleSetCookie = signOutResponse.headers.get('set-cookie');
-      if (singleSetCookie) {
-        redirectResponse.headers.append('set-cookie', singleSetCookie);
-      }
+    const setCookies = extractSetCookies(signOutResponse.headers);
+    for (const cookie of setCookies) {
+      redirectResponse.headers.append('set-cookie', cookie);
     }
   } catch (error) {
     console.warn(
@@ -209,6 +213,116 @@ async function signOutAndRedirect(request: NextRequest, url: URL) {
   }
 
   return redirectResponse;
+}
+
+async function getSessionFromAuthApi(
+  request: NextRequest
+): Promise<BetterAuthSessionPayload | null> {
+  try {
+    const sessionUrl = new URL(
+      `${BETTER_AUTH_BASE_PATH}/get-session`,
+      request.url
+    );
+    const sessionResponse = await fetch(sessionUrl.toString(), {
+      method: 'GET',
+      headers: createAuthProxyHeaders(request),
+    });
+
+    if (sessionResponse.status === 401) {
+      return null;
+    }
+
+    if (!sessionResponse.ok) {
+      console.warn(
+        `[Middleware] Auth session API failed (${sessionResponse.status})`
+      );
+      return null;
+    }
+
+    const payload = (await sessionResponse
+      .json()
+      .catch(() => null)) as BetterAuthSessionPayload | null;
+    if (!payload || typeof payload !== 'object') {
+      return null;
+    }
+
+    return payload;
+  } catch (authError) {
+    console.log(`[Middleware] Auth verification failed: ${authError}`);
+    return null;
+  }
+}
+
+function createAuthProxyHeaders(request: NextRequest): HeadersInit {
+  const cookie = request.headers.get('cookie') || '';
+  const userAgent = request.headers.get('user-agent') || '';
+  const forwardedFor = request.headers.get('x-forwarded-for') || '';
+  const forwardedProto = request.headers.get('x-forwarded-proto') || '';
+  const forwardedHost = request.headers.get('x-forwarded-host') || '';
+  const headers = new Headers();
+
+  if (cookie) {
+    headers.set('cookie', cookie);
+  }
+  if (userAgent) {
+    headers.set('user-agent', userAgent);
+  }
+  if (forwardedFor) {
+    headers.set('x-forwarded-for', forwardedFor);
+  }
+  if (forwardedProto) {
+    headers.set('x-forwarded-proto', forwardedProto);
+  }
+  if (forwardedHost) {
+    headers.set('x-forwarded-host', forwardedHost);
+  }
+
+  return headers;
+}
+
+function extractSetCookies(headers: Headers): string[] {
+  const headersWithGetSetCookie = headers as Headers & {
+    getSetCookie?: () => string[];
+  };
+  const setCookies = headersWithGetSetCookie.getSetCookie?.() || [];
+  if (setCookies.length > 0) {
+    return setCookies;
+  }
+
+  const singleSetCookie = headers.get('set-cookie');
+  return singleSetCookie ? [singleSetCookie] : [];
+}
+
+async function getProfileStatusFromApi(
+  request: NextRequest
+): Promise<ProfileStatusPayload | null> {
+  const profileUrl = new URL(INTERNAL_PROFILE_STATUS_PATH, request.url);
+  const profileResponse = await fetch(profileUrl.toString(), {
+    method: 'GET',
+    headers: createAuthProxyHeaders(request),
+  });
+
+  if (profileResponse.status === 401 || profileResponse.status === 404) {
+    return null;
+  }
+
+  if (!profileResponse.ok) {
+    throw new Error(
+      `[Middleware] Profile status API failed (${profileResponse.status})`
+    );
+  }
+
+  const payload = (await profileResponse
+    .json()
+    .catch(() => null)) as Partial<ProfileStatusPayload> | null;
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  return {
+    role: typeof payload.role === 'string' ? payload.role : null,
+    status: typeof payload.status === 'string' ? payload.status : null,
+  };
 }
 
 // Configure the paths matched by the middleware

@@ -42,6 +42,7 @@
     "m0:rpc:verify": "bash scripts/m0-rpc-verify.sh",
     "m1:schema:verify": "bash scripts/m1-schema-verify.sh",
     "m2:oidc:verify": "node scripts/m2-oidc-discovery-verify.mjs",
+    "m3:oauth:mock:verify": "node scripts/m3-mock-oauth-e2e.mjs",
     "i18n:check": "python3 scripts/i18n-refactor-helper.py quick-check",
     "i18n:validate": "python3 scripts/validate-i18n-consistency.py",
     "i18n:detect": "python3 scripts/i18n-refactor-helper.py detect-missing",
