@@ -601,6 +601,7 @@
         "errors": {
           "oauthFailed": "OAuth-Anmeldung fehlgeschlagen, bitte versuchen Sie es erneut oder verwenden Sie andere Anmeldemethoden",
           "ssoCallbackFailed": "SSO-Authentifizierungs-Callback-Verarbeitung fehlgeschlagen, bitte versuchen Sie sich erneut anzumelden",
+          "accountNotLinked": "This email is reserved for local password login. Please sign in with password.",
           "ticketValidationFailed": "SSO-Ticket-Validierung fehlgeschlagen, bitte melden Sie sich erneut an",
           "invalidEmployeeNumber": "Format der Mitarbeiternummer ist falsch, bitte kontaktieren Sie den Administrator",
           "userCreationFailed": "Kontoerstellung fehlgeschlagen, dies könnte auf inkonsistente Kontodaten zurückzuführen sein. Bitte versuchen Sie sich erneut anzumelden, wenn das Problem weiterhin besteht, kontaktieren Sie den Administrator",

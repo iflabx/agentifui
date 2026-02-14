@@ -601,6 +601,7 @@
         "errors": {
           "oauthFailed": "Échec de la connexion OAuth, veuillez réessayer ou utiliser d'autres méthodes de connexion",
           "ssoCallbackFailed": "Échec du rappel d'authentification SSO, veuillez réessayer de vous connecter",
+          "accountNotLinked": "This email is reserved for local password login. Please sign in with password.",
           "ticketValidationFailed": "Échec de la validation du ticket SSO, veuillez vous reconnecter",
           "invalidEmployeeNumber": "Le format du numéro d'employé est incorrect, veuillez contacter l'administrateur",
           "userCreationFailed": "Échec de la création du compte, cela peut être dû à des données de compte incohérentes. Veuillez réessayer de vous connecter, si le problème persiste, veuillez contacter l'administrateur",

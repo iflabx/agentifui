@@ -601,6 +601,7 @@
         "errors": {
           "oauthFailed": "OAuth登录失败，请重试或使用其他登录方式",
           "ssoCallbackFailed": "SSO认证回调处理失败，请重新尝试登录",
+          "accountNotLinked": "该邮箱仅允许本地密码登录，请使用密码登录。",
           "ticketValidationFailed": "SSO票据验证失败，请重新登录",
           "invalidEmployeeNumber": "学工号格式不正确，请联系管理员",
           "userCreationFailed": "账户创建失败，这可能是由于账户数据不一致导致的。请尝试重新登录，如果问题持续存在，请联系管理员",

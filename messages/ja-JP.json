@@ -601,6 +601,7 @@
         "errors": {
           "oauthFailed": "OAuth ログインに失敗しました。再試行するか、他のログイン方法をお試しください",
           "ssoCallbackFailed": "SSO認証コールバック処理に失敗しました。再度ログインをお試しください",
+          "accountNotLinked": "This email is reserved for local password login. Please sign in with password.",
           "ticketValidationFailed": "SSOチケット検証に失敗しました。再度ログインしてください",
           "invalidEmployeeNumber": "従業員番号の形式が正しくありません。管理者にお問い合わせください",
           "userCreationFailed": "アカウント作成に失敗しました。これはアカウントデータの不整合によるものかもしれません。再度ログインをお試しください。問題が続く場合は管理者にお問い合わせください",

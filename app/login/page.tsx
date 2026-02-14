@@ -21,8 +21,11 @@ export default function LoginPage() {
     switch (error) {
       case 'oauth_failed':
         return t('errors.oauthFailed');
+      case 'sso_auth_failed':
       case 'sso_callback_failed':
         return t('errors.ssoCallbackFailed');
+      case 'account_not_linked':
+        return t('errors.accountNotLinked');
       case 'ticket_validation_failed':
         return t('errors.ticketValidationFailed');
       case 'invalid_employee_number':

@@ -601,6 +601,7 @@
         "errors": {
           "oauthFailed": "Error en el inicio de sesión OAuth, por favor inténtalo de nuevo o usa otros métodos de inicio de sesión",
           "ssoCallbackFailed": "Error en el procesamiento del callback de autenticación SSO, por favor intenta iniciar sesión nuevamente",
+          "accountNotLinked": "This email is reserved for local password login. Please sign in with password.",
           "ticketValidationFailed": "Error en la validación del ticket SSO, por favor inicia sesión nuevamente",
           "invalidEmployeeNumber": "El formato del número de empleado es incorrecto, por favor contacta al administrador",
           "userCreationFailed": "Error en la creación de la cuenta, esto puede deberse a datos de cuenta inconsistentes. Por favor intenta iniciar sesión nuevamente, si el problema persiste, contacta al administrador",

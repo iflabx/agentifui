@@ -461,6 +461,11 @@ export const auth = betterAuth({
       createdAt: 'created_at',
       updatedAt: 'updated_at',
     },
+    accountLinking: {
+      enabled: true,
+      // Enforce explicit linking only; never merge users just because emails match.
+      disableImplicitLinking: true,
+    },
   },
   verification: {
     modelName: 'auth_verifications',

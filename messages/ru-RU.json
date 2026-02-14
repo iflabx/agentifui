@@ -601,6 +601,7 @@
         "errors": {
           "oauthFailed": "Ошибка входа через OAuth, попробуйте снова или используйте другие методы входа",
           "ssoCallbackFailed": "Ошибка обратного вызова аутентификации SSO, попробуйте войти снова",
+          "accountNotLinked": "This email is reserved for local password login. Please sign in with password.",
           "ticketValidationFailed": "Ошибка проверки билета SSO, пожалуйста, войдите снова",
           "invalidEmployeeNumber": "Неверный формат табельного номера, обратитесь к администратору",
           "userCreationFailed": "Ошибка создания учетной записи, возможно, из-за несоответствия данных. Попробуйте войти снова, если проблема не исчезнет, обратитесь к администратору",

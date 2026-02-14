@@ -601,6 +601,7 @@
         "errors": {
           "oauthFailed": "Login con OAuth fallito, riprova o usa altri metodi di login",
           "ssoCallbackFailed": "Callback di autenticazione SSO fallito, prova a effettuare nuovamente il login",
+          "accountNotLinked": "This email is reserved for local password login. Please sign in with password.",
           "ticketValidationFailed": "Validazione del ticket SSO fallita, effettua nuovamente il login",
           "invalidEmployeeNumber": "Il formato del numero di dipendente non è corretto, contatta l'amministratore",
           "userCreationFailed": "Creazione dell'account fallita, potrebbe essere dovuto a dati dell'account incoerenti. Prova a effettuare nuovamente il login, se il problema persiste, contatta l'amministratore",

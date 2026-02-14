@@ -601,6 +601,7 @@
         "errors": {
           "oauthFailed": "OAuth login failed, please try again or use other login methods",
           "ssoCallbackFailed": "SSO authentication callback failed, please try to login again",
+          "accountNotLinked": "This email is reserved for local password login. Please sign in with password.",
           "ticketValidationFailed": "SSO ticket validation failed, please login again",
           "invalidEmployeeNumber": "Employee number format is incorrect, please contact administrator",
           "userCreationFailed": "Account creation failed, this may be due to inconsistent account data. Please try to login again, if the problem persists, please contact administrator",
