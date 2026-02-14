@@ -128,6 +128,15 @@ export {
   isUserAdminLegacy,
 } from './profiles';
 
+// External identity and immutable profile attributes
+export {
+  getUserIdentityByIssuerSubject,
+  getUserIdentitiesByUserId,
+  upsertUserIdentity,
+  getProfileExternalAttributes,
+  upsertProfileExternalAttributes,
+} from './user-identities';
+
 // Conversation related functions
 export {
   getUserConversations,
