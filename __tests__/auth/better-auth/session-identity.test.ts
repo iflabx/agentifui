@@ -61,11 +61,20 @@ describe('resolveSessionIdentity', () => {
     Promise<PoolQueryResult>,
     [queryText: string, params?: unknown[]]
   >();
+  const lockQueryMock = jest.fn();
+  const lockReleaseMock = jest.fn();
+  const poolConnectMock = jest.fn();
 
   beforeEach(() => {
     jest.clearAllMocks();
+    lockQueryMock.mockResolvedValue({ rows: [] });
+    poolConnectMock.mockResolvedValue({
+      query: lockQueryMock,
+      release: lockReleaseMock,
+    });
     mockedGetPgPool.mockReturnValue({
       query: queryMock,
+      connect: poolConnectMock,
     } as unknown as ReturnType<typeof getPgPool>);
     mockedListUserAccounts.mockResolvedValue([]);
     mockedGetAuthProviderIssuer.mockReturnValue(null);
@@ -73,10 +82,12 @@ describe('resolveSessionIdentity', () => {
       success: true,
       data: null,
     });
-    mockedUpsertUserIdentity.mockResolvedValue({
+    mockedUpsertUserIdentity.mockImplementation(async input => ({
       success: true,
-      data: {} as never,
-    });
+      data: {
+        user_id: input.user_id,
+      } as never,
+    }));
     mockedUpsertProfileExternalAttributes.mockResolvedValue({
       success: true,
       data: {} as never,
@@ -187,6 +198,10 @@ describe('resolveSessionIdentity', () => {
       .mockResolvedValueOnce({
         success: true,
         data: null,
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: null,
       });
     queryMock
       .mockResolvedValueOnce({
@@ -231,5 +246,57 @@ describe('resolveSessionIdentity', () => {
     expect(
       mockedUpsertProfileExternalAttributes.mock.calls[0][0].employee_number
     ).toBe('EMP-1001');
+  });
+
+  it('uses mapped owner returned by upsert during concurrent legacy mapping race', async () => {
+    mockedGetSession.mockResolvedValueOnce({
+      session: {
+        id: 'session-id',
+      },
+      user: {
+        id: 'legacy-user-id',
+        email: 'legacy.user@example.com',
+        name: 'Legacy User',
+      },
+    } as never);
+
+    const conflictOwner = '00000000-0000-4000-8000-000000000003';
+    mockedGetUserIdentityByIssuerSubject
+      .mockResolvedValueOnce({
+        success: true,
+        data: null,
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: null,
+      });
+    mockedUpsertUserIdentity.mockResolvedValueOnce({
+      success: true,
+      data: {
+        user_id: conflictOwner,
+      } as never,
+    });
+    queryMock
+      .mockResolvedValueOnce({
+        rows: [],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ role: 'user', status: 'active' }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ role: 'user', status: 'active' }],
+      });
+
+    const result = await resolveSessionIdentity(new Headers());
+
+    expect(result.success).toBe(true);
+    if (!result.success || !result.data) {
+      throw new Error('Expected resolved identity data');
+    }
+
+    expect(result.data.userId).toBe(conflictOwner);
+    expect(queryMock).toHaveBeenCalledTimes(3);
+    expect(mockedListUserAccounts).not.toHaveBeenCalled();
+    expect(mockedUpsertProfileExternalAttributes).not.toHaveBeenCalled();
   });
 });

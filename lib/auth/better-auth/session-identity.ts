@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 const INTERNAL_AUTH_ISSUER = 'urn:agentifui:better-auth';
 const INTERNAL_AUTH_PROVIDER = 'better-auth';
 const PROVIDER_ISSUER_PREFIX = 'urn:better-auth:provider:';
+const LEGACY_MAPPING_LOCK_PREFIX = 'legacy-auth-user';
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -38,6 +39,7 @@ type EnsureProfileResult = {
 type ResolveUserIdResult = {
   userId: string;
   createdLegacyMapping: boolean;
+  ensuredProfile?: EnsureProfileResult;
 };
 
 type BetterAuthLinkedAccount = {
@@ -182,6 +184,42 @@ function buildSourceIssuer(providerId: string): string {
   );
 }
 
+async function withLegacyMappingLock<T>(
+  authUserId: string,
+  callback: () => Promise<Result<T>>
+): Promise<Result<T>> {
+  const pool = getPgPool();
+  const client = await pool.connect();
+  const lockKey = `${LEGACY_MAPPING_LOCK_PREFIX}:${authUserId}`;
+
+  try {
+    await client.query(
+      'SELECT pg_advisory_lock(hashtextextended($1::text, 0))',
+      [lockKey]
+    );
+    return await callback();
+  } catch (error) {
+    return failure(
+      error instanceof Error
+        ? error
+        : new Error('Failed to acquire legacy identity mapping lock')
+    );
+  } finally {
+    try {
+      await client.query(
+        'SELECT pg_advisory_unlock(hashtextextended($1::text, 0))',
+        [lockKey]
+      );
+    } catch (unlockError) {
+      console.warn(
+        '[SessionIdentity] failed to release legacy identity mapping lock:',
+        unlockError
+      );
+    }
+    client.release();
+  }
+}
+
 async function resolveInternalUserId(
   authUserId: string,
   sessionUser: SessionUser
@@ -208,39 +246,73 @@ async function resolveInternalUserId(
     });
   }
 
-  const fallbackUserId = randomUUID();
-  const fullName = readString(sessionUser.name);
-  const split = splitName(fullName);
-  const provider = inferProvider(sessionUser);
-  const upsertIdentity = await upsertUserIdentity({
-    user_id: fallbackUserId,
-    issuer: INTERNAL_AUTH_ISSUER,
-    provider: INTERNAL_AUTH_PROVIDER,
-    subject: authUserId,
-    email: normalizeEmail(sessionUser.email),
-    email_verified: Boolean(sessionUser.emailVerified),
-    given_name: split.givenName,
-    family_name: split.familyName,
-    preferred_username: readFirstString(sessionUser, [
-      'preferred_username',
-      'preferredUsername',
-      'username',
-      'login',
-    ]),
-    raw_claims: {
-      ...sessionUser,
-      _identity_source: 'better-auth/session',
-      _provider_hint: provider,
-    },
-  });
+  return withLegacyMappingLock(authUserId, async () => {
+    const recheckedIdentity = await getUserIdentityByIssuerSubject(
+      INTERNAL_AUTH_ISSUER,
+      authUserId
+    );
+    if (!recheckedIdentity.success) {
+      return failure(recheckedIdentity.error);
+    }
 
-  if (!upsertIdentity.success) {
-    return failure(upsertIdentity.error);
-  }
+    if (recheckedIdentity.data?.user_id) {
+      return success({
+        userId: recheckedIdentity.data.user_id,
+        createdLegacyMapping: false,
+      });
+    }
 
-  return success({
-    userId: fallbackUserId,
-    createdLegacyMapping: true,
+    const fallbackUserId = randomUUID();
+    const fullName = readString(sessionUser.name);
+    const split = splitName(fullName);
+    const provider = inferProvider(sessionUser);
+    const ensuredProfile = await ensureProfileStatus(
+      fallbackUserId,
+      sessionUser
+    );
+    if (!ensuredProfile.success) {
+      return failure(ensuredProfile.error);
+    }
+
+    const upsertIdentity = await upsertUserIdentity({
+      user_id: fallbackUserId,
+      issuer: INTERNAL_AUTH_ISSUER,
+      provider: INTERNAL_AUTH_PROVIDER,
+      subject: authUserId,
+      email: normalizeEmail(sessionUser.email),
+      email_verified: Boolean(sessionUser.emailVerified),
+      given_name: split.givenName,
+      family_name: split.familyName,
+      preferred_username: readFirstString(sessionUser, [
+        'preferred_username',
+        'preferredUsername',
+        'username',
+        'login',
+      ]),
+      raw_claims: {
+        ...sessionUser,
+        _identity_source: 'better-auth/session',
+        _provider_hint: provider,
+      },
+    });
+
+    if (!upsertIdentity.success) {
+      return failure(upsertIdentity.error);
+    }
+
+    const resolvedUserId = upsertIdentity.data.user_id;
+    if (!resolvedUserId) {
+      return failure(
+        new Error('Failed to resolve user_id from identity mapping')
+      );
+    }
+
+    const createdLegacyMapping = resolvedUserId === fallbackUserId;
+    return success({
+      userId: resolvedUserId,
+      createdLegacyMapping,
+      ensuredProfile: createdLegacyMapping ? ensuredProfile.data : undefined,
+    });
   });
 }
 
@@ -563,16 +635,20 @@ export async function resolveSessionIdentity(
     return failure(resolvedUserId.error);
   }
 
-  const ensuredProfile = await ensureProfileStatus(
-    resolvedUserId.data.userId,
-    sessionUser
-  );
-  if (!ensuredProfile.success) {
-    return failure(ensuredProfile.error);
+  let ensuredProfileData = resolvedUserId.data.ensuredProfile;
+  if (!ensuredProfileData) {
+    const ensuredProfile = await ensureProfileStatus(
+      resolvedUserId.data.userId,
+      sessionUser
+    );
+    if (!ensuredProfile.success) {
+      return failure(ensuredProfile.error);
+    }
+    ensuredProfileData = ensuredProfile.data;
   }
 
   const shouldSyncIdentityData =
-    resolvedUserId.data.createdLegacyMapping || ensuredProfile.data.created;
+    resolvedUserId.data.createdLegacyMapping || ensuredProfileData.created;
   if (shouldSyncIdentityData) {
     await syncLinkedAccountIdentities(
       headers,
@@ -586,7 +662,7 @@ export async function resolveSessionIdentity(
     session: session as NonNullable<AuthSession>,
     authUserId,
     userId: resolvedUserId.data.userId,
-    role: ensuredProfile.data.role,
-    status: ensuredProfile.data.status,
+    role: ensuredProfileData.role,
+    status: ensuredProfileData.status,
   });
 }

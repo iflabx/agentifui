@@ -152,7 +152,8 @@ export async function upsertUserIdentity(
       )
       ON CONFLICT (issuer, subject)
       DO UPDATE SET
-        user_id = EXCLUDED.user_id,
+        -- Keep the original owner for a given external identity to avoid
+        -- accidental reassignment under concurrent first-login races.
         provider = EXCLUDED.provider,
         email = EXCLUDED.email,
         email_verified = EXCLUDED.email_verified,
