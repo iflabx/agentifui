@@ -188,17 +188,21 @@ async function getProfileByEmail(
     const query = await pool.query<ProfileLocalLoginRow>(
       `
       SELECT
-        id::text AS id,
-        auth_source,
-        local_login_enabled
-      FROM profiles
-      WHERE lower(email) = $1
+        p.id::text AS id,
+        p.auth_source,
+        p.local_login_enabled
+      FROM auth_users u
+      LEFT JOIN profiles p
+        ON p.id = u.id
+      WHERE lower(u.email) = $1
       LIMIT 1
       `,
       [email]
     );
+    const row = query.rows[0];
 
-    return success(query.rows[0] ?? null);
+    // Only treat it as a resolved profile when the profile row exists.
+    return success(row?.id ? row : null);
   } catch (error) {
     return failure(
       error instanceof Error

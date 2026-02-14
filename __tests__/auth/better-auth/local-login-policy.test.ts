@@ -170,6 +170,29 @@ describe('local-login-policy', () => {
     expect(result.data.reason).toBe('profile_not_found');
   });
 
+  it('allows when auth user exists but profile row is not materialized yet', async () => {
+    queryMock
+      .mockResolvedValueOnce({ rows: [{ auth_mode: 'normal' }] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: null,
+            auth_source: null,
+            local_login_enabled: null,
+          },
+        ],
+      });
+
+    const result = await evaluateLocalLoginByEmail(
+      'pending-profile@example.com'
+    );
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error('Expected success');
+    expect(result.data.allowed).toBe(true);
+    expect(result.data.reason).toBe('profile_not_found');
+  });
+
   it('records local-login audit row', async () => {
     queryMock.mockResolvedValueOnce({ rowCount: 1 });
 
