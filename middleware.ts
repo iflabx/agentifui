@@ -302,7 +302,7 @@ async function getProfileStatusFromApi(
     headers: createAuthProxyHeaders(request),
   });
 
-  if (profileResponse.status === 401 || profileResponse.status === 404) {
+  if (profileResponse.status === 401) {
     return null;
   }
 
