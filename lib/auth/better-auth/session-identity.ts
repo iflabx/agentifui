@@ -308,6 +308,10 @@ async function resolveInternalUserId(
     }
 
     const createdLegacyMapping = resolvedUserId === fallbackUserId;
+    if (!createdLegacyMapping && ensuredProfile.data.created) {
+      await cleanupUnlinkedProfile(fallbackUserId);
+    }
+
     return success({
       userId: resolvedUserId,
       createdLegacyMapping,
@@ -409,6 +413,30 @@ async function ensureProfileStatus(
   return failure(
     new Error('Failed to resolve profile status for session user')
   );
+}
+
+async function cleanupUnlinkedProfile(userId: string): Promise<void> {
+  const pool = getPgPool();
+
+  try {
+    await pool.query(
+      `
+      DELETE FROM profiles
+      WHERE id = $1
+        AND NOT EXISTS (
+          SELECT 1
+          FROM user_identities
+          WHERE user_id = $1
+        )
+      `,
+      [userId]
+    );
+  } catch (error) {
+    console.warn(
+      `[SessionIdentity] failed to clean transient profile ${userId}:`,
+      error
+    );
+  }
 }
 
 async function syncLinkedAccountIdentities(

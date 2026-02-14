@@ -284,6 +284,9 @@ describe('resolveSessionIdentity', () => {
         rows: [{ role: 'user', status: 'active' }],
       })
       .mockResolvedValueOnce({
+        rows: [],
+      })
+      .mockResolvedValueOnce({
         rows: [{ role: 'user', status: 'active' }],
       });
 
@@ -295,7 +298,7 @@ describe('resolveSessionIdentity', () => {
     }
 
     expect(result.data.userId).toBe(conflictOwner);
-    expect(queryMock).toHaveBeenCalledTimes(3);
+    expect(queryMock).toHaveBeenCalledTimes(4);
     expect(mockedListUserAccounts).not.toHaveBeenCalled();
     expect(mockedUpsertProfileExternalAttributes).not.toHaveBeenCalled();
   });
