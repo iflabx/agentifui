@@ -1,0 +1,235 @@
+/** @jest-environment node */
+import { auth, getAuthProviderIssuer } from '@lib/auth/better-auth/server';
+import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
+import {
+  getUserIdentityByIssuerSubject,
+  upsertProfileExternalAttributes,
+  upsertUserIdentity,
+} from '@lib/db/user-identities';
+import { getPgPool } from '@lib/server/pg/pool';
+
+jest.mock('@lib/auth/better-auth/server', () => ({
+  auth: {
+    api: {
+      getSession: jest.fn(),
+      listUserAccounts: jest.fn(),
+    },
+  },
+  getAuthProviderIssuer: jest.fn(),
+}));
+
+jest.mock('@lib/db/user-identities', () => ({
+  getUserIdentityByIssuerSubject: jest.fn(),
+  upsertUserIdentity: jest.fn(),
+  upsertProfileExternalAttributes: jest.fn(),
+}));
+
+jest.mock('@lib/server/pg/pool', () => ({
+  getPgPool: jest.fn(),
+}));
+
+type PoolQueryResult = {
+  rows: Array<{
+    role: string | null;
+    status: string | null;
+  }>;
+};
+
+describe('resolveSessionIdentity', () => {
+  const mockedGetSession = auth.api.getSession as jest.MockedFunction<
+    typeof auth.api.getSession
+  >;
+  const mockedListUserAccounts = auth.api
+    .listUserAccounts as unknown as jest.MockedFunction<
+    (input: { headers: Headers }) => Promise<unknown>
+  >;
+  const mockedGetAuthProviderIssuer =
+    getAuthProviderIssuer as jest.MockedFunction<typeof getAuthProviderIssuer>;
+  const mockedGetUserIdentityByIssuerSubject =
+    getUserIdentityByIssuerSubject as jest.MockedFunction<
+      typeof getUserIdentityByIssuerSubject
+    >;
+  const mockedUpsertUserIdentity = upsertUserIdentity as jest.MockedFunction<
+    typeof upsertUserIdentity
+  >;
+  const mockedUpsertProfileExternalAttributes =
+    upsertProfileExternalAttributes as jest.MockedFunction<
+      typeof upsertProfileExternalAttributes
+    >;
+  const mockedGetPgPool = getPgPool as jest.MockedFunction<typeof getPgPool>;
+  const queryMock = jest.fn<
+    Promise<PoolQueryResult>,
+    [queryText: string, params?: unknown[]]
+  >();
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedGetPgPool.mockReturnValue({
+      query: queryMock,
+    } as unknown as ReturnType<typeof getPgPool>);
+    mockedListUserAccounts.mockResolvedValue([]);
+    mockedGetAuthProviderIssuer.mockReturnValue(null);
+    mockedGetUserIdentityByIssuerSubject.mockResolvedValue({
+      success: true,
+      data: null,
+    });
+    mockedUpsertUserIdentity.mockResolvedValue({
+      success: true,
+      data: {} as never,
+    });
+    mockedUpsertProfileExternalAttributes.mockResolvedValue({
+      success: true,
+      data: {} as never,
+    });
+  });
+
+  it('returns null when no authenticated session exists', async () => {
+    mockedGetSession.mockResolvedValueOnce(null);
+
+    const result = await resolveSessionIdentity(new Headers());
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error('Expected success result');
+    expect(result.data).toBeNull();
+    expect(queryMock).not.toHaveBeenCalled();
+  });
+
+  it('returns existing UUID user without creating identity mapping', async () => {
+    mockedGetSession.mockResolvedValueOnce({
+      session: {
+        id: 'session-id',
+      },
+      user: {
+        id: '00000000-0000-4000-8000-000000000001',
+        email: 'uuid.user@example.com',
+        name: 'UUID User',
+      },
+    } as never);
+
+    queryMock.mockResolvedValueOnce({
+      rows: [{ role: 'user', status: 'active' }],
+    });
+
+    const result = await resolveSessionIdentity(new Headers());
+
+    expect(result.success).toBe(true);
+    if (!result.success || !result.data) {
+      throw new Error('Expected resolved identity data');
+    }
+    expect(result.data.userId).toBe('00000000-0000-4000-8000-000000000001');
+    expect(result.data.role).toBe('user');
+    expect(result.data.status).toBe('active');
+    expect(mockedUpsertUserIdentity).not.toHaveBeenCalled();
+    expect(mockedUpsertProfileExternalAttributes).not.toHaveBeenCalled();
+    expect(queryMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses existing legacy mapping when auth user id is non-UUID', async () => {
+    mockedGetSession.mockResolvedValueOnce({
+      session: {
+        id: 'session-id',
+      },
+      user: {
+        id: 'legacy-user-id',
+        email: 'legacy.user@example.com',
+        name: 'Legacy User',
+      },
+    } as never);
+
+    mockedGetUserIdentityByIssuerSubject.mockResolvedValueOnce({
+      success: true,
+      data: {
+        user_id: '00000000-0000-4000-8000-000000000002',
+      } as never,
+    });
+    queryMock.mockResolvedValueOnce({
+      rows: [{ role: 'admin', status: 'active' }],
+    });
+
+    const result = await resolveSessionIdentity(new Headers());
+
+    expect(result.success).toBe(true);
+    if (!result.success || !result.data) {
+      throw new Error('Expected resolved identity data');
+    }
+    expect(result.data.userId).toBe('00000000-0000-4000-8000-000000000002');
+    expect(mockedUpsertUserIdentity).not.toHaveBeenCalled();
+    expect(mockedUpsertProfileExternalAttributes).not.toHaveBeenCalled();
+  });
+
+  it('creates legacy mapping and syncs linked identity + external attributes', async () => {
+    mockedGetSession.mockResolvedValueOnce({
+      session: {
+        id: 'session-id',
+      },
+      user: {
+        id: 'legacy-user-id',
+        email: 'new.user@example.com',
+        name: 'New User',
+        employee_number: 'EMP-1001',
+        app_metadata: {
+          provider: 'github',
+        },
+      },
+    } as never);
+    mockedGetAuthProviderIssuer.mockReturnValue('https://idp.example.com');
+    mockedListUserAccounts.mockResolvedValueOnce([
+      {
+        providerId: 'github',
+        accountId: 'gh-sub-001',
+      },
+    ]);
+    mockedGetUserIdentityByIssuerSubject
+      .mockResolvedValueOnce({
+        success: true,
+        data: null,
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: null,
+      });
+    queryMock
+      .mockResolvedValueOnce({
+        rows: [],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ role: 'user', status: 'active' }],
+      });
+
+    const result = await resolveSessionIdentity(new Headers());
+
+    expect(result.success).toBe(true);
+    if (!result.success || !result.data) {
+      throw new Error('Expected resolved identity data');
+    }
+
+    expect(queryMock).toHaveBeenCalledTimes(2);
+    expect(mockedUpsertUserIdentity).toHaveBeenCalledTimes(2);
+
+    const firstUpsert = mockedUpsertUserIdentity.mock.calls[0][0];
+    const secondUpsert = mockedUpsertUserIdentity.mock.calls[1][0];
+
+    expect(firstUpsert.issuer).toBe('urn:agentifui:better-auth');
+    expect(firstUpsert.provider).toBe('better-auth');
+    expect(firstUpsert.subject).toBe('legacy-user-id');
+    expect(firstUpsert.user_id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    );
+
+    expect(secondUpsert.issuer).toBe('https://idp.example.com');
+    expect(secondUpsert.provider).toBe('github');
+    expect(secondUpsert.subject).toBe('gh-sub-001');
+    expect(secondUpsert.user_id).toBe(firstUpsert.user_id);
+
+    expect(mockedUpsertProfileExternalAttributes).toHaveBeenCalledTimes(1);
+    expect(
+      mockedUpsertProfileExternalAttributes.mock.calls[0][0].source_issuer
+    ).toBe('https://idp.example.com');
+    expect(
+      mockedUpsertProfileExternalAttributes.mock.calls[0][0].source_provider
+    ).toBe('github');
+    expect(
+      mockedUpsertProfileExternalAttributes.mock.calls[0][0].employee_number
+    ).toBe('EMP-1001');
+  });
+});
