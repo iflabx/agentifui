@@ -2,16 +2,21 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-M0_MIGRATION_FILE="${ROOT_DIR}/supabase/migrations/20260214010100_add_missing_rpc_functions.sql"
-M1_MIGRATION_FILE="${ROOT_DIR}/supabase/migrations/20260214020100_create_local_pg_baseline_schema.sql"
 PGURL="${PGURL:-postgresql://agentif:agentif@172.20.0.1:5432/agentifui}"
+MIGRATION_FILES=(
+  "${ROOT_DIR}/supabase/migrations/20260214010100_add_missing_rpc_functions.sql"
+  "${ROOT_DIR}/supabase/migrations/20260214020100_create_local_pg_baseline_schema.sql"
+  "${ROOT_DIR}/supabase/migrations/20260214061000_add_external_identity_profile_tables.sql"
+  "${ROOT_DIR}/supabase/migrations/20260214133000_enforce_single_idp_binding.sql"
+  "${ROOT_DIR}/supabase/migrations/20260214153000_create_better_auth_tables.sql"
+  "${ROOT_DIR}/supabase/migrations/20260214161000_add_local_login_policy_controls.sql"
+)
 
 echo "[M1] Using database: ${PGURL}"
-echo "[M1] Applying prerequisite migration: ${M0_MIGRATION_FILE}"
-psql "${PGURL}" -v ON_ERROR_STOP=1 -f "${M0_MIGRATION_FILE}" >/dev/null
-
-echo "[M1] Applying baseline migration: ${M1_MIGRATION_FILE}"
-psql "${PGURL}" -v ON_ERROR_STOP=1 -f "${M1_MIGRATION_FILE}" >/dev/null
+for migration in "${MIGRATION_FILES[@]}"; do
+  echo "[M1] Applying migration: ${migration}"
+  psql "${PGURL}" -v ON_ERROR_STOP=1 -f "${migration}" >/dev/null
+done
 
 echo "[M1] Verifying required table existence..."
 psql "${PGURL}" -v ON_ERROR_STOP=1 <<'SQL'
@@ -27,7 +32,14 @@ WITH required_tables(name) AS (
     ('group_app_permissions'),
     ('conversations'),
     ('messages'),
-    ('app_executions')
+    ('app_executions'),
+    ('user_identities'),
+    ('profile_external_attributes'),
+    ('auth_users'),
+    ('auth_sessions'),
+    ('auth_accounts'),
+    ('auth_verifications'),
+    ('auth_local_login_audit_logs')
 )
 SELECT
   rt.name AS required_table,
@@ -163,5 +175,16 @@ SELECT safe_delete_user('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee2'::UUID) AS deleted
 
 ROLLBACK;
 SQL
+
+echo "[M1] Running runtime health checks (Auth/DB/Redis/MinIO)..."
+DATABASE_URL="${DATABASE_URL:-${PGURL}}" \
+REDIS_URL="${REDIS_URL:-redis://172.20.0.1:6379/0}" \
+S3_ENDPOINT="${S3_ENDPOINT:-http://172.20.0.1:9000}" \
+S3_BUCKET="${S3_BUCKET:-agentifui}" \
+S3_ACCESS_KEY_ID="${S3_ACCESS_KEY_ID:-minioadmin}" \
+S3_SECRET_ACCESS_KEY="${S3_SECRET_ACCESS_KEY:-minioadmin}" \
+S3_ENABLE_PATH_STYLE="${S3_ENABLE_PATH_STYLE:-1}" \
+AUTH_BACKEND="${AUTH_BACKEND:-better-auth}" \
+node "${ROOT_DIR}/scripts/m1-runtime-health-verify.mjs"
 
 echo "[M1] Baseline schema verification completed."
