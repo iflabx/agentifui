@@ -20,7 +20,10 @@
 3. OIDC Discovery 连通性校验：
    - `scripts/m2-oidc-discovery-verify.mjs`
    - `pnpm m2:oidc:verify`
-4. 解析器单测：
+4. Mock OIDC SSO 端到端验收（含冲突拒绝）：
+   - `scripts/m2-sso-mock-e2e-verify.mjs`
+   - `pnpm m2:sso:mock:verify`
+5. 解析器单测：
    - `__tests__/auth/better-auth/sso-providers.test.ts`
 
 ## 3. CAS->OIDC 桥接约定
@@ -35,6 +38,12 @@
 
 ```bash
 pnpm m2:oidc:verify
+```
+
+M2 全量 Gate（email/password + SSO）：
+
+```bash
+pnpm m2:gate:verify
 ```
 
 可选超时配置：

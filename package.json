@@ -44,6 +44,8 @@
     "m1:runtime:health": "node scripts/m1-runtime-health-verify.mjs",
     "m2:oidc:verify": "node scripts/m2-oidc-discovery-verify.mjs",
     "m2:auth:e2e:verify": "node scripts/m2-auth-e2e-verify.mjs",
+    "m2:sso:mock:verify": "node scripts/m2-sso-mock-e2e-verify.mjs",
+    "m2:gate:verify": "pnpm m2:auth:e2e:verify && pnpm m2:sso:mock:verify",
     "m3:oauth:mock:verify": "node scripts/m3-mock-oauth-e2e.mjs",
     "i18n:check": "python3 scripts/i18n-refactor-helper.py quick-check",
     "i18n:validate": "python3 scripts/validate-i18n-consistency.py",
