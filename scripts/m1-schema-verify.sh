@@ -11,6 +11,7 @@ MIGRATION_FILES=(
   "${ROOT_DIR}/supabase/migrations/20260214153000_create_better_auth_tables.sql"
   "${ROOT_DIR}/supabase/migrations/20260214161000_add_local_login_policy_controls.sql"
   "${ROOT_DIR}/supabase/migrations/20260214192000_add_better_auth_phone_fields.sql"
+  "${ROOT_DIR}/supabase/migrations/20260214201000_add_fallback_password_profile_metadata.sql"
 )
 
 echo "[M1] Using database: ${PGURL}"

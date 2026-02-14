@@ -124,4 +124,34 @@ describe('POST /api/auth/better/[...all]', () => {
       }
     );
   });
+
+  it('blocks email login when fallback password is missing', async () => {
+    const { POST } = await import('./route');
+
+    (evaluateLocalLoginByEmail as jest.Mock).mockResolvedValue({
+      success: true,
+      data: {
+        allowed: false,
+        authMode: 'degraded',
+        email: 'user@example.com',
+        userId: '00000000-0000-4000-8000-000000000001',
+        reason: 'missing_fallback_password',
+      },
+    });
+
+    const response = await POST(
+      new Request('http://localhost/api/auth/better/sign-in/email', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ email: 'user@example.com', password: 'x' }),
+      })
+    );
+
+    expect(response.status).toBe(403);
+    const payload = await response.json();
+    expect(payload.code).toBe('FALLBACK_PASSWORD_NOT_SET');
+    expect(mockedHandlerPost).not.toHaveBeenCalled();
+  });
 });

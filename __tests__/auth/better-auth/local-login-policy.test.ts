@@ -99,6 +99,9 @@ describe('local-login-policy', () => {
             local_login_enabled: true,
           },
         ],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ has_credential_password: true }],
       });
 
     const result = await evaluateLocalLoginByEmail('user@example.com');
@@ -107,6 +110,30 @@ describe('local-login-policy', () => {
     if (!result.success) throw new Error('Expected success');
     expect(result.data.allowed).toBe(true);
     expect(result.data.reason).toBe('allowed_degraded');
+  });
+
+  it('blocks external-idp account when degraded but fallback password is missing', async () => {
+    queryMock
+      .mockResolvedValueOnce({ rows: [{ auth_mode: 'degraded' }] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: '00000000-0000-4000-8000-000000000001',
+            auth_source: 'oidc',
+            local_login_enabled: true,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ has_credential_password: false }],
+      });
+
+    const result = await evaluateLocalLoginByEmail('user@example.com');
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error('Expected success');
+    expect(result.data.allowed).toBe(false);
+    expect(result.data.reason).toBe('missing_fallback_password');
   });
 
   it('always allows password-native account', async () => {
@@ -172,6 +199,8 @@ describe('local-login-policy', () => {
           auth_source: 'oidc',
           local_login_enabled: true,
           local_login_updated_at: '2026-02-14T00:00:00.000Z',
+          fallback_password_set_at: '2026-02-14T01:00:00.000Z',
+          fallback_password_updated_by: '00000000-0000-4000-8000-000000000009',
         },
       ],
     });
@@ -186,6 +215,8 @@ describe('local-login-policy', () => {
       userId: '00000000-0000-4000-8000-000000000001',
       localLoginEnabled: true,
       authSource: 'oidc',
+      fallbackPasswordSetAt: '2026-02-14T01:00:00.000Z',
+      fallbackPasswordUpdatedBy: '00000000-0000-4000-8000-000000000009',
     });
   });
 
@@ -198,6 +229,8 @@ describe('local-login-policy', () => {
           auth_source: 'oidc',
           local_login_enabled: false,
           local_login_updated_at: '2026-02-14T00:00:00.000Z',
+          fallback_password_set_at: '2026-02-14T02:00:00.000Z',
+          fallback_password_updated_by: '00000000-0000-4000-8000-000000000009',
         },
       ],
     });
@@ -212,6 +245,8 @@ describe('local-login-policy', () => {
     expect(result.data).toMatchObject({
       userId: '00000000-0000-4000-8000-000000000001',
       localLoginEnabled: false,
+      fallbackPasswordSetAt: '2026-02-14T02:00:00.000Z',
+      fallbackPasswordUpdatedBy: '00000000-0000-4000-8000-000000000009',
     });
   });
 

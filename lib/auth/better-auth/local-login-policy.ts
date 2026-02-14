@@ -19,6 +19,12 @@ type ProfileLocalLoginStateRow = {
   auth_source: string | null;
   local_login_enabled: boolean | null;
   local_login_updated_at: string | Date | null;
+  fallback_password_set_at: string | Date | null;
+  fallback_password_updated_by: string | null;
+};
+
+type CredentialPasswordExistsRow = {
+  has_credential_password: boolean | null;
 };
 
 export type LocalLoginDecisionReason =
@@ -27,6 +33,7 @@ export type LocalLoginDecisionReason =
   | 'password_account'
   | 'blocked_auth_mode'
   | 'blocked_user_toggle'
+  | 'missing_fallback_password'
   | 'allowed_degraded';
 
 export interface LocalLoginDecision {
@@ -43,6 +50,8 @@ export interface UserLocalLoginState {
   authSource: string | null;
   localLoginEnabled: boolean;
   localLoginUpdatedAt: string | null;
+  fallbackPasswordSetAt: string | null;
+  fallbackPasswordUpdatedBy: string | null;
 }
 
 export interface LocalLoginAuditInput {
@@ -199,6 +208,106 @@ async function getProfileByEmail(
   }
 }
 
+async function hasCredentialPasswordByEmail(
+  email: string
+): Promise<Result<boolean>> {
+  const pool = getPgPool();
+
+  try {
+    const query = await pool.query<CredentialPasswordExistsRow>(
+      `
+      SELECT EXISTS (
+        SELECT 1
+        FROM auth_users u
+        JOIN auth_accounts a
+          ON a.user_id = u.id
+        WHERE lower(u.email) = $1
+          AND a.provider_id = 'credential'
+          AND a.password IS NOT NULL
+      ) AS has_credential_password
+      `,
+      [email]
+    );
+
+    return success(Boolean(query.rows[0]?.has_credential_password));
+  } catch (error) {
+    return failure(
+      error instanceof Error
+        ? error
+        : new Error('Failed to check credential password by email')
+    );
+  }
+}
+
+export async function hasCredentialPasswordByAuthUserId(
+  authUserId: string
+): Promise<Result<boolean>> {
+  const normalizedAuthUserId = authUserId.trim();
+  if (!normalizedAuthUserId) {
+    return failure(new Error('authUserId is required'));
+  }
+
+  const pool = getPgPool();
+
+  try {
+    const query = await pool.query<CredentialPasswordExistsRow>(
+      `
+      SELECT EXISTS (
+        SELECT 1
+        FROM auth_accounts
+        WHERE user_id = $1::uuid
+          AND provider_id = 'credential'
+          AND password IS NOT NULL
+      ) AS has_credential_password
+      `,
+      [normalizedAuthUserId]
+    );
+
+    return success(Boolean(query.rows[0]?.has_credential_password));
+  } catch (error) {
+    return failure(
+      error instanceof Error
+        ? error
+        : new Error('Failed to check credential password by auth user id')
+    );
+  }
+}
+
+export async function markFallbackPasswordUpdated(
+  userId: string,
+  updatedByUserId?: string | null
+): Promise<Result<void>> {
+  const normalizedUserId = userId.trim();
+  if (!normalizedUserId) {
+    return failure(new Error('userId is required'));
+  }
+
+  const normalizedUpdatedBy = updatedByUserId?.trim() || normalizedUserId;
+  const pool = getPgPool();
+
+  try {
+    await pool.query(
+      `
+      UPDATE profiles
+      SET
+        fallback_password_set_at = NOW(),
+        fallback_password_updated_by = $2::uuid,
+        updated_at = NOW()
+      WHERE id = $1::uuid
+      `,
+      [normalizedUserId, normalizedUpdatedBy]
+    );
+
+    return success(undefined);
+  } catch (error) {
+    return failure(
+      error instanceof Error
+        ? error
+        : new Error('Failed to update fallback password metadata')
+    );
+  }
+}
+
 export async function getUserLocalLoginStateByUserId(
   userId: string
 ): Promise<Result<UserLocalLoginState | null>> {
@@ -216,7 +325,9 @@ export async function getUserLocalLoginStateByUserId(
         email,
         auth_source,
         local_login_enabled,
-        local_login_updated_at
+        local_login_updated_at,
+        fallback_password_set_at,
+        fallback_password_updated_by::text AS fallback_password_updated_by
       FROM profiles
       WHERE id = $1::uuid
       LIMIT 1
@@ -235,6 +346,8 @@ export async function getUserLocalLoginStateByUserId(
       authSource: row.auth_source ?? null,
       localLoginEnabled: Boolean(row.local_login_enabled),
       localLoginUpdatedAt: toIsoString(row.local_login_updated_at),
+      fallbackPasswordSetAt: toIsoString(row.fallback_password_set_at),
+      fallbackPasswordUpdatedBy: row.fallback_password_updated_by ?? null,
     });
   } catch (error) {
     return failure(
@@ -269,7 +382,9 @@ export async function setUserLocalLoginEnabledByUserId(
         email,
         auth_source,
         local_login_enabled,
-        local_login_updated_at
+        local_login_updated_at,
+        fallback_password_set_at,
+        fallback_password_updated_by::text AS fallback_password_updated_by
       `,
       [normalizedUserId, enabled]
     );
@@ -285,6 +400,8 @@ export async function setUserLocalLoginEnabledByUserId(
       authSource: row.auth_source ?? null,
       localLoginEnabled: Boolean(row.local_login_enabled),
       localLoginUpdatedAt: toIsoString(row.local_login_updated_at),
+      fallbackPasswordSetAt: toIsoString(row.fallback_password_set_at),
+      fallbackPasswordUpdatedBy: row.fallback_password_updated_by ?? null,
     });
   } catch (error) {
     return failure(
@@ -358,6 +475,21 @@ export async function evaluateLocalLoginByEmail(
       email,
       userId: profile.id,
       reason: 'blocked_user_toggle',
+    });
+  }
+
+  const credentialPassword = await hasCredentialPasswordByEmail(email);
+  if (!credentialPassword.success) {
+    return failure(credentialPassword.error);
+  }
+
+  if (!credentialPassword.data) {
+    return success({
+      allowed: false,
+      authMode: authMode.data,
+      email,
+      userId: profile.id,
+      reason: 'missing_fallback_password',
     });
   }
 

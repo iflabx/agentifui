@@ -57,6 +57,17 @@ function localLoginBlockedResponse(reason: string): Response {
     );
   }
 
+  if (reason === 'missing_fallback_password') {
+    return Response.json(
+      {
+        code: 'FALLBACK_PASSWORD_NOT_SET',
+        message:
+          'Local fallback password is not set. Please configure fallback password first.',
+      },
+      { status: 403 }
+    );
+  }
+
   return Response.json(
     {
       code: 'LOCAL_LOGIN_DISABLED',
