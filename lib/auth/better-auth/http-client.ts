@@ -13,6 +13,11 @@ export interface BetterAuthUser {
   name?: string | null;
   image?: string | null;
   emailVerified?: boolean;
+  last_sign_in_at?: string | null;
+  app_metadata?: {
+    provider?: string;
+    [key: string]: unknown;
+  } | null;
   [key: string]: unknown;
 }
 

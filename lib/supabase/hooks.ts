@@ -1,6 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import {
+  type BetterAuthUser,
+  getCurrentSession,
+  getCurrentUser,
+  subscribeAuthStateChange,
+} from '@lib/auth/better-auth/http-client';
 
-import { Session, User } from '@supabase/supabase-js';
+import { useCallback, useEffect, useState } from 'react';
 
 import { createClient } from './client';
 import type { Database } from './types';
@@ -10,42 +15,35 @@ import type { Database } from './types';
  * Provides user login status and session information.
  */
 export const useSupabaseAuth = () => {
-  const supabase = createClient();
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
+  type LegacySession = {
+    user: BetterAuthUser;
+    [key: string]: unknown;
+  };
+
+  const [user, setUser] = useState<BetterAuthUser | null>(null);
+  const [session, setSession] = useState<LegacySession | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const getSession = async () => {
       setLoading(true);
-      const {
-        data: { session },
-        error,
-      } = await supabase.auth.getSession();
-
-      if (error) {
-        console.error('Error fetching session:', error);
-      }
-
-      setSession(session);
-      setUser(session?.user || null);
+      const currentSession = await getCurrentSession().catch(() => null);
+      const currentUser = currentSession?.user ?? null;
+      setSession(currentUser ? { user: currentUser } : null);
+      setUser(currentUser);
       setLoading(false);
     };
 
-    getSession();
+    void getSession();
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setUser(session?.user || null);
-      setLoading(false);
+    const unsubscribe = subscribeAuthStateChange(() => {
+      void getSession();
     });
 
     return () => {
-      subscription.unsubscribe();
+      unsubscribe();
     };
-  }, [supabase]);
+  }, []);
 
   return { user, session, loading };
 };
@@ -120,7 +118,9 @@ export const useProfile = () => {
 export const useOrganizations = () => {
   const { user } = useSupabaseAuth();
   const supabase = createClient();
-  const [organizations, setOrganizations] = useState<any[]>([]);
+  const [organizations, setOrganizations] = useState<
+    Database['public']['Tables']['groups']['Row'][]
+  >([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -276,10 +276,7 @@ export const useMessages = (conversationId: string | null) => {
           conversation_id: conversationId,
           role,
           content,
-          user_id:
-            role === 'user'
-              ? (await supabase.auth.getUser()).data.user?.id
-              : null,
+          user_id: role === 'user' ? (await getCurrentUser())?.id : null,
         })
         .select()
         .single();
