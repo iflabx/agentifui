@@ -3,19 +3,19 @@
  *
  * Uses unified data service and real-time subscription management for better performance and error handling
  */
+import {
+  getCurrentSession,
+  subscribeAuthStateChange,
+} from '@lib/auth/better-auth/http-client';
 import { CacheKeys, cacheService } from '@lib/services/db/cache-service';
 import { dataService } from '@lib/services/db/data-service';
 import {
   SubscriptionKeys,
   realtimeService,
 } from '@lib/services/db/realtime-service';
-import { createClient } from '@lib/supabase/client';
 import { Conversation } from '@lib/types/database';
 
 import { useCallback, useEffect, useState } from 'react';
-
-// Singleton Supabase client
-const supabase = createClient();
 
 /**
  * Sidebar conversations list hook
@@ -34,36 +34,45 @@ export function useSidebarConversations(limit: number = 20) {
 
   // Get current user ID
   useEffect(() => {
+    let isMounted = true;
+
     const fetchUserId = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (session?.user) {
-        setUserId(session.user.id);
-      } else {
-        setUserId(null);
-      }
-    };
+      try {
+        const session = await getCurrentSession();
+        const sessionUserId = session?.user?.id ?? null;
+        if (!isMounted) {
+          return;
+        }
 
-    fetchUserId();
-
-    // Subscribe to auth state changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session?.user) {
-        setUserId(session.user.id);
-      } else {
+        if (sessionUserId) {
+          setUserId(sessionUserId);
+        } else {
+          setUserId(null);
+          // Clear state when user logs out
+          setConversations([]);
+          setTotal(0);
+          setHasMore(false);
+        }
+      } catch {
+        if (!isMounted) {
+          return;
+        }
         setUserId(null);
-        // Clear state when user logs out
         setConversations([]);
         setTotal(0);
         setHasMore(false);
       }
+    };
+
+    void fetchUserId();
+
+    const unsubscribe = subscribeAuthStateChange(() => {
+      void fetchUserId();
     });
 
     return () => {
-      subscription.unsubscribe();
+      isMounted = false;
+      unsubscribe();
     };
   }, []);
 

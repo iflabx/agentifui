@@ -47,14 +47,12 @@ export function useCurrentApp() {
   const initializeApp = useCallback(async () => {
     try {
       // Security check: only initialize app if user is logged in
-      const { createClient } = await import('@lib/supabase/client');
-      const supabase = createClient();
-      const {
-        data: { user },
-        error,
-      } = await supabase.auth.getUser();
+      const { getCurrentUser } = await import(
+        '@lib/auth/better-auth/http-client'
+      );
+      const user = await getCurrentUser();
 
-      if (!user || error) {
+      if (!user) {
         console.log(
           '[useCurrentApp] User not logged in, skip app initialization'
         );

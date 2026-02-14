@@ -1,7 +1,7 @@
 import { MediaResponseHandler } from '@lib/api/dify/handlers/media-response-handler';
+import { auth } from '@lib/auth/better-auth/server';
 import { getDifyAppConfig } from '@lib/config/dify-config';
 import { type DifyAppConfig } from '@lib/config/dify-config';
-import { createClient } from '@lib/supabase/server';
 import {
   type DifyAppType,
   isTextGenerationApp,
@@ -75,15 +75,16 @@ async function proxyToDify(
   context: { params: Promise<DifyApiParams> } // Unified use of Promise type
 ) {
   // 🔒 security: authenticate user before processing request
-  const supabase = await createClient();
+  let session: Awaited<ReturnType<typeof auth.api.getSession>> | null = null;
+  try {
+    session = await auth.api.getSession({
+      headers: req.headers,
+    });
+  } catch (error) {
+    console.warn('[Dify API] Failed to resolve auth session:', error);
+  }
 
-  // use getUser() to verify authentication with Supabase Auth server
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-
-  if (userError || !user) {
+  if (!session?.user?.id) {
     console.log(
       `[Dify API] Unauthorized access attempt to appId: ${(await context.params).appId}`
     );

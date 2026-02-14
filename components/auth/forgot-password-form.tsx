@@ -1,5 +1,6 @@
 'use client';
 
+import { requestPasswordReset } from '@lib/auth/better-auth/http-client';
 import { cn } from '@lib/utils';
 import { ArrowLeft, Mail } from 'lucide-react';
 
@@ -7,8 +8,6 @@ import { useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-
-import { createClient } from '../../lib/supabase/client';
 
 export function ForgotPasswordForm() {
   const t = useTranslations('pages.auth.forgotPassword');
@@ -25,31 +24,26 @@ export function ForgotPasswordForm() {
     setError('');
 
     try {
-      const supabase = createClient();
-
       const redirectUrl = `${window.location.origin}/reset-password`;
       console.log('send reset password email, redirect URL:', redirectUrl);
 
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: redirectUrl,
-      });
+      await requestPasswordReset(email, redirectUrl);
 
-      console.log('reset email send result:', error ? 'failed' : 'success');
-
-      if (error) {
-        if (error.message.includes('Invalid email')) {
-          throw new Error(t('errors.emailRequired'));
-        } else if (error.message.includes('rate limit')) {
-          throw new Error(t('errors.rateLimited'));
-        } else {
-          throw error;
-        }
-      }
+      console.log('reset email send result: success');
 
       setIsEmailSent(true);
     } catch (err: unknown) {
+      let mappedError: string | null = null;
+      if (err instanceof Error) {
+        if (err.message.includes('email')) {
+          mappedError = t('errors.emailRequired');
+        } else if (err.message.toLowerCase().includes('rate')) {
+          mappedError = t('errors.rateLimited');
+        }
+      }
       const errorMessage =
-        err instanceof Error ? err.message : t('errors.sendFailed');
+        mappedError ||
+        (err instanceof Error ? err.message : t('errors.sendFailed'));
       setError(errorMessage);
     } finally {
       setIsLoading(false);

@@ -1,6 +1,9 @@
 'use client';
 
-import { createClient } from '@lib/supabase/client';
+import {
+  sendPhoneOtp,
+  verifyPhoneOtp,
+} from '@lib/auth/better-auth/http-client';
 import { cn } from '@lib/utils';
 import { Loader2, MessageSquare, Phone } from 'lucide-react';
 import { toast } from 'sonner';
@@ -14,7 +17,6 @@ export default function PhoneAuth() {
   const [otp, setOtp] = useState('');
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
   const [loading, setLoading] = useState(false);
-  const supabase = createClient();
   const t = useTranslations('pages.auth.phoneLogin');
 
   const sendOTP = async () => {
@@ -33,11 +35,7 @@ export default function PhoneAuth() {
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signInWithOtp({
-        phone: `+86${phone}`, // add Chinese area code
-      });
-
-      if (error) throw error;
+      await sendPhoneOtp(`+86${phone}`);
 
       toast.success(t('success.otpSent'));
       setStep('otp');
@@ -65,13 +63,7 @@ export default function PhoneAuth() {
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.verifyOtp({
-        phone: `+86${phone}`,
-        token: otp,
-        type: 'sms',
-      });
-
-      if (error) throw error;
+      await verifyPhoneOtp(`+86${phone}`, otp);
 
       toast.success(t('success.verifySuccess'));
       window.location.href = '/chat';

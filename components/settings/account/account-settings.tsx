@@ -1,8 +1,8 @@
 'use client';
 
+import { getCurrentSession } from '@lib/auth/better-auth/http-client';
 import { useLogout } from '@lib/hooks/use-logout';
 import { useSettingsColors } from '@lib/hooks/use-settings-colors';
-import { createClient } from '@lib/supabase/client';
 import { cn } from '@lib/utils';
 import { motion } from 'framer-motion';
 import { AlertCircle, Key, LogOut, Mail } from 'lucide-react';
@@ -26,7 +26,6 @@ export function AccountSettings() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const router = useRouter();
-  const supabase = createClient();
 
   // Load user account data
   useEffect(() => {
@@ -36,9 +35,8 @@ export function AccountSettings() {
         setError(null);
 
         // Check if user is logged in
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
+        const session = await getCurrentSession();
+        const user = session?.user ?? null;
         if (!user) {
           router.push('/login');
           return;
@@ -46,7 +44,7 @@ export function AccountSettings() {
 
         // Get user email and authentication source
         setUserEmail(user.email || null);
-        setAuthSource(user.app_metadata?.provider || t('emailPasswordAuth'));
+        setAuthSource(t('emailPasswordAuth'));
       } catch (err) {
         console.error('Failed to load user account information:', err);
         setError(err instanceof Error ? err : new Error(t('loadAccountError')));
@@ -56,7 +54,7 @@ export function AccountSettings() {
     }
 
     loadUserAccount();
-  }, [router, supabase.auth, t]);
+  }, [router, t]);
 
   // Handle logout
   const handleLogout = async () => {

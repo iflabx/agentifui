@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from '@components/ui/select';
 import { Textarea } from '@components/ui/textarea';
-import { createClient } from '@lib/supabase/client';
+import { getCurrentUser } from '@lib/auth/better-auth/http-client';
 import { ComponentInstance } from '@lib/types/about-page-components';
 import { cn } from '@lib/utils';
 import { Plus, Trash2, Upload, X } from 'lucide-react';
@@ -88,10 +88,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     let isMounted = true;
 
     const fetchUserId = async () => {
-      const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const user = await getCurrentUser();
       if (isMounted && user) {
         setUserId(user.id);
       }

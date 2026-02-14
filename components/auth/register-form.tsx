@@ -1,6 +1,7 @@
 'use client';
 
 import { Button } from '@components/ui/button';
+import { signUpWithEmail } from '@lib/auth/better-auth/http-client';
 import { cn } from '@lib/utils';
 import { Eye, EyeOff } from 'lucide-react';
 
@@ -10,12 +11,10 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
-import { createClient } from '../../lib/supabase/client';
 import { SocialAuthButtons } from './social-auth-buttons';
 
 export function RegisterForm() {
   const router = useRouter();
-  const supabase = createClient();
   const t = useTranslations('pages.auth.register');
 
   const [formData, setFormData] = useState({
@@ -72,37 +71,40 @@ export function RegisterForm() {
     setError('');
 
     try {
-      const { data, error: signUpError } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
-        options: {
-          data: {
-            full_name: formData.name.trim(),
-            username: formData.username.trim() || undefined,
-          },
-        },
-      });
-
-      if (signUpError) {
-        if (signUpError.message.includes('already registered')) {
-          throw new Error(t('errors.emailExists'));
-        } else if (signUpError.message.includes('Password should be')) {
-          throw new Error(t('errors.passwordWeak'));
-        } else if (signUpError.message.includes('Invalid email')) {
-          throw new Error(t('errors.emailInvalid'));
-        } else {
-          throw signUpError;
+      const result = await signUpWithEmail(
+        formData.name.trim(),
+        formData.email,
+        formData.password,
+        '/chat',
+        {
+          username: formData.username.trim() || undefined,
         }
+      );
+
+      if (!result?.user) {
+        throw new Error(t('errors.registerFailed'));
       }
 
-      if (data.user && !data.user.email_confirmed_at) {
+      if (!result.user.emailVerified) {
         router.push('/login?registered=true&verify=true');
       } else {
         router.push('/login?registered=true');
       }
     } catch (err) {
+      let mappedError: string | null = null;
+      if (err instanceof Error) {
+        const message = err.message;
+        if (message.includes('already') || message.includes('exists')) {
+          mappedError = t('errors.emailExists');
+        } else if (message.includes('password')) {
+          mappedError = t('errors.passwordWeak');
+        } else if (message.includes('email')) {
+          mappedError = t('errors.emailInvalid');
+        }
+      }
       const errorMessage =
-        err instanceof Error ? err.message : t('errors.registerFailed');
+        mappedError ||
+        (err instanceof Error ? err.message : t('errors.registerFailed'));
       setError(errorMessage);
     } finally {
       setIsLoading(false);

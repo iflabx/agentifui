@@ -4,16 +4,12 @@
  * This file contains all database operations related to the profiles table.
  * Updated to use the unified data service and Result type.
  */
+import { getCurrentUser } from '@lib/auth/better-auth/http-client';
 import { CacheKeys, cacheService } from '@lib/services/db/cache-service';
 import { dataService } from '@lib/services/db/data-service';
 import { SubscriptionKeys } from '@lib/services/db/realtime-service';
 import { Profile } from '@lib/types/database';
 import { Result, failure, success } from '@lib/types/result';
-
-import { createClient } from '../supabase/client';
-
-// For compatibility with existing code, while using the new data service.
-const supabase = createClient();
 
 /**
  * Get the current user's profile (optimized version).
@@ -22,9 +18,7 @@ const supabase = createClient();
 export async function getCurrentUserProfile(): Promise<Result<Profile | null>> {
   // First get the current user ID, then query the user profile.
   // Uses the new data service and cache mechanism.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
 
   if (!user) {
     return success(null);

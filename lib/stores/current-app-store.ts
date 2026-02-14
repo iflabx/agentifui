@@ -26,6 +26,15 @@ interface CurrentAppState {
   switchToApp: (appId: string) => Promise<void>; // Added: switch to a specific app
 }
 
+type ServiceInstanceWithProvider = ServiceInstance & {
+  providers?: {
+    id: string;
+    name: string;
+    is_active: boolean;
+    is_default: boolean;
+  } | null;
+};
+
 // Refactor: Remove hardcoding, rely only on is_default field in database
 // Helper function to get the default provider, supports multi-provider environments
 async function getDefaultProviderForApp(): Promise<Provider> {
@@ -88,14 +97,12 @@ export const useCurrentAppStore = create<CurrentAppState>()(
         // Security check: ensure user is logged in before initializing app store
         // Prevent unauthenticated users from triggering cache creation
         try {
-          const { createClient } = await import('../supabase/client');
-          const supabase = createClient();
-          const {
-            data: { user },
-            error,
-          } = await supabase.auth.getUser();
+          const { getCurrentUser } = await import(
+            '@lib/auth/better-auth/http-client'
+          );
+          const user = await getCurrentUser();
 
-          if (!user || error) {
+          if (!user) {
             console.log(
               '[CurrentAppStore] User not logged in, skipping app store initialization'
             );
@@ -261,7 +268,7 @@ export const useCurrentAppStore = create<CurrentAppState>()(
           );
 
           // Support validating a specific app instance, not just the default app
-          let targetInstance: any = null;
+          let targetInstance: ServiceInstanceWithProvider | null = null;
 
           if (targetAppId) {
             // Refactor: search for the specified app instance among all active providers
@@ -344,6 +351,10 @@ export const useCurrentAppStore = create<CurrentAppState>()(
             } else {
               targetInstance = currentInstance;
             }
+          }
+
+          if (!targetInstance) {
+            throw new Error('Target app instance is missing after validation');
           }
 
           // Check if the current config matches the target config

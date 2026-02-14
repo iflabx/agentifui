@@ -64,6 +64,10 @@ interface AppListState {
 
 const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes - extend cache time to reduce selector flicker
 
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export const useAppListStore = create<AppListState>((set, get) => ({
   apps: [],
   isLoading: false, // Restore initial state to false, handle timing issues elsewhere
@@ -92,11 +96,10 @@ export const useAppListStore = create<AppListState>((set, get) => ({
     }
 
     // Fix cache pollution: get user ID first, check for user change
-    const { createClient } = await import('@lib/supabase/client');
-    const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const { getCurrentUser } = await import(
+      '@lib/auth/better-auth/http-client'
+    );
+    const user = await getCurrentUser();
 
     if (!user) {
       throw new Error('User not logged in'); // Should not happen, middleware intercepts
@@ -193,10 +196,10 @@ export const useAppListStore = create<AppListState>((set, get) => ({
       } catch (error) {
         console.warn('[AppListStore] Failed to sync favorite app info:', error);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[AppListStore] Failed to fetch app list:', error);
       set({
-        error: error.message,
+        error: getErrorMessage(error),
         isLoading: false,
       });
     }
@@ -208,11 +211,10 @@ export const useAppListStore = create<AppListState>((set, get) => ({
     const state = get();
 
     // Admin function also needs user isolation to avoid cache pollution
-    const { createClient } = await import('@lib/supabase/client');
-    const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const { getCurrentUser } = await import(
+      '@lib/auth/better-auth/http-client'
+    );
+    const user = await getCurrentUser();
 
     if (!user) {
       throw new Error('User not logged in');
@@ -283,9 +285,9 @@ export const useAppListStore = create<AppListState>((set, get) => ({
       } catch (error) {
         console.warn('[AppListStore] Failed to sync favorite app info:', error);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       set({
-        error: error.message,
+        error: getErrorMessage(error),
         isLoading: false,
       });
     }
@@ -359,13 +361,13 @@ export const useAppListStore = create<AppListState>((set, get) => ({
       console.log(
         `[AppListStore] Successfully fetched ${apps.length} apps accessible by user ${userId}`
       );
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(
         '[AppListStore] Failed to fetch user accessible apps:',
         error
       );
       set({
-        error: error.message,
+        error: getErrorMessage(error),
         isLoading: false,
       });
     }
@@ -482,13 +484,13 @@ export const useAppListStore = create<AppListState>((set, get) => ({
       console.log(
         `[AppListStore] Batch fetch of app parameters complete, successfully fetched parameters for ${Object.keys(newParametersCache).length} apps`
       );
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(
         '[AppListStore] Failed to batch fetch app parameters:',
         error
       );
       set({
-        parametersError: error.message,
+        parametersError: getErrorMessage(error),
         isLoadingParameters: false,
       });
     }

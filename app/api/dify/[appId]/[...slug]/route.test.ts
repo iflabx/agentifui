@@ -6,7 +6,7 @@ import { MediaResponseHandler } from '@lib/api/dify/handlers/media-response-hand
 
 // Mock Next.js dependencies
 jest.mock('@lib/config/dify-config');
-jest.mock('@lib/supabase/server');
+jest.mock('@lib/auth/better-auth/server');
 jest.mock('@lib/types/dify-app-types');
 
 // Mock globals for Node.js environment

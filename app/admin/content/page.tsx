@@ -7,6 +7,7 @@ import { EditorSkeleton } from '@components/admin/content/editor-skeleton';
 import { HomePreviewDynamic } from '@components/admin/content/home-preview-dynamic';
 import { PreviewToolbar } from '@components/admin/content/preview-toolbar';
 import { ResizableSplitPane } from '@components/ui/resizable-split-pane';
+import { getCurrentUser } from '@lib/auth/better-auth/http-client';
 import type { SupportedLocale } from '@lib/config/language-config';
 import { getCurrentLocaleFromCookie } from '@lib/config/language-config';
 import { clearTranslationCache } from '@lib/hooks/use-dynamic-translations';
@@ -14,7 +15,6 @@ import { TranslationService } from '@lib/services/admin/content/translation-serv
 import { cleanupUnusedImages } from '@lib/services/content-image-upload-service';
 import { useAboutEditorStore } from '@lib/stores/about-editor-store';
 import { useHomeEditorStore } from '@lib/stores/home-editor-store';
-import { createClient } from '@lib/supabase/client';
 import type {
   AboutTranslationData,
   PageContent,
@@ -209,10 +209,7 @@ export default function ContentManagementPage() {
     setIsSaving(true);
     try {
       // Get current user ID for image cleanup
-      const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const user = await getCurrentUser();
 
       let cleanupCount = 0;
 

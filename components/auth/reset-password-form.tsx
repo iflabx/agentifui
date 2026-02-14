@@ -1,5 +1,9 @@
 'use client';
 
+import {
+  getCurrentSession,
+  resetPasswordWithToken,
+} from '@lib/auth/better-auth/http-client';
 import { cn } from '@lib/utils';
 import { AlertCircle, ArrowLeft, CheckCircle, Eye, EyeOff } from 'lucide-react';
 
@@ -8,8 +12,6 @@ import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-
-import { createClient } from '../../lib/supabase/client';
 
 export function ResetPasswordForm() {
   const router = useRouter();
@@ -29,57 +31,24 @@ export function ResetPasswordForm() {
   useEffect(() => {
     const checkUserSession = async () => {
       try {
-        const supabase = createClient();
+        const token =
+          searchParams.get('token') ||
+          searchParams.get('token_hash') ||
+          searchParams.get('reset_token');
 
-        const access_token = searchParams.get('access_token');
-        const refresh_token = searchParams.get('refresh_token');
-        const type = searchParams.get('type');
-        const token_hash = searchParams.get('token_hash');
-
-        if (type === 'recovery' && token_hash) {
-          const { error: verifyError } = await supabase.auth.verifyOtp({
-            type: 'recovery',
-            token_hash: token_hash,
-          });
-
-          if (verifyError) {
-            setError(t('errors.linkInvalid'));
-            setIsTokenValid(false);
-          } else {
-            setIsTokenValid(true);
-          }
-          return;
-        }
-
-        if (access_token) {
-          const { error: sessionError } = await supabase.auth.setSession({
-            access_token,
-            refresh_token: refresh_token || '',
-          });
-
-          if (sessionError) {
-            setError(t('errors.linkInvalid'));
-            setIsTokenValid(false);
-          } else {
-            setIsTokenValid(true);
-          }
-          return;
-        }
-
-        const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser();
-
-        if (userError) {
-          setError(t('errors.verifyFailed'));
-          setIsTokenValid(false);
-        } else if (user) {
+        if (token) {
           setIsTokenValid(true);
-        } else {
-          setError(t('errors.linkExpired'));
-          setIsTokenValid(false);
+          return;
         }
+
+        const session = await getCurrentSession();
+        if (session?.user?.id) {
+          setIsTokenValid(true);
+          return;
+        }
+
+        setError(t('errors.linkExpired'));
+        setIsTokenValid(false);
       } catch {
         setError(t('errors.verifyFailed'));
         setIsTokenValid(false);
@@ -127,28 +96,29 @@ export function ResetPasswordForm() {
     setError('');
 
     try {
-      const supabase = createClient();
-      const { error } = await supabase.auth.updateUser({
-        password: formData.password,
-      });
-
-      if (error) {
-        if (error.message.includes('Password should be')) {
-          throw new Error(t('errors.passwordWeak'));
-        } else if (error.message.includes('session')) {
-          throw new Error(t('errors.sessionExpired'));
-        } else {
-          throw error;
-        }
-      }
+      const token =
+        searchParams.get('token') ||
+        searchParams.get('token_hash') ||
+        searchParams.get('reset_token') ||
+        undefined;
+      await resetPasswordWithToken(formData.password, token);
 
       setIsSuccess(true);
       setTimeout(() => {
         router.push('/login?reset=success');
       }, 3000);
     } catch (err) {
+      let mappedError: string | null = null;
+      if (err instanceof Error) {
+        if (err.message.includes('password')) {
+          mappedError = t('errors.passwordWeak');
+        } else if (err.message.includes('session')) {
+          mappedError = t('errors.sessionExpired');
+        }
+      }
       const errorMessage =
-        err instanceof Error ? err.message : t('errors.resetFailed');
+        mappedError ||
+        (err instanceof Error ? err.message : t('errors.resetFailed'));
       setError(errorMessage);
     } finally {
       setIsLoading(false);

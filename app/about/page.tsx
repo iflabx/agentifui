@@ -4,8 +4,8 @@ import { DynamicAboutRenderer } from '@components/about/dynamic-about-renderer';
 import { AdminButton } from '@components/admin/admin-button';
 import { LanguageSwitcher } from '@components/ui/language-switcher';
 import { PageLoader } from '@components/ui/page-loader';
+import { getCurrentUser } from '@lib/auth/better-auth/http-client';
 import { useDynamicTranslations } from '@lib/hooks/use-dynamic-translations';
-import { createClient } from '@lib/supabase/client';
 import type { AboutTranslationData } from '@lib/types/about-page-components';
 
 import { useEffect, useState } from 'react';
@@ -41,10 +41,7 @@ export default function AboutPage() {
   const handleExploreClick = async () => {
     try {
       // check if user is logged in
-      const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const user = await getCurrentUser();
 
       if (user) {
         // user is logged in, redirect to chat page

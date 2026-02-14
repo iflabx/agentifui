@@ -4,19 +4,19 @@
  * Unlike useSidebarConversations, this hook fetches all user conversations.
  * Mainly used for the full conversation list in the history page.
  */
+import {
+  getCurrentSession,
+  subscribeAuthStateChange,
+} from '@lib/auth/better-auth/http-client';
 import { cacheService } from '@lib/services/db/cache-service';
 import { dataService } from '@lib/services/db/data-service';
 import {
   SubscriptionKeys,
   realtimeService,
 } from '@lib/services/db/realtime-service';
-import { createClient } from '@lib/supabase/client';
 import { Conversation } from '@lib/types/database';
 
 import { useCallback, useEffect, useState } from 'react';
-
-// Use singleton Supabase client
-const supabase = createClient();
 
 /**
  * Hook to get all historical conversations.
@@ -33,42 +33,49 @@ export function useAllConversations() {
 
   // Get current user ID
   useEffect(() => {
+    let isMounted = true;
+
     const fetchUserId = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (session?.user) {
-        setUserId(session.user.id);
-      } else {
-        setUserId(null);
-      }
-    };
+      try {
+        const session = await getCurrentSession();
+        const sessionUserId = session?.user?.id ?? null;
+        if (!isMounted) {
+          return;
+        }
 
-    fetchUserId();
-
-    // Subscribe to auth state changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session?.user) {
-        setUserId(session.user.id);
-      } else {
+        if (sessionUserId) {
+          setUserId(sessionUserId);
+        } else {
+          setUserId(null);
+          setConversations([]);
+          setTotal(0);
+        }
+      } catch {
+        if (!isMounted) {
+          return;
+        }
         setUserId(null);
-        // Clear state on logout
         setConversations([]);
         setTotal(0);
       }
+    };
+
+    void fetchUserId();
+
+    const unsubscribe = subscribeAuthStateChange(() => {
+      void fetchUserId();
     });
 
     return () => {
-      subscription.unsubscribe();
+      isMounted = false;
+      unsubscribe();
     };
   }, []);
 
   // Function to load all conversations
   // No limit, fetch all user conversations
   const loadAllConversations = useCallback(
-    async (reset: boolean = false) => {
+    async (_reset: boolean = false) => {
       if (!userId) {
         setConversations([]);
         setIsLoading(false);
