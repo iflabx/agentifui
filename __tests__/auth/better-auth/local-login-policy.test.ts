@@ -2,8 +2,12 @@
 import {
   evaluateLocalLoginByEmail,
   extractClientIp,
+  getAuthModeSetting,
+  getUserLocalLoginStateByUserId,
   parseSignInEmailFromRequest,
   recordLocalLoginAudit,
+  setAuthModeSetting,
+  setUserLocalLoginEnabledByUserId,
 } from '@lib/auth/better-auth/local-login-policy';
 import { getPgPool } from '@lib/server/pg/pool';
 
@@ -41,6 +45,26 @@ describe('local-login-policy', () => {
     if (!result.success) throw new Error('Expected success');
     expect(result.data.allowed).toBe(false);
     expect(result.data.reason).toBe('blocked_auth_mode');
+  });
+
+  it('reads auth mode setting', async () => {
+    queryMock.mockResolvedValueOnce({ rows: [{ auth_mode: 'degraded' }] });
+
+    const result = await getAuthModeSetting();
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error('Expected success');
+    expect(result.data).toBe('degraded');
+  });
+
+  it('updates auth mode setting', async () => {
+    queryMock.mockResolvedValueOnce({ rows: [{ auth_mode: 'degraded' }] });
+
+    const result = await setAuthModeSetting('degraded');
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error('Expected success');
+    expect(result.data).toBe('degraded');
   });
 
   it('blocks external-idp account when per-user fallback toggle is off', async () => {
@@ -137,6 +161,58 @@ describe('local-login-policy', () => {
     expect(String(queryMock.mock.calls[0]?.[0])).toContain(
       'auth_local_login_audit_logs'
     );
+  });
+
+  it('gets user local-login state by user id', async () => {
+    queryMock.mockResolvedValueOnce({
+      rows: [
+        {
+          id: '00000000-0000-4000-8000-000000000001',
+          email: 'user@example.com',
+          auth_source: 'oidc',
+          local_login_enabled: true,
+          local_login_updated_at: '2026-02-14T00:00:00.000Z',
+        },
+      ],
+    });
+
+    const result = await getUserLocalLoginStateByUserId(
+      '00000000-0000-4000-8000-000000000001'
+    );
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error('Expected success');
+    expect(result.data).toMatchObject({
+      userId: '00000000-0000-4000-8000-000000000001',
+      localLoginEnabled: true,
+      authSource: 'oidc',
+    });
+  });
+
+  it('updates user local-login state by user id', async () => {
+    queryMock.mockResolvedValueOnce({
+      rows: [
+        {
+          id: '00000000-0000-4000-8000-000000000001',
+          email: 'user@example.com',
+          auth_source: 'oidc',
+          local_login_enabled: false,
+          local_login_updated_at: '2026-02-14T00:00:00.000Z',
+        },
+      ],
+    });
+
+    const result = await setUserLocalLoginEnabledByUserId(
+      '00000000-0000-4000-8000-000000000001',
+      false
+    );
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error('Expected success');
+    expect(result.data).toMatchObject({
+      userId: '00000000-0000-4000-8000-000000000001',
+      localLoginEnabled: false,
+    });
   });
 
   it('parses login email and extracts client ip', () => {

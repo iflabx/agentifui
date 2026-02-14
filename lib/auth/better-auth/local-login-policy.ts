@@ -13,6 +13,14 @@ type AuthModeRow = {
   auth_mode: string | null;
 };
 
+type ProfileLocalLoginStateRow = {
+  id: string;
+  email: string | null;
+  auth_source: string | null;
+  local_login_enabled: boolean | null;
+  local_login_updated_at: string | Date | null;
+};
+
 export type LocalLoginDecisionReason =
   | 'email_missing'
   | 'profile_not_found'
@@ -27,6 +35,14 @@ export interface LocalLoginDecision {
   email: string | null;
   userId: string | null;
   reason: LocalLoginDecisionReason;
+}
+
+export interface UserLocalLoginState {
+  userId: string;
+  email: string | null;
+  authSource: string | null;
+  localLoginEnabled: boolean;
+  localLoginUpdatedAt: string | null;
 }
 
 export interface LocalLoginAuditInput {
@@ -57,6 +73,27 @@ function normalizeAuthMode(input: string | null | undefined): AuthMode {
   return 'normal';
 }
 
+function isAuthMode(input: string): input is AuthMode {
+  return input === 'normal' || input === 'degraded';
+}
+
+function toIsoString(value: string | Date | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed.toISOString();
+}
+
 async function getCurrentAuthMode(): Promise<Result<AuthMode>> {
   const pool = getPgPool();
 
@@ -76,6 +113,59 @@ async function getCurrentAuthMode(): Promise<Result<AuthMode>> {
       error instanceof Error
         ? error
         : new Error('Failed to load current auth mode')
+    );
+  }
+}
+
+export async function getAuthModeSetting(): Promise<Result<AuthMode>> {
+  return getCurrentAuthMode();
+}
+
+export async function setAuthModeSetting(
+  authMode: AuthMode
+): Promise<Result<AuthMode>> {
+  if (!isAuthMode(authMode)) {
+    return failure(new Error('Invalid auth mode'));
+  }
+
+  const pool = getPgPool();
+
+  try {
+    const updated = await pool.query<AuthModeRow>(
+      `
+      WITH target AS (
+        SELECT id
+        FROM auth_settings
+        ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+        LIMIT 1
+      )
+      UPDATE auth_settings
+      SET auth_mode = $1, updated_at = NOW()
+      WHERE id = (SELECT id FROM target)
+      RETURNING auth_mode
+      `,
+      [authMode]
+    );
+
+    if (updated.rows[0]) {
+      return success(normalizeAuthMode(updated.rows[0].auth_mode));
+    }
+
+    const inserted = await pool.query<AuthModeRow>(
+      `
+      INSERT INTO auth_settings (auth_mode, created_at, updated_at)
+      VALUES ($1, NOW(), NOW())
+      RETURNING auth_mode
+      `,
+      [authMode]
+    );
+
+    return success(normalizeAuthMode(inserted.rows[0]?.auth_mode));
+  } catch (error) {
+    return failure(
+      error instanceof Error
+        ? error
+        : new Error('Failed to update auth mode setting')
     );
   }
 }
@@ -105,6 +195,102 @@ async function getProfileByEmail(
       error instanceof Error
         ? error
         : new Error('Failed to load profile by email')
+    );
+  }
+}
+
+export async function getUserLocalLoginStateByUserId(
+  userId: string
+): Promise<Result<UserLocalLoginState | null>> {
+  const normalizedUserId = userId.trim();
+  if (!normalizedUserId) {
+    return failure(new Error('userId is required'));
+  }
+
+  const pool = getPgPool();
+  try {
+    const query = await pool.query<ProfileLocalLoginStateRow>(
+      `
+      SELECT
+        id::text AS id,
+        email,
+        auth_source,
+        local_login_enabled,
+        local_login_updated_at
+      FROM profiles
+      WHERE id = $1::uuid
+      LIMIT 1
+      `,
+      [normalizedUserId]
+    );
+
+    const row = query.rows[0];
+    if (!row) {
+      return success(null);
+    }
+
+    return success({
+      userId: row.id,
+      email: row.email ?? null,
+      authSource: row.auth_source ?? null,
+      localLoginEnabled: Boolean(row.local_login_enabled),
+      localLoginUpdatedAt: toIsoString(row.local_login_updated_at),
+    });
+  } catch (error) {
+    return failure(
+      error instanceof Error
+        ? error
+        : new Error('Failed to get user local-login state')
+    );
+  }
+}
+
+export async function setUserLocalLoginEnabledByUserId(
+  userId: string,
+  enabled: boolean
+): Promise<Result<UserLocalLoginState | null>> {
+  const normalizedUserId = userId.trim();
+  if (!normalizedUserId) {
+    return failure(new Error('userId is required'));
+  }
+
+  const pool = getPgPool();
+  try {
+    const query = await pool.query<ProfileLocalLoginStateRow>(
+      `
+      UPDATE profiles
+      SET
+        local_login_enabled = $2,
+        local_login_updated_at = NOW(),
+        updated_at = NOW()
+      WHERE id = $1::uuid
+      RETURNING
+        id::text AS id,
+        email,
+        auth_source,
+        local_login_enabled,
+        local_login_updated_at
+      `,
+      [normalizedUserId, enabled]
+    );
+
+    const row = query.rows[0];
+    if (!row) {
+      return success(null);
+    }
+
+    return success({
+      userId: row.id,
+      email: row.email ?? null,
+      authSource: row.auth_source ?? null,
+      localLoginEnabled: Boolean(row.local_login_enabled),
+      localLoginUpdatedAt: toIsoString(row.local_login_updated_at),
+    });
+  } catch (error) {
+    return failure(
+      error instanceof Error
+        ? error
+        : new Error('Failed to update user local-login state')
     );
   }
 }
