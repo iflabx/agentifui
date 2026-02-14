@@ -156,12 +156,52 @@ function parseGenericOAuthProvidersFromEnv(rawValue?: string): {
   }
 }
 
+function stripTrailingSlash(value: string): string {
+  return value.endsWith('/') ? value.slice(0, -1) : value;
+}
+
+function issuerFromDiscoveryUrl(discoveryUrl?: string): string | null {
+  if (!discoveryUrl || !discoveryUrl.trim()) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(discoveryUrl.trim());
+    const marker = '/.well-known/';
+    const markerIndex = parsed.pathname.indexOf(marker);
+    const basePath =
+      markerIndex >= 0
+        ? parsed.pathname.slice(0, markerIndex)
+        : parsed.pathname;
+    const normalizedPath = basePath === '/' ? '' : stripTrailingSlash(basePath);
+    return `${parsed.origin}${normalizedPath}`;
+  } catch {
+    return null;
+  }
+}
+
 const parsedGenericOAuthProviders = parseGenericOAuthProvidersFromEnv(
   process.env.BETTER_AUTH_GENERIC_OAUTH_PROVIDERS_JSON
 );
 
 parsedGenericOAuthProviders.warnings.forEach(message => {
   console.warn(message);
+});
+
+const providerIssuerMap = new Map<string, string>();
+
+parsedSsoProviders.providers.forEach(provider => {
+  providerIssuerMap.set(
+    provider.providerId,
+    stripTrailingSlash(provider.oidcConfig.issuer)
+  );
+});
+
+parsedGenericOAuthProviders.providers.forEach(provider => {
+  const issuer = issuerFromDiscoveryUrl(provider.discoveryUrl);
+  if (issuer) {
+    providerIssuerMap.set(provider.providerId, issuer);
+  }
 });
 
 export function getPublicSsoProviders() {
@@ -174,11 +214,25 @@ export function getPublicSsoProviders() {
   }));
 }
 
+export function getAuthProviderIssuer(providerId: string): string | null {
+  const normalizedProviderId = providerId.trim();
+  if (!normalizedProviderId) {
+    return null;
+  }
+
+  return providerIssuerMap.get(normalizedProviderId) ?? null;
+}
+
 export const auth = betterAuth({
   baseURL: getBaseUrl(),
   basePath: BETTER_AUTH_BASE_PATH,
   secret: getSecret(),
   database: memoryAdapter(getMemoryDb(), {}),
+  advanced: {
+    database: {
+      generateId: 'uuid',
+    },
+  },
   emailAndPassword: {
     enabled: true,
   },

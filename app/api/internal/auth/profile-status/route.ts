@@ -1,41 +1,33 @@
-import { auth } from '@lib/auth/better-auth/server';
-import { getPgPool } from '@lib/server/pg/pool';
+import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
 
 import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 
-type ProfileRow = {
-  role: string | null;
-  status: string | null;
-};
-
 export async function GET(request: Request) {
   try {
-    const session = await auth.api.getSession({
-      headers: request.headers,
-    });
-    const userId = session?.user?.id;
-
-    if (!userId) {
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+    const resolvedIdentity = await resolveSessionIdentity(request.headers);
+    if (!resolvedIdentity.success) {
+      console.error(
+        '[InternalAuthProfileStatus] failed to resolve session identity:',
+        resolvedIdentity.error
+      );
+      return NextResponse.json(
+        {
+          error: 'profile_status_failed',
+        },
+        { status: 500 }
+      );
     }
 
-    const pool = getPgPool();
-    const result = await pool.query<ProfileRow>(
-      'SELECT role, status FROM profiles WHERE id = $1 LIMIT 1',
-      [userId]
-    );
-    const profile = result.rows[0] ?? null;
-
-    if (!profile) {
-      return NextResponse.json({ error: 'profile_not_found' }, { status: 404 });
+    if (!resolvedIdentity.data) {
+      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
     }
 
     return NextResponse.json(
       {
-        role: profile.role,
-        status: profile.status,
+        role: resolvedIdentity.data.role,
+        status: resolvedIdentity.data.status,
       },
       {
         status: 200,
