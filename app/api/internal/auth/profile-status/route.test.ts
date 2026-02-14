@@ -79,6 +79,8 @@ describe('Internal Auth Profile Status Route', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('Cache-Control')).toBe('no-store');
     expect(payload).toEqual({
+      userId: '00000000-0000-4000-8000-000000000010',
+      authUserId: '00000000-0000-4000-8000-000000000010',
       role: 'admin',
       status: 'active',
     });

@@ -26,6 +26,8 @@ export async function GET(request: Request) {
 
     return NextResponse.json(
       {
+        userId: resolvedIdentity.data.userId,
+        authUserId: resolvedIdentity.data.authUserId,
         role: resolvedIdentity.data.role,
         status: resolvedIdentity.data.status,
       },
