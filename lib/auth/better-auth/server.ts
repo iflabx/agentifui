@@ -4,11 +4,14 @@ import { memoryAdapter } from 'better-auth/adapters/memory';
 import { nextCookies } from 'better-auth/next-js';
 import { genericOAuth } from 'better-auth/plugins/generic-oauth';
 import type { GenericOAuthConfig } from 'better-auth/plugins/generic-oauth';
+import { Pool } from 'pg';
 
 import { parseSsoProvidersFromEnv, toDefaultSsoConfig } from './sso-providers';
 
 const BETTER_AUTH_BASE_PATH = '/api/auth/better';
 const MEMORY_DB_KEY = '__agentifui_better_auth_memory_db__';
+const BETTER_AUTH_KYSELY_KEY = '__agentifui_better_auth_kysely__';
+type KyselyDb = unknown;
 
 function getBaseUrl(): string {
   if (process.env.BETTER_AUTH_URL) {
@@ -52,6 +55,83 @@ function getMemoryDb() {
   });
 
   return db;
+}
+
+function resolveDatabaseUrl(): string | null {
+  const fromPrimary = process.env.DATABASE_URL?.trim();
+  if (fromPrimary) {
+    return fromPrimary;
+  }
+
+  const fallback = process.env.PGURL?.trim();
+  if (fallback) {
+    return fallback;
+  }
+
+  return null;
+}
+
+function loadKyselyRuntime(): {
+  Kysely: new (config: unknown) => unknown;
+  PostgresDialect: new (config: unknown) => unknown;
+} {
+  const runtimeRequire = eval('require') as (id: string) => unknown;
+
+  try {
+    return runtimeRequire('kysely') as {
+      Kysely: new (config: unknown) => unknown;
+      PostgresDialect: new (config: unknown) => unknown;
+    };
+  } catch {
+    return runtimeRequire('better-auth/node_modules/kysely') as {
+      Kysely: new (config: unknown) => unknown;
+      PostgresDialect: new (config: unknown) => unknown;
+    };
+  }
+}
+
+function getKyselyDb(connectionString: string) {
+  const globalState = globalThis as unknown as Record<string, unknown>;
+  const existing = globalState[BETTER_AUTH_KYSELY_KEY] as KyselyDb | undefined;
+  if (existing) {
+    return existing;
+  }
+
+  const { Kysely, PostgresDialect } = loadKyselyRuntime();
+  const pool = new Pool({
+    connectionString,
+    max: Number(process.env.PG_POOL_MAX || 10),
+    idleTimeoutMillis: Number(process.env.PG_POOL_IDLE_MS || 30000),
+    connectionTimeoutMillis: Number(process.env.PG_POOL_CONNECT_MS || 5000),
+  });
+
+  const db = new Kysely({
+    dialect: new PostgresDialect({ pool }),
+  }) as KyselyDb;
+
+  globalState[BETTER_AUTH_KYSELY_KEY] = db;
+  return db;
+}
+
+function getAuthDatabaseConfig() {
+  const databaseUrl = resolveDatabaseUrl();
+  if (databaseUrl) {
+    return {
+      db: getKyselyDb(databaseUrl),
+      type: 'postgres' as const,
+    };
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'DATABASE_URL (or PGURL) is required in production when better-auth is enabled'
+    );
+  }
+
+  console.warn(
+    '[better-auth] DATABASE_URL/PGURL is missing; using in-memory adapter (dev/test only)'
+  );
+  return memoryAdapter(getMemoryDb(), {});
 }
 
 const parsedSsoProviders = parseSsoProvidersFromEnv(
@@ -227,7 +307,49 @@ export const auth = betterAuth({
   baseURL: getBaseUrl(),
   basePath: BETTER_AUTH_BASE_PATH,
   secret: getSecret(),
-  database: memoryAdapter(getMemoryDb(), {}),
+  database: getAuthDatabaseConfig(),
+  user: {
+    modelName: 'auth_users',
+    fields: {
+      emailVerified: 'email_verified',
+      createdAt: 'created_at',
+      updatedAt: 'updated_at',
+    },
+  },
+  session: {
+    modelName: 'auth_sessions',
+    fields: {
+      expiresAt: 'expires_at',
+      createdAt: 'created_at',
+      updatedAt: 'updated_at',
+      ipAddress: 'ip_address',
+      userAgent: 'user_agent',
+      userId: 'user_id',
+    },
+  },
+  account: {
+    modelName: 'auth_accounts',
+    fields: {
+      accountId: 'account_id',
+      providerId: 'provider_id',
+      userId: 'user_id',
+      accessToken: 'access_token',
+      refreshToken: 'refresh_token',
+      idToken: 'id_token',
+      accessTokenExpiresAt: 'access_token_expires_at',
+      refreshTokenExpiresAt: 'refresh_token_expires_at',
+      createdAt: 'created_at',
+      updatedAt: 'updated_at',
+    },
+  },
+  verification: {
+    modelName: 'auth_verifications',
+    fields: {
+      expiresAt: 'expires_at',
+      createdAt: 'created_at',
+      updatedAt: 'updated_at',
+    },
+  },
   advanced: {
     database: {
       generateId: 'uuid',
