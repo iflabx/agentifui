@@ -24,7 +24,7 @@ interface BetterAuthSsoProvider {
   domain: string;
   displayName: string;
   icon: string;
-  mode: 'direct' | 'cas-bridge';
+  mode: 'native' | 'cas-bridge';
 }
 
 export function SSOButton({

@@ -462,8 +462,8 @@ export const auth = betterAuth({
       updatedAt: 'updated_at',
     },
     accountLinking: {
-      enabled: true,
-      // Enforce explicit linking only; never merge users just because emails match.
+      // Enforce strict `1 UUID = 1 IdP`: disable both implicit and explicit linking.
+      enabled: false,
       disableImplicitLinking: true,
     },
   },
