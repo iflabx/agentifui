@@ -1,5 +1,5 @@
 import { MediaResponseHandler } from '@lib/api/dify/handlers/media-response-handler';
-import { auth } from '@lib/auth/better-auth/server';
+import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
 import { getDifyAppConfig } from '@lib/config/dify-config';
 import { type DifyAppConfig } from '@lib/config/dify-config';
 import {
@@ -74,17 +74,17 @@ async function proxyToDify(
   // modification point 1: receive context object containing params
   context: { params: Promise<DifyApiParams> } // Unified use of Promise type
 ) {
-  // 🔒 security: authenticate user before processing request
-  let session: Awaited<ReturnType<typeof auth.api.getSession>> | null = null;
-  try {
-    session = await auth.api.getSession({
-      headers: req.headers,
-    });
-  } catch (error) {
-    console.warn('[Dify API] Failed to resolve auth session:', error);
+  // Security: resolve user identity via the unified auth->internal UUID path.
+  const resolvedIdentity = await resolveSessionIdentity(req.headers);
+  if (!resolvedIdentity.success) {
+    console.warn(
+      '[Dify API] Failed to resolve session identity:',
+      resolvedIdentity.error
+    );
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  if (!session?.user?.id) {
+  if (!resolvedIdentity.data) {
     console.log(
       `[Dify API] Unauthorized access attempt to appId: ${(await context.params).appId}`
     );
