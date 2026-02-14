@@ -62,20 +62,29 @@ export const WorkflowInputForm = React.forwardRef<
           instanceId
         );
 
-        // Directly get the configuration of the specified instanceId from the database
+        // Directly get the configuration of the specified instanceId from internal API
         try {
-          // Import database query function
-          const { createClient } = await import('@lib/supabase/client');
-          const supabase = createClient();
+          const response = await fetch(
+            `/api/internal/apps?instanceId=${encodeURIComponent(instanceId)}`,
+            {
+              method: 'GET',
+              credentials: 'include',
+            }
+          );
 
-          // Query the specified service instance
-          const { data: serviceInstance, error } = await supabase
-            .from('service_instances')
-            .select('*')
-            .eq('instance_id', instanceId)
-            .single();
+          if (!response.ok) {
+            throw new Error(t('errors.instanceNotFound', { instanceId }));
+          }
 
-          if (error || !serviceInstance) {
+          const payload = (await response.json()) as {
+            success: boolean;
+            app?: {
+              config?: Record<string, any>;
+            };
+          };
+
+          const serviceInstance = payload.app;
+          if (!payload.success || !serviceInstance) {
             throw new Error(t('errors.instanceNotFound', { instanceId }));
           }
 

@@ -215,12 +215,21 @@ export const usePermissionManagementStore = create<PermissionManagementStore>(
       }));
 
       try {
-        const { updateServiceInstance } = await import(
-          '@lib/db/service-instances'
-        );
-        const result = await updateServiceInstance(appId, { visibility });
+        const response = await fetch('/api/internal/apps', {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ id: appId, visibility }),
+        });
 
-        if (result.success) {
+        const payload = (await response.json()) as {
+          success: boolean;
+          error?: string;
+        };
+
+        if (response.ok && payload.success) {
           // Data cleanup logic after permission switch
           // When switching from group_only to other permissions, clean up related records in the group permission table
           // If switching to non-group_only permission, remove all related group permission records
@@ -258,7 +267,7 @@ export const usePermissionManagementStore = create<PermissionManagementStore>(
 
           return true;
         } else {
-          throw new Error(result.error.message);
+          throw new Error(payload.error || 'Failed to update app visibility');
         }
       } catch (error: any) {
         console.error('Failed to update app visibility:', error);

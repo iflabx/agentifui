@@ -1,52 +1,50 @@
 /**
  * Database query functions related to user management.
- *
- * This file contains all database operations required for the user management interface,
- * including user list queries, user details, role management, status management, etc.
+ * Uses PostgreSQL directly on server and internal API bridge on browser.
  */
-import { createClient } from '@lib/supabase/client';
-import type { Database } from '@lib/supabase/types';
+import type { AccountStatus, Profile, UserRole } from '@lib/types/database';
 import { Result, failure, success } from '@lib/types/result';
 
-// Type definitions
-type Profile = Database['public']['Tables']['profiles']['Row'];
-type ProfileUpdate = Database['public']['Tables']['profiles']['Update'];
-type UserRole = Database['public']['Enums']['user_role'];
-type AccountStatus = Database['public']['Enums']['account_status'];
+import { callInternalDataAction } from './internal-data-api';
 
-// Extended user information, including data from auth.users table
+type ProfileUpdate = Partial<Omit<Profile, 'id' | 'created_at'>>;
+
+const IS_BROWSER = typeof window !== 'undefined';
+
+async function getPool() {
+  const { getPgPool } = await import('@lib/server/pg/pool');
+  return getPgPool();
+}
+
+// Extended user information, including profile and group info
 export interface EnhancedUser {
   id: string;
-  email?: string;
-  phone?: string;
-  email_confirmed_at?: string;
-  phone_confirmed_at?: string;
+  email?: string | null;
+  phone?: string | null;
+  email_confirmed_at?: string | null;
+  phone_confirmed_at?: string | null;
   created_at: string;
   updated_at: string;
-  last_sign_in_at?: string;
-  // profiles table info
-  full_name?: string;
-  username?: string;
-  avatar_url?: string;
+  last_sign_in_at?: string | null;
+  full_name?: string | null;
+  username?: string | null;
+  avatar_url?: string | null;
   role: UserRole;
   status: AccountStatus;
   auth_source?: string;
-  sso_provider_id?: string;
-  employee_number?: string | null; // Optional: employee/student number (only for SSO users)
+  sso_provider_id?: string | null;
+  employee_number?: string | null;
   profile_created_at: string;
   profile_updated_at: string;
-  last_login?: string;
-  // Group info
+  last_login?: string | null;
   groups?: Array<{
     id: string;
     name: string;
     description?: string | null;
     joined_at: string;
   }>;
-  // Note: Organization-related fields have been removed, replaced by group system
 }
 
-// User statistics information
 export interface UserStats {
   totalUsers: number;
   activeUsers: number;
@@ -60,22 +58,139 @@ export interface UserStats {
   newUsersThisMonth: number;
 }
 
-// User filter parameters
 export interface UserFilters {
   role?: UserRole;
   status?: AccountStatus;
   auth_source?: string;
-  search?: string; // Search email, username, full name
+  search?: string;
   sortBy?: 'created_at' | 'last_sign_in_at' | 'email' | 'full_name';
   sortOrder?: 'asc' | 'desc';
   page?: number;
   pageSize?: number;
 }
 
-const supabase = createClient();
+const USER_SORT_COLUMN_MAP: Record<
+  NonNullable<UserFilters['sortBy']>,
+  string
+> = {
+  created_at: 'p.created_at',
+  last_sign_in_at: 'p.last_login',
+  email: 'p.email',
+  full_name: 'p.full_name',
+};
+
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, match => `\\${match}`);
+}
+
+function buildUserFilterWhereClause(filters: UserFilters): {
+  sql: string;
+  params: unknown[];
+} {
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+
+  if (filters.role) {
+    params.push(filters.role);
+    clauses.push(`p.role = $${params.length}`);
+  }
+
+  if (filters.status) {
+    params.push(filters.status);
+    clauses.push(`p.status = $${params.length}`);
+  }
+
+  if (filters.auth_source) {
+    params.push(filters.auth_source);
+    clauses.push(`p.auth_source = $${params.length}`);
+  }
+
+  if (filters.search?.trim()) {
+    params.push(`%${escapeLikePattern(filters.search.trim())}%`);
+    clauses.push(
+      `(p.full_name ILIKE $${params.length} ESCAPE '\\' OR p.username ILIKE $${params.length} ESCAPE '\\')`
+    );
+  }
+
+  return {
+    sql: clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '',
+    params,
+  };
+}
+
+function toEnhancedUser(
+  profile: Profile,
+  groups: EnhancedUser['groups']
+): EnhancedUser {
+  return {
+    id: profile.id,
+    email: profile.email || null,
+    phone: profile.phone || null,
+    email_confirmed_at: null,
+    phone_confirmed_at: null,
+    created_at: profile.created_at,
+    updated_at: profile.updated_at,
+    last_sign_in_at: profile.last_login,
+    full_name: profile.full_name || null,
+    username: profile.username || null,
+    avatar_url: profile.avatar_url || null,
+    role: profile.role,
+    status: profile.status,
+    auth_source: profile.auth_source,
+    sso_provider_id: profile.sso_provider_id,
+    employee_number: profile.employee_number || null,
+    profile_created_at: profile.created_at,
+    profile_updated_at: profile.updated_at,
+    last_login: profile.last_login,
+    groups,
+  };
+}
+
+async function loadGroupsByUserIdMap(userIds: string[]) {
+  if (userIds.length === 0) {
+    return new Map<string, NonNullable<EnhancedUser['groups']>>();
+  }
+
+  const pool = await getPool();
+  const { rows } = await pool.query<{
+    user_id: string;
+    joined_at: string;
+    group_id: string;
+    group_name: string;
+    group_description: string | null;
+  }>(
+    `
+      SELECT
+        gm.user_id,
+        gm.created_at::text AS joined_at,
+        g.id::text AS group_id,
+        g.name AS group_name,
+        g.description AS group_description
+      FROM group_members gm
+      INNER JOIN groups g ON g.id = gm.group_id
+      WHERE gm.user_id = ANY($1::uuid[])
+      ORDER BY gm.created_at DESC
+    `,
+    [userIds]
+  );
+
+  const groupsByUser = new Map<string, NonNullable<EnhancedUser['groups']>>();
+  rows.forEach(row => {
+    const current = groupsByUser.get(row.user_id) || [];
+    current.push({
+      id: row.group_id,
+      name: row.group_name,
+      description: row.group_description,
+      joined_at: row.joined_at,
+    });
+    groupsByUser.set(row.user_id, current);
+  });
+
+  return groupsByUser;
+}
 
 /**
- * Get user list (using secure admin function)
+ * Get user list.
  */
 export async function getUserList(filters: UserFilters = {}): Promise<
   Result<{
@@ -86,150 +201,46 @@ export async function getUserList(filters: UserFilters = {}): Promise<
     totalPages: number;
   }>
 > {
+  if (IS_BROWSER) {
+    return callInternalDataAction('users.getUserList', { filters });
+  }
+
   try {
-    const {
-      role,
-      status,
-      auth_source,
-      search,
-      sortBy = 'created_at',
-      sortOrder = 'desc',
-      page = 1,
-      pageSize = 20,
-    } = filters;
+    const page = Number(filters.page || 1);
+    const pageSize = Number(filters.pageSize || 20);
+    const sortBy = filters.sortBy || 'created_at';
+    const sortOrder = filters.sortOrder === 'asc' ? 'ASC' : 'DESC';
+    const sortColumn =
+      USER_SORT_COLUMN_MAP[sortBy] || USER_SORT_COLUMN_MAP.created_at;
 
-    // Get user info, including email and phone from auth.users table
-    let query = supabase.from('profiles').select('*', { count: 'exact' });
+    const pool = await getPool();
+    const where = buildUserFilterWhereClause(filters);
 
-    // Apply filter conditions
-    if (role) {
-      query = query.eq('role', role);
-    }
-    if (status) {
-      query = query.eq('status', status);
-    }
-    if (auth_source) {
-      query = query.eq('auth_source', auth_source);
-    }
-    if (search) {
-      query = query.or(
-        `full_name.ilike.%${search}%,username.ilike.%${search}%`
-      );
-    }
+    const countQuery = await pool.query<{ total: number }>(
+      `SELECT COUNT(*)::int AS total FROM profiles p ${where.sql}`,
+      where.params
+    );
+    const total = Number(countQuery.rows[0]?.total || 0);
 
-    // Note: Organization and department filters have been removed, replaced by group system
+    const limitParamIndex = where.params.length + 1;
+    const offsetParamIndex = where.params.length + 2;
+    const offset = Math.max(0, (page - 1) * pageSize);
+    const userRows = await pool.query<Profile>(
+      `
+        SELECT p.*
+        FROM profiles p
+        ${where.sql}
+        ORDER BY ${sortColumn} ${sortOrder} NULLS LAST, p.id DESC
+        LIMIT $${limitParamIndex}
+        OFFSET $${offsetParamIndex}
+      `,
+      [...where.params, pageSize, offset]
+    );
 
-    // Apply sorting
-    query = query.order(sortBy, { ascending: sortOrder === 'asc' });
-
-    // Apply pagination
-    const from = (page - 1) * pageSize;
-    const to = from + pageSize - 1;
-    query = query.range(from, to);
-
-    const { data: profiles, error: profilesError, count } = await query;
-
-    if (profilesError) {
-      console.error('Failed to get user list:', profilesError);
-      return failure(
-        new Error(`Failed to get user list: ${profilesError.message}`)
-      );
-    }
-
-    // Get email and phone info from auth.users table
-    // For admin, show full contact info
-    const userIds = (profiles || []).map(p => p.id);
-    let authUsers: any[] = [];
-
-    if (userIds.length > 0) {
-      // Get auth.users info via RPC function (requires admin privileges)
-      const { data: authData, error: authError } = await supabase.rpc(
-        'get_admin_users',
-        { user_ids: userIds }
-      );
-
-      if (authError) {
-        console.error('Failed to get auth.users info:', {
-          error: authError,
-          userIdsCount: userIds.length,
-          errorCode: authError.code,
-          errorMessage: authError.message,
-          errorDetails: authError.details,
-        });
-        // If RPC call fails, continue processing but log the error
-      } else if (authData) {
-        console.log('Successfully got auth data, user count:', authData.length);
-        authUsers = authData;
-      } else {
-        console.warn('RPC call succeeded but returned empty data');
-      }
-    }
-
-    const total = count || 0;
-    const totalPages = Math.ceil(total / pageSize);
-
-    // Merge profiles and auth.users data, and get group info
-    const enhancedUsers: EnhancedUser[] = await Promise.all(
-      (profiles || []).map(async (profile: any) => {
-        const authUser = authUsers.find(au => au.id === profile.id);
-
-        // Get user's group info
-        let userGroups: Array<{
-          id: string;
-          name: string;
-          description?: string | null;
-          joined_at: string;
-        }> = [];
-
-        try {
-          const { data: groupData, error: groupError } = await supabase
-            .from('group_members')
-            .select(
-              `
-              created_at,
-              groups:group_id(id, name, description)
-            `
-            )
-            .eq('user_id', profile.id);
-
-          if (!groupError && groupData) {
-            userGroups = groupData.map((item: any) => ({
-              id: item.groups.id,
-              name: item.groups.name,
-              description: item.groups.description,
-              joined_at: item.created_at,
-            }));
-          }
-        } catch (error) {
-          console.warn(
-            `Failed to get group information for user ${profile.id}:`,
-            error
-          );
-        }
-
-        return {
-          id: profile.id,
-          email: authUser?.email || null,
-          phone: authUser?.phone || null,
-          email_confirmed_at: authUser?.email_confirmed_at,
-          phone_confirmed_at: authUser?.phone_confirmed_at,
-          created_at: authUser?.created_at || profile.created_at,
-          updated_at: authUser?.updated_at || profile.updated_at,
-          last_sign_in_at: authUser?.last_sign_in_at,
-          full_name: profile.full_name,
-          username: profile.username,
-          avatar_url: profile.avatar_url,
-          role: profile.role,
-          status: profile.status,
-          auth_source: profile.auth_source,
-          sso_provider_id: profile.sso_provider_id,
-          employee_number: profile.employee_number,
-          profile_created_at: profile.created_at,
-          profile_updated_at: profile.updated_at,
-          last_login: profile.last_login,
-          groups: userGroups,
-        };
-      })
+    const profiles = userRows.rows || [];
+    const groupsByUser = await loadGroupsByUserIdMap(profiles.map(p => p.id));
+    const enhancedUsers = profiles.map(profile =>
+      toEnhancedUser(profile, groupsByUser.get(profile.id) || [])
     );
 
     return success({
@@ -237,7 +248,7 @@ export async function getUserList(filters: UserFilters = {}): Promise<
       total,
       page,
       pageSize,
-      totalPages,
+      totalPages: Math.ceil(total / pageSize),
     });
   } catch (error) {
     console.error('Exception while getting user list:', error);
@@ -248,20 +259,33 @@ export async function getUserList(filters: UserFilters = {}): Promise<
 }
 
 /**
- * Get user statistics (using database function)
+ * Get user statistics.
  */
 export async function getUserStats(): Promise<Result<UserStats>> {
+  if (IS_BROWSER) {
+    return callInternalDataAction('users.getUserStats');
+  }
+
   try {
-    const { data, error } = await supabase.rpc('get_user_stats');
+    const pool = await getPool();
+    const { rows } = await pool.query<UserStats>(
+      `
+        SELECT
+          COUNT(*)::int AS "totalUsers",
+          COUNT(*) FILTER (WHERE status = 'active')::int AS "activeUsers",
+          COUNT(*) FILTER (WHERE status = 'suspended')::int AS "suspendedUsers",
+          COUNT(*) FILTER (WHERE status = 'pending')::int AS "pendingUsers",
+          COUNT(*) FILTER (WHERE role = 'admin')::int AS "adminUsers",
+          COUNT(*) FILTER (WHERE role = 'manager')::int AS "managerUsers",
+          COUNT(*) FILTER (WHERE role = 'user')::int AS "regularUsers",
+          COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE)::int AS "newUsersToday",
+          COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE - INTERVAL '7 days')::int AS "newUsersThisWeek",
+          COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE - INTERVAL '30 days')::int AS "newUsersThisMonth"
+        FROM profiles
+      `
+    );
 
-    if (error) {
-      console.error('Failed to get user statistics:', error);
-      return failure(
-        new Error(`Failed to get user statistics: ${error.message}`)
-      );
-    }
-
-    return success(data as UserStats);
+    return success(rows[0]);
   } catch (error) {
     console.error('Exception while getting user statistics:', error);
     return failure(
@@ -273,45 +297,29 @@ export async function getUserStats(): Promise<Result<UserStats>> {
 }
 
 /**
- * Get detailed information of a single user (using secure database function, does not expose sensitive auth.users data)
+ * Get detailed information for a single user.
  */
 export async function getUserById(
   userId: string
 ): Promise<Result<EnhancedUser | null>> {
+  if (IS_BROWSER) {
+    return callInternalDataAction('users.getUserById', { userId });
+  }
+
   try {
-    const { data, error } = await supabase.rpc('get_user_detail_for_admin', {
-      target_user_id: userId,
-    });
+    const pool = await getPool();
+    const { rows } = await pool.query<Profile>(
+      `SELECT * FROM profiles WHERE id = $1::uuid LIMIT 1`,
+      [userId]
+    );
 
-    if (error) {
-      console.error('Failed to get user info:', error);
-      return failure(new Error(`Failed to get user info: ${error.message}`));
-    }
-
-    if (!data || data.length === 0) {
+    const profile = rows[0];
+    if (!profile) {
       return success(null);
     }
 
-    // Transform data format to be compatible with existing interface
-    const userDetail = data[0];
-    const enhancedUser: EnhancedUser = {
-      ...userDetail,
-      // Remap fields returned from secure function
-      profile_created_at: userDetail.created_at,
-      profile_updated_at: userDetail.updated_at,
-      // For sensitive info, use safe alternative fields
-      email: userDetail.has_email ? userDetail.email : null,
-      phone: userDetail.has_phone ? userDetail.phone : null,
-      email_confirmed_at: userDetail.email_confirmed
-        ? new Date().toISOString()
-        : null,
-      phone_confirmed_at: userDetail.phone_confirmed
-        ? new Date().toISOString()
-        : null,
-      groups: userDetail.groups,
-    };
-
-    return success(enhancedUser);
+    const groupsByUser = await loadGroupsByUserIdMap([profile.id]);
+    return success(toEnhancedUser(profile, groupsByUser.get(profile.id) || []));
   } catch (error) {
     console.error('Exception while getting user info:', error);
     return failure(
@@ -320,31 +328,64 @@ export async function getUserById(
   }
 }
 
+function buildUpdateSetClause(
+  updates: Record<string, unknown>,
+  startIndex: number = 1
+): { clause: string; values: unknown[] } {
+  const entries = Object.entries(updates).filter(
+    ([, value]) => value !== undefined
+  );
+  const setClauses = entries.map(
+    ([column], index) => `${column} = $${startIndex + index}`
+  );
+  const values = entries.map(([, value]) => value);
+  return {
+    clause: setClauses.join(', '),
+    values,
+  };
+}
+
 /**
- * Update user profile
+ * Update user profile.
  */
 export async function updateUserProfile(
   userId: string,
   updates: Partial<ProfileUpdate>
 ): Promise<Result<Profile>> {
-  try {
-    const { data, error } = await supabase
-      .from('profiles')
-      .update({
-        ...updates,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', userId)
-      .select()
-      .single();
+  if (IS_BROWSER) {
+    return callInternalDataAction('users.updateUserProfile', {
+      userId,
+      updates,
+    });
+  }
 
-    if (error) {
-      return failure(
-        new Error(`Failed to update user profile: ${error.message}`)
-      );
+  try {
+    const updateData = {
+      ...updates,
+      updated_at: new Date().toISOString(),
+    } as Record<string, unknown>;
+    const setClause = buildUpdateSetClause(updateData, 1);
+    if (!setClause.clause) {
+      return failure(new Error('No valid fields to update'));
     }
 
-    return success(data);
+    const pool = await getPool();
+    const { rows } = await pool.query<Profile>(
+      `
+        UPDATE profiles
+        SET ${setClause.clause}
+        WHERE id = $${setClause.values.length + 1}::uuid
+        RETURNING *
+      `,
+      [...setClause.values, userId]
+    );
+
+    const profile = rows[0];
+    if (!profile) {
+      return failure(new Error('User profile not found'));
+    }
+
+    return success(profile);
   } catch (error) {
     console.error('Exception while updating user profile:', error);
     return failure(
@@ -356,7 +397,7 @@ export async function updateUserProfile(
 }
 
 /**
- * Update user role
+ * Update user role.
  */
 export async function updateUserRole(
   userId: string,
@@ -366,7 +407,7 @@ export async function updateUserRole(
 }
 
 /**
- * Update user status
+ * Update user status.
  */
 export async function updateUserStatus(
   userId: string,
@@ -376,22 +417,22 @@ export async function updateUserStatus(
 }
 
 /**
- * Delete user (use secure RPC function to delete auth.users record, triggers cascade delete)
+ * Delete user.
  */
 export async function deleteUser(userId: string): Promise<Result<void>> {
+  if (IS_BROWSER) {
+    return callInternalDataAction('users.deleteUser', { userId });
+  }
+
   try {
-    const { data, error } = await supabase.rpc('safe_delete_user', {
-      target_user_id: userId,
-    });
+    const pool = await getPool();
+    const result = await pool.query(
+      `DELETE FROM profiles WHERE id = $1::uuid`,
+      [userId]
+    );
 
-    if (error) {
-      return failure(new Error(`Failed to delete user: ${error.message}`));
-    }
-
-    if (!data) {
-      return failure(
-        new Error('Failed to delete user: operation not successful')
-      );
+    if (!result.rowCount) {
+      return failure(new Error('User not found'));
     }
 
     return success(undefined);
@@ -404,7 +445,7 @@ export async function deleteUser(userId: string): Promise<Result<void>> {
 }
 
 /**
- * Create new user profile (only creates profile, requires existing auth.users record)
+ * Create new user profile.
  */
 export async function createUserProfile(
   userId: string,
@@ -417,25 +458,53 @@ export async function createUserProfile(
     auth_source?: string;
   }
 ): Promise<Result<Profile>> {
+  if (IS_BROWSER) {
+    return callInternalDataAction('users.createUserProfile', {
+      userId,
+      profileData,
+    });
+  }
+
   try {
-    const { data, error } = await supabase
-      .from('profiles')
-      .insert({
-        id: userId,
-        ...profileData,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
+    const pool = await getPool();
+    const { rows } = await pool.query<Profile>(
+      `
+        INSERT INTO profiles (
+          id,
+          full_name,
+          username,
+          avatar_url,
+          role,
+          status,
+          auth_source,
+          created_at,
+          updated_at
+        )
+        VALUES (
+          $1::uuid,
+          $2,
+          $3,
+          $4,
+          COALESCE($5::user_role, 'user'),
+          COALESCE($6::account_status, 'active'),
+          COALESCE($7, 'password'),
+          NOW(),
+          NOW()
+        )
+        RETURNING *
+      `,
+      [
+        userId,
+        profileData.full_name || null,
+        profileData.username || null,
+        profileData.avatar_url || null,
+        profileData.role || null,
+        profileData.status || null,
+        profileData.auth_source || null,
+      ]
+    );
 
-    if (error) {
-      return failure(
-        new Error(`Failed to create user profile: ${error.message}`)
-      );
-    }
-
-    return success(data);
+    return success(rows[0]);
   } catch (error) {
     console.error('Exception while creating user profile:', error);
     return failure(
@@ -447,26 +516,34 @@ export async function createUserProfile(
 }
 
 /**
- * Batch update user status
+ * Batch update user status.
  */
 export async function batchUpdateUserStatus(
   userIds: string[],
   status: AccountStatus
 ): Promise<Result<void>> {
-  try {
-    const { error } = await supabase
-      .from('profiles')
-      .update({
-        status,
-        updated_at: new Date().toISOString(),
-      })
-      .in('id', userIds);
+  if (IS_BROWSER) {
+    return callInternalDataAction('users.batchUpdateUserStatus', {
+      userIds,
+      status,
+    });
+  }
 
-    if (error) {
-      return failure(
-        new Error(`Failed to batch update user status: ${error.message}`)
-      );
+  try {
+    if (userIds.length === 0) {
+      return success(undefined);
     }
+
+    const pool = await getPool();
+    await pool.query(
+      `
+        UPDATE profiles
+        SET status = $2::account_status,
+            updated_at = NOW()
+        WHERE id = ANY($1::uuid[])
+      `,
+      [userIds, status]
+    );
 
     return success(undefined);
   } catch (error) {
@@ -480,26 +557,34 @@ export async function batchUpdateUserStatus(
 }
 
 /**
- * Batch update user role
+ * Batch update user role.
  */
 export async function batchUpdateUserRole(
   userIds: string[],
   role: UserRole
 ): Promise<Result<void>> {
-  try {
-    const { error } = await supabase
-      .from('profiles')
-      .update({
-        role,
-        updated_at: new Date().toISOString(),
-      })
-      .in('id', userIds);
+  if (IS_BROWSER) {
+    return callInternalDataAction('users.batchUpdateUserRole', {
+      userIds,
+      role,
+    });
+  }
 
-    if (error) {
-      return failure(
-        new Error(`Failed to batch update user role: ${error.message}`)
-      );
+  try {
+    if (userIds.length === 0) {
+      return success(undefined);
     }
+
+    const pool = await getPool();
+    await pool.query(
+      `
+        UPDATE profiles
+        SET role = $2::user_role,
+            updated_at = NOW()
+        WHERE id = ANY($1::uuid[])
+      `,
+      [userIds, role]
+    );
 
     return success(undefined);
   } catch (error) {
@@ -512,4 +597,4 @@ export async function batchUpdateUserRole(
   }
 }
 
-// Note: Organization and department option functions have been removed, replaced by group system
+// Note: Organization and department option functions have been removed, replaced by group system.

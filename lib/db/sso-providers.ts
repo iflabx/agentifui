@@ -1,9 +1,7 @@
 /**
- * SSO Providers Database Operations
- * @description Handles all database operations for SSO providers management
- * @module lib/db/sso-providers
+ * SSO providers database operations.
+ * Uses PostgreSQL directly on server and internal API bridge on browser.
  */
-import { createClient } from '@lib/supabase/client';
 import {
   CreateSsoProviderData,
   SsoProtocol,
@@ -11,12 +9,15 @@ import {
 } from '@lib/types/database';
 import { Result, failure, success } from '@lib/types/result';
 
-// Keep compatibility with existing code patterns
-const supabase = createClient();
+import { callInternalDataAction } from './internal-data-api';
 
-/**
- * Filter options for SSO providers query
- */
+const IS_BROWSER = typeof window !== 'undefined';
+
+async function getPool() {
+  const { getPgPool } = await import('@lib/server/pg/pool');
+  return getPgPool();
+}
+
 export interface SsoProviderFilters {
   protocol?: SsoProtocol;
   enabled?: boolean;
@@ -27,9 +28,6 @@ export interface SsoProviderFilters {
   pageSize?: number;
 }
 
-/**
- * SSO provider statistics for admin dashboard
- */
 export interface SsoProviderStats {
   total: number;
   enabled: number;
@@ -37,11 +35,6 @@ export interface SsoProviderStats {
   byProtocol: Record<SsoProtocol, number>;
 }
 
-// CreateSsoProviderData is now defined in @lib/types/database
-
-/**
- * Update data for existing SSO provider
- */
 export interface UpdateSsoProviderData {
   name?: string;
   protocol?: SsoProtocol;
@@ -54,10 +47,52 @@ export interface UpdateSsoProviderData {
   button_text?: string | null;
 }
 
+const SSO_SORT_COLUMN_MAP: Record<
+  NonNullable<SsoProviderFilters['sortBy']>,
+  string
+> = {
+  name: 'name',
+  protocol: 'protocol',
+  created_at: 'created_at',
+  display_order: 'display_order',
+};
+
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, match => `\\${match}`);
+}
+
+function buildSsoWhereClause(filters: SsoProviderFilters): {
+  sql: string;
+  params: unknown[];
+} {
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+
+  if (filters.protocol) {
+    params.push(filters.protocol);
+    clauses.push(`protocol = $${params.length}::sso_protocol`);
+  }
+
+  if (filters.enabled !== undefined) {
+    params.push(filters.enabled);
+    clauses.push(`enabled = $${params.length}`);
+  }
+
+  if (filters.search?.trim()) {
+    params.push(`%${escapeLikePattern(filters.search.trim())}%`);
+    clauses.push(
+      `(name ILIKE $${params.length} ESCAPE '\\' OR button_text ILIKE $${params.length} ESCAPE '\\')`
+    );
+  }
+
+  return {
+    sql: clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '',
+    params,
+  };
+}
+
 /**
- * Fetch SSO providers list with filtering and pagination
- * @param filters - Query filters and pagination options
- * @returns Result containing providers list and pagination metadata
+ * Fetch SSO providers list with filtering and pagination.
  */
 export async function getSsoProviders(
   filters: SsoProviderFilters = {}
@@ -70,59 +105,46 @@ export async function getSsoProviders(
     totalPages: number;
   }>
 > {
+  if (IS_BROWSER) {
+    return callInternalDataAction('sso.getSsoProviders', { filters });
+  }
+
   try {
-    const {
-      protocol,
-      enabled,
-      search,
-      sortBy = 'display_order',
-      sortOrder = 'asc',
-      page = 1,
-      pageSize = 20,
-    } = filters;
+    const page = Number(filters.page || 1);
+    const pageSize = Number(filters.pageSize || 20);
+    const sortBy = filters.sortBy || 'display_order';
+    const sortOrder = filters.sortOrder === 'desc' ? 'DESC' : 'ASC';
+    const sortColumn = SSO_SORT_COLUMN_MAP[sortBy] || 'display_order';
+    const where = buildSsoWhereClause(filters);
 
-    let query = supabase.from('sso_providers').select('*', { count: 'exact' });
+    const pool = await getPool();
+    const countResult = await pool.query<{ total: number }>(
+      `SELECT COUNT(*)::int AS total FROM sso_providers ${where.sql}`,
+      where.params
+    );
+    const total = Number(countResult.rows[0]?.total || 0);
 
-    // Apply protocol filter
-    if (protocol) {
-      query = query.eq('protocol', protocol);
-    }
-
-    // Apply enabled status filter
-    if (enabled !== undefined) {
-      query = query.eq('enabled', enabled);
-    }
-
-    // Apply search filter on name and button_text
-    if (search) {
-      query = query.or(`name.ilike.%${search}%,button_text.ilike.%${search}%`);
-    }
-
-    // Apply sorting
-    query = query.order(sortBy, { ascending: sortOrder === 'asc' });
-
-    // Apply pagination
-    const from = (page - 1) * pageSize;
-    const to = from + pageSize - 1;
-    query = query.range(from, to);
-
-    const { data: providers, error, count } = await query;
-
-    if (error) {
-      console.error('Failed to fetch SSO providers:', error);
-      return failure(
-        new Error(`Failed to fetch SSO providers: ${error.message}`)
-      );
-    }
-
-    const totalPages = Math.ceil((count || 0) / pageSize);
+    const limitParamIndex = where.params.length + 1;
+    const offsetParamIndex = where.params.length + 2;
+    const offset = Math.max(0, (page - 1) * pageSize);
+    const providerResult = await pool.query<SsoProvider>(
+      `
+        SELECT *
+        FROM sso_providers
+        ${where.sql}
+        ORDER BY ${sortColumn} ${sortOrder}, id ASC
+        LIMIT $${limitParamIndex}
+        OFFSET $${offsetParamIndex}
+      `,
+      [...where.params, pageSize, offset]
+    );
 
     return success({
-      providers: providers || [],
-      total: count || 0,
+      providers: providerResult.rows || [],
+      total,
       page,
       pageSize,
-      totalPages,
+      totalPages: Math.ceil(total / pageSize),
     });
   } catch (error) {
     return failure(error instanceof Error ? error : new Error(String(error)));
@@ -130,26 +152,24 @@ export async function getSsoProviders(
 }
 
 /**
- * Get SSO provider statistics for admin dashboard
- * @returns Result containing provider statistics
+ * Get SSO provider statistics for admin dashboard.
  */
 export async function getSsoProviderStats(): Promise<Result<SsoProviderStats>> {
-  try {
-    const { data: providers, error } = await supabase
-      .from('sso_providers')
-      .select('protocol, enabled');
+  if (IS_BROWSER) {
+    return callInternalDataAction('sso.getSsoProviderStats');
+  }
 
-    if (error) {
-      console.error('Failed to fetch SSO provider stats:', error);
-      return failure(
-        new Error(`Failed to fetch SSO provider stats: ${error.message}`)
-      );
-    }
+  try {
+    const pool = await getPool();
+    const { rows } = await pool.query<{
+      protocol: SsoProtocol;
+      enabled: boolean;
+    }>(`SELECT protocol, enabled FROM sso_providers`);
 
     const stats: SsoProviderStats = {
-      total: providers?.length || 0,
-      enabled: providers?.filter(p => p.enabled).length || 0,
-      disabled: providers?.filter(p => !p.enabled).length || 0,
+      total: rows.length,
+      enabled: rows.filter(row => row.enabled).length,
+      disabled: rows.filter(row => !row.enabled).length,
       byProtocol: {
         CAS: 0,
         SAML: 0,
@@ -158,9 +178,8 @@ export async function getSsoProviderStats(): Promise<Result<SsoProviderStats>> {
       },
     };
 
-    // Count providers by protocol
-    providers?.forEach(provider => {
-      stats.byProtocol[provider.protocol as SsoProtocol]++;
+    rows.forEach(row => {
+      stats.byProtocol[row.protocol] += 1;
     });
 
     return success(stats);
@@ -170,126 +189,151 @@ export async function getSsoProviderStats(): Promise<Result<SsoProviderStats>> {
 }
 
 /**
- * Get single SSO provider by ID
- * @param id - Provider UUID
- * @returns Result containing provider data or null if not found
+ * Get single SSO provider by ID.
  */
 export async function getSsoProviderById(
   id: string
 ): Promise<Result<SsoProvider | null>> {
+  if (IS_BROWSER) {
+    return callInternalDataAction('sso.getSsoProviderById', { id });
+  }
+
   try {
-    const { data: provider, error } = await supabase
-      .from('sso_providers')
-      .select('*')
-      .eq('id', id)
-      .maybeSingle();
-
-    if (error) {
-      console.error('Failed to fetch SSO provider:', error);
-      return failure(
-        new Error(`Failed to fetch SSO provider: ${error.message}`)
-      );
-    }
-
-    return success(provider);
+    const pool = await getPool();
+    const { rows } = await pool.query<SsoProvider>(
+      `SELECT * FROM sso_providers WHERE id = $1::uuid LIMIT 1`,
+      [id]
+    );
+    return success(rows[0] || null);
   } catch (error) {
     return failure(error instanceof Error ? error : new Error(String(error)));
   }
 }
 
 /**
- * Create new SSO provider
- * @param data - Provider creation data
- * @returns Result containing created provider
+ * Create new SSO provider.
  */
 export async function createSsoProvider(
   data: CreateSsoProviderData
 ): Promise<Result<SsoProvider>> {
+  if (IS_BROWSER) {
+    return callInternalDataAction('sso.createSsoProvider', { data });
+  }
+
   try {
-    const { data: provider, error } = await supabase
-      .from('sso_providers')
-      .insert({
-        name: data.name,
-        protocol: data.protocol,
-        settings: data.settings,
-        client_id: data.client_id,
-        client_secret: data.client_secret,
-        metadata_url: data.metadata_url,
-        enabled: data.enabled ?? true,
-        display_order: data.display_order ?? 0,
-        button_text: data.button_text,
-      })
-      .select()
-      .single();
+    const pool = await getPool();
+    const { rows } = await pool.query<SsoProvider>(
+      `
+        INSERT INTO sso_providers (
+          name,
+          protocol,
+          settings,
+          client_id,
+          client_secret,
+          metadata_url,
+          enabled,
+          display_order,
+          button_text
+        )
+        VALUES (
+          $1,
+          $2::sso_protocol,
+          $3::jsonb,
+          $4,
+          $5,
+          $6,
+          COALESCE($7, TRUE),
+          COALESCE($8, 0),
+          $9
+        )
+        RETURNING *
+      `,
+      [
+        data.name,
+        data.protocol,
+        JSON.stringify(data.settings || {}),
+        data.client_id || null,
+        data.client_secret || null,
+        data.metadata_url || null,
+        data.enabled ?? true,
+        data.display_order ?? 0,
+        data.button_text || null,
+      ]
+    );
 
-    if (error) {
-      console.error('Failed to create SSO provider:', error);
-      return failure(
-        new Error(`Failed to create SSO provider: ${error.message}`)
-      );
-    }
-
-    return success(provider);
+    return success(rows[0]);
   } catch (error) {
     return failure(error instanceof Error ? error : new Error(String(error)));
   }
 }
 
 /**
- * Update existing SSO provider
- * @param id - Provider UUID
- * @param data - Provider update data
- * @returns Result containing updated provider
+ * Update existing SSO provider.
  */
 export async function updateSsoProvider(
   id: string,
   data: UpdateSsoProviderData
 ): Promise<Result<SsoProvider>> {
+  if (IS_BROWSER) {
+    return callInternalDataAction('sso.updateSsoProvider', { id, data });
+  }
+
   try {
-    const updateData: any = {
+    const updates = {
       ...data,
       updated_at: new Date().toISOString(),
-    };
-
-    const { data: provider, error } = await supabase
-      .from('sso_providers')
-      .update(updateData)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Failed to update SSO provider:', error);
-      return failure(
-        new Error(`Failed to update SSO provider: ${error.message}`)
-      );
+    } as Record<string, unknown>;
+    const entries = Object.entries(updates).filter(
+      ([, value]) => value !== undefined
+    );
+    if (entries.length === 0) {
+      return failure(new Error('No fields to update'));
     }
 
-    return success(provider);
+    const setClauses = entries.map(
+      ([column], index) => `${column} = $${index + 1}`
+    );
+    const values = entries.map(([, value]) =>
+      columnNeedsJson(value) ? JSON.stringify(value) : value
+    );
+    values.push(id);
+
+    const pool = await getPool();
+    const { rows } = await pool.query<SsoProvider>(
+      `
+        UPDATE sso_providers
+        SET ${setClauses.join(', ')}
+        WHERE id = $${values.length}::uuid
+        RETURNING *
+      `,
+      values
+    );
+
+    if (!rows[0]) {
+      return failure(new Error('SSO provider not found'));
+    }
+
+    return success(rows[0]);
   } catch (error) {
     return failure(error instanceof Error ? error : new Error(String(error)));
   }
 }
 
+function columnNeedsJson(value: unknown) {
+  return !!value && typeof value === 'object' && !(value instanceof Date);
+}
+
 /**
- * Delete SSO provider by ID
- * @param id - Provider UUID
- * @returns Result indicating success or failure
+ * Delete SSO provider by ID.
  */
 export async function deleteSsoProvider(id: string): Promise<Result<void>> {
+  if (IS_BROWSER) {
+    return callInternalDataAction('sso.deleteSsoProvider', { id });
+  }
+
   try {
-    const { error } = await supabase
-      .from('sso_providers')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
-      console.error('Failed to delete SSO provider:', error);
-      return failure(
-        new Error(`Failed to delete SSO provider: ${error.message}`)
-      );
-    }
-
+    const pool = await getPool();
+    await pool.query(`DELETE FROM sso_providers WHERE id = $1::uuid`, [id]);
     return success(undefined);
   } catch (error) {
     return failure(error instanceof Error ? error : new Error(String(error)));
@@ -297,37 +341,55 @@ export async function deleteSsoProvider(id: string): Promise<Result<void>> {
 }
 
 /**
- * Toggle SSO provider enabled status
- * @param id - Provider UUID
- * @param enabled - New enabled status
- * @returns Result containing updated provider
+ * Toggle SSO provider enabled status.
  */
 export async function toggleSsoProvider(
   id: string,
   enabled: boolean
 ): Promise<Result<SsoProvider>> {
+  if (IS_BROWSER) {
+    return callInternalDataAction('sso.toggleSsoProvider', { id, enabled });
+  }
+
   return updateSsoProvider(id, { enabled });
 }
 
 /**
- * Update display order for multiple SSO providers
- * @param updates - Array of provider ID and new display order
- * @returns Result indicating success or failure
+ * Update display order for multiple SSO providers.
  */
 export async function updateSsoProviderOrder(
   updates: Array<{ id: string; display_order: number }>
 ): Promise<Result<void>> {
-  try {
-    // Use transaction to ensure all updates succeed or fail together
-    const { error } = await supabase.rpc('update_sso_provider_order', {
-      updates: updates,
-    });
+  if (IS_BROWSER) {
+    return callInternalDataAction('sso.updateSsoProviderOrder', { updates });
+  }
 
-    if (error) {
-      console.error('Failed to update SSO provider order:', error);
-      return failure(
-        new Error(`Failed to update SSO provider order: ${error.message}`)
-      );
+  try {
+    if (updates.length === 0) {
+      return success(undefined);
+    }
+
+    const pool = await getPool();
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const update of updates) {
+        await client.query(
+          `
+            UPDATE sso_providers
+            SET display_order = $1::integer,
+                updated_at = NOW()
+            WHERE id = $2::uuid
+          `,
+          [update.display_order, update.id]
+        );
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
 
     return success(undefined);

@@ -1,7 +1,6 @@
 // lib/stores/current-app-store.ts
 import { clearDifyConfigCache } from '@lib/config/dify-config';
-import { getDefaultProvider, getDefaultServiceInstance } from '@lib/db';
-import type { Provider, ServiceInstance } from '@lib/types/database';
+import type { ServiceInstance } from '@lib/types/database';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
@@ -27,7 +26,7 @@ interface CurrentAppState {
 }
 
 type ServiceInstanceWithProvider = ServiceInstance & {
-  providers?: {
+  provider?: {
     id: string;
     name: string;
     is_active: boolean;
@@ -35,19 +34,37 @@ type ServiceInstanceWithProvider = ServiceInstance & {
   } | null;
 };
 
-// Refactor: Remove hardcoding, rely only on is_default field in database
-// Helper function to get the default provider, supports multi-provider environments
-async function getDefaultProviderForApp(): Promise<Provider> {
-  // Get the system default provider (based on is_default field)
-  const defaultProviderResult = await getDefaultProvider();
+async function fetchAppFromInternalApi(
+  query: URLSearchParams
+): Promise<ServiceInstanceWithProvider | null> {
+  const response = await fetch(`/api/internal/apps?${query.toString()}`, {
+    method: 'GET',
+    credentials: 'include',
+  });
 
-  if (defaultProviderResult.success && defaultProviderResult.data) {
-    return defaultProviderResult.data;
+  if (!response.ok) {
+    return null;
   }
 
-  // If no default provider is set, throw an error to require admin configuration
-  throw new Error(
-    'No default provider found. Please set a provider as default in the admin panel.'
+  const payload = (await response.json()) as {
+    success: boolean;
+    app?: ServiceInstanceWithProvider;
+  };
+
+  if (!payload.success || !payload.app) {
+    return null;
+  }
+
+  return payload.app;
+}
+
+async function fetchDefaultAppInstance() {
+  return fetchAppFromInternalApi(new URLSearchParams({ mode: 'default' }));
+}
+
+async function fetchActiveAppInstance(instanceId: string) {
+  return fetchAppFromInternalApi(
+    new URLSearchParams({ instanceId: instanceId.trim() })
   );
 }
 
@@ -119,35 +136,18 @@ export const useCurrentAppStore = create<CurrentAppState>()(
         set({ isLoadingAppId: true, errorLoadingAppId: null });
 
         try {
-          // Refactor: use default provider instead of hardcoded Dify provider
-          // Support multi-provider environment, prefer system default provider
-          const provider = await getDefaultProviderForApp();
+          const defaultInstance = await fetchDefaultAppInstance();
 
-          const defaultInstanceResult = await getDefaultServiceInstance(
-            provider.id
-          );
-
-          if (!defaultInstanceResult.success) {
-            throw new Error(
-              `Failed to get default service instance: ${defaultInstanceResult.error.message}`
-            );
-          }
-
-          if (
-            defaultInstanceResult.data &&
-            defaultInstanceResult.data.instance_id
-          ) {
+          if (defaultInstance && defaultInstance.instance_id) {
             set({
-              currentAppId: defaultInstanceResult.data.instance_id,
-              currentAppInstance: defaultInstanceResult.data,
+              currentAppId: defaultInstance.instance_id,
+              currentAppInstance: defaultInstance,
               isLoadingAppId: false,
               lastValidatedAt: Date.now(), // Set validation timestamp
             });
           } else {
-            // If there is no default service instance in the database, this needs to be handled.
-            // The UI should prompt the user to select an app, or the admin should configure a default app.
-            // For now, set appId to null and record the error.
-            const errorMessage = `No default service instance found for provider "${provider.name}". Please configure a default app instance.`;
+            const errorMessage =
+              'No default service instance found. Please configure a default app instance.';
             console.warn(errorMessage);
             set({
               currentAppId: null,
@@ -180,23 +180,15 @@ export const useCurrentAppStore = create<CurrentAppState>()(
         set({ isLoadingAppId: true, errorLoadingAppId: null });
 
         try {
-          const defaultInstanceResult = await getDefaultServiceInstance(
-            currentState.currentAppInstance.provider_id
-          );
+          const refreshed =
+            (currentState.currentAppId &&
+              (await fetchActiveAppInstance(currentState.currentAppId))) ||
+            (await fetchDefaultAppInstance());
 
-          if (!defaultInstanceResult.success) {
-            throw new Error(
-              `Failed to refresh app instance: ${defaultInstanceResult.error.message}`
-            );
-          }
-
-          if (
-            defaultInstanceResult.data &&
-            defaultInstanceResult.data.instance_id
-          ) {
+          if (refreshed && refreshed.instance_id) {
             set({
-              currentAppId: defaultInstanceResult.data.instance_id,
-              currentAppInstance: defaultInstanceResult.data,
+              currentAppId: refreshed.instance_id,
+              currentAppInstance: refreshed,
               isLoadingAppId: false,
               lastValidatedAt: Date.now(), // Set validation timestamp
             });
@@ -271,30 +263,8 @@ export const useCurrentAppStore = create<CurrentAppState>()(
           let targetInstance: ServiceInstanceWithProvider | null = null;
 
           if (targetAppId) {
-            // Refactor: search for the specified app instance among all active providers
-            // Support app validation in multi-provider environments
-            const { createClient } = await import('../supabase/client');
-            const supabase = createClient();
-
-            const { data: specificInstance, error: specificError } =
-              await supabase
-                .from('service_instances')
-                .select(
-                  `
-                *,
-                providers!inner(
-                  id,
-                  name,
-                  is_active,
-                  is_default
-                )
-              `
-                )
-                .eq('instance_id', targetAppId)
-                .eq('providers.is_active', true)
-                .single();
-
-            if (specificError || !specificInstance) {
+            const specificInstance = await fetchActiveAppInstance(targetAppId);
+            if (!specificInstance) {
               throw new Error(
                 `Specified app instance not found: ${targetAppId}`
               );
@@ -302,44 +272,19 @@ export const useCurrentAppStore = create<CurrentAppState>()(
 
             targetInstance = specificInstance;
           } else {
-            // Refactor: when validating the current app, also support multi-provider lookup
-            // If the current app does not exist, fallback to the default provider's default app
-            const { createClient } = await import('../supabase/client');
-            const supabase = createClient();
+            const currentInstance = currentState.currentAppId
+              ? await fetchActiveAppInstance(currentState.currentAppId)
+              : null;
 
-            const { data: currentInstance, error: currentError } =
-              await supabase
-                .from('service_instances')
-                .select(
-                  `
-                *,
-                providers!inner(
-                  id,
-                  name,
-                  is_active,
-                  is_default
-                )
-              `
-                )
-                .eq('instance_id', currentState.currentAppId)
-                .eq('providers.is_active', true)
-                .single();
-
-            if (currentError || !currentInstance) {
+            if (!currentInstance) {
               // Current app does not exist, fallback to default provider's default app
               console.warn(
                 `[validateAndRefreshConfig] Current app ${currentState.currentAppId} not found, fallback to default app`
               );
 
-              const provider = await getDefaultProviderForApp();
-              const defaultInstanceResult = await getDefaultServiceInstance(
-                provider.id
-              );
+              const defaultInstance = await fetchDefaultAppInstance();
 
-              if (
-                !defaultInstanceResult.success ||
-                !defaultInstanceResult.data
-              ) {
+              if (!defaultInstance) {
                 console.warn(
                   '[validateAndRefreshConfig] Default service instance also not found, clearing current config'
                 );
@@ -347,7 +292,7 @@ export const useCurrentAppStore = create<CurrentAppState>()(
                 return;
               }
 
-              targetInstance = defaultInstanceResult.data;
+              targetInstance = defaultInstance;
             } else {
               targetInstance = currentInstance;
             }
@@ -419,30 +364,9 @@ export const useCurrentAppStore = create<CurrentAppState>()(
         set({ isLoadingAppId: true, errorLoadingAppId: null });
 
         try {
-          // Refactor: search for app instance among all active providers, not just default provider
-          // This allows switching to apps from different providers
-          const { createClient } = await import('../supabase/client');
-          const supabase = createClient();
+          const targetInstance = await fetchActiveAppInstance(appId);
 
-          // First, search for the specified app instance among all active providers
-          const { data: targetInstance, error: targetError } = await supabase
-            .from('service_instances')
-            .select(
-              `
-              *,
-              providers!inner(
-                id,
-                name,
-                is_active,
-                is_default
-              )
-            `
-            )
-            .eq('instance_id', appId)
-            .eq('providers.is_active', true)
-            .single();
-
-          if (targetError || !targetInstance) {
+          if (!targetInstance) {
             throw new Error(`App instance not found: ${appId}`);
           }
 
@@ -463,7 +387,7 @@ export const useCurrentAppStore = create<CurrentAppState>()(
           });
 
           console.log(
-            `[switchToApp] Successfully switched to app: ${appId}, provider: ${targetInstance.providers?.name}`
+            `[switchToApp] Successfully switched to app: ${appId}, provider: ${targetInstance.provider?.name}`
           );
         } catch (error) {
           const errorMessage =

@@ -24,45 +24,33 @@ export async function getAllDifyApps(): Promise<
   }>
 > {
   try {
-    // Refactor: Support multiple providers, get all active providers' app instances
-    const { createClient } = await import('@lib/supabase/client');
-    const supabase = createClient();
+    if (typeof window !== 'undefined') {
+      const response = await fetch('/api/internal/apps?scope=all', {
+        method: 'GET',
+        credentials: 'include',
+      });
 
-    const { data: instances, error } = await supabase
-      .from('service_instances')
-      .select(
-        `
-        id, 
-        instance_id, 
-        display_name, 
-        description, 
-        config, 
-        visibility,
-        providers!inner(
-          id,
-          name,
-          is_active
-        )
-      `
-      )
-      .eq('providers.is_active', true)
-      .order('display_name');
+      if (!response.ok) {
+        throw new Error('Failed to fetch app list');
+      }
 
-    if (error) {
-      throw error;
+      const data = (await response.json()) as {
+        success: boolean;
+        apps: Array<{
+          id: string;
+          name: string;
+          instance_id: string;
+          display_name?: string;
+          description?: string;
+          config?: ServiceInstanceConfig;
+          visibility?: string;
+        }>;
+      };
+
+      return data.apps || [];
     }
 
-    return (
-      instances?.map(instance => ({
-        id: instance.id, // Use database UUID as identifier
-        name: instance.display_name || instance.instance_id,
-        instance_id: instance.instance_id,
-        display_name: instance.display_name,
-        description: instance.description,
-        config: instance.config as ServiceInstanceConfig,
-        visibility: instance.visibility || 'public', // Default to public
-      })) || []
-    );
+    return queryAppsFromDatabase(false);
   } catch (error) {
     console.error('Failed to get app list:', error);
     throw error;
@@ -85,50 +73,77 @@ export async function getPublicDifyApps(): Promise<
   }>
 > {
   try {
-    // Refactor: Support multiple providers, get all active providers' public app instances
-    const { createClient } = await import('@lib/supabase/client');
-    const supabase = createClient();
+    if (typeof window !== 'undefined') {
+      const response = await fetch('/api/internal/apps?scope=public', {
+        method: 'GET',
+      });
 
-    const { data: instances, error } = await supabase
-      .from('service_instances')
-      .select(
-        `
-        id, 
-        instance_id, 
-        display_name, 
-        description, 
-        config, 
-        visibility,
-        providers!inner(
-          id,
-          name,
-          is_active
-        )
-      `
-      )
-      .eq('providers.is_active', true)
-      .in('visibility', ['public']) // Only get public apps
-      .order('display_name');
+      if (!response.ok) {
+        throw new Error('Failed to fetch public apps');
+      }
 
-    if (error) {
-      throw error;
+      const data = (await response.json()) as {
+        success: boolean;
+        apps: Array<{
+          id: string;
+          name: string;
+          instance_id: string;
+          display_name?: string;
+          description?: string;
+          config?: ServiceInstanceConfig;
+          visibility?: string;
+        }>;
+      };
+
+      return data.apps || [];
     }
 
-    return (
-      instances?.map(instance => ({
-        id: instance.id,
-        name: instance.display_name || instance.instance_id,
-        instance_id: instance.instance_id,
-        display_name: instance.display_name,
-        description: instance.description,
-        config: instance.config as ServiceInstanceConfig,
-        visibility: instance.visibility || 'public',
-      })) || []
-    );
+    return queryAppsFromDatabase(true);
   } catch (error) {
     console.error('Failed to get public app list:', error);
     throw error;
   }
+}
+
+async function queryAppsFromDatabase(publicOnly: boolean) {
+  const { getPgPool } = await import('@lib/server/pg/pool');
+  const pool = getPgPool();
+  const params: unknown[] = [];
+  const visibilityFilter = publicOnly ? `AND si.visibility = 'public'` : '';
+  const { rows } = await pool.query<{
+    id: string;
+    instance_id: string;
+    display_name: string | null;
+    description: string | null;
+    config: ServiceInstanceConfig | null;
+    visibility: string | null;
+  }>(
+    `
+      SELECT
+        si.id::text AS id,
+        si.instance_id,
+        si.display_name,
+        si.description,
+        si.config,
+        si.visibility
+      FROM service_instances si
+      INNER JOIN providers p ON p.id = si.provider_id
+      WHERE p.is_active = TRUE
+      ${visibilityFilter}
+      ORDER BY si.display_name ASC NULLS LAST, si.instance_id ASC
+    `,
+    params
+  );
+
+  return rows.map(instance => ({
+    id: instance.id,
+    name: instance.display_name || instance.instance_id,
+    instance_id: instance.instance_id,
+    display_name: instance.display_name || undefined,
+    description: instance.description || undefined,
+    config: (instance.config || {}) as ServiceInstanceConfig,
+    visibility: instance.visibility || 'public',
+  }));
 }
 
 /**

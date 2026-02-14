@@ -8,12 +8,8 @@ import { cacheService } from '@lib/services/db/cache-service';
 import { dataService } from '@lib/services/db/data-service';
 import { Result, failure, success } from '@lib/types/result';
 
-import { createClient } from '../supabase/client';
 import { ApiKey } from '../types/database';
 import { decryptApiKey, encryptApiKey } from '../utils/encryption';
-
-// Maintain compatibility with existing code while using the new data service.
-const supabase = createClient();
 
 /**
  * Get the API key for a specific service instance (optimized version).
@@ -195,12 +191,19 @@ export async function incrementApiKeyUsage(
   id: string
 ): Promise<Result<boolean>> {
   return dataService.query(async () => {
-    const { error } = await supabase.rpc('increment_api_key_usage', {
-      key_id: id,
-    });
+    const executeResult = await dataService.rawExecute(
+      `
+        UPDATE api_keys
+        SET usage_count = COALESCE(usage_count, 0) + 1,
+            last_used_at = NOW(),
+            updated_at = NOW()
+        WHERE id = $1::uuid
+      `,
+      [id]
+    );
 
-    if (error) {
-      throw error;
+    if (!executeResult.success) {
+      throw executeResult.error;
     }
 
     // Clear related cache

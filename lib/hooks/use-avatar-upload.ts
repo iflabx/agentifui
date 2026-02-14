@@ -1,8 +1,5 @@
 'use client';
 
-import { createClient } from '@lib/supabase/client';
-import { v4 as uuidv4 } from 'uuid';
-
 import { useCallback, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
@@ -27,23 +24,6 @@ export interface AvatarUploadResult {
 }
 
 /**
- * Helper function to extract file path from avatar URL.
- */
-const extractFilePathFromUrl = (url: string): string | null => {
-  try {
-    const urlObj = new URL(url);
-    const pathParts = urlObj.pathname.split('/');
-    const bucketIndex = pathParts.indexOf('avatars');
-    if (bucketIndex !== -1 && bucketIndex < pathParts.length - 1) {
-      return pathParts.slice(bucketIndex + 1).join('/');
-    }
-    return null;
-  } catch {
-    return null;
-  }
-};
-
-/**
  * Hook for avatar upload, delete, and URL generation.
  */
 export function useAvatarUpload() {
@@ -55,7 +35,6 @@ export function useAvatarUpload() {
     status: 'idle',
   });
 
-  const supabase = createClient();
   const t = useTranslations('pages.settings.avatarUpload');
 
   /**
@@ -95,23 +74,7 @@ export function useAvatarUpload() {
   );
 
   /**
-   * Generate a safe file path for the avatar.
-   * Format: user-{userId}/{timestamp}-{uuid}.{ext}
-   */
-  const generateFilePath = useCallback(
-    (userId: string, fileName: string): string => {
-      const uuid = uuidv4();
-      const timestamp = Date.now();
-      const extension = fileName.split('.').pop();
-      const safeFileName = `${timestamp}-${uuid}.${extension}`;
-      return `user-${userId}/${safeFileName}`;
-    },
-    []
-  );
-
-  /**
    * Upload avatar file and update user profile.
-   * Also deletes the old avatar file if present.
    */
   const uploadAvatar = useCallback(
     async (file: File, userId: string): Promise<AvatarUploadResult> => {
@@ -129,68 +92,25 @@ export function useAvatarUpload() {
       }));
 
       try {
-        // 1. Get current avatar URL for cleanup
-        const { data: currentProfile } = await supabase
-          .from('profiles')
-          .select('avatar_url')
-          .eq('id', userId)
-          .single();
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('userId', userId);
 
-        // 2. Generate new file path
-        const filePath = generateFilePath(userId, file.name);
+        const response = await fetch('/api/internal/storage/avatar', {
+          method: 'POST',
+          body: formData,
+          credentials: 'include',
+        });
 
-        // 3. Upload new avatar to Supabase Storage
-        const { error: uploadError } = await supabase.storage
-          .from('avatars')
-          .upload(filePath, file, {
-            cacheControl: '3600',
-            upsert: false,
-          });
+        const payload = (await response.json()) as {
+          success: boolean;
+          url?: string;
+          path?: string;
+          error?: string;
+        };
 
-        if (uploadError) {
-          throw new Error(
-            t('errors.uploadFailed', { message: uploadError.message })
-          );
-        }
-
-        // 4. Get public URL
-        const { data: urlData } = supabase.storage
-          .from('avatars')
-          .getPublicUrl(filePath);
-
-        if (!urlData?.publicUrl) {
-          throw new Error(t('errors.getUrlFailed'));
-        }
-
-        // 5. Update avatar_url in database
-        const { error: updateError } = await supabase
-          .from('profiles')
-          .update({
-            avatar_url: urlData.publicUrl,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', userId);
-
-        if (updateError) {
-          throw new Error(
-            t('errors.updateDatabaseFailed', { message: updateError.message })
-          );
-        }
-
-        // 6. Delete old avatar file if exists (silent)
-        if (currentProfile?.avatar_url) {
-          const oldFilePath = extractFilePathFromUrl(currentProfile.avatar_url);
-          if (oldFilePath) {
-            supabase.storage
-              .from('avatars')
-              .remove([oldFilePath])
-              .catch(error => {
-                console.warn(
-                  'Failed to delete old avatar file (ignored):',
-                  error
-                );
-              });
-          }
+        if (!response.ok || !payload.success || !payload.url || !payload.path) {
+          throw new Error(payload.error || t('errors.uploadFailedGeneric'));
         }
 
         setState(prev => ({
@@ -201,8 +121,8 @@ export function useAvatarUpload() {
         }));
 
         return {
-          url: urlData.publicUrl,
-          path: filePath,
+          url: payload.url,
+          path: payload.path,
         };
       } catch (error) {
         setState(prev => ({
@@ -217,7 +137,7 @@ export function useAvatarUpload() {
         throw error;
       }
     },
-    [validateFile, generateFilePath, supabase, t]
+    [validateFile, t]
   );
 
   /**
@@ -233,28 +153,22 @@ export function useAvatarUpload() {
       }));
 
       try {
-        // Delete file from storage
-        const { error } = await supabase.storage
-          .from('avatars')
-          .remove([filePath]);
+        const response = await fetch('/api/internal/storage/avatar', {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+          body: JSON.stringify({ filePath, userId }),
+        });
 
-        if (error) {
-          throw new Error(t('errors.deleteFailed', { message: error.message }));
-        }
+        const payload = (await response.json()) as {
+          success: boolean;
+          error?: string;
+        };
 
-        // Update database, set avatar_url to null
-        const { error: updateError } = await supabase
-          .from('profiles')
-          .update({
-            avatar_url: null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', userId);
-
-        if (updateError) {
-          throw new Error(
-            t('errors.updateDatabaseFailed', { message: updateError.message })
-          );
+        if (!response.ok || !payload.success) {
+          throw new Error(payload.error || t('errors.deleteFailedGeneric'));
         }
 
         setState(prev => ({
@@ -275,7 +189,7 @@ export function useAvatarUpload() {
         throw error;
       }
     },
-    [supabase, t]
+    [t]
   );
 
   /**

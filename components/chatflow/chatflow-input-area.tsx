@@ -67,17 +67,37 @@ export function ChatflowInputArea({
       try {
         setIsLoading(true);
 
-        // Get application configuration from database
-        const { createClient } = await import('@lib/supabase/client');
-        const supabase = createClient();
+        // Get application configuration from internal API
+        const response = await fetch(
+          `/api/internal/apps?instanceId=${encodeURIComponent(instanceId)}`,
+          {
+            method: 'GET',
+            credentials: 'include',
+          }
+        );
 
-        const { data: serviceInstance, error } = await supabase
-          .from('service_instances')
-          .select('*')
-          .eq('instance_id', instanceId)
-          .single();
+        if (!response.ok) {
+          console.warn(
+            '[ChatflowInputArea] Service instance not found, using pure query mode'
+          );
+          setHasFormConfig(false);
+          onFormConfigChange?.(false);
+          return;
+        }
 
-        if (error || !serviceInstance) {
+        const payload = (await response.json()) as {
+          success: boolean;
+          app?: {
+            config?: {
+              dify_parameters?: {
+                user_input_form?: DifyUserInputFormItem[];
+              };
+            };
+          };
+        };
+
+        const serviceInstance = payload.app;
+        if (!payload.success || !serviceInstance) {
           console.warn(
             '[ChatflowInputArea] Service instance not found, using pure query mode'
           );

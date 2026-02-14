@@ -2,10 +2,10 @@
 
 import { Spinner } from '@components/ui/spinner';
 import { TooltipWrapper } from '@components/ui/tooltip-wrapper';
+import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
 import { useCurrentApp } from '@lib/hooks/use-current-app';
 import { uploadDifyFile } from '@lib/services/dify/file-service';
 import type { DifyFileUploadResponse } from '@lib/services/dify/types';
-import { useSupabaseAuth } from '@lib/supabase/hooks';
 import { cn, formatBytes } from '@lib/utils';
 import {
   AlertCircle,
@@ -62,7 +62,7 @@ export function FileUploadField({
   instanceId,
   isSingleFileMode = false,
 }: FileUploadFieldProps) {
-  const { session } = useSupabaseAuth();
+  const { session } = useAuthSession();
   const { currentAppId } = useCurrentApp();
   const t = useTranslations('pages.workflow.fileUpload');
   const fileInputRef = useRef<HTMLInputElement>(null);

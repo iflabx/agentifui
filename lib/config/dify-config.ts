@@ -1,4 +1,3 @@
-import { createClient } from '../supabase/client';
 import { decryptApiKey } from '../utils/encryption';
 
 export interface DifyAppConfig {
@@ -57,6 +56,31 @@ export const getDifyAppConfig = async (
   appId: string,
   forceRefresh: boolean = false
 ): Promise<DifyAppConfig | null> => {
+  if (typeof window !== 'undefined') {
+    try {
+      const response = await fetch(
+        `/api/internal/dify-config/${encodeURIComponent(appId)}?forceRefresh=${forceRefresh ? '1' : '0'}`,
+        {
+          method: 'GET',
+          credentials: 'include',
+        }
+      );
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const payload = (await response.json()) as {
+        success: boolean;
+        config?: DifyAppConfig | null;
+      };
+      return payload.success ? payload.config || null : null;
+    } catch (error) {
+      console.error('[Get Dify Config] Browser fetch failed:', error);
+      return null;
+    }
+  }
+
   // If force refresh, clear cache
   if (forceRefresh) {
     clearDifyConfigCache(appId);
@@ -109,9 +133,6 @@ export const getDifyAppConfig = async (
 async function getDifyConfigFromDatabase(
   appId: string
 ): Promise<DifyAppConfig | null> {
-  // Initialize Supabase client
-  const supabase = createClient();
-
   // Get master key from environment variable
   const masterKey = process.env.API_ENCRYPTION_KEY;
 
@@ -123,71 +144,97 @@ async function getDifyConfigFromDatabase(
     return null;
   }
 
-  // Refactor: support multiple providers, search for app instance among all active providers
-  // No longer hardcode to only search Dify provider
-  // 1. Directly search for the corresponding service instance (including provider info)
-  const { data: instance, error: instanceError } = await supabase
-    .from('service_instances')
-    .select(
-      `
-      *,
-      providers!inner(
-        id,
-        name,
-        base_url,
-        is_active
-      )
+  const { getPgPool } = await import('@lib/server/pg/pool');
+  const pool = getPgPool();
+  const { rows: directInstanceRows } = await pool.query<{
+    id: string;
+    instance_id: string;
+    display_name: string | null;
+    description: string | null;
+    config: Record<string, any> | null;
+    provider_id: string;
+    provider_name: string;
+    provider_base_url: string;
+  }>(
     `
-    )
-    .eq('instance_id', appId)
-    .eq('providers.is_active', true)
-    .single();
+      SELECT
+        si.id::text AS id,
+        si.instance_id,
+        si.display_name,
+        si.description,
+        si.config,
+        p.id::text AS provider_id,
+        p.name AS provider_name,
+        p.base_url AS provider_base_url
+      FROM service_instances si
+      INNER JOIN providers p ON p.id = si.provider_id
+      WHERE si.instance_id = $1
+        AND p.is_active = TRUE
+      LIMIT 1
+    `,
+    [appId]
+  );
 
-  let serviceInstance = instance;
-  let provider = instance?.providers;
+  let serviceInstance = directInstanceRows[0];
+  let provider = serviceInstance
+    ? {
+        id: serviceInstance.provider_id,
+        name: serviceInstance.provider_name,
+        base_url: serviceInstance.provider_base_url,
+      }
+    : null;
 
   // If the specified instance is not found, try to use the default provider's default instance as fallback
-  if (instanceError || !serviceInstance) {
+  if (!serviceInstance || !provider) {
     console.log(
       `[Get App Config] No service instance found for instance_id "${appId}", trying default provider's default instance`
     );
 
-    // Get default provider
-    const { data: defaultProvider, error: defaultProviderError } =
-      await supabase
-        .from('providers')
-        .select('id, name, base_url')
-        .eq('is_default', true)
-        .eq('is_active', true)
-        .single();
+    const { rows: fallbackRows } = await pool.query<{
+      id: string;
+      instance_id: string;
+      display_name: string | null;
+      description: string | null;
+      config: Record<string, any> | null;
+      provider_id: string;
+      provider_name: string;
+      provider_base_url: string;
+    }>(
+      `
+        SELECT
+          si.id::text AS id,
+          si.instance_id,
+          si.display_name,
+          si.description,
+          si.config,
+          p.id::text AS provider_id,
+          p.name AS provider_name,
+          p.base_url AS provider_base_url
+        FROM providers p
+        INNER JOIN service_instances si ON si.provider_id = p.id
+        WHERE p.is_default = TRUE
+          AND p.is_active = TRUE
+          AND si.is_default = TRUE
+        LIMIT 1
+      `
+    );
 
-    if (defaultProviderError || !defaultProvider) {
-      console.error(
-        `[Get App Config] No default provider found, appId: ${appId}`
-      );
-      return null;
-    }
-
-    // Get default instance for default provider
-    const { data: defaultInstance, error: defaultInstanceError } =
-      await supabase
-        .from('service_instances')
-        .select('*')
-        .eq('provider_id', defaultProvider.id)
-        .eq('is_default', true)
-        .single();
-
-    if (defaultInstanceError || !defaultInstance) {
+    const fallback = fallbackRows[0];
+    if (!fallback) {
       console.error(
         `[Get App Config] No default service instance found for default provider, appId: ${appId}`
       );
       return null;
     }
 
-    serviceInstance = defaultInstance;
-    provider = defaultProvider;
+    serviceInstance = fallback;
+    provider = {
+      id: fallback.provider_id,
+      name: fallback.provider_name,
+      base_url: fallback.provider_base_url,
+    };
     console.log(
-      `[Get App Config] Using default provider "${provider.name}" default instance: ${defaultInstance.instance_id} (original request: ${appId})`
+      `[Get App Config] Using default provider "${provider.name}" default instance: ${fallback.instance_id} (original request: ${appId})`
     );
   } else {
     console.log(
@@ -208,14 +255,20 @@ async function getDifyConfigFromDatabase(
   }
 
   // 4. Get API key
-  const { data: apiKey, error: apiKeyError } = await supabase
-    .from('api_keys')
-    .select('*')
-    .eq('service_instance_id', instanceId)
-    .eq('is_default', true)
-    .single();
+  const { rows: apiKeyRows } = await pool.query<{ key_value: string }>(
+    `
+      SELECT key_value
+      FROM api_keys
+      WHERE service_instance_id = $1::uuid
+        AND is_default = TRUE
+      ORDER BY created_at ASC
+      LIMIT 1
+    `,
+    [instanceId]
+  );
 
-  if (apiKeyError || !apiKey) {
+  const apiKey = apiKeyRows[0];
+  if (!apiKey) {
     console.error(`No API key found for app "${appId}"`);
     return null;
   }
@@ -255,7 +308,7 @@ async function getDifyConfigFromDatabase(
       apiUrl: provider.base_url,
       appId: serviceInstance.instance_id,
       displayName: serviceInstance.display_name || serviceInstance.instance_id,
-      description: serviceInstance.description,
+      description: serviceInstance.description || undefined,
       appType: serviceInstance.config?.app_metadata?.dify_apptype,
     };
 

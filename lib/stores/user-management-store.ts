@@ -328,7 +328,7 @@ export const useUserManagementStore = create<UserManagementState>()(
         }));
 
         try {
-          const result = await updateUserProfile(userId, updates);
+          const result = await updateUserProfile(userId, updates as any);
 
           if (result.success) {
             // Update local state

@@ -221,32 +221,36 @@ export function useAutoAddFavoriteApp() {
     console.log(`[addToFavorites] Add app to favorites: ${instanceId}`);
 
     try {
-      // Refactor: support multiple providers, search for app instance in all active providers
-      // No longer hardcoded to only search Dify provider
-      const { createClient } = await import('@lib/supabase/client');
-      const supabase = createClient();
+      const response = await fetch(
+        `/api/internal/apps?instanceId=${encodeURIComponent(instanceId)}`,
+        {
+          method: 'GET',
+          credentials: 'include',
+        }
+      );
 
-      // Directly search for app instance (including provider info)
-      const { data: instance, error: instanceError } = await supabase
-        .from('service_instances')
-        .select(
-          `
-          *,
-          providers!inner(
-            id,
-            name,
-            is_active
-          )
-        `
-        )
-        .eq('instance_id', instanceId)
-        .eq('providers.is_active', true)
-        .single();
-
-      if (instanceError || !instance) {
+      if (!response.ok) {
         console.error(
-          `[addToFavorites] Failed to query app info: ${instanceId}`,
-          instanceError
+          `[addToFavorites] Failed to query app info: ${instanceId}`
+        );
+        return;
+      }
+
+      const payload = (await response.json()) as {
+        success: boolean;
+        app?: {
+          instance_id: string;
+          display_name: string | null;
+          description: string | null;
+          config?: any;
+          provider_name?: string;
+        };
+      };
+
+      const instance = payload.app;
+      if (!payload.success || !instance) {
+        console.error(
+          `[addToFavorites] Failed to query app info: ${instanceId}`
         );
         return;
       }
@@ -254,7 +258,7 @@ export function useAutoAddFavoriteApp() {
       // Handle found app instance
       const appMetadata = instance.config?.app_metadata;
       console.log(
-        `[addToFavorites] Found app instance: ${instanceId}, provider: ${instance.providers?.name}`
+        `[addToFavorites] Found app instance: ${instanceId}, provider: ${instance.provider_name || 'unknown'}`
       );
 
       // Key fix: only add marketplace type apps, skip model type

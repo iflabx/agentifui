@@ -1,4 +1,3 @@
-import { createClient } from '@lib/supabase/client';
 import { PageSection } from '@lib/types/about-page-components';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -51,13 +50,9 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const BUCKET_NAME = 'content-images';
 
 /**
- * Validate image file type and size
- *
- * @param file - File to validate
- * @returns Validation result with error message if invalid
+ * Validate image file type and size.
  */
 export function validateImageFile(file: File): ValidationResult {
-  // Check file type
   if (
     !ALLOWED_IMAGE_TYPES.includes(
       file.type as (typeof ALLOWED_IMAGE_TYPES)[number]
@@ -69,7 +64,6 @@ export function validateImageFile(file: File): ValidationResult {
     };
   }
 
-  // Check file size
   if (file.size > MAX_FILE_SIZE) {
     return {
       valid: false,
@@ -81,14 +75,7 @@ export function validateImageFile(file: File): ValidationResult {
 }
 
 /**
- * Generate a unique file path for content image
- *
- * Format: user-{userId}/{timestamp}-{uuid}.{ext}
- *
- * @param userId - User ID
- * @param fileName - Original file name (used for fallback only)
- * @param fileType - MIME type of the file
- * @returns Generated file path
+ * Generate a unique file path for content image.
  */
 export function generateContentImagePath(
   userId: string,
@@ -104,10 +91,7 @@ export function generateContentImagePath(
 }
 
 /**
- * Extract file path from Supabase Storage URL
- *
- * @param url - Full Supabase Storage URL
- * @returns File path or null if invalid
+ * Extract file path from storage URL.
  */
 export function extractFilePathFromUrl(url: string): string | null {
   try {
@@ -124,99 +108,94 @@ export function extractFilePathFromUrl(url: string): string | null {
 }
 
 /**
- * Upload content image to Supabase Storage
- *
- * @param file - Image file to upload
- * @param userId - User ID for file path generation
- * @returns Upload result with public URL and file path
- * @throws Error if upload fails or validation fails
+ * Upload content image to storage.
  */
 export async function uploadContentImage(
   file: File,
   userId: string
 ): Promise<ContentImageUploadResult> {
-  // Validate file
   const validation = validateImageFile(file);
   if (!validation.valid) {
     throw new Error(validation.error);
   }
 
-  const supabase = createClient();
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('userId', userId);
 
-  // Generate file path
-  const filePath = generateContentImagePath(userId, file.name, file.type);
+  const response = await fetch('/api/internal/storage/content-images', {
+    method: 'POST',
+    credentials: 'include',
+    body: formData,
+  });
 
-  // Upload to Supabase Storage
-  const { error: uploadError } = await supabase.storage
-    .from(BUCKET_NAME)
-    .upload(filePath, file, {
-      cacheControl: '3600',
-      upsert: false,
-    });
+  const payload = (await response.json()) as {
+    success: boolean;
+    url?: string;
+    path?: string;
+    error?: string;
+  };
 
-  if (uploadError) {
-    throw new Error(`Upload failed: ${uploadError.message}`);
-  }
-
-  // Get public URL
-  const { data: urlData } = supabase.storage
-    .from(BUCKET_NAME)
-    .getPublicUrl(filePath);
-
-  if (!urlData?.publicUrl) {
-    throw new Error('Failed to get public URL');
+  if (!response.ok || !payload.success || !payload.url || !payload.path) {
+    throw new Error(payload.error || 'Upload failed');
   }
 
   return {
-    url: urlData.publicUrl,
-    path: filePath,
+    url: payload.url,
+    path: payload.path,
   };
 }
 
 /**
- * Delete content image from Supabase Storage
- *
- * @param filePath - File path in storage (e.g., user-{userId}/filename.jpg)
- * @throws Error if deletion fails
+ * Delete content image from storage.
  */
 export async function deleteContentImage(filePath: string): Promise<void> {
-  const supabase = createClient();
+  const response = await fetch('/api/internal/storage/content-images', {
+    method: 'DELETE',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ filePath }),
+  });
 
-  const { error } = await supabase.storage.from(BUCKET_NAME).remove([filePath]);
+  const payload = (await response.json()) as {
+    success: boolean;
+    error?: string;
+  };
 
-  if (error) {
-    throw new Error(`Delete failed: ${error.message}`);
+  if (!response.ok || !payload.success) {
+    throw new Error(payload.error || 'Delete failed');
   }
 }
 
 /**
- * List all content images for a specific user
- *
- * @param userId - User ID
- * @returns Array of file paths
- * @throws Error if listing fails
+ * List all content images for a specific user.
  */
 export async function listUserContentImages(userId: string): Promise<string[]> {
-  const supabase = createClient();
+  const response = await fetch(
+    `/api/internal/storage/content-images?userId=${encodeURIComponent(userId)}`,
+    {
+      method: 'GET',
+      credentials: 'include',
+    }
+  );
 
-  const { data, error } = await supabase.storage
-    .from(BUCKET_NAME)
-    .list(`user-${userId}`, {
-      sortBy: { column: 'created_at', order: 'desc' },
-    });
+  const payload = (await response.json()) as {
+    success: boolean;
+    files?: string[];
+    error?: string;
+  };
 
-  if (error) {
-    throw new Error(`Failed to list images: ${error.message}`);
+  if (!response.ok || !payload.success) {
+    throw new Error(payload.error || 'Failed to list images');
   }
 
-  return data.map(file => `user-${userId}/${file.name}`);
+  return payload.files || [];
 }
 
 /**
- * Extract all image paths from page sections
- *
- * @param sections - Page sections array
- * @returns Array of image paths used in the page
+ * Extract all image paths from page sections.
  */
 export function extractImagePathsFromSections(
   sections: PageSection[]
@@ -233,41 +212,20 @@ export function extractImagePathsFromSections(
 }
 
 /**
- * Clean up unused content images for a specific user
- *
- * Compares images currently used in page sections with all images in storage,
- * and deletes any images that are no longer referenced.
- *
- * @param sections - Current page sections
- * @param userId - User ID
- * @returns Number of images deleted
- * @throws Error if cleanup operation fails
+ * Clean up unused content images for a specific user.
  */
 export async function cleanupUnusedImages(
   sections: PageSection[],
   userId: string
 ): Promise<number> {
-  // Extract image paths currently used in the page into a Set for efficient lookup
   const usedImagePaths = new Set(extractImagePathsFromSections(sections));
-
-  // Get all images from storage
   const allImagePaths = await listUserContentImages(userId);
-
-  // Find unused images by filtering against the Set
   const unusedImagePaths = allImagePaths.filter(
     path => !usedImagePaths.has(path)
   );
 
-  // Delete unused images
   if (unusedImagePaths.length > 0) {
-    const supabase = createClient();
-    const { error } = await supabase.storage
-      .from(BUCKET_NAME)
-      .remove(unusedImagePaths);
-
-    if (error) {
-      throw new Error(`Failed to cleanup images: ${error.message}`);
-    }
+    await Promise.all(unusedImagePaths.map(path => deleteContentImage(path)));
   }
 
   return unusedImagePaths.length;

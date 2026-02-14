@@ -1,5 +1,4 @@
 import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
-import { createClient } from '@lib/supabase/client';
 import type { UserRole } from '@lib/types/database';
 import {
   safeJsonParse,
@@ -228,16 +227,38 @@ export function useProfile(userId?: string): UseProfileResult {
       }
 
       // Query user profile info
-      const supabase = createClient();
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', targetUserId)
-        .maybeSingle();
+      const response = await fetch(
+        `/api/internal/profile?userId=${encodeURIComponent(targetUserId)}`,
+        {
+          method: 'GET',
+          credentials: 'include',
+        }
+      );
 
-      if (profileError) {
-        throw new Error(profileError.message || 'Failed to get user profile');
+      if (!response.ok) {
+        throw new Error('Failed to get user profile');
       }
+
+      const payload = (await response.json()) as {
+        success: boolean;
+        profile?: {
+          id: string;
+          full_name: string | null;
+          username: string | null;
+          avatar_url: string | null;
+          role: UserRole;
+          created_at: string | null;
+          updated_at: string | null;
+          employee_number?: string | null;
+        } | null;
+        error?: string;
+      };
+
+      if (!payload.success) {
+        throw new Error(payload.error || 'Failed to get user profile');
+      }
+
+      const profileData = payload.profile;
 
       if (!profileData) {
         setProfile(null);

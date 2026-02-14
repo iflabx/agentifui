@@ -9,15 +9,11 @@ import { cacheService } from '@lib/services/db/cache-service';
 import { dataService } from '@lib/services/db/data-service';
 import { Result, failure, success } from '@lib/types/result';
 
-import { createClient } from '../supabase/client';
 import {
   AppExecution,
   ExecutionStatus,
   ExecutionType,
 } from '../types/database';
-
-// For compatibility with existing code, while using the new data service
-const supabase = createClient();
 
 /**
  * Get a list of user execution records (optimized version)
@@ -235,19 +231,35 @@ export async function updateCompleteExecutionData(
       JSON.stringify(safeUpdateData, null, 2)
     );
 
-    // Use native Supabase client for update to ensure all fields are saved correctly
-    const { data, error } = await supabase
-      .from('app_executions')
-      .update(safeUpdateData)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
-      console.error('[DB] Complete data update failed:', error);
-      return failure(error);
+    const entries = Object.entries(safeUpdateData).filter(
+      ([, value]) => value !== undefined
+    );
+    if (entries.length === 0) {
+      return failure(new Error('No fields to update'));
     }
 
+    const setClauses = entries.map(
+      ([column], index) => `${column} = $${index + 1}`
+    );
+    const values = entries.map(([, value]) => value);
+    values.push(id);
+
+    const updateResult = await dataService.rawQuery<AppExecution>(
+      `
+        UPDATE app_executions
+        SET ${setClauses.join(', ')}
+        WHERE id = $${values.length}::uuid
+        RETURNING *
+      `,
+      values
+    );
+
+    if (!updateResult.success) {
+      console.error('[DB] Complete data update failed:', updateResult.error);
+      return failure(updateResult.error);
+    }
+
+    const data = updateResult.data[0];
     if (!data) {
       console.error('[DB] Update succeeded but no data returned');
       return failure(new Error('Update succeeded but no data returned'));
@@ -440,21 +452,31 @@ export async function getExecutionStats(
   }>
 > {
   try {
-    const filters: Record<string, any> = {
-      user_id: userId,
-      ...(executionType && { execution_type: executionType }),
-    };
-
-    // Get basic statistics
-    const { data, error } = await supabase
-      .from('app_executions')
-      .select('status, total_tokens, elapsed_time')
-      .match(filters);
-
-    if (error) {
-      return failure(error);
+    const params: unknown[] = [userId];
+    const whereClauses = ['user_id = $1::uuid'];
+    if (executionType) {
+      params.push(executionType);
+      whereClauses.push(`execution_type = $${params.length}`);
     }
 
+    const statsQuery = await dataService.rawQuery<{
+      status: ExecutionStatus;
+      total_tokens: number | null;
+      elapsed_time: number | null;
+    }>(
+      `
+        SELECT status, total_tokens, elapsed_time
+        FROM app_executions
+        WHERE ${whereClauses.join(' AND ')}
+      `,
+      params
+    );
+
+    if (!statsQuery.success) {
+      return failure(statsQuery.error);
+    }
+
+    const data = statsQuery.data;
     const stats = {
       total: data.length,
       completed: data.filter(item => item.status === 'completed').length,

@@ -27,8 +27,8 @@ import { useTranslations } from 'next-intl';
 interface User {
   id: string;
   role: 'admin' | 'manager' | 'user';
-  full_name?: string;
-  email?: string;
+  full_name?: string | null;
+  email?: string | null;
 }
 
 export default function UsersManagementPage() {
