@@ -4,7 +4,6 @@
  * This file contains all database operations related to the conversations table and messages table.
  * Updated to use unified data service and Result type.
  */
-import { getPgPool } from '@lib/server/pg/pool';
 import { dataService } from '@lib/services/db/data-service';
 import { Result, failure, success } from '@lib/types/result';
 
@@ -292,22 +291,19 @@ export async function permanentlyDeleteConversation(
   conversationId: string
 ): Promise<Result<boolean>> {
   try {
-    const pool = getPgPool();
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query('DELETE FROM messages WHERE conversation_id = $1', [
-        conversationId,
-      ]);
-      await client.query('DELETE FROM conversations WHERE id = $1', [
-        conversationId,
-      ]);
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
+    const transactionResult = await dataService.runInTransaction(
+      async client => {
+        await client.query('DELETE FROM messages WHERE conversation_id = $1', [
+          conversationId,
+        ]);
+        await client.query('DELETE FROM conversations WHERE id = $1', [
+          conversationId,
+        ]);
+        return true;
+      }
+    );
+    if (!transactionResult.success) {
+      return failure(transactionResult.error);
     }
 
     dataService.clearCache('messages');

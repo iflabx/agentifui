@@ -4,7 +4,6 @@
  * PostgreSQL-based implementation with cache, retries, and Result wrappers.
  * Keeps the same API surface used by legacy callers.
  */
-import { getPgPool } from '@lib/server/pg/pool';
 import {
   DatabaseError,
   Result,
@@ -36,7 +35,28 @@ type WhereClause = {
   params: unknown[];
 };
 
+type QueryResultRow = object;
+type QueryResult<T extends QueryResultRow = QueryResultRow> = {
+  rows: T[];
+  rowCount: number | null;
+};
+type SqlClient = {
+  query<T extends QueryResultRow = QueryResultRow>(
+    sql: string,
+    params?: unknown[]
+  ): Promise<QueryResult<T>>;
+  release: () => void;
+};
+type SqlPool = {
+  query<T extends QueryResultRow = QueryResultRow>(
+    sql: string,
+    params?: unknown[]
+  ): Promise<QueryResult<T>>;
+  connect: () => Promise<SqlClient>;
+};
+
 const IDENTIFIER_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+const PG_POOL_GLOBAL_KEY = '__agentifui_pg_pool__';
 
 function assertIdentifier(identifier: string, label: string): string {
   if (!IDENTIFIER_PATTERN.test(identifier)) {
@@ -62,6 +82,56 @@ export class DataService {
       DataService.instance = new DataService();
     }
     return DataService.instance;
+  }
+
+  private getPool(): SqlPool {
+    if (typeof window !== 'undefined') {
+      throw new DatabaseError(
+        'PostgreSQL pool is not available in browser runtime',
+        'pg_pool'
+      );
+    }
+
+    const globalState = globalThis as unknown as Record<string, unknown>;
+    const existing = globalState[PG_POOL_GLOBAL_KEY] as SqlPool | undefined;
+    if (existing) {
+      return existing;
+    }
+
+    // Dynamic runtime require prevents client bundle from resolving node-only deps.
+    const runtimeRequire = eval('require') as (id: string) => unknown;
+    const pgModule = runtimeRequire('pg') as {
+      Pool: new (config: {
+        connectionString: string;
+        max: number;
+        idleTimeoutMillis: number;
+        connectionTimeoutMillis: number;
+      }) => SqlPool;
+    };
+
+    const pool = new pgModule.Pool({
+      connectionString: this.resolveDatabaseUrl(),
+      max: Number(process.env.PG_POOL_MAX || 10),
+      idleTimeoutMillis: Number(process.env.PG_POOL_IDLE_MS || 30000),
+      connectionTimeoutMillis: Number(process.env.PG_POOL_CONNECT_MS || 5000),
+    });
+
+    globalState[PG_POOL_GLOBAL_KEY] = pool;
+    return pool;
+  }
+
+  private resolveDatabaseUrl(): string {
+    const fromPrimary = process.env.DATABASE_URL?.trim();
+    if (fromPrimary) {
+      return fromPrimary;
+    }
+
+    const fallback = process.env.PGURL?.trim();
+    if (fallback) {
+      return fallback;
+    }
+
+    throw new DatabaseError('DATABASE_URL (or PGURL) is required', 'pg_pool');
   }
 
   /**
@@ -175,7 +245,7 @@ export class DataService {
       async () => {
         const { clause, params } = this.buildWhereClause(filters, 1);
         const sql = `SELECT * FROM ${quoteIdentifier(safeTable)} ${clause} LIMIT 1`;
-        const pool = getPgPool();
+        const pool = this.getPool();
         const queryResult = await pool.query(sql, params);
         const row = queryResult.rows[0];
         return row ? this.normalizeRow<T>(row) : null;
@@ -230,7 +300,7 @@ export class DataService {
           .filter(Boolean)
           .join(' ');
 
-        const pool = getPgPool();
+        const pool = this.getPool();
         const queryResult = await pool.query(sql, params);
         return queryResult.rows.map(row => this.normalizeRow<T>(row));
       },
@@ -275,7 +345,7 @@ export class DataService {
           .join(', ');
         const sql = `INSERT INTO ${quoteIdentifier(safeTable)} (${columnsSql}) VALUES (${placeholders}) RETURNING *`;
 
-        const pool = getPgPool();
+        const pool = this.getPool();
         const queryResult = await pool.query(sql, values);
         const row = queryResult.rows[0];
         if (!row) {
@@ -321,7 +391,7 @@ export class DataService {
         values.push(id);
 
         const sql = `UPDATE ${quoteIdentifier(safeTable)} SET ${setClauses.join(', ')} WHERE id = $${values.length} RETURNING *`;
-        const pool = getPgPool();
+        const pool = this.getPool();
         const queryResult = await pool.query(sql, values);
         const row = queryResult.rows[0];
 
@@ -352,7 +422,7 @@ export class DataService {
     const result = await this.query(
       async () => {
         const sql = `DELETE FROM ${quoteIdentifier(safeTable)} WHERE id = $1`;
-        const pool = getPgPool();
+        const pool = this.getPool();
         await pool.query(sql, [id]);
       },
       undefined,
@@ -394,11 +464,68 @@ export class DataService {
       async () => {
         const { clause, params } = this.buildWhereClause(filters, 1);
         const sql = `SELECT COUNT(*)::int AS total FROM ${quoteIdentifier(safeTable)} ${clause}`;
-        const pool = getPgPool();
+        const pool = this.getPool();
         const queryResult = await pool.query<{ total: number }>(sql, params);
         return Number(queryResult.rows[0]?.total || 0);
       },
       cacheKey,
+      options
+    );
+  }
+
+  async rawQuery<T extends QueryResultRow = QueryResultRow>(
+    sql: string,
+    params: unknown[] = [],
+    options: QueryOptions = {}
+  ): Promise<Result<T[]>> {
+    return this.query(
+      async () => {
+        const pool = this.getPool();
+        const queryResult = await pool.query<T>(sql, params);
+        return queryResult.rows.map(row => this.normalizeRow<T>(row));
+      },
+      undefined,
+      options
+    );
+  }
+
+  async rawExecute(
+    sql: string,
+    params: unknown[] = [],
+    options: QueryOptions = {}
+  ): Promise<Result<number>> {
+    return this.query(
+      async () => {
+        const pool = this.getPool();
+        const queryResult = await pool.query(sql, params);
+        return Number(queryResult.rowCount || 0);
+      },
+      undefined,
+      options
+    );
+  }
+
+  async runInTransaction<T>(
+    operation: (client: SqlClient) => Promise<T>,
+    options: QueryOptions = {}
+  ): Promise<Result<T>> {
+    return this.query(
+      async () => {
+        const pool = this.getPool();
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          const result = await operation(client);
+          await client.query('COMMIT');
+          return result;
+        } catch (error) {
+          await client.query('ROLLBACK');
+          throw error;
+        } finally {
+          client.release();
+        }
+      },
+      undefined,
       options
     );
   }

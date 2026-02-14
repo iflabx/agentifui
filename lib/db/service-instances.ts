@@ -9,11 +9,7 @@ import { dataService } from '@lib/services/db/data-service';
 import { SubscriptionKeys } from '@lib/services/db/realtime-service';
 import { Result, success } from '@lib/types/result';
 
-import { createClient } from '../supabase/client';
 import { ServiceInstance } from '../types/database';
-
-// For compatibility with existing code, while using the new data service
-const supabase = createClient();
 
 /**
  * Get all service instances for a specific provider (optimized version)
@@ -114,14 +110,17 @@ export async function createServiceInstance(
   return dataService.query(async () => {
     // If this is the default instance, set other instances to non-default first
     if (serviceInstance.is_default) {
-      const { error: updateError } = await supabase
-        .from('service_instances')
-        .update({ is_default: false })
-        .eq('provider_id', serviceInstance.provider_id)
-        .eq('is_default', true);
-
-      if (updateError) {
-        throw updateError;
+      const resetResult = await dataService.rawExecute(
+        `
+          UPDATE service_instances
+          SET is_default = FALSE
+          WHERE provider_id = $1
+            AND is_default = TRUE
+        `,
+        [serviceInstance.provider_id]
+      );
+      if (!resetResult.success) {
+        throw resetResult.error;
       }
     }
 
@@ -157,14 +156,18 @@ export async function updateServiceInstance(
     if (updates.is_default) {
       const currentInstanceResult = await getServiceInstanceById(id);
       if (currentInstanceResult.success && currentInstanceResult.data) {
-        const { error: updateError } = await supabase
-          .from('service_instances')
-          .update({ is_default: false })
-          .eq('provider_id', currentInstanceResult.data.provider_id)
-          .eq('is_default', true);
-
-        if (updateError) {
-          throw updateError;
+        const resetResult = await dataService.rawExecute(
+          `
+            UPDATE service_instances
+            SET is_default = FALSE
+            WHERE provider_id = $1
+              AND is_default = TRUE
+              AND id <> $2
+          `,
+          [currentInstanceResult.data.provider_id, id]
+        );
+        if (!resetResult.success) {
+          throw resetResult.error;
         }
       }
     }
@@ -299,7 +302,7 @@ export async function deleteServiceInstanceLegacy(
  */
 export async function getAppParametersFromDb(
   instanceId: string
-): Promise<Result<any | null>> {
+): Promise<Result<Record<string, unknown> | null>> {
   return dataService.query(async () => {
     const result = await getServiceInstanceByInstanceId('dify', instanceId);
 
@@ -321,7 +324,7 @@ export async function getAppParametersFromDb(
  */
 export async function updateAppParametersInDb(
   instanceId: string,
-  parameters: any
+  parameters: Record<string, unknown>
 ): Promise<Result<void>> {
   return dataService.query(async () => {
     // Get the current service instance first
@@ -369,13 +372,35 @@ export async function setDefaultServiceInstance(
     const instance = instanceResult.data;
 
     // In a transaction: set other instances of the same provider to non-default, then set this one as default
-    const { error } = await supabase.rpc('set_default_service_instance', {
-      target_instance_id: instanceId,
-      target_provider_id: instance.provider_id,
-    });
+    const txResult = await dataService.runInTransaction(async client => {
+      await client.query(
+        `
+          UPDATE service_instances
+          SET is_default = FALSE
+          WHERE provider_id = $1
+            AND is_default = TRUE
+            AND id <> $2
+        `,
+        [instance.provider_id, instanceId]
+      );
 
-    if (error) {
-      throw error;
+      const updateResult = await client.query<{ id: string }>(
+        `
+          UPDATE service_instances
+          SET is_default = TRUE
+          WHERE id = $1
+            AND provider_id = $2
+          RETURNING id
+        `,
+        [instanceId, instance.provider_id]
+      );
+
+      if (!updateResult.rowCount) {
+        throw new Error('Failed to set default service instance');
+      }
+    });
+    if (!txResult.success) {
+      throw txResult.error;
     }
 
     // Clear related cache

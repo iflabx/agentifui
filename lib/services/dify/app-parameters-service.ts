@@ -1,4 +1,4 @@
-import { getAppParametersFromDb } from '@lib/db';
+import { getAppParametersFromDb } from '@lib/db/service-instances';
 import type { DifyAppParametersResponse } from '@lib/services/dify/types';
 import type { Result } from '@lib/types/result';
 import { failure, success } from '@lib/types/result';
@@ -27,30 +27,65 @@ const parametersCache: AppParametersCache = {};
  * Convert database config to Dify parameters format
  */
 function convertDatabaseConfigToDifyParameters(
-  config: any
+  config: unknown
 ): DifyAppParametersResponse | null {
   if (!config) return null;
 
   try {
+    const resolvedConfig =
+      typeof config === 'object' && config !== null
+        ? (config as Record<string, unknown>)
+        : {};
+
     // Ensure the returned object matches DifyAppParametersResponse format
     return {
-      opening_statement: config.opening_statement || '',
-      suggested_questions: config.suggested_questions || [],
+      opening_statement: (resolvedConfig.opening_statement as string) || '',
+      suggested_questions:
+        (resolvedConfig.suggested_questions as string[]) || [],
       suggested_questions_after_answer:
-        config.suggested_questions_after_answer || { enabled: false },
-      speech_to_text: config.speech_to_text || { enabled: false },
-      text_to_speech: config.text_to_speech || { enabled: false },
-      retriever_resource: config.retriever_resource || { enabled: false },
-      annotation_reply: config.annotation_reply || { enabled: false },
-      user_input_form: config.user_input_form || [],
-      file_upload: config.file_upload || {
-        image: {
+        (resolvedConfig.suggested_questions_after_answer as {
+          enabled: boolean;
+        }) || {
           enabled: false,
-          number_limits: 3,
-          transfer_methods: ['local_file', 'remote_url'],
         },
+      speech_to_text: (resolvedConfig.speech_to_text as {
+        enabled: boolean;
+      }) || {
+        enabled: false,
       },
-      system_parameters: config.system_parameters || {},
+      text_to_speech: (resolvedConfig.text_to_speech as {
+        enabled: boolean;
+      }) || {
+        enabled: false,
+      },
+      retriever_resource: (resolvedConfig.retriever_resource as {
+        enabled: boolean;
+      }) || {
+        enabled: false,
+      },
+      annotation_reply: (resolvedConfig.annotation_reply as {
+        enabled: boolean;
+      }) || {
+        enabled: false,
+      },
+      user_input_form:
+        (resolvedConfig.user_input_form as DifyAppParametersResponse['user_input_form']) ||
+        [],
+      file_upload:
+        (resolvedConfig.file_upload as DifyAppParametersResponse['file_upload']) || {
+          image: {
+            enabled: false,
+            number_limits: 3,
+            transfer_methods: ['local_file', 'remote_url'],
+          },
+        },
+      system_parameters:
+        (resolvedConfig.system_parameters as DifyAppParametersResponse['system_parameters']) || {
+          file_size_limit: 15,
+          image_file_size_limit: 10,
+          audio_file_size_limit: 50,
+          video_file_size_limit: 100,
+        },
     };
   } catch (error) {
     console.error(

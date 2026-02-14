@@ -1,4 +1,5 @@
-import { getActiveProviders, getServiceInstancesByProvider } from '@lib/db';
+import { getActiveProviders } from '@lib/db/providers';
+import { getServiceInstancesByProvider } from '@lib/db/service-instances';
 import { requireAdmin } from '@lib/services/admin/require-admin';
 
 import { NextResponse } from 'next/server';

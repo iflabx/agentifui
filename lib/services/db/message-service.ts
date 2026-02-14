@@ -4,7 +4,6 @@
  * Handles message-related data operations, optimized for pagination and sorting.
  * Uses database-level sorting to avoid complex client-side logic.
  */
-import { getPgPool } from '@lib/server/pg/pool';
 import { ChatMessage } from '@lib/stores/chat-store';
 import { Message, MessageStatus } from '@lib/types/database';
 import { Result, success } from '@lib/types/result';
@@ -23,18 +22,6 @@ export interface MessagePage {
 export interface PaginationCursor {
   timestamp: string;
   id: string;
-}
-
-function normalizeMessageRow(row: Record<string, unknown>): Message {
-  const createdAt =
-    row.created_at instanceof Date
-      ? row.created_at.toISOString()
-      : String(row.created_at);
-
-  return {
-    ...row,
-    created_at: createdAt,
-  } as Message;
 }
 
 export class MessageService {
@@ -112,7 +99,6 @@ export class MessageService {
 
         params.push(limit + 1);
         const limitParam = `$${nextParamIndex}`;
-        const pool = getPgPool();
         const sql = `
           SELECT *
           FROM messages
@@ -120,8 +106,11 @@ export class MessageService {
           ORDER BY created_at DESC, sequence_index DESC, id DESC
           LIMIT ${limitParam}
         `;
-        const queryResult = await pool.query(sql, params);
-        const rows = queryResult.rows.map(row => normalizeMessageRow(row));
+        const queryResult = await dataService.rawQuery<Message>(sql, params);
+        if (!queryResult.success) {
+          throw queryResult.error;
+        }
+        const rows = queryResult.data;
 
         const hasMore = rows.length > limit;
         const actualMessages = hasMore ? rows.slice(0, limit) : rows;
@@ -170,19 +159,21 @@ export class MessageService {
 
     return dataService.query(
       async () => {
-        const pool = getPgPool();
-        const queryResult = await pool.query(
+        const queryResult = await dataService.rawQuery<Message>(
           `
-            SELECT *
-            FROM messages
-            WHERE conversation_id = $1
-            ORDER BY created_at ASC, sequence_index ASC, id ASC
-            LIMIT $2
-          `,
+          SELECT *
+          FROM messages
+          WHERE conversation_id = $1
+          ORDER BY created_at ASC, sequence_index ASC, id ASC
+          LIMIT $2
+        `,
           [conversationId, limit]
         );
+        if (!queryResult.success) {
+          throw queryResult.error;
+        }
 
-        return queryResult.rows.map(row => normalizeMessageRow(row));
+        return queryResult.data;
       },
       cache
         ? `conversation:messages:latest:${conversationId}:${limit}`
@@ -359,8 +350,13 @@ export class MessageService {
         VALUES ${valueRows.join(', ')}
         RETURNING id
       `;
-      const pool = getPgPool();
-      const queryResult = await pool.query<{ id: string }>(sql, params);
+      const queryResult = await dataService.rawQuery<{ id: string }>(
+        sql,
+        params
+      );
+      if (!queryResult.success) {
+        throw queryResult.error;
+      }
 
       // Clear related cache
       const conversationIds = new Set(messages.map(m => m.conversation_id));
@@ -368,7 +364,7 @@ export class MessageService {
         cacheService.deletePattern(`conversation:messages:${convId}:*`);
       });
 
-      return queryResult.rows.map(item => item.id);
+      return queryResult.data.map(item => item.id);
     });
   }
 
@@ -498,8 +494,7 @@ export class MessageService {
         throw totalResult.error;
       }
 
-      const pool = getPgPool();
-      const roleStatsResult = await pool.query<{
+      const roleStatsResult = await dataService.rawQuery<{
         role: string;
         total: number;
       }>(
@@ -511,12 +506,17 @@ export class MessageService {
         `,
         [conversationId]
       );
+      if (!roleStatsResult.success) {
+        throw roleStatsResult.error;
+      }
       const byRole: Record<string, number> = {};
-      roleStatsResult.rows.forEach(item => {
+      roleStatsResult.data.forEach(item => {
         byRole[item.role] = Number(item.total || 0);
       });
 
-      const lastMessageResult = await pool.query<{ created_at: Date | string }>(
+      const lastMessageResult = await dataService.rawQuery<{
+        created_at: string;
+      }>(
         `
           SELECT created_at
           FROM messages
@@ -526,11 +526,12 @@ export class MessageService {
         `,
         [conversationId]
       );
-      const lastMessage = lastMessageResult.rows[0];
+      if (!lastMessageResult.success) {
+        throw lastMessageResult.error;
+      }
+      const lastMessage = lastMessageResult.data[0];
       const lastMessageAt = lastMessage
-        ? lastMessage.created_at instanceof Date
-          ? lastMessage.created_at.toISOString()
-          : String(lastMessage.created_at)
+        ? String(lastMessage.created_at)
         : undefined;
 
       return {
