@@ -68,6 +68,8 @@ describe('resolveSessionIdentity', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    delete process.env.EXTERNAL_ATTRIBUTES_SYNC_MODE;
+    delete process.env.EXTERNAL_ATTRIBUTES_SYNC_INTERVAL_MS;
     lockQueryMock.mockResolvedValue({ rows: [] });
     poolConnectMock.mockResolvedValue({
       query: lockQueryMock,
@@ -146,6 +148,9 @@ describe('resolveSessionIdentity', () => {
   });
 
   it('skips external attributes upsert when existing data is fresh', async () => {
+    process.env.EXTERNAL_ATTRIBUTES_SYNC_MODE = 'interval';
+    process.env.EXTERNAL_ATTRIBUTES_SYNC_INTERVAL_MS = '900000';
+
     mockedGetSession.mockResolvedValueOnce({
       session: {
         id: 'session-id',

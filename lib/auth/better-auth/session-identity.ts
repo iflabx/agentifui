@@ -15,15 +15,23 @@ const INTERNAL_AUTH_PROVIDER = 'better-auth';
 const PROVIDER_ISSUER_PREFIX = 'urn:better-auth:provider:';
 const LEGACY_MAPPING_LOCK_PREFIX = 'legacy-auth-user';
 const DEFAULT_EXTERNAL_ATTRIBUTES_SYNC_INTERVAL_MS = 15 * 60 * 1000;
-const EXTERNAL_ATTRIBUTES_SYNC_INTERVAL_MS = (() => {
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function getExternalAttributesSyncIntervalMs(): number {
   const parsed = Number(process.env.EXTERNAL_ATTRIBUTES_SYNC_INTERVAL_MS);
   if (Number.isFinite(parsed) && parsed >= 0) {
     return parsed;
   }
   return DEFAULT_EXTERNAL_ATTRIBUTES_SYNC_INTERVAL_MS;
-})();
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+}
+
+function shouldUseIntervalExternalAttributesSync(): boolean {
+  return (
+    (process.env.EXTERNAL_ATTRIBUTES_SYNC_MODE || '').trim().toLowerCase() ===
+    'interval'
+  );
+}
 
 type AuthSession = Awaited<ReturnType<typeof auth.api.getSession>>;
 type SessionUser = Record<string, unknown> & {
@@ -607,10 +615,10 @@ async function syncExternalAttributes(
 
     if (sameSource) {
       const syncedAtMs = Date.parse(existingAttributes.data.synced_at);
+      const syncIntervalMs = getExternalAttributesSyncIntervalMs();
       const isFresh =
-        Number.isFinite(syncedAtMs) &&
-        Date.now() - syncedAtMs < EXTERNAL_ATTRIBUTES_SYNC_INTERVAL_MS;
-      if (isFresh) {
+        Number.isFinite(syncedAtMs) && Date.now() - syncedAtMs < syncIntervalMs;
+      if (shouldUseIntervalExternalAttributesSync() && isFresh) {
         return;
       }
     }

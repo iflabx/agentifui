@@ -102,11 +102,16 @@ export async function getUserIdentityByIssuerSubject(
 }
 
 export async function getUserIdentitiesByUserId(
-  userId: string
+  userId: string,
+  options?: {
+    cache?: boolean;
+  }
 ): Promise<Result<UserIdentity[]>> {
   if (!userId.trim()) {
     return success([]);
   }
+
+  const useCache = options?.cache ?? true;
 
   return dataService.findMany<UserIdentity>(
     'user_identities',
@@ -114,7 +119,7 @@ export async function getUserIdentitiesByUserId(
     { column: 'updated_at', ascending: false },
     undefined,
     {
-      cache: true,
+      cache: useCache,
       cacheTTL: 2 * 60 * 1000,
     }
   );
@@ -137,7 +142,9 @@ export async function upsertUserIdentity(
   }
 
   // Enforce one-to-one ownership: one internal UUID can only bind one IdP identity.
-  const existingByUser = await getUserIdentitiesByUserId(userId);
+  const existingByUser = await getUserIdentitiesByUserId(userId, {
+    cache: false,
+  });
   if (!existingByUser.success) {
     return failure(existingByUser.error);
   }
@@ -225,6 +232,33 @@ export async function upsertUserIdentity(
   );
 
   if (!queryResult.success) {
+    const dbError = queryResult.error as Error & { code?: string };
+    const isUserIdUniqueViolation =
+      dbError.code === '23505' &&
+      dbError.message.includes('idx_user_identities_user_id_unique');
+
+    if (isUserIdUniqueViolation) {
+      const reloadedByUser = await getUserIdentitiesByUserId(userId, {
+        cache: false,
+      });
+      if (!reloadedByUser.success) {
+        return failure(queryResult.error);
+      }
+
+      const reloadedIdentity = reloadedByUser.data[0];
+      if (
+        reloadedIdentity &&
+        (reloadedIdentity.issuer !== issuer ||
+          reloadedIdentity.subject !== subject)
+      ) {
+        return failure(
+          new Error(
+            `User ${userId} is already bound to identity ${reloadedIdentity.issuer}:${reloadedIdentity.subject}`
+          )
+        );
+      }
+    }
+
     return failure(queryResult.error);
   }
 

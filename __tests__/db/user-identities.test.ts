@@ -123,6 +123,9 @@ describe('upsertUserIdentity', () => {
     expect(result.success).toBe(true);
     expect(mockedRawQuery).toHaveBeenCalledTimes(1);
     expect(mockedDeletePattern).toHaveBeenCalledWith('user_identities:*');
+    expect(mockedFindMany.mock.calls[0]?.[4]).toMatchObject({
+      cache: false,
+    });
   });
 
   it('rejects switching to a different external provider on same identity', async () => {
@@ -157,5 +160,59 @@ describe('upsertUserIdentity', () => {
 
     expect(result.success).toBe(false);
     expect(mockedRawQuery).not.toHaveBeenCalled();
+  });
+
+  it('handles user_id unique race by returning explicit single-binding error', async () => {
+    mockedFindMany
+      .mockResolvedValueOnce({
+        success: true,
+        data: [],
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: [
+          {
+            id: 'existing-identity-id',
+            user_id: '00000000-0000-4000-8000-000000000001',
+            issuer: 'https://idp-a.example.com',
+            provider: 'oidc-a',
+            subject: 'subject-a',
+            email: 'test@example.com',
+            email_verified: true,
+            given_name: 'Test',
+            family_name: 'User',
+            preferred_username: 'test-user',
+            raw_claims: {},
+            created_at: '2026-02-14T00:00:00.000Z',
+            updated_at: '2026-02-14T00:00:00.000Z',
+            last_login_at: '2026-02-14T00:00:00.000Z',
+          },
+        ],
+      });
+
+    mockedRawQuery.mockResolvedValueOnce({
+      success: false,
+      error: Object.assign(
+        new Error(
+          'duplicate key value violates unique constraint idx_user_identities_user_id_unique'
+        ),
+        {
+          code: '23505',
+        }
+      ),
+    });
+
+    const result = await upsertUserIdentity({
+      user_id: '00000000-0000-4000-8000-000000000001',
+      issuer: 'https://idp-b.example.com',
+      provider: 'oidc-b',
+      subject: 'subject-b',
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected failure');
+    expect(result.error.message).toContain(
+      'already bound to identity https://idp-a.example.com:subject-a'
+    );
   });
 });
