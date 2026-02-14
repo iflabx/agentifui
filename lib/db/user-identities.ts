@@ -124,11 +124,30 @@ export async function upsertUserIdentity(
   const issuer = normalizeIssuer(input.issuer);
   const subject = normalizeSubject(input.subject);
   const provider = normalizeProvider(input.provider);
+  const userId = input.user_id.trim();
 
-  if (!input.user_id.trim() || !issuer || !subject || !provider) {
+  if (!userId || !issuer || !subject || !provider) {
     return failure(
       new Error(
         'upsertUserIdentity requires user_id, issuer, provider, and subject'
+      )
+    );
+  }
+
+  // Enforce one-to-one ownership: one internal UUID can only bind one IdP identity.
+  const existingByUser = await getUserIdentitiesByUserId(userId);
+  if (!existingByUser.success) {
+    return failure(existingByUser.error);
+  }
+
+  const existingIdentity = existingByUser.data[0];
+  if (
+    existingIdentity &&
+    (existingIdentity.issuer !== issuer || existingIdentity.subject !== subject)
+  ) {
+    return failure(
+      new Error(
+        `User ${userId} is already bound to identity ${existingIdentity.issuer}:${existingIdentity.subject}`
       )
     );
   }
@@ -166,7 +185,7 @@ export async function upsertUserIdentity(
       RETURNING *
     `,
     [
-      input.user_id,
+      userId,
       issuer,
       provider,
       subject,

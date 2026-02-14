@@ -13,7 +13,6 @@ jest.mock('@lib/auth/better-auth/server', () => ({
   auth: {
     api: {
       getSession: jest.fn(),
-      listUserAccounts: jest.fn(),
     },
   },
   getAuthProviderIssuer: jest.fn(),
@@ -40,10 +39,6 @@ type PoolQueryResult = {
 describe('resolveSessionIdentity', () => {
   const mockedGetSession = auth.api.getSession as jest.MockedFunction<
     typeof auth.api.getSession
-  >;
-  const mockedListUserAccounts = auth.api
-    .listUserAccounts as unknown as jest.MockedFunction<
-    (input: { headers: Headers }) => Promise<unknown>
   >;
   const mockedGetAuthProviderIssuer =
     getAuthProviderIssuer as jest.MockedFunction<typeof getAuthProviderIssuer>;
@@ -82,7 +77,6 @@ describe('resolveSessionIdentity', () => {
       query: queryMock,
       connect: poolConnectMock,
     } as unknown as ReturnType<typeof getPgPool>);
-    mockedListUserAccounts.mockResolvedValue([]);
     mockedGetAuthProviderIssuer.mockReturnValue(null);
     mockedGetProfileExternalAttributes.mockResolvedValue({
       success: true,
@@ -217,7 +211,7 @@ describe('resolveSessionIdentity', () => {
     expect(mockedUpsertProfileExternalAttributes).not.toHaveBeenCalled();
   });
 
-  it('creates legacy mapping and syncs linked identity + external attributes', async () => {
+  it('creates legacy mapping and syncs external attributes', async () => {
     mockedGetSession.mockResolvedValueOnce({
       session: {
         id: 'session-id',
@@ -233,17 +227,7 @@ describe('resolveSessionIdentity', () => {
       },
     } as never);
     mockedGetAuthProviderIssuer.mockReturnValue('https://idp.example.com');
-    mockedListUserAccounts.mockResolvedValueOnce([
-      {
-        providerId: 'github',
-        accountId: 'gh-sub-001',
-      },
-    ]);
     mockedGetUserIdentityByIssuerSubject
-      .mockResolvedValueOnce({
-        success: true,
-        data: null,
-      })
       .mockResolvedValueOnce({
         success: true,
         data: null,
@@ -268,10 +252,9 @@ describe('resolveSessionIdentity', () => {
     }
 
     expect(queryMock).toHaveBeenCalledTimes(2);
-    expect(mockedUpsertUserIdentity).toHaveBeenCalledTimes(2);
+    expect(mockedUpsertUserIdentity).toHaveBeenCalledTimes(1);
 
     const firstUpsert = mockedUpsertUserIdentity.mock.calls[0][0];
-    const secondUpsert = mockedUpsertUserIdentity.mock.calls[1][0];
 
     expect(firstUpsert.issuer).toBe('urn:agentifui:better-auth');
     expect(firstUpsert.provider).toBe('better-auth');
@@ -279,11 +262,6 @@ describe('resolveSessionIdentity', () => {
     expect(firstUpsert.user_id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
     );
-
-    expect(secondUpsert.issuer).toBe('https://idp.example.com');
-    expect(secondUpsert.provider).toBe('github');
-    expect(secondUpsert.subject).toBe('gh-sub-001');
-    expect(secondUpsert.user_id).toBe(firstUpsert.user_id);
 
     expect(mockedUpsertProfileExternalAttributes).toHaveBeenCalledTimes(1);
     expect(
@@ -348,7 +326,6 @@ describe('resolveSessionIdentity', () => {
 
     expect(result.data.userId).toBe(conflictOwner);
     expect(queryMock).toHaveBeenCalledTimes(4);
-    expect(mockedListUserAccounts).not.toHaveBeenCalled();
     expect(mockedUpsertProfileExternalAttributes).not.toHaveBeenCalled();
   });
 });

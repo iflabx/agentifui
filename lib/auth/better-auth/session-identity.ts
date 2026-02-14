@@ -51,15 +51,6 @@ type ResolveUserIdResult = {
   ensuredProfile?: EnsureProfileResult;
 };
 
-type BetterAuthLinkedAccount = {
-  id?: string;
-  providerId?: string;
-  provider_id?: string;
-  accountId?: string;
-  account_id?: string;
-  [key: string]: unknown;
-};
-
 export interface ResolvedSessionIdentity {
   session: NonNullable<AuthSession>;
   authUserId: string;
@@ -334,21 +325,31 @@ async function ensureProfileStatus(
   sessionUser: SessionUser
 ): Promise<Result<EnsureProfileResult>> {
   const pool = getPgPool();
+  const profileName = readString(sessionUser.name);
+  const profileAvatar = readString(sessionUser.image);
+  const profileEmail = normalizeEmail(sessionUser.email);
+  const profileAuthSource = inferProvider(sessionUser);
 
   try {
-    const existing = await pool.query<ProfileStatusRow>(
+    const touchedExisting = await pool.query<ProfileStatusRow>(
       `
-      SELECT
+      UPDATE profiles
+      SET
+        full_name = COALESCE($2, full_name),
+        avatar_url = COALESCE($3, avatar_url),
+        email = COALESCE($4, email),
+        auth_source = COALESCE($5, auth_source),
+        last_login = NOW(),
+        updated_at = NOW()
+      WHERE id = $1
+      RETURNING
         role::text AS role,
         status::text AS status
-      FROM profiles
-      WHERE id = $1
-      LIMIT 1
       `,
-      [userId]
+      [userId, profileName, profileAvatar, profileEmail, profileAuthSource]
     );
 
-    const profile = existing.rows[0];
+    const profile = touchedExisting.rows[0];
     if (profile) {
       return success({
         role: profile.role,
@@ -374,13 +375,7 @@ async function ensureProfileStatus(
         role::text AS role,
         status::text AS status
       `,
-      [
-        userId,
-        readString(sessionUser.name),
-        readString(sessionUser.image),
-        normalizeEmail(sessionUser.email),
-        inferProvider(sessionUser),
-      ]
+      [userId, profileName, profileAvatar, profileEmail, profileAuthSource]
     );
 
     const createdProfile = inserted.rows[0];
@@ -392,18 +387,24 @@ async function ensureProfileStatus(
       });
     }
 
-    const afterConflict = await pool.query<ProfileStatusRow>(
+    const touchedAfterConflict = await pool.query<ProfileStatusRow>(
       `
-      SELECT
+      UPDATE profiles
+      SET
+        full_name = COALESCE($2, full_name),
+        avatar_url = COALESCE($3, avatar_url),
+        email = COALESCE($4, email),
+        auth_source = COALESCE($5, auth_source),
+        last_login = NOW(),
+        updated_at = NOW()
+      WHERE id = $1
+      RETURNING
         role::text AS role,
         status::text AS status
-      FROM profiles
-      WHERE id = $1
-      LIMIT 1
       `,
-      [userId]
+      [userId, profileName, profileAvatar, profileEmail, profileAuthSource]
     );
-    const profileAfterConflict = afterConflict.rows[0];
+    const profileAfterConflict = touchedAfterConflict.rows[0];
     if (profileAfterConflict) {
       return success({
         role: profileAfterConflict.role,
@@ -445,97 +446,6 @@ async function cleanupUnlinkedProfile(userId: string): Promise<void> {
       `[SessionIdentity] failed to clean transient profile ${userId}:`,
       error
     );
-  }
-}
-
-async function syncLinkedAccountIdentities(
-  headers: Headers,
-  userId: string,
-  sessionUser: SessionUser
-): Promise<void> {
-  type ListUserAccountsFn = (input: { headers: Headers }) => Promise<unknown>;
-
-  const listUserAccounts = (
-    auth.api as { listUserAccounts?: ListUserAccountsFn }
-  ).listUserAccounts;
-
-  if (typeof listUserAccounts !== 'function') {
-    return;
-  }
-
-  let rawAccounts: unknown;
-  try {
-    rawAccounts = await listUserAccounts({ headers });
-  } catch (error) {
-    console.warn('[SessionIdentity] listUserAccounts failed:', error);
-    return;
-  }
-
-  if (!Array.isArray(rawAccounts)) {
-    return;
-  }
-
-  const fullName = readString(sessionUser.name);
-  const split = splitName(fullName);
-
-  for (const rawAccount of rawAccounts) {
-    const account = asRecord(rawAccount) as BetterAuthLinkedAccount;
-    const providerId = readFirstString(account, ['providerId', 'provider_id']);
-    const accountId = readFirstString(account, ['accountId', 'account_id']);
-
-    if (!providerId || !accountId) {
-      continue;
-    }
-
-    const issuer = buildSourceIssuer(providerId);
-    const existing = await getUserIdentityByIssuerSubject(issuer, accountId);
-
-    if (!existing.success) {
-      console.warn(
-        `[SessionIdentity] failed to check existing identity for ${providerId}:`,
-        existing.error
-      );
-      continue;
-    }
-
-    if (existing.data?.user_id && existing.data.user_id !== userId) {
-      console.warn(
-        `[SessionIdentity] identity conflict for ${providerId}:${accountId}; keeping existing owner ${existing.data.user_id}`
-      );
-      continue;
-    }
-
-    if (existing.data?.user_id === userId) {
-      continue;
-    }
-
-    const upsert = await upsertUserIdentity({
-      user_id: userId,
-      issuer,
-      provider: providerId,
-      subject: accountId,
-      email: normalizeEmail(sessionUser.email),
-      email_verified: Boolean(sessionUser.emailVerified),
-      given_name: split.givenName,
-      family_name: split.familyName,
-      preferred_username: readFirstString(sessionUser, [
-        'preferred_username',
-        'preferredUsername',
-        'username',
-        'login',
-      ]),
-      raw_claims: {
-        ...account,
-        _identity_source: 'better-auth/list-accounts',
-      },
-    });
-
-    if (!upsert.success) {
-      console.warn(
-        `[SessionIdentity] failed to upsert provider identity for ${providerId}:`,
-        upsert.error
-      );
-    }
   }
 }
 
@@ -709,15 +619,6 @@ export async function resolveSessionIdentity(
     ensuredProfileData = ensuredProfile.data;
   }
 
-  const shouldSyncIdentityData =
-    resolvedUserId.data.createdLegacyMapping || ensuredProfileData.created;
-  if (shouldSyncIdentityData) {
-    await syncLinkedAccountIdentities(
-      headers,
-      resolvedUserId.data.userId,
-      sessionUser
-    );
-  }
   await syncExternalAttributes(resolvedUserId.data.userId, sessionUser);
 
   return success({
