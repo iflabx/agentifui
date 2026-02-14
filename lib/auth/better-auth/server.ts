@@ -51,9 +51,15 @@ parsedSsoProviders.warnings.forEach(message => {
   console.warn(message);
 });
 
-export const isBetterAuthEnabled =
-  process.env.BETTER_AUTH_ENABLED === 'true' ||
-  process.env.AUTH_BACKEND === 'better-auth';
+export function getPublicSsoProviders() {
+  return parsedSsoProviders.providers.map(provider => ({
+    providerId: provider.providerId,
+    domain: provider.domain,
+    displayName: provider.displayName,
+    icon: provider.icon ?? '🏛️',
+    mode: provider.mode,
+  }));
+}
 
 export const auth = betterAuth({
   baseURL: getBaseUrl(),

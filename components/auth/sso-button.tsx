@@ -1,8 +1,7 @@
 'use client';
 
 import { Button } from '@components/ui/button';
-import { createClient } from '@lib/supabase/client';
-import type { PublicSsoProvider } from '@lib/types/database';
+import { signInWithSsoProvider } from '@lib/auth/better-auth/http-client';
 import { cn } from '@lib/utils';
 import { clearCacheOnLogin } from '@lib/utils/cache-cleanup';
 
@@ -18,6 +17,14 @@ interface SSOButtonProps {
   disabled?: boolean;
   children?: React.ReactNode;
   providerId?: string; // specific provider ID
+}
+
+interface BetterAuthSsoProvider {
+  providerId: string;
+  domain: string;
+  displayName: string;
+  icon: string;
+  mode: 'direct' | 'cas-bridge';
 }
 
 export function SSOButton({
@@ -37,16 +44,26 @@ export function SSOButton({
       setIsLoading(true);
 
       clearCacheOnLogin();
-
-      const params = new URLSearchParams();
-      if (returnUrl) {
-        params.set('returnUrl', returnUrl);
+      if (!providerId) {
+        throw new Error(t('noProvider'));
       }
 
-      const ssoLoginUrl = providerId
-        ? `/api/sso/${providerId}/login${params.toString() ? '?' + params.toString() : ''}`
-        : `/api/sso/cas/login${params.toString() ? '?' + params.toString() : ''}`;
-      window.location.href = ssoLoginUrl;
+      const callbackURL =
+        typeof returnUrl === 'string' && returnUrl.startsWith('/')
+          ? returnUrl
+          : '/chat';
+
+      const result = await signInWithSsoProvider(
+        providerId,
+        callbackURL,
+        '/login?error=sso_auth_failed'
+      );
+
+      if (!result?.url) {
+        throw new Error(t('startError'));
+      }
+
+      window.location.href = result.url;
     } catch (error) {
       console.error('[SSO login] failed to start SSO login:', error);
       setIsLoading(false);
@@ -98,7 +115,7 @@ export function SSOCard({
   returnUrl?: string;
   className?: string;
 }) {
-  const [providers, setProviders] = useState<PublicSsoProvider[]>([]);
+  const [providers, setProviders] = useState<BetterAuthSsoProvider[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const t = useTranslations('pages.auth.sso');
@@ -109,22 +126,28 @@ export function SSOCard({
         setLoading(true);
         setError(null);
 
-        const supabase = createClient();
+        const response = await fetch('/api/auth/sso/providers', {
+          method: 'GET',
+          cache: 'no-store',
+          credentials: 'include',
+        });
 
-        const { data: providers, error } = await supabase
-          .from('public_sso_providers')
-          .select('*');
-
-        if (error) {
-          throw new Error(error.message);
+        if (!response.ok) {
+          throw new Error(`Failed to load providers (${response.status})`);
         }
 
-        const sortedProviders = (providers || []).sort((a, b) => {
-          if (a.display_order === null && b.display_order === null)
-            return a.name.localeCompare(b.name);
-          if (a.display_order === null) return 1;
-          if (b.display_order === null) return -1;
-          return a.display_order - b.display_order;
+        const payload = (await response.json()) as {
+          providers?: BetterAuthSsoProvider[];
+          success?: boolean;
+          error?: string;
+        };
+
+        if (!payload.success) {
+          throw new Error(payload.error || t('startError'));
+        }
+
+        const sortedProviders = (payload.providers || []).sort((a, b) => {
+          return a.displayName.localeCompare(b.displayName);
         });
 
         setProviders(sortedProviders);
@@ -241,25 +264,16 @@ export function SSOCard({
 
         <div className="space-y-3">
           {providers.map(provider => {
-            // use new settings field, include filtered full config
-            const settings = provider.settings as {
-              ui?: { displayName?: string; icon?: string };
-            };
-            const uiSettings = settings?.ui || {};
-            const displayName =
-              uiSettings?.displayName || provider.button_text || provider.name;
-            const icon = uiSettings?.icon || '🏛️';
-
             return (
               <SSOButton
-                key={provider.id}
+                key={provider.providerId}
                 returnUrl={returnUrl}
-                providerId={provider.id}
+                providerId={provider.providerId}
                 variant="gradient"
                 className="w-full font-serif"
               >
-                <span className="mr-2">{icon}</span>
-                {displayName}
+                <span className="mr-2">{provider.icon}</span>
+                {provider.displayName}
               </SSOButton>
             );
           })}

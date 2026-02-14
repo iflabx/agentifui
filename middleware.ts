@@ -1,3 +1,4 @@
+import { auth } from '@lib/auth/better-auth/server';
 import {
   createCorsHeaders,
   handleCorsPreflightRequest,
@@ -6,14 +7,13 @@ import {
   AUTH_SYSTEM_ERRORS,
   getAccountStatusError,
 } from '@lib/constants/auth-errors';
+import { getPgPool } from '@lib/server/pg/pool';
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-import { CookieOptions, createServerClient } from '@supabase/ssr';
-
 // This middleware intercepts all requests.
-// Uses Supabase authentication logic for route protection.
+// Uses better-auth + PostgreSQL profile checks for route protection.
 export async function middleware(request: NextRequest) {
   const url = new URL(request.url);
   const pathname = url.pathname;
@@ -56,69 +56,16 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(newChatUrl);
   }
 
-  // Check if it is an SSO login success callback, if so, temporarily skip authentication check
-  // Allow the frontend to handle the SSO session establishment
-  const ssoLoginSuccess = url.searchParams.get('sso_login') === 'success';
-  const hasSsoUserCookie = request.cookies.get('sso_user_data');
-  const hasSsoSecureCookie = request.cookies.get('sso_user_data_secure');
-
-  // 🔒 Security: Only bypass authentication check for SSO processing paths
-  // This ensures that SSO users still go through normal status checks for protected routes
-  const isSsoProcessingPath =
-    pathname === '/sso/processing' ||
-    pathname.startsWith('/api/sso/') ||
-    pathname.startsWith('/api/auth/sso-signin');
-
-  if (
-    (ssoLoginSuccess || hasSsoUserCookie || hasSsoSecureCookie) &&
-    isSsoProcessingPath
-  ) {
-    console.log(
-      `[Middleware] SSO processing path detected, allowing request to ${pathname}`
-    );
-    return response;
+  // Get current session from better-auth.
+  let session: Awaited<ReturnType<typeof auth.api.getSession>> | null = null;
+  try {
+    session = await auth.api.getSession({
+      headers: request.headers,
+    });
+  } catch (authError) {
+    console.log(`[Middleware] Auth verification failed: ${authError}`);
   }
-
-  // Create Supabase client
-  const cookieStore = {
-    get: (name: string) => {
-      return request.cookies.get(name)?.value;
-    },
-    set: (name: string, value: string, options: CookieOptions) => {
-      // Setting cookies in the middleware requires through response
-      response.cookies.set(name, value, options);
-    },
-    remove: (name: string, options: CookieOptions) => {
-      // Deleting cookies in the middleware requires through response
-      response.cookies.set({
-        name,
-        value: '',
-        ...options,
-        maxAge: 0,
-      });
-    },
-  };
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: cookieStore,
-    }
-  );
-
-  // 🔒 Security fix: Use getUser() instead of getSession()
-  // getUser() will verify the authenticity of the JWT token with the Supabase Auth server
-  // Prevent privilege escalation attacks caused by tampering with local cookies
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-
-  // Handle authentication errors
-  if (authError) {
-    console.log(`[Middleware] Auth verification failed: ${authError.message}`);
-  }
+  const user = session?.user ?? null;
 
   // Route protection logic based on user session status
   // In sso mode, prohibit registration-related routes
@@ -153,34 +100,20 @@ export async function middleware(request: NextRequest) {
   // Query profile once to get both status and role for performance optimization
   if (user) {
     try {
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('role, status')
-        .eq('id', user.id) // 🔒 Use user.id that has been verified by the server
-        .single();
-
-      if (error) {
-        console.error(
-          `[SECURITY] Profile query failed for user ${user.id}:`,
-          error.message,
-          { pathname, code: error.code }
-        );
-        await supabase.auth.signOut();
-        return NextResponse.redirect(
-          new URL(
-            `/login?error=${AUTH_SYSTEM_ERRORS.PROFILE_CHECK_FAILED}`,
-            request.url
-          )
-        );
-      }
+      const pool = getPgPool();
+      const profileResult = await pool.query<{
+        role: string | null;
+        status: string | null;
+      }>('SELECT role, status FROM profiles WHERE id = $1 LIMIT 1', [user.id]);
+      const profile = profileResult.rows[0] ?? null;
 
       // 🔒 Defense: Handle missing profile (should never happen but defensive)
       if (!profile) {
         console.error(
           `[SECURITY] No profile found for authenticated user ${user.id}`
         );
-        await supabase.auth.signOut();
-        return NextResponse.redirect(
+        return await signOutAndRedirect(
+          request,
           new URL(
             `/login?error=${AUTH_SYSTEM_ERRORS.PROFILE_NOT_FOUND}`,
             request.url
@@ -199,8 +132,8 @@ export async function middleware(request: NextRequest) {
           console.log(
             `[Middleware] User with status '${profile.status}' attempting to access ${pathname}, signing out and redirecting to login`
           );
-          await supabase.auth.signOut();
-          return NextResponse.redirect(
+          return await signOutAndRedirect(
+            request,
             new URL(`/login?error=${errorCode}`, request.url)
           );
         }
@@ -223,8 +156,8 @@ export async function middleware(request: NextRequest) {
         error instanceof Error ? error.message : 'Unknown error',
         { pathname }
       );
-      await supabase.auth.signOut();
-      return NextResponse.redirect(
+      return await signOutAndRedirect(
+        request,
         new URL(
           `/login?error=${AUTH_SYSTEM_ERRORS.PERMISSION_CHECK_FAILED}`,
           request.url
@@ -242,6 +175,40 @@ export async function middleware(request: NextRequest) {
   }
 
   return response;
+}
+
+async function signOutAndRedirect(request: NextRequest, url: URL) {
+  const redirectResponse = NextResponse.redirect(url);
+
+  try {
+    const signOutResponse = await auth.api.signOut({
+      headers: request.headers,
+      asResponse: true,
+    });
+
+    const headersWithGetSetCookie = signOutResponse.headers as Headers & {
+      getSetCookie?: () => string[];
+    };
+    const setCookies = headersWithGetSetCookie.getSetCookie?.() || [];
+
+    if (setCookies.length > 0) {
+      for (const cookie of setCookies) {
+        redirectResponse.headers.append('set-cookie', cookie);
+      }
+    } else {
+      const singleSetCookie = signOutResponse.headers.get('set-cookie');
+      if (singleSetCookie) {
+        redirectResponse.headers.append('set-cookie', singleSetCookie);
+      }
+    }
+  } catch (error) {
+    console.warn(
+      '[Middleware] Failed to sign out session during redirect:',
+      error
+    );
+  }
+
+  return redirectResponse;
 }
 
 // Configure the paths matched by the middleware

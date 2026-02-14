@@ -1,7 +1,7 @@
 'use client';
 
+import { getCurrentSession } from '@lib/auth/better-auth/http-client';
 import { useCurrentAppStore } from '@lib/stores/current-app-store';
-import { createClient } from '@lib/supabase/client';
 
 import { useEffect, useState } from 'react';
 
@@ -24,15 +24,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
     // Prevent unnecessary cache creation for unlogged users
     const checkUserAndInitialize = async () => {
       try {
-        const supabase = createClient();
-        const {
-          data: { user },
-          error,
-        } = await supabase.auth.getUser();
+        const sessionPayload = (await getCurrentSession()) as {
+          user?: { id?: string } | null;
+        } | null;
+        const user = sessionPayload?.user ?? null;
 
         setUserChecked(true);
 
-        if (user && !error) {
+        if (user?.id) {
           console.log('[Providers] User logged in, initializing app storage');
           // Only initialize default App ID when user is logged in
           await initializeDefaultAppId();

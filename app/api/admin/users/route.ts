@@ -1,3 +1,4 @@
+import { getPgPool } from '@lib/server/pg/pool';
 import { requireAdmin } from '@lib/services/admin/require-admin';
 
 import { NextResponse } from 'next/server';
@@ -8,37 +9,39 @@ import { NextResponse } from 'next/server';
  * Handle admin user management related API requests
  * Get user list (simplified version, for user selection in group management)
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const authResult = await requireAdmin();
+    const authResult = await requireAdmin(request.headers);
     if (!authResult.ok) return authResult.response;
 
-    const supabase = authResult.supabase;
-
-    // get user basic information (only query profiles table existing fields)
-    const { data: users, error } = await supabase
-      .from('profiles')
-      .select('id, full_name, username, avatar_url, role, status')
-      .eq('status', 'active') // only get active users
-      .order('full_name', { ascending: true });
-
-    if (error) {
-      console.error('Failed to get user list:', error);
-      return NextResponse.json(
-        { error: 'Failed to get user list' },
-        { status: 500 }
-      );
-    }
+    const pool = getPgPool();
+    const { rows: users } = await pool.query<{
+      id: string;
+      full_name: string | null;
+      username: string | null;
+      avatar_url: string | null;
+      role: string | null;
+      status: string | null;
+    }>(
+      `
+      SELECT id, full_name, username, avatar_url, role, status
+      FROM profiles
+      WHERE status = 'active'
+      ORDER BY full_name ASC NULLS LAST, username ASC NULLS LAST, created_at DESC
+      `
+    );
 
     // format user data, prioritize showing real name
-    const formattedUsers = (users || []).map(user => ({
-      id: user.id,
-      full_name: user.full_name || user.username || 'Unknown user',
-      username: user.username,
-      avatar_url: user.avatar_url,
-      role: user.role,
-      status: user.status,
-    }));
+    const formattedUsers = (users || []).map(
+      (user: (typeof users)[number]) => ({
+        id: user.id,
+        full_name: user.full_name || user.username || 'Unknown user',
+        username: user.username,
+        avatar_url: user.avatar_url,
+        role: user.role,
+        status: user.status,
+      })
+    );
 
     return NextResponse.json({
       users: formattedUsers,

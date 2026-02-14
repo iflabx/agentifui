@@ -9,6 +9,8 @@ interface EnvSsoProvider {
   issuer: string;
   clientId: string;
   clientSecret: string;
+  displayName?: string;
+  icon?: string;
   discoveryEndpoint?: string;
   tokenEndpointAuthentication?: TokenEndpointAuth;
   scopes?: string[];
@@ -20,6 +22,8 @@ interface EnvSsoProvider {
 export interface ParsedSsoProvider {
   providerId: string;
   domain: string;
+  displayName: string;
+  icon?: string;
   mode: BridgeMode;
   casIssuer?: string;
   oidcConfig: OIDCConfig;
@@ -81,6 +85,14 @@ function parseProvider(
     issuer: ensureString(input.issuer, 'issuer'),
     clientId: ensureString(input.clientId, 'clientId'),
     clientSecret: ensureString(input.clientSecret, 'clientSecret'),
+    displayName:
+      typeof input.displayName === 'string' && input.displayName.trim().length
+        ? input.displayName.trim()
+        : undefined,
+    icon:
+      typeof input.icon === 'string' && input.icon.trim().length
+        ? input.icon.trim()
+        : undefined,
     discoveryEndpoint:
       typeof input.discoveryEndpoint === 'string'
         ? input.discoveryEndpoint
@@ -110,6 +122,8 @@ function parseProvider(
   return {
     providerId: provider.providerId,
     domain: provider.domain,
+    displayName: provider.displayName ?? provider.providerId,
+    icon: provider.icon,
     mode: parsedMode,
     casIssuer: provider.casIssuer,
     oidcConfig: toOidcConfig(provider),

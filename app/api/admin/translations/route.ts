@@ -164,7 +164,7 @@ function setNestedValue(
 // GET: read translation content
 export async function GET(request: NextRequest) {
   try {
-    const authResult = await requireAdmin();
+    const authResult = await requireAdmin(request.headers);
     if (!authResult.ok) return authResult.response;
 
     const { searchParams } = new URL(request.url);
@@ -218,7 +218,7 @@ export async function GET(request: NextRequest) {
 // PUT: update translation content
 export async function PUT(request: NextRequest) {
   try {
-    const authResult = await requireAdmin();
+    const authResult = await requireAdmin(request.headers);
     if (!authResult.ok) return authResult.response;
 
     const body = await request.json();
@@ -302,7 +302,7 @@ export async function PUT(request: NextRequest) {
 // POST: batch update multiple language translations
 export async function POST(request: NextRequest) {
   try {
-    const authResult = await requireAdmin();
+    const authResult = await requireAdmin(request.headers);
     if (!authResult.ok) return authResult.response;
 
     const body = await request.json();

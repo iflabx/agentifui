@@ -1,6 +1,6 @@
 'use client';
 
-import { createClient } from '@lib/supabase/client';
+import { signOutCurrentSession } from '@lib/auth/better-auth/http-client';
 import { clearCacheOnLogout } from '@lib/utils/cache-cleanup';
 
 import { useRouter } from 'next/navigation';
@@ -9,7 +9,7 @@ import { useRouter } from 'next/navigation';
  * Logout Hook
  *
  * Provides logout functionality and handles all related logic, including:
- * - Calling Supabase Auth sign out method
+ * - Calling better-auth sign out method
  * - Clearing local state and sensitive cache
  * - Redirecting to the login page
  *
@@ -30,11 +30,10 @@ import { useRouter } from 'next/navigation';
  */
 export function useLogout() {
   const router = useRouter();
-  const supabase = createClient();
 
   /**
    * Executes the logout process:
-   * - Calls Supabase Auth sign out method
+   * - Calls better-auth sign out method
    * - Clears all sensitive cache and user data
    * - Redirects to the login page
    * - Refreshes the router to update authentication state
@@ -46,10 +45,10 @@ export function useLogout() {
       // First, clear all sensitive cache to ensure user data safety
       clearCacheOnLogout();
 
-      // Call Supabase Auth sign out method
-      await supabase.auth.signOut();
+      // Call better-auth sign out method
+      await signOutCurrentSession();
 
-      console.log('[Logout] Supabase Auth sign out successful');
+      console.log('[Logout] better-auth sign out successful');
 
       // Redirect to login page
       router.push('/login');

@@ -1,53 +1,49 @@
-/**
- * generic SSO logout handler
- * handle logout requests for any CAS provider
- */
-import { CASConfigService } from '@lib/services/sso/generic-cas-service';
+import { auth } from '@lib/auth/better-auth/server';
 
-import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 
-import type { CookieOptions } from '@supabase/ssr';
-import { createServerClient } from '@supabase/ssr';
+async function withSignOutHeaders(
+  request: NextRequest,
+  response: NextResponse
+): Promise<NextResponse> {
+  try {
+    const signOutResponse = await auth.api.signOut({
+      headers: request.headers,
+      asResponse: true,
+    });
+
+    const headersWithGetSetCookie = signOutResponse.headers as Headers & {
+      getSetCookie?: () => string[];
+    };
+    const setCookies = headersWithGetSetCookie.getSetCookie?.() || [];
+
+    if (setCookies.length > 0) {
+      for (const cookie of setCookies) {
+        response.headers.append('set-cookie', cookie);
+      }
+    } else {
+      const cookie = signOutResponse.headers.get('set-cookie');
+      if (cookie) {
+        response.headers.append('set-cookie', cookie);
+      }
+    }
+  } catch (error) {
+    console.error('[LegacySSOLogout] better-auth sign-out failed:', error);
+  }
+
+  return response;
+}
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ providerId: string }> }
 ) {
-  const requestUrl = new URL(request.url);
-  const returnUrl = requestUrl.searchParams.get('returnUrl') || '/login';
   const { providerId } = await params;
-
-  console.log(
-    `SSO logout initiated for provider ${providerId}, return URL: ${returnUrl}`
-  );
-
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL;
-  if (!appUrl) {
-    throw new Error('NEXT_PUBLIC_APP_URL is not configured');
-  }
-
-  try {
-    // create generic CAS service instance
-    const casService = await CASConfigService.createCASService(providerId);
-    const casConfig = casService.getConfig();
-
-    // generate CAS logout URL
-    const logoutUrl = casService.generateLogoutURL(
-      new URL(returnUrl, appUrl).toString()
-    );
-
-    console.log(
-      `Redirecting to CAS logout for ${casConfig.name}: ${logoutUrl}`
-    );
-
-    return NextResponse.redirect(logoutUrl);
-  } catch (error) {
-    console.error(`SSO logout failed for provider ${providerId}:`, error);
-
-    // even if CAS logout fails, clean up local session
-    return NextResponse.redirect(new URL(returnUrl, appUrl));
-  }
+  const returnUrl = request.nextUrl.searchParams.get('returnUrl') || '/login';
+  const safeReturnUrl = returnUrl.startsWith('/') ? returnUrl : '/login';
+  const redirect = NextResponse.redirect(new URL(safeReturnUrl, request.url));
+  redirect.headers.set('x-legacy-provider', providerId);
+  return withSignOutHeaders(request, redirect);
 }
 
 export async function POST(
@@ -55,72 +51,11 @@ export async function POST(
   { params }: { params: Promise<{ providerId: string }> }
 ) {
   const { providerId } = await params;
-  console.log(`Processing SSO logout POST request for provider ${providerId}`);
-
-  try {
-    const cookieStore = await cookies();
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value;
-          },
-          set(name: string, value: string, options: CookieOptions) {
-            cookieStore.set({ name, value, ...options });
-          },
-          remove(name: string, options: CookieOptions) {
-            cookieStore.set({ name, value: '', ...options });
-          },
-        },
-      }
-    );
-
-    // sign out Supabase session
-    const { error } = await supabase.auth.signOut();
-
-    if (error) {
-      console.error('Supabase signout error:', error);
-      return NextResponse.json(
-        { error: 'Failed to sign out' },
-        { status: 500 }
-      );
-    }
-
-    // create generic CAS service instance
-    const casService = await CASConfigService.createCASService(providerId);
-    const casConfig = casService.getConfig();
-
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL;
-    if (!appUrl) {
-      throw new Error('NEXT_PUBLIC_APP_URL is not configured');
-    }
-
-    // generate CAS logout URL
-    const logoutUrl = casService.generateLogoutURL(
-      new URL('/login', appUrl).toString()
-    );
-
-    console.log(`Generated CAS logout URL for ${casConfig.name}: ${logoutUrl}`);
-
-    return NextResponse.json({
-      success: true,
-      logoutUrl: logoutUrl,
-      message: 'Logged out successfully',
-    });
-  } catch (error) {
-    console.error(
-      `SSO logout processing failed for provider ${providerId}:`,
-      error
-    );
-
-    return NextResponse.json(
-      {
-        error: 'Logout failed',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      },
-      { status: 500 }
-    );
-  }
+  const response = NextResponse.json({
+    success: true,
+    providerId,
+    message:
+      'Signed out with better-auth. Legacy CAS logout flow is no longer used.',
+  });
+  return withSignOutHeaders(request, response);
 }

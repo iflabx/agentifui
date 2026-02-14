@@ -6,9 +6,9 @@ import { NextResponse } from 'next/server';
 /**
  * Get admin backend status information
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const authResult = await requireAdmin();
+    const authResult = await requireAdmin(request.headers);
     if (!authResult.ok) return authResult.response;
 
     // check if there are active service providers

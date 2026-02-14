@@ -1,13 +1,11 @@
-import { createClient } from '@lib/supabase/server';
+import { auth } from '@lib/auth/better-auth/server';
+import { getPgPool } from '@lib/server/pg/pool';
 
 import { NextResponse } from 'next/server';
-
-type ServerSupabaseClient = Awaited<ReturnType<typeof createClient>>;
 
 export type RequireAdminResult =
   | {
       ok: true;
-      supabase: ServerSupabaseClient;
       userId: string;
     }
   | {
@@ -19,15 +17,19 @@ export type RequireAdminResult =
  * Enforce admin access for admin API routes.
  * Returns a typed guard result so handlers can short-circuit consistently.
  */
-export async function requireAdmin(): Promise<RequireAdminResult> {
-  const supabase = await createClient();
+export async function requireAdmin(
+  requestHeaders: Headers
+): Promise<RequireAdminResult> {
+  let session: Awaited<ReturnType<typeof auth.api.getSession>> | null = null;
+  try {
+    session = await auth.api.getSession({
+      headers: requestHeaders,
+    });
+  } catch (authError) {
+    console.error('[AdminAuth] Failed to get auth session:', authError);
+  }
 
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-
-  if (authError || !user) {
+  if (!session?.user?.id) {
     return {
       ok: false,
       response: NextResponse.json(
@@ -37,13 +39,23 @@ export async function requireAdmin(): Promise<RequireAdminResult> {
     };
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle();
-
-  if (profileError) {
+  const pool = getPgPool();
+  try {
+    const result = await pool.query<{ role: string | null }>(
+      'SELECT role FROM profiles WHERE id = $1 LIMIT 1',
+      [session.user.id]
+    );
+    const role = result.rows[0]?.role ?? null;
+    if (role !== 'admin') {
+      return {
+        ok: false,
+        response: NextResponse.json(
+          { error: 'Insufficient permissions' },
+          { status: 403 }
+        ),
+      };
+    }
+  } catch (profileError) {
     console.error('[AdminAuth] Failed to verify admin role:', profileError);
     return {
       ok: false,
@@ -54,19 +66,8 @@ export async function requireAdmin(): Promise<RequireAdminResult> {
     };
   }
 
-  if (!profile || profile.role !== 'admin') {
-    return {
-      ok: false,
-      response: NextResponse.json(
-        { error: 'Insufficient permissions' },
-        { status: 403 }
-      ),
-    };
-  }
-
   return {
     ok: true,
-    supabase,
-    userId: user.id,
+    userId: session.user.id,
   };
 }

@@ -11,7 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
  */
 export async function POST(request: NextRequest) {
   try {
-    const authResult = await requireAdmin();
+    const authResult = await requireAdmin(request.headers);
     if (!authResult.ok) return authResult.response;
 
     // get request data

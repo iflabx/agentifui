@@ -1,3 +1,4 @@
+import { getPgPool } from '@lib/server/pg/pool';
 import { requireAdmin } from '@lib/services/admin/require-admin';
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -10,70 +11,93 @@ import { NextRequest, NextResponse } from 'next/server';
  */
 export async function POST(request: NextRequest) {
   try {
-    const authResult = await requireAdmin();
+    const authResult = await requireAdmin(request.headers);
     if (!authResult.ok) return authResult.response;
-
-    const supabase = authResult.supabase;
 
     // parse request parameters
     const body = await request.json();
     const { page = 1, pageSize = 10, search, excludeUserIds = [] } = body;
+    const safePage = Math.max(1, Number(page) || 1);
+    const safePageSize = Math.min(100, Math.max(1, Number(pageSize) || 10));
+    const offset = (safePage - 1) * safePageSize;
+    const trimmedSearch = typeof search === 'string' ? search.trim() : '';
 
-    // build query
-    let query = supabase
-      .from('profiles')
-      .select('id, username, full_name, email, avatar_url, role, status', {
-        count: 'exact',
-      })
-      .eq('status', 'active') // only get active users
-      .order('created_at', { ascending: false });
+    const pool = getPgPool();
+    const whereClauses: string[] = ["status = 'active'"];
+    const params: Array<string | string[] | number> = [];
 
-    // exclude specified user IDs (e.g. users already in the group)
-    if (excludeUserIds.length > 0) {
-      query = query.not('id', 'in', `(${excludeUserIds.join(',')})`);
-    }
-
-    // search condition: username, full name or email contains search term
-    if (search && search.trim()) {
-      query = query.or(
-        `username.ilike.%${search.trim()}%,full_name.ilike.%${search.trim()}%,email.ilike.%${search.trim()}%`
+    if (trimmedSearch.length > 0) {
+      params.push(`%${trimmedSearch}%`);
+      const searchParamIndex = params.length;
+      whereClauses.push(
+        `(username ILIKE $${searchParamIndex} OR full_name ILIKE $${searchParamIndex} OR email ILIKE $${searchParamIndex})`
       );
     }
 
-    // apply pagination
-    const from = (page - 1) * pageSize;
-    const to = from + pageSize - 1;
-    query = query.range(from, to);
-
-    const { data: users, error, count } = await query;
-
-    if (error) {
-      console.error('Failed to get user list:', error);
-      return NextResponse.json(
-        { error: 'Failed to get user list' },
-        { status: 500 }
+    if (Array.isArray(excludeUserIds) && excludeUserIds.length > 0) {
+      const sanitizedIds = excludeUserIds.filter(
+        (id: unknown) => typeof id === 'string' && id.trim().length > 0
       );
+      if (sanitizedIds.length > 0) {
+        params.push(sanitizedIds);
+        const excludeParamIndex = params.length;
+        whereClauses.push(`NOT (id = ANY($${excludeParamIndex}::uuid[]))`);
+      }
     }
+
+    const whereSql = whereClauses.join(' AND ');
+
+    const countResult = await pool.query<{ total: string }>(
+      `SELECT COUNT(*)::text AS total FROM profiles WHERE ${whereSql}`,
+      params
+    );
+    const total = Number(countResult.rows[0]?.total || 0);
+
+    params.push(safePageSize);
+    const limitParamIndex = params.length;
+    params.push(offset);
+    const offsetParamIndex = params.length;
+
+    const usersResult = await pool.query<{
+      id: string;
+      username: string | null;
+      full_name: string | null;
+      email: string | null;
+      avatar_url: string | null;
+      role: string | null;
+      status: string | null;
+    }>(
+      `
+      SELECT id, username, full_name, email, avatar_url, role, status
+      FROM profiles
+      WHERE ${whereSql}
+      ORDER BY created_at DESC
+      LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}
+      `,
+      params
+    );
+    const users = usersResult.rows;
 
     // calculate pagination information
-    const total = count || 0;
-    const totalPages = Math.ceil(total / pageSize);
+    const totalPages = Math.ceil(total / safePageSize);
 
     // format user data
-    const formattedUsers = (users || []).map(user => ({
-      id: user.id,
-      username: user.username,
-      full_name: user.full_name,
-      email: user.email,
-      avatar_url: user.avatar_url,
-      role: user.role,
-      status: user.status,
-    }));
+    const formattedUsers = (users || []).map(
+      (user: (typeof users)[number]) => ({
+        id: user.id,
+        username: user.username,
+        full_name: user.full_name,
+        email: user.email,
+        avatar_url: user.avatar_url,
+        role: user.role,
+        status: user.status,
+      })
+    );
 
     return NextResponse.json({
       users: formattedUsers,
-      page,
-      pageSize,
+      page: safePage,
+      pageSize: safePageSize,
       total,
       totalPages,
       success: true,

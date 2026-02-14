@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from '@components/ui/button';
-import { createClient } from '@lib/supabase/client';
+import { signInWithSocialProvider } from '@lib/auth/better-auth/http-client';
 import { cn } from '@lib/utils';
 
 import { useState } from 'react';
@@ -37,25 +37,12 @@ export function SocialAuthButtons({
     setError('');
 
     try {
-      const supabase = createClient();
-
-      const baseUrl = window.location.origin;
-      const callbackUrl = `${baseUrl}/api/auth/callback?redirectTo=${encodeURIComponent(redirectTo)}`;
-
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: callbackUrl,
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
-          },
-        },
-      });
-
-      if (error) {
-        throw error;
+      const result = await signInWithSocialProvider(provider, redirectTo);
+      if (!result?.url) {
+        throw new Error(t('failed'));
       }
+
+      window.location.href = result.url;
     } catch (err) {
       console.error(`GitHub login failed:`, err);
       const errorMessage = err instanceof Error ? err.message : t('failed');

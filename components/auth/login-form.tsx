@@ -1,6 +1,7 @@
 'use client';
 
 import { Button } from '@components/ui/button';
+import { signInWithEmailPassword } from '@lib/auth/better-auth/http-client';
 import { cn } from '@lib/utils';
 import { clearCacheOnLogin } from '@lib/utils/cache-cleanup';
 import { Eye, EyeOff } from 'lucide-react';
@@ -11,7 +12,6 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
-import { createClient } from '../../lib/supabase/client';
 import { SocialAuthButtons } from './social-auth-buttons';
 import { SSOCard } from './sso-button';
 
@@ -47,15 +47,7 @@ export function LoginForm() {
 
       clearCacheOnLogin();
 
-      const supabase = createClient();
-      const { error } = await supabase.auth.signInWithPassword({
-        email: formData.email,
-        password: formData.password,
-      });
-
-      if (error) {
-        throw error;
-      }
+      await signInWithEmailPassword(formData.email, formData.password, '/chat');
 
       console.log('[login] email password login success');
 

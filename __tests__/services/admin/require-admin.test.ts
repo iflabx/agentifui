@@ -1,74 +1,84 @@
 /** @jest-environment node */
+import { auth } from '@lib/auth/better-auth/server';
+import { getPgPool } from '@lib/server/pg/pool';
 import { requireAdmin } from '@lib/services/admin/require-admin';
-import { createClient } from '@lib/supabase/server';
 
-jest.mock('@lib/supabase/server', () => ({
-  createClient: jest.fn(),
+jest.mock('@lib/auth/better-auth/server', () => ({
+  auth: {
+    api: {
+      getSession: jest.fn(),
+    },
+  },
 }));
 
-type MockParams = {
-  authError?: Error | null;
-  profileError?: Error | null;
-  profileRole?: 'admin' | 'user' | null;
-  userId?: string | null;
-};
+jest.mock('@lib/server/pg/pool', () => ({
+  getPgPool: jest.fn(),
+}));
 
-const createMockSupabase = ({
-  authError = null,
-  profileError = null,
-  profileRole = 'admin',
-  userId = 'user-1',
-}: MockParams = {}) => {
-  const maybeSingle = jest.fn().mockResolvedValue({
-    data: profileRole ? { role: profileRole } : null,
-    error: profileError,
-  });
-  const eq = jest.fn().mockReturnValue({ maybeSingle });
-  const select = jest.fn().mockReturnValue({ eq });
-  const from = jest.fn().mockReturnValue({ select });
+type SessionShape = Awaited<ReturnType<typeof auth.api.getSession>>;
 
-  const getUser = jest.fn().mockResolvedValue({
-    data: { user: userId ? { id: userId } : null },
-    error: authError,
-  });
-
-  return {
-    auth: { getUser },
-    from,
-  };
+type QueryResultShape = {
+  rows: Array<{ role: string | null }>;
 };
 
 describe('requireAdmin', () => {
-  const mockedCreateClient = createClient as jest.MockedFunction<
-    typeof createClient
+  const mockedGetSession = auth.api.getSession as jest.MockedFunction<
+    typeof auth.api.getSession
   >;
+  const mockedGetPgPool = getPgPool as jest.MockedFunction<typeof getPgPool>;
+  const queryMock = jest.fn<
+    Promise<QueryResultShape>,
+    [queryText: string, values?: unknown[]]
+  >();
+
+  const headers = new Headers();
+
+  const buildSession = (userId: string): SessionShape =>
+    ({
+      session: {
+        id: 'session-id',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        userId,
+        expiresAt: new Date(Date.now() + 60_000),
+        token: 'test-token',
+        ipAddress: null,
+        userAgent: 'jest',
+      },
+      user: {
+        id: userId,
+        email: `${userId}@example.com`,
+        name: userId,
+        emailVerified: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        image: null,
+      },
+    }) as SessionShape;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockedGetPgPool.mockReturnValue({
+      query: queryMock,
+    } as unknown as ReturnType<typeof getPgPool>);
   });
 
   it('returns 401 when user is not authenticated', async () => {
-    mockedCreateClient.mockResolvedValueOnce(
-      createMockSupabase({ userId: null }) as unknown as Awaited<
-        ReturnType<typeof createClient>
-      >
-    );
+    mockedGetSession.mockResolvedValueOnce(null as SessionShape);
 
-    const result = await requireAdmin();
+    const result = await requireAdmin(headers);
 
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('Expected auth failure result');
     expect(result.response.status).toBe(401);
+    expect(queryMock).not.toHaveBeenCalled();
   });
 
   it('returns 500 when role check query fails', async () => {
-    mockedCreateClient.mockResolvedValueOnce(
-      createMockSupabase({
-        profileError: new Error('db error'),
-      }) as unknown as Awaited<ReturnType<typeof createClient>>
-    );
+    mockedGetSession.mockResolvedValueOnce(buildSession('user-1'));
+    queryMock.mockRejectedValueOnce(new Error('db error'));
 
-    const result = await requireAdmin();
+    const result = await requireAdmin(headers);
 
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('Expected auth failure result');
@@ -76,33 +86,28 @@ describe('requireAdmin', () => {
   });
 
   it('returns 403 when user role is not admin', async () => {
-    mockedCreateClient.mockResolvedValueOnce(
-      createMockSupabase({ profileRole: 'user' }) as unknown as Awaited<
-        ReturnType<typeof createClient>
-      >
-    );
+    mockedGetSession.mockResolvedValueOnce(buildSession('user-1'));
+    queryMock.mockResolvedValueOnce({
+      rows: [{ role: 'user' }],
+    });
 
-    const result = await requireAdmin();
+    const result = await requireAdmin(headers);
 
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('Expected auth failure result');
     expect(result.response.status).toBe(403);
   });
 
-  it('returns ok=true with userId and client for admin', async () => {
-    const supabase = createMockSupabase({
-      profileRole: 'admin',
-      userId: 'admin-1',
+  it('returns ok=true with userId for admin', async () => {
+    mockedGetSession.mockResolvedValueOnce(buildSession('admin-1'));
+    queryMock.mockResolvedValueOnce({
+      rows: [{ role: 'admin' }],
     });
-    mockedCreateClient.mockResolvedValueOnce(
-      supabase as unknown as Awaited<ReturnType<typeof createClient>>
-    );
 
-    const result = await requireAdmin();
+    const result = await requireAdmin(headers);
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error('Expected auth success result');
     expect(result.userId).toBe('admin-1');
-    expect(result.supabase).toBe(supabase);
   });
 });
