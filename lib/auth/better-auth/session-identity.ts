@@ -269,6 +269,11 @@ async function resolveInternalUserId(
   sessionUser: SessionUser
 ): Promise<Result<ResolveUserIdResult>> {
   if (isUuid(authUserId)) {
+    const ensuredProfile = await ensureProfileStatus(authUserId, sessionUser);
+    if (!ensuredProfile.success) {
+      return failure(ensuredProfile.error);
+    }
+
     const upsertIdentity = await upsertPrimarySessionIdentity(
       authUserId,
       sessionUser
@@ -280,6 +285,7 @@ async function resolveInternalUserId(
     return success({
       userId: authUserId,
       createdLegacyMapping: false,
+      ensuredProfile: ensuredProfile.data,
     });
   }
 
