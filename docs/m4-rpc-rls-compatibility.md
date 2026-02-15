@@ -1,4 +1,4 @@
-# M4 RPC + RLS 语义迁移（Phase1 + Phase2）
+# M4 RPC + RLS 语义迁移（Phase1 + Phase2 + Phase3）
 
 日期：2026-02-15  
 分支：`migration/m0-m1-pg-baseline`
@@ -49,7 +49,31 @@
    - `app.current_user_role`
 5. 新增表级 RLS gate 脚本：`scripts/m4-table-rls-verify.mjs`。
 
-## 3. 验证与 Gate
+## 3. Phase3（剩余关键表 RLS 收尾）完成项
+
+1. 新增剩余关键表 RLS 迁移包：`supabase/migrations/20260215070000_m4_table_rls_phase3.sql`。
+2. 对以下表启用 `ENABLE ROW LEVEL SECURITY` + `FORCE ROW LEVEL SECURITY`：
+   - `providers`
+   - `service_instances`
+   - `api_keys`
+   - `sso_providers`
+   - `domain_sso_mappings`
+   - `auth_settings`
+   - `user_identities`
+   - `profile_external_attributes`
+   - `auth_local_login_audit_logs`
+3. 新增 helper：
+   - `app_rls_admin_only()`
+   - `app_rls_service_instance_visible()`
+4. 策略语义补齐：
+   - admin-only：配置/密钥/SSO/审计类表
+   - self-or-admin：身份映射与外部属性表
+   - visibility：`service_instances` 对 user/admin 可见性一致化
+5. 表级 gate 扩展覆盖：
+   - Phase2 + Phase3 全表 `RLS/FORCE` 状态检查
+   - admin / self / forbidden / legacy（无 actor）四类场景
+
+## 4. 验证与 Gate
 
 命令：
 
@@ -59,14 +83,18 @@
 
 当前结果（2026-02-15）：上述三项均通过。
 
-## 4. 兼容性策略
+补充回归（2026-02-15）：
+
+1. `pnpm m3:gate:verify` 通过（确认 M3 链路未回归）。
+
+## 5. 兼容性策略
 
 1. 保持“有 actor 强约束、无 actor 兼容旧行为”：
    - 有 actor：执行 RLS 与 RPC 权限收口。
    - 无 actor：`app_rls_legacy_mode()` 允许旧链路继续工作。
 2. 不改变前端调用契约：仍走 existing internal API action。
 
-## 5. 当前边界
+## 6. 当前边界
 
-1. Phase2 聚焦“核心业务表”RLS；其余表的全量收口可在 M4 后续批次继续扩展。
+1. M4 范围内的关键 RPC + 关键表 RLS 已完成。
 2. Storage / Realtime 不在 M4 范围（分别属于 M5 / M6）。

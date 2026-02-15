@@ -29,9 +29,10 @@ const migrationFiles = [
   'supabase/migrations/20260214201000_add_fallback_password_profile_metadata.sql',
   'supabase/migrations/20260215030000_m4_rpc_rls_guc_hardening.sql',
   'supabase/migrations/20260215050000_m4_table_rls_phase2.sql',
+  'supabase/migrations/20260215070000_m4_table_rls_phase3.sql',
 ];
 
-const targetTables = [
+const phase2Tables = [
   'profiles',
   'conversations',
   'messages',
@@ -40,6 +41,20 @@ const targetTables = [
   'group_app_permissions',
   'app_executions',
 ];
+
+const phase3Tables = [
+  'providers',
+  'service_instances',
+  'api_keys',
+  'sso_providers',
+  'domain_sso_mappings',
+  'auth_settings',
+  'user_identities',
+  'profile_external_attributes',
+  'auth_local_login_audit_logs',
+];
+
+const allTargetTables = [...phase2Tables, ...phase3Tables];
 const rlsVerifierRole = 'agentif_rls_tester';
 
 function applyMigration(relativePath) {
@@ -167,10 +182,11 @@ async function seedFixtures(pool, ids) {
         config
       )
       VALUES
-        ($1::uuid, $3::uuid, 'rls-public', '/v1', 'RLS Public', 'public app', TRUE, 'public', '{}'::jsonb),
-        ($2::uuid, $3::uuid, 'rls-group', '/v1', 'RLS Group', 'group app', FALSE, 'group_only', '{}'::jsonb)
+        ($1::uuid, $4::uuid, 'rls-public', '/v1', 'RLS Public', 'public app', TRUE, 'public', '{}'::jsonb),
+        ($2::uuid, $4::uuid, 'rls-group', '/v1', 'RLS Group', 'group app', FALSE, 'group_only', '{}'::jsonb),
+        ($3::uuid, $4::uuid, 'rls-private', '/v1', 'RLS Private', 'private app', FALSE, 'private', '{}'::jsonb)
     `,
-    [ids.instancePublic, ids.instanceGroup, ids.provider]
+    [ids.instancePublic, ids.instanceGroup, ids.instancePrivate, ids.provider]
   );
 
   await pool.query(
@@ -223,6 +239,108 @@ async function seedFixtures(pool, ids) {
       VALUES ($1::uuid, $2::uuid, $3::uuid, TRUE, 10, 4)
     `,
     [ids.groupPermission, ids.group, ids.instanceGroup]
+  );
+
+  await pool.query(
+    `
+      INSERT INTO api_keys (
+        id,
+        provider_id,
+        service_instance_id,
+        user_id,
+        key_value,
+        is_default,
+        usage_count
+      )
+      VALUES ($1::uuid, $2::uuid, $3::uuid, NULL, 'm4-rls-key', TRUE, 0)
+    `,
+    [ids.apiKey, ids.provider, ids.instancePublic]
+  );
+
+  await pool.query(
+    `
+      INSERT INTO sso_providers (
+        id,
+        name,
+        protocol,
+        settings,
+        enabled,
+        display_order
+      )
+      VALUES ($1::uuid, $2, 'OIDC', '{}'::jsonb, TRUE, 10)
+    `,
+    [ids.ssoProvider, `m4-rls-sso-${ids.suffix}`]
+  );
+
+  await pool.query(
+    `
+      INSERT INTO domain_sso_mappings (
+        id,
+        domain,
+        sso_provider_id,
+        enabled
+      )
+      VALUES ($1::uuid, $2, $3::uuid, TRUE)
+    `,
+    [ids.domainMapping, `m4-rls-${ids.suffix}.example.com`, ids.ssoProvider]
+  );
+
+  await pool.query(
+    `
+      INSERT INTO auth_settings (
+        id,
+        allow_email_registration,
+        allow_password_login,
+        allow_phone_registration,
+        require_email_verification,
+        auth_mode
+      )
+      VALUES ($1::uuid, FALSE, TRUE, FALSE, TRUE, 'normal')
+    `,
+    [ids.authSetting]
+  );
+
+  await pool.query(
+    `
+      INSERT INTO user_identities (
+        user_id,
+        issuer,
+        provider,
+        subject,
+        email,
+        email_verified,
+        raw_claims
+      )
+      VALUES
+        ($1::uuid, 'https://idp.example.com', 'oidc', $3, $4, TRUE, '{}'::jsonb),
+        ($2::uuid, 'https://idp.example.com', 'oidc', $5, $6, TRUE, '{}'::jsonb)
+    `,
+    [
+      ids.userA,
+      ids.userB,
+      `sub-a-${ids.suffix}`,
+      `m4-identity-a-${ids.suffix}@example.com`,
+      `sub-b-${ids.suffix}`,
+      `m4-identity-b-${ids.suffix}@example.com`,
+    ]
+  );
+
+  await pool.query(
+    `
+      INSERT INTO profile_external_attributes (
+        user_id,
+        source_issuer,
+        source_provider,
+        department_code,
+        department_name,
+        attributes,
+        raw_profile
+      )
+      VALUES
+        ($1::uuid, 'https://idp.example.com', 'oidc', 'D-A', 'Dept A', '{}'::jsonb, '{}'::jsonb),
+        ($2::uuid, 'https://idp.example.com', 'oidc', 'D-B', 'Dept B', '{}'::jsonb, '{}'::jsonb)
+    `,
+    [ids.userA, ids.userB]
   );
 
   await pool.query(
@@ -289,6 +407,10 @@ async function seedFixtures(pool, ids) {
 
 async function cleanupFixtures(pool, ids) {
   await pool.query(
+    `DELETE FROM auth_local_login_audit_logs WHERE email LIKE $1`,
+    [`m4-rls-%-${ids.suffix}@example.com`]
+  );
+  await pool.query(
     `DELETE FROM app_executions WHERE id = ANY($1::uuid[])`,
     [[ids.executionA, ids.executionB]]
   );
@@ -301,6 +423,14 @@ async function cleanupFixtures(pool, ids) {
     [[ids.conversationA, ids.conversationB]]
   );
   await pool.query(
+    `DELETE FROM profile_external_attributes WHERE user_id = ANY($1::uuid[])`,
+    [[ids.userA, ids.userB]]
+  );
+  await pool.query(
+    `DELETE FROM user_identities WHERE user_id = ANY($1::uuid[])`,
+    [[ids.userA, ids.userB]]
+  );
+  await pool.query(
     `DELETE FROM group_app_permissions WHERE id = ANY($1::uuid[])`,
     [[ids.groupPermission]]
   );
@@ -310,8 +440,26 @@ async function cleanupFixtures(pool, ids) {
   );
   await pool.query(`DELETE FROM groups WHERE id = ANY($1::uuid[])`, [[ids.group]]);
   await pool.query(
+    `DELETE FROM domain_sso_mappings WHERE id = ANY($1::uuid[])`,
+    [[ids.domainMapping]]
+  );
+  await pool.query(
+    `DELETE FROM sso_providers WHERE id = ANY($1::uuid[])`,
+    [[ids.ssoProvider]]
+  );
+  await pool.query(
+    `DELETE FROM auth_settings WHERE id = ANY($1::uuid[])`,
+    [[ids.authSetting]]
+  );
+  await pool.query(`DELETE FROM api_keys WHERE id = ANY($1::uuid[])`, [[ids.apiKey]]);
+  await pool.query(
     `DELETE FROM service_instances WHERE id = ANY($1::uuid[])`,
-    [[ids.instancePublic, ids.instanceGroup]]
+    [[
+      ids.instancePublic,
+      ids.instanceGroup,
+      ids.instancePrivate,
+      ids.adminCreatedInstance,
+    ]]
   );
   await pool.query(
     `DELETE FROM providers WHERE id = ANY($1::uuid[])`,
@@ -333,6 +481,12 @@ async function main() {
     provider: randomUUID(),
     instancePublic: randomUUID(),
     instanceGroup: randomUUID(),
+    instancePrivate: randomUUID(),
+    adminCreatedInstance: randomUUID(),
+    apiKey: randomUUID(),
+    ssoProvider: randomUUID(),
+    domainMapping: randomUUID(),
+    authSetting: randomUUID(),
     adminUser: randomUUID(),
     userA: randomUUID(),
     userB: randomUUID(),
@@ -350,9 +504,10 @@ async function main() {
   const pool = new Pool({ connectionString: databaseUrl });
 
   const checks = {
-    rlsEnabledForCoreTables: false,
-    policyCoverageForCoreTables: false,
+    rlsEnabledForAllTables: false,
+    policyCoverageForAllTables: false,
     legacyNoActorBypass: false,
+
     profilesSelfIsolation: false,
     profileCrossInsertForbidden: false,
     conversationsSelfIsolation: false,
@@ -362,6 +517,18 @@ async function main() {
     groupPermissionMemberScope: false,
     groupPermissionMemberUpdateScope: false,
     adminVisibilityAcrossCoreData: false,
+
+    serviceInstanceVisibilityScope: false,
+    serviceInstanceAdminCanSeePrivate: false,
+    serviceInstanceInsertAdminOnly: false,
+
+    apiKeysAdminOnly: false,
+    ssoProvidersAdminOnly: false,
+    domainMappingsAdminOnly: false,
+    authSettingsAdminOnly: false,
+
+    userIdentitiesSelfIsolation: false,
+    profileExternalAttributesSelfIsolation: false,
   };
 
   try {
@@ -378,10 +545,10 @@ async function main() {
           AND c.relname = ANY($1::text[])
         ORDER BY c.relname
       `,
-      [targetTables]
+      [allTargetTables]
     );
-    checks.rlsEnabledForCoreTables =
-      rlsStatusRows.rowCount === targetTables.length &&
+    checks.rlsEnabledForAllTables =
+      rlsStatusRows.rowCount === allTargetTables.length &&
       rlsStatusRows.rows.every(
         row => row.relrowsecurity === true && row.relforcerowsecurity === true
       );
@@ -394,12 +561,12 @@ async function main() {
           AND tablename = ANY($1::text[])
         GROUP BY tablename
       `,
-      [targetTables]
+      [allTargetTables]
     );
     const policyMap = new Map(
       policyRows.rows.map(row => [String(row.tablename), Number(row.count)])
     );
-    checks.policyCoverageForCoreTables = targetTables.every(
+    checks.policyCoverageForAllTables = allTargetTables.every(
       tableName => (policyMap.get(tableName) || 0) >= 4
     );
 
@@ -632,6 +799,373 @@ async function main() {
       Number(adminProfileView.rows[0]?.total || 0) === 3 &&
       Number(adminConversationView.rows[0]?.total || 0) === 2;
 
+    const serviceRowsA = await queryWithActor(
+      pool,
+      ids.userA,
+      `
+        SELECT id::text
+        FROM service_instances
+        WHERE id = ANY($1::uuid[])
+      `,
+      [[ids.instancePublic, ids.instanceGroup, ids.instancePrivate]]
+    );
+    const serviceRowsB = await queryWithActor(
+      pool,
+      ids.userB,
+      `
+        SELECT id::text
+        FROM service_instances
+        WHERE id = ANY($1::uuid[])
+      `,
+      [[ids.instancePublic, ids.instanceGroup, ids.instancePrivate]]
+    );
+    const servicesA = new Set(serviceRowsA.rows.map(row => String(row.id)));
+    const servicesB = new Set(serviceRowsB.rows.map(row => String(row.id)));
+    checks.serviceInstanceVisibilityScope =
+      servicesA.has(ids.instancePublic) &&
+      servicesA.has(ids.instanceGroup) &&
+      !servicesA.has(ids.instancePrivate) &&
+      servicesB.has(ids.instancePublic) &&
+      !servicesB.has(ids.instanceGroup) &&
+      !servicesB.has(ids.instancePrivate);
+
+    const serviceRowsAdmin = await queryWithActor(
+      pool,
+      ids.adminUser,
+      `
+        SELECT id::text
+        FROM service_instances
+        WHERE id = ANY($1::uuid[])
+      `,
+      [[ids.instancePublic, ids.instanceGroup, ids.instancePrivate]]
+    );
+    checks.serviceInstanceAdminCanSeePrivate = serviceRowsAdmin.rowCount === 3;
+
+    await expectPgError(
+      () =>
+        queryWithActor(
+          pool,
+          ids.userA,
+          `
+            INSERT INTO service_instances (
+              id,
+              provider_id,
+              instance_id,
+              api_path,
+              display_name,
+              description,
+              is_default,
+              visibility,
+              config
+            )
+            VALUES (
+              $1::uuid,
+              $2::uuid,
+              'forbidden-instance',
+              '/v1',
+              'forbidden',
+              'forbidden',
+              FALSE,
+              'public',
+              '{}'::jsonb
+            )
+          `,
+          [ids.adminCreatedInstance, ids.provider]
+        ),
+      '42501',
+      'service-instance-insert-admin-only'
+    );
+
+    const adminInsertService = await queryWithActor(
+      pool,
+      ids.adminUser,
+      `
+        INSERT INTO service_instances (
+          id,
+          provider_id,
+          instance_id,
+          api_path,
+          display_name,
+          description,
+          is_default,
+          visibility,
+          config
+        )
+        VALUES (
+          $1::uuid,
+          $2::uuid,
+          'admin-instance',
+          '/v1',
+          'admin instance',
+          'admin insert allowed',
+          FALSE,
+          'public',
+          '{}'::jsonb
+        )
+        RETURNING id::text
+      `,
+      [ids.adminCreatedInstance, ids.provider]
+    );
+    checks.serviceInstanceInsertAdminOnly = adminInsertService.rowCount === 1;
+
+    const apiKeyViewUser = await queryWithActor(
+      pool,
+      ids.userA,
+      `
+        SELECT id::text
+        FROM api_keys
+        WHERE id = $1::uuid
+      `,
+      [ids.apiKey]
+    );
+    await expectPgError(
+      () =>
+        queryWithActor(
+          pool,
+          ids.userA,
+          `
+            INSERT INTO api_keys (
+              id,
+              provider_id,
+              service_instance_id,
+              user_id,
+              key_value,
+              is_default,
+              usage_count
+            )
+            VALUES ($1::uuid, $2::uuid, $3::uuid, NULL, 'x', FALSE, 0)
+          `,
+          [randomUUID(), ids.provider, ids.instancePublic]
+        ),
+      '42501',
+      'api-keys-admin-only'
+    );
+    const apiKeyViewAdmin = await queryWithActor(
+      pool,
+      ids.adminUser,
+      `
+        SELECT id::text
+        FROM api_keys
+        WHERE id = $1::uuid
+      `,
+      [ids.apiKey]
+    );
+    checks.apiKeysAdminOnly =
+      apiKeyViewUser.rowCount === 0 && apiKeyViewAdmin.rowCount === 1;
+
+    const ssoViewUser = await queryWithActor(
+      pool,
+      ids.userA,
+      `
+        SELECT id::text
+        FROM sso_providers
+        WHERE id = $1::uuid
+      `,
+      [ids.ssoProvider]
+    );
+    await expectPgError(
+      () =>
+        queryWithActor(
+          pool,
+          ids.userA,
+          `
+            INSERT INTO sso_providers (
+              id,
+              name,
+              protocol,
+              settings,
+              enabled,
+              display_order
+            )
+            VALUES ($1::uuid, $2, 'CAS', '{}'::jsonb, TRUE, 20)
+          `,
+          [randomUUID(), `sso-forbidden-${ids.suffix}`]
+        ),
+      '42501',
+      'sso-providers-admin-only'
+    );
+    const ssoViewAdmin = await queryWithActor(
+      pool,
+      ids.adminUser,
+      `
+        SELECT id::text
+        FROM sso_providers
+        WHERE id = $1::uuid
+      `,
+      [ids.ssoProvider]
+    );
+    checks.ssoProvidersAdminOnly =
+      ssoViewUser.rowCount === 0 && ssoViewAdmin.rowCount === 1;
+
+    const domainViewUser = await queryWithActor(
+      pool,
+      ids.userA,
+      `
+        SELECT id::text
+        FROM domain_sso_mappings
+        WHERE id = $1::uuid
+      `,
+      [ids.domainMapping]
+    );
+    const domainViewAdmin = await queryWithActor(
+      pool,
+      ids.adminUser,
+      `
+        SELECT id::text
+        FROM domain_sso_mappings
+        WHERE id = $1::uuid
+      `,
+      [ids.domainMapping]
+    );
+    checks.domainMappingsAdminOnly =
+      domainViewUser.rowCount === 0 && domainViewAdmin.rowCount === 1;
+
+    const authSettingsViewUser = await queryWithActor(
+      pool,
+      ids.userA,
+      `
+        SELECT id::text
+        FROM auth_settings
+        WHERE id = $1::uuid
+      `,
+      [ids.authSetting]
+    );
+    await expectPgError(
+      () =>
+        queryWithActor(
+          pool,
+          ids.userA,
+          `
+            INSERT INTO auth_settings (
+              id,
+              allow_email_registration,
+              allow_password_login,
+              allow_phone_registration,
+              require_email_verification,
+              auth_mode
+            )
+            VALUES ($1::uuid, FALSE, TRUE, FALSE, TRUE, 'normal')
+          `,
+          [randomUUID()]
+        ),
+      '42501',
+      'auth-settings-admin-only'
+    );
+    const authSettingsViewAdmin = await queryWithActor(
+      pool,
+      ids.adminUser,
+      `
+        SELECT id::text
+        FROM auth_settings
+        WHERE id = $1::uuid
+      `,
+      [ids.authSetting]
+    );
+    checks.authSettingsAdminOnly =
+      authSettingsViewUser.rowCount === 0 && authSettingsViewAdmin.rowCount === 1;
+
+    const identityRowsUserA = await queryWithActor(
+      pool,
+      ids.userA,
+      `
+        SELECT user_id::text
+        FROM user_identities
+        WHERE user_id = ANY($1::uuid[])
+      `,
+      [[ids.userA, ids.userB]]
+    );
+    const identityRowsAdmin = await queryWithActor(
+      pool,
+      ids.adminUser,
+      `
+        SELECT user_id::text
+        FROM user_identities
+        WHERE user_id = ANY($1::uuid[])
+      `,
+      [[ids.userA, ids.userB]]
+    );
+    await expectPgError(
+      () =>
+        queryWithActor(
+          pool,
+          ids.userA,
+          `
+            INSERT INTO user_identities (
+              user_id,
+              issuer,
+              provider,
+              subject,
+              email,
+              email_verified,
+              raw_claims
+            )
+            VALUES (
+              $1::uuid,
+              'https://idp.example.com',
+              'oidc',
+              $2,
+              $3,
+              TRUE,
+              '{}'::jsonb
+            )
+          `,
+          [ids.userB, `forbidden-sub-${ids.suffix}`, `forbidden-${ids.suffix}@example.com`]
+        ),
+      '42501',
+      'user-identities-self-isolation'
+    );
+    checks.userIdentitiesSelfIsolation =
+      identityRowsUserA.rowCount === 1 && identityRowsAdmin.rowCount === 2;
+
+    const attrsRowsUserA = await queryWithActor(
+      pool,
+      ids.userA,
+      `
+        SELECT user_id::text
+        FROM profile_external_attributes
+        WHERE user_id = ANY($1::uuid[])
+      `,
+      [[ids.userA, ids.userB]]
+    );
+    const attrsRowsAdmin = await queryWithActor(
+      pool,
+      ids.adminUser,
+      `
+        SELECT user_id::text
+        FROM profile_external_attributes
+        WHERE user_id = ANY($1::uuid[])
+      `,
+      [[ids.userA, ids.userB]]
+    );
+    await expectPgError(
+      () =>
+        queryWithActor(
+          pool,
+          ids.userA,
+          `
+            INSERT INTO profile_external_attributes (
+              user_id,
+              source_issuer,
+              source_provider,
+              attributes,
+              raw_profile
+            )
+            VALUES (
+              $1::uuid,
+              'https://idp.example.com',
+              'oidc',
+              '{}'::jsonb,
+              '{}'::jsonb
+            )
+          `,
+          [ids.userB]
+        ),
+      '42501',
+      'profile-external-attributes-self-isolation'
+    );
+    checks.profileExternalAttributesSelfIsolation =
+      attrsRowsUserA.rowCount === 1 && attrsRowsAdmin.rowCount === 2;
+
     const failedChecks = Object.entries(checks)
       .filter(([, ok]) => !ok)
       .map(([name]) => name);
@@ -644,12 +1178,15 @@ async function main() {
         {
           ok: true,
           checks,
-          tables: targetTables,
+          tables: {
+            phase2: phase2Tables,
+            phase3: phase3Tables,
+          },
           ids: {
             adminUser: ids.adminUser,
             userA: ids.userA,
             userB: ids.userB,
-            groupPermission: ids.groupPermission,
+            provider: ids.provider,
           },
         },
         null,
