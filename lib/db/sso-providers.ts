@@ -18,6 +18,23 @@ async function getPool() {
   return getPgPool();
 }
 
+async function queryRowsWithActorContext<T extends object>(
+  actorUserId: string | undefined,
+  sql: string,
+  params: unknown[] = []
+): Promise<T[]> {
+  if (!actorUserId) {
+    const pool = await getPool();
+    const { rows } = await pool.query<T>(sql, params);
+    return rows;
+  }
+
+  const { queryRowsWithPgUserContext } = await import(
+    '@lib/server/pg/user-context'
+  );
+  return queryRowsWithPgUserContext<T>(actorUserId, sql, params);
+}
+
 export interface SsoProviderFilters {
   protocol?: SsoProtocol;
   enabled?: boolean;
@@ -358,7 +375,8 @@ export async function toggleSsoProvider(
  * Update display order for multiple SSO providers.
  */
 export async function updateSsoProviderOrder(
-  updates: Array<{ id: string; display_order: number }>
+  updates: Array<{ id: string; display_order: number }>,
+  actorUserId?: string
 ): Promise<Result<void>> {
   if (IS_BROWSER) {
     return callInternalDataAction('sso.updateSsoProviderOrder', { updates });
@@ -369,27 +387,14 @@ export async function updateSsoProviderOrder(
       return success(undefined);
     }
 
-    const pool = await getPool();
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      for (const update of updates) {
-        await client.query(
-          `
-            UPDATE sso_providers
-            SET display_order = $1::integer,
-                updated_at = NOW()
-            WHERE id = $2::uuid
-          `,
-          [update.display_order, update.id]
-        );
-      }
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
+    const rows = await queryRowsWithActorContext<{ updated_rows: number }>(
+      actorUserId,
+      `SELECT update_sso_provider_order($1::jsonb) AS updated_rows`,
+      [JSON.stringify(updates)]
+    );
+
+    if ((rows[0]?.updated_rows || 0) !== updates.length) {
+      return failure(new Error('Failed to update all SSO providers'));
     }
 
     return success(undefined);

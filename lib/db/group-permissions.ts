@@ -1,3 +1,4 @@
+import type { ServiceInstanceConfig } from '@lib/types/database';
 import { Result, failure, success } from '@lib/types/result';
 
 import { callInternalDataAction } from './internal-data-api';
@@ -7,6 +8,23 @@ const IS_BROWSER = typeof window !== 'undefined';
 async function getPool() {
   const { getPgPool } = await import('@lib/server/pg/pool');
   return getPgPool();
+}
+
+async function queryRowsWithActorContext<T extends object>(
+  actorUserId: string | undefined,
+  sql: string,
+  params: unknown[]
+): Promise<T[]> {
+  if (!actorUserId) {
+    const pool = await getPool();
+    const { rows } = await pool.query<T>(sql, params);
+    return rows;
+  }
+
+  const { queryRowsWithPgUserContext } = await import(
+    '@lib/server/pg/user-context'
+  );
+  return queryRowsWithPgUserContext<T>(actorUserId, sql, params);
 }
 
 // Group permission management service
@@ -55,7 +73,7 @@ export interface UserAccessibleApp {
   instance_id: string;
   api_path: string;
   visibility: 'public' | 'group_only' | 'private';
-  config: any;
+  config: ServiceInstanceConfig;
   usage_quota: number | null;
   used_count: number;
   quota_remaining: number | null;
@@ -521,15 +539,16 @@ export async function removeAllGroupAppPermissions(
 }
 
 export async function getUserAccessibleApps(
-  userId: string
+  userId: string,
+  actorUserId?: string
 ): Promise<Result<UserAccessibleApp[]>> {
   if (IS_BROWSER) {
     return callInternalDataAction('groups.getUserAccessibleApps', { userId });
   }
 
   try {
-    const pool = await getPool();
-    const { rows } = await pool.query<UserAccessibleApp>(
+    const rows = await queryRowsWithActorContext<UserAccessibleApp>(
+      actorUserId || userId,
       `SELECT * FROM get_user_accessible_apps($1::uuid)`,
       [userId]
     );
@@ -542,7 +561,8 @@ export async function getUserAccessibleApps(
 
 export async function checkUserAppPermission(
   userId: string,
-  serviceInstanceId: string
+  serviceInstanceId: string,
+  actorUserId?: string
 ): Promise<Result<AppPermissionCheck>> {
   if (IS_BROWSER) {
     return callInternalDataAction('groups.checkUserAppPermission', {
@@ -552,8 +572,8 @@ export async function checkUserAppPermission(
   }
 
   try {
-    const pool = await getPool();
-    const { rows } = await pool.query<AppPermissionCheck>(
+    const rows = await queryRowsWithActorContext<AppPermissionCheck>(
+      actorUserId || userId,
       `
         SELECT
           has_access,
@@ -584,7 +604,8 @@ export async function checkUserAppPermission(
 export async function incrementAppUsage(
   userId: string,
   serviceInstanceId: string,
-  increment: number = 1
+  increment: number = 1,
+  actorUserId?: string
 ): Promise<
   Result<{
     success: boolean;
@@ -602,17 +623,16 @@ export async function incrementAppUsage(
   }
 
   try {
-    const pool = await getPool();
-    const { rows } = await pool.query<{
+    const rows = await queryRowsWithActorContext<{
       success: boolean;
       new_used_count: number;
       quota_remaining: number | null;
       error_message: string | null;
-    }>(`SELECT * FROM increment_app_usage($1::uuid, $2::uuid, $3::integer)`, [
-      userId,
-      serviceInstanceId,
-      increment,
-    ]);
+    }>(
+      actorUserId || userId,
+      `SELECT * FROM increment_app_usage($1::uuid, $2::uuid, $3::integer)`,
+      [userId, serviceInstanceId, increment]
+    );
 
     return success(
       rows[0] || {

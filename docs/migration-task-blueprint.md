@@ -39,7 +39,8 @@
 - M1：完成
 - M2：完成
 - M3：完成（见 `docs/m3-db-crud-compatibility.md`）
-- M4-M9：未开始
+- M4：进行中（见 `docs/m4-rpc-rls-compatibility.md`）
+- M5-M9：未开始
 
 ## 3. 里程碑详细任务
 

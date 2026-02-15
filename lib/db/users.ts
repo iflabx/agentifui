@@ -16,6 +16,23 @@ async function getPool() {
   return getPgPool();
 }
 
+async function queryRowsWithActorContext<T extends object>(
+  actorUserId: string | undefined,
+  sql: string,
+  params: unknown[] = []
+): Promise<T[]> {
+  if (!actorUserId) {
+    const pool = await getPool();
+    const { rows } = await pool.query<T>(sql, params);
+    return rows;
+  }
+
+  const { queryRowsWithPgUserContext } = await import(
+    '@lib/server/pg/user-context'
+  );
+  return queryRowsWithPgUserContext<T>(actorUserId, sql, params);
+}
+
 // Extended user information, including profile and group info
 export interface EnhancedUser {
   id: string;
@@ -261,12 +278,22 @@ export async function getUserList(filters: UserFilters = {}): Promise<
 /**
  * Get user statistics.
  */
-export async function getUserStats(): Promise<Result<UserStats>> {
+export async function getUserStats(
+  actorUserId?: string
+): Promise<Result<UserStats>> {
   if (IS_BROWSER) {
     return callInternalDataAction('users.getUserStats');
   }
 
   try {
+    if (actorUserId) {
+      const rows = await queryRowsWithActorContext<{ payload: UserStats }>(
+        actorUserId,
+        `SELECT get_user_stats() AS payload`
+      );
+      return success(rows[0]?.payload || ({} as UserStats));
+    }
+
     const pool = await getPool();
     const { rows } = await pool.query<UserStats>(
       `
@@ -300,13 +327,25 @@ export async function getUserStats(): Promise<Result<UserStats>> {
  * Get detailed information for a single user.
  */
 export async function getUserById(
-  userId: string
+  userId: string,
+  actorUserId?: string
 ): Promise<Result<EnhancedUser | null>> {
   if (IS_BROWSER) {
     return callInternalDataAction('users.getUserById', { userId });
   }
 
   try {
+    if (actorUserId) {
+      const adminCheckRows = await queryRowsWithActorContext<{ id: string }>(
+        actorUserId,
+        `SELECT id::text FROM get_user_detail_for_admin($1::uuid) LIMIT 1`,
+        [userId]
+      );
+      if (!adminCheckRows[0]) {
+        return success(null);
+      }
+    }
+
     const pool = await getPool();
     const { rows } = await pool.query<Profile>(
       `SELECT * FROM profiles WHERE id = $1::uuid LIMIT 1`,
@@ -419,12 +458,27 @@ export async function updateUserStatus(
 /**
  * Delete user.
  */
-export async function deleteUser(userId: string): Promise<Result<void>> {
+export async function deleteUser(
+  userId: string,
+  actorUserId?: string
+): Promise<Result<void>> {
   if (IS_BROWSER) {
     return callInternalDataAction('users.deleteUser', { userId });
   }
 
   try {
+    if (actorUserId) {
+      const rows = await queryRowsWithActorContext<{ deleted: boolean }>(
+        actorUserId,
+        `SELECT safe_delete_user($1::uuid) AS deleted`,
+        [userId]
+      );
+      if (!rows[0]?.deleted) {
+        return failure(new Error('User not found'));
+      }
+      return success(undefined);
+    }
+
     const pool = await getPool();
     const result = await pool.query(
       `DELETE FROM profiles WHERE id = $1::uuid`,

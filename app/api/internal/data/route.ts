@@ -141,31 +141,33 @@ async function ensureActionPermission(
   request: Request,
   action: string,
   payload: Record<string, unknown> | undefined
-): Promise<NextResponse | null> {
+): Promise<{ error: NextResponse | null; actorUserId?: string }> {
   if (ADMIN_ACTIONS.has(action)) {
     const adminResult = await requireAdmin(request.headers);
     if (!adminResult.ok) {
-      return adminResult.response;
+      return { error: adminResult.response };
     }
-    return null;
+    return { error: null, actorUserId: adminResult.userId };
   }
 
   if (AUTH_ACTIONS.has(action)) {
     const identityResult = await resolveSessionIdentity(request.headers);
     if (!identityResult.success) {
-      return toErrorResponse('Failed to verify session', 500);
+      return { error: toErrorResponse('Failed to verify session', 500) };
     }
     if (!identityResult.data) {
-      return toErrorResponse('Unauthorized', 401);
+      return { error: toErrorResponse('Unauthorized', 401) };
     }
 
     const payloadUserId = resolvePayloadUserId(payload);
     if (payloadUserId && payloadUserId !== identityResult.data.userId) {
-      return toErrorResponse('Forbidden', 403);
+      return { error: toErrorResponse('Forbidden', 403) };
     }
+
+    return { error: null, actorUserId: identityResult.data.userId };
   }
 
-  return null;
+  return { error: null };
 }
 
 export async function POST(request: Request) {
@@ -178,14 +180,11 @@ export async function POST(request: Request) {
       return toErrorResponse('Missing action', 400);
     }
 
-    const permissionError = await ensureActionPermission(
-      request,
-      action,
-      payload
-    );
-    if (permissionError) {
-      return permissionError;
+    const permission = await ensureActionPermission(request, action, payload);
+    if (permission.error) {
+      return permission.error;
     }
+    const actorUserId = permission.actorUserId;
 
     switch (action) {
       case 'users.getUserList':
@@ -195,10 +194,10 @@ export async function POST(request: Request) {
           )
         );
       case 'users.getUserStats':
-        return toResultResponse(await getUserStats());
+        return toResultResponse(await getUserStats(actorUserId));
       case 'users.getUserById':
         return toResultResponse(
-          await getUserById(String(payload?.userId || ''))
+          await getUserById(String(payload?.userId || ''), actorUserId)
         );
       case 'users.updateUserProfile':
         return toResultResponse(
@@ -209,7 +208,7 @@ export async function POST(request: Request) {
         );
       case 'users.deleteUser':
         return toResultResponse(
-          await deleteUser(String(payload?.userId || ''))
+          await deleteUser(String(payload?.userId || ''), actorUserId)
         );
       case 'users.createUserProfile':
         return toResultResponse(
@@ -302,13 +301,17 @@ export async function POST(request: Request) {
         );
       case 'groups.getUserAccessibleApps':
         return toResultResponse(
-          await getUserAccessibleApps(String(payload?.userId || ''))
+          await getUserAccessibleApps(
+            String(payload?.userId || ''),
+            actorUserId
+          )
         );
       case 'groups.checkUserAppPermission':
         return toResultResponse(
           await checkUserAppPermission(
             String(payload?.userId || ''),
-            String(payload?.serviceInstanceId || '')
+            String(payload?.serviceInstanceId || ''),
+            actorUserId
           )
         );
       case 'groups.incrementAppUsage':
@@ -316,7 +319,8 @@ export async function POST(request: Request) {
           await incrementAppUsage(
             String(payload?.userId || ''),
             String(payload?.serviceInstanceId || ''),
-            Number(payload?.increment || 1)
+            Number(payload?.increment || 1),
+            actorUserId
           )
         );
       case 'groups.searchUsersForGroup':
@@ -405,7 +409,8 @@ export async function POST(request: Request) {
           await updateSsoProviderOrder(
             (payload?.updates || []) as Parameters<
               typeof updateSsoProviderOrder
-            >[0]
+            >[0],
+            actorUserId
           )
         );
       default:
