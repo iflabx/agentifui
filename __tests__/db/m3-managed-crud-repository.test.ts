@@ -203,5 +203,64 @@ describe('M3 managed CRUD compatibility', () => {
       await cleanupRecord('providers', providerId);
       await cleanupRecord('profiles', profileCreated ? profileId : null);
     }
-  });
+  }, 15000);
+
+  it('preserves failure semantics for duplicates and missing rows', async () => {
+    const suffix = `${Date.now()}${Math.random().toString(36).slice(2, 8)}`;
+    let providerId: string | null = null;
+
+    try {
+      const provider = expectSuccess(
+        await dataService.create<Provider>('providers', {
+          name: `m3-provider-unique-${suffix}`,
+          type: 'llm',
+          base_url: 'https://example.invalid/api',
+          auth_type: 'bearer',
+          is_active: true,
+          is_default: false,
+        }),
+        'create provider for unique check'
+      );
+      providerId = provider.id;
+
+      const duplicate = await dataService.create<Provider>(
+        'providers',
+        {
+          name: provider.name,
+          type: 'llm',
+          base_url: 'https://example.invalid/api',
+          auth_type: 'bearer',
+          is_active: true,
+          is_default: false,
+        },
+        {
+          retries: 1,
+          retryDelay: 0,
+        }
+      );
+      expect(duplicate.success).toBe(false);
+      if (!duplicate.success) {
+        expect(duplicate.error.message.toLowerCase()).toContain('unique');
+      }
+
+      const missingConversationId = randomUUID();
+      const missingUpdate = await dataService.update<Conversation>(
+        'conversations',
+        missingConversationId,
+        { title: 'should-fail' },
+        {
+          retries: 1,
+          retryDelay: 0,
+        }
+      );
+      expect(missingUpdate.success).toBe(false);
+      if (!missingUpdate.success) {
+        expect(missingUpdate.error.message.toLowerCase()).toContain(
+          'record not found'
+        );
+      }
+    } finally {
+      await cleanupRecord('providers', providerId);
+    }
+  }, 15000);
 });

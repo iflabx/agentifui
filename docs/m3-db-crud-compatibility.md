@@ -27,16 +27,32 @@
 
 - `pnpm m3:crud:verify`  
   执行 `__tests__/db/m3-managed-crud-repository.test.ts`，对 5 张核心表执行真实 CRUD 验证。
+- `pnpm m3:internal-data:verify`  
+  执行 `scripts/m3-internal-data-e2e-verify.mjs`，验证浏览器链路通过 `/api/internal/data` 访问 conversations，并校验所有权约束。
+- `pnpm m3:sql-audit:verify`  
+  执行 `scripts/m3-managed-sql-audit.mjs`，对 managed 表 SQL fallback 文件做白名单审计，防止回退面失控。
 - `pnpm m3:gate:verify`  
-  聚合执行 `m3:crud:verify + m3:oauth:mock:verify`。
+  聚合执行 `m3:crud:verify + m3:internal-data:verify + m3:sql-audit:verify + m3:oauth:mock:verify`。
 
 ## 3. 兼容性说明
 
 1. 现有 `Result` 错误语义保持不变，前端调用面无需改动。
 2. 缓存清理逻辑保持原行为：写操作后按 `table:*` 清理。
 3. 事务接口 `runInTransaction`、`rawQuery`、`rawExecute` 暂继续走 PG 原生路径（为 M4 RPC/RLS 迁移预留）。
+4. 客户端 conversation 列表/重命名/删除已改为通过 `callInternalDataAction` 调用 `/api/internal/data`，不再在浏览器直接调用 `DataService`。
 
-## 4. 当前边界（进入 M4 前的已知项）
+## 4. SQL Fallback 清单（managed 表）
+
+当前允许的 fallback 文件：
+
+1. `lib/db/users.ts`（管理员视图/批量管理 SQL）
+2. `lib/db/conversations.ts`（物理删除事务）
+3. `lib/db/service-instances.ts`（默认实例切换事务）
+4. `lib/services/db/message-service.ts`（高级消息查询与批量写入）
+
+> 该清单由 `pnpm m3:sql-audit:verify` 强制审计。
+
+## 5. 当前边界（进入 M4 前的已知项）
 
 1. 仅核心高频 CRUD 已切至 Drizzle，其他表尚未统一切换。
 2. 权限/RLS 语义对齐属于 M4 范畴，本阶段不处理 GUC/RLS 完整迁移。
