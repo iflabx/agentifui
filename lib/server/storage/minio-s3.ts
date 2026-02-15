@@ -8,6 +8,27 @@ type S3Config = {
   secretAccessKey: string;
 };
 
+type SignedMethod = 'GET' | 'PUT' | 'DELETE' | 'HEAD';
+
+type PresignInput = {
+  method: 'GET' | 'PUT';
+  key: string;
+  expiresInSeconds?: number;
+  query?: URLSearchParams;
+};
+
+export type HeadObjectResult = {
+  exists: boolean;
+  status: number;
+  contentType: string | null;
+  contentLength: number | null;
+  eTag: string | null;
+  lastModified: string | null;
+};
+
+const DEFAULT_PRESIGN_EXPIRES_SECONDS = 5 * 60;
+const MAX_PRESIGN_EXPIRES_SECONDS = 7 * 24 * 60 * 60;
+
 function resolveConfig(): S3Config {
   const endpointRaw =
     process.env.S3_ENDPOINT?.trim() || process.env.MINIO_ENDPOINT?.trim() || '';
@@ -53,28 +74,84 @@ function formatAmzDate(date: Date) {
   };
 }
 
+function encodeRfc3986(value: string): string {
+  return encodeURIComponent(value).replace(
+    /[!'()*]/g,
+    ch => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`
+  );
+}
+
 function encodePath(path: string): string {
   return path
     .split('/')
     .filter(Boolean)
-    .map(segment => encodeURIComponent(segment))
+    .map(segment => encodeRfc3986(segment))
     .join('/');
 }
 
 function canonicalQueryString(query: URLSearchParams): string {
-  const entries = Array.from(query.entries()).sort(([a], [b]) =>
-    a.localeCompare(b)
+  const entries = Array.from(query.entries()).sort(
+    ([aKey, aValue], [bKey, bValue]) => {
+      if (aKey === bKey) {
+        return aValue.localeCompare(bValue);
+      }
+      return aKey.localeCompare(bKey);
+    }
   );
+
   return entries
-    .map(
-      ([key, value]) =>
-        `${encodeURIComponent(key)}=${encodeURIComponent(value)}`
-    )
+    .map(([key, value]) => `${encodeRfc3986(key)}=${encodeRfc3986(value)}`)
     .join('&');
 }
 
+function buildCanonicalUri(config: S3Config, key?: string): string {
+  const keyPath = key ? `/${encodePath(key)}` : '';
+  const basePath = config.endpoint.pathname.replace(/\/$/, '');
+  return `${basePath}/${config.bucket}${keyPath}`.replace(/\/{2,}/g, '/');
+}
+
+function buildObjectUrl(
+  config: S3Config,
+  key?: string,
+  query?: URLSearchParams
+): URL {
+  const url = new URL(config.endpoint.toString());
+  url.pathname = buildCanonicalUri(config, key);
+  if (query) {
+    query.forEach((value, name) => {
+      url.searchParams.set(name, value);
+    });
+  }
+  return url;
+}
+
+function buildSigningKey(config: S3Config, dateStamp: string): Buffer {
+  const kDate = hmacSha256(`AWS4${config.secretAccessKey}`, dateStamp);
+  const kRegion = hmacSha256(kDate, config.region);
+  const kService = hmacSha256(kRegion, 's3');
+  return hmacSha256(kService, 'aws4_request');
+}
+
+function resolvePresignExpires(expiresInSeconds: number | undefined): number {
+  const candidate = Number(expiresInSeconds || DEFAULT_PRESIGN_EXPIRES_SECONDS);
+  if (!Number.isFinite(candidate)) {
+    return DEFAULT_PRESIGN_EXPIRES_SECONDS;
+  }
+
+  const normalized = Math.floor(candidate);
+  if (normalized < 1) {
+    return 1;
+  }
+
+  if (normalized > MAX_PRESIGN_EXPIRES_SECONDS) {
+    return MAX_PRESIGN_EXPIRES_SECONDS;
+  }
+
+  return normalized;
+}
+
 async function signedRequest(options: {
-  method: 'GET' | 'PUT' | 'DELETE';
+  method: SignedMethod;
   key?: string;
   query?: URLSearchParams;
   body?: Buffer;
@@ -84,27 +161,17 @@ async function signedRequest(options: {
   const now = new Date();
   const { amzDate, dateStamp } = formatAmzDate(now);
   const query = options.query || new URLSearchParams();
-  const body = options.body;
-  const payloadHash = sha256Hex(body || '');
+  const payloadHash = sha256Hex(options.body || '');
 
-  const keyPath = options.key ? `/${encodePath(options.key)}` : '';
-  const basePath = config.endpoint.pathname.replace(/\/$/, '');
-  const canonicalUri = `${basePath}/${config.bucket}${keyPath}`.replace(
-    /\/{2,}/g,
-    '/'
-  );
-
-  const url = new URL(config.endpoint.toString());
-  url.pathname = canonicalUri;
-  query.forEach((value, key) => {
-    url.searchParams.set(key, value);
-  });
+  const url = buildObjectUrl(config, options.key, query);
+  const canonicalUri = buildCanonicalUri(config, options.key);
 
   const headers: Record<string, string> = {
     host: url.host,
     'x-amz-content-sha256': payloadHash,
     'x-amz-date': amzDate,
   };
+
   if (options.contentType) {
     headers['content-type'] = options.contentType;
   }
@@ -114,6 +181,7 @@ async function signedRequest(options: {
     .map(key => `${key}:${headers[key].trim()}\n`)
     .join('');
   const signedHeaders = signedHeaderKeys.join(';');
+
   const canonicalRequest = [
     options.method,
     canonicalUri,
@@ -131,11 +199,10 @@ async function signedRequest(options: {
     sha256Hex(canonicalRequest),
   ].join('\n');
 
-  const kDate = hmacSha256(`AWS4${config.secretAccessKey}`, dateStamp);
-  const kRegion = hmacSha256(kDate, config.region);
-  const kService = hmacSha256(kRegion, 's3');
-  const kSigning = hmacSha256(kService, 'aws4_request');
-  const signature = hmacSha256(kSigning, stringToSign).toString('hex');
+  const signature = hmacSha256(
+    buildSigningKey(config, dateStamp),
+    stringToSign
+  ).toString('hex');
 
   headers.authorization =
     `AWS4-HMAC-SHA256 Credential=${config.accessKeyId}/${credentialScope}, ` +
@@ -144,8 +211,53 @@ async function signedRequest(options: {
   return fetch(url.toString(), {
     method: options.method,
     headers,
-    body,
+    body: options.body,
   });
+}
+
+function buildPresignedUrl(input: PresignInput): string {
+  const config = resolveConfig();
+  const now = new Date();
+  const { amzDate, dateStamp } = formatAmzDate(now);
+  const expires = resolvePresignExpires(input.expiresInSeconds);
+
+  const query = new URLSearchParams(input.query || undefined);
+  const credentialScope = `${dateStamp}/${config.region}/s3/aws4_request`;
+
+  query.set('X-Amz-Algorithm', 'AWS4-HMAC-SHA256');
+  query.set('X-Amz-Credential', `${config.accessKeyId}/${credentialScope}`);
+  query.set('X-Amz-Date', amzDate);
+  query.set('X-Amz-Expires', String(expires));
+  query.set('X-Amz-SignedHeaders', 'host');
+
+  const canonicalUri = buildCanonicalUri(config, input.key);
+  const url = buildObjectUrl(config, input.key, query);
+
+  const canonicalRequest = [
+    input.method,
+    canonicalUri,
+    canonicalQueryString(query),
+    `host:${url.host}\n`,
+    'host',
+    'UNSIGNED-PAYLOAD',
+  ].join('\n');
+
+  const stringToSign = [
+    'AWS4-HMAC-SHA256',
+    amzDate,
+    credentialScope,
+    sha256Hex(canonicalRequest),
+  ].join('\n');
+
+  const signature = hmacSha256(
+    buildSigningKey(config, dateStamp),
+    stringToSign
+  ).toString('hex');
+
+  query.set('X-Amz-Signature', signature);
+
+  const signedUrl = buildObjectUrl(config, input.key, query);
+  return signedUrl.toString();
 }
 
 function decodeXmlEntities(value: string): string {
@@ -208,9 +320,81 @@ export async function listObjects(namespace: string, prefix: string) {
   const xml = await response.text();
   const matches = [...xml.matchAll(/<Key>(.*?)<\/Key>/g)];
   const keys = matches.map(match => decodeXmlEntities(match[1] || ''));
+
   return keys
     .filter(key => key.startsWith(`${namespace}/`))
     .map(key => key.slice(namespace.length + 1));
+}
+
+export async function headObject(
+  namespace: string,
+  filePath: string
+): Promise<HeadObjectResult> {
+  const key = `${namespace}/${filePath}`;
+  const response = await signedRequest({
+    method: 'HEAD',
+    key,
+  });
+
+  if (response.status === 404) {
+    return {
+      exists: false,
+      status: response.status,
+      contentType: null,
+      contentLength: null,
+      eTag: null,
+      lastModified: null,
+    };
+  }
+
+  if (!response.ok) {
+    const bodyText = await response.text().catch(() => '');
+    throw new Error(`Failed to head object: ${response.status} ${bodyText}`);
+  }
+
+  const contentLengthRaw = response.headers.get('content-length');
+  const contentLength = contentLengthRaw
+    ? Number(contentLengthRaw)
+    : Number.NaN;
+
+  return {
+    exists: true,
+    status: response.status,
+    contentType: response.headers.get('content-type'),
+    contentLength: Number.isFinite(contentLength) ? contentLength : null,
+    eTag: response.headers.get('etag'),
+    lastModified: response.headers.get('last-modified'),
+  };
+}
+
+export function createPresignedUploadUrl(
+  namespace: string,
+  filePath: string,
+  options: { expiresInSeconds?: number } = {}
+): string {
+  return buildPresignedUrl({
+    method: 'PUT',
+    key: `${namespace}/${filePath}`,
+    expiresInSeconds: options.expiresInSeconds,
+  });
+}
+
+export function createPresignedDownloadUrl(
+  namespace: string,
+  filePath: string,
+  options: { expiresInSeconds?: number; responseContentType?: string } = {}
+): string {
+  const query = new URLSearchParams();
+  if (options.responseContentType) {
+    query.set('response-content-type', options.responseContentType);
+  }
+
+  return buildPresignedUrl({
+    method: 'GET',
+    key: `${namespace}/${filePath}`,
+    expiresInSeconds: options.expiresInSeconds,
+    query,
+  });
 }
 
 export function buildPublicObjectUrl(namespace: string, filePath: string) {
@@ -228,6 +412,7 @@ export function buildPublicObjectUrl(namespace: string, filePath: string) {
     /\/{2,}/g,
     '/'
   );
+
   return url.toString().replace(/\/$/, '');
 }
 
@@ -242,6 +427,7 @@ export function extractPathFromPublicUrl(
       .split('/')
       .filter(Boolean)
       .map(segment => decodeURIComponent(segment));
+
     const bucketIndex = segments.indexOf(config.bucket);
     if (bucketIndex !== -1 && bucketIndex < segments.length - 2) {
       const namespaceSegment = segments[bucketIndex + 1];

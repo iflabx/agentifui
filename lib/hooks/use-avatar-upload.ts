@@ -92,25 +92,132 @@ export function useAvatarUpload() {
       }));
 
       try {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('userId', userId);
+        const runLegacyUpload = async (): Promise<AvatarUploadResult> => {
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('userId', userId);
 
-        const response = await fetch('/api/internal/storage/avatar', {
-          method: 'POST',
-          body: formData,
-          credentials: 'include',
-        });
+          const legacyResponse = await fetch('/api/internal/storage/avatar', {
+            method: 'POST',
+            body: formData,
+            credentials: 'include',
+          });
+          const legacyPayload = (await legacyResponse.json()) as {
+            success: boolean;
+            url?: string;
+            path?: string;
+            error?: string;
+          };
 
-        const payload = (await response.json()) as {
-          success: boolean;
-          url?: string;
-          path?: string;
-          error?: string;
+          if (
+            !legacyResponse.ok ||
+            !legacyPayload.success ||
+            !legacyPayload.url ||
+            !legacyPayload.path
+          ) {
+            throw new Error(
+              legacyPayload.error || t('errors.uploadFailedGeneric')
+            );
+          }
+
+          return {
+            url: legacyPayload.url,
+            path: legacyPayload.path,
+          };
         };
 
-        if (!response.ok || !payload.success || !payload.url || !payload.path) {
-          throw new Error(payload.error || t('errors.uploadFailedGeneric'));
+        let uploadResult: AvatarUploadResult;
+
+        try {
+          const presignResponse = await fetch(
+            '/api/internal/storage/avatar/presign',
+            {
+              method: 'POST',
+              credentials: 'include',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                userId,
+                fileName: file.name,
+                contentType: file.type,
+                fileSize: file.size,
+              }),
+            }
+          );
+
+          const presignPayload = (await presignResponse.json()) as {
+            success: boolean;
+            uploadUrl?: string;
+            path?: string;
+            error?: string;
+          };
+
+          if (
+            !presignResponse.ok ||
+            !presignPayload.success ||
+            !presignPayload.uploadUrl ||
+            !presignPayload.path
+          ) {
+            throw new Error(
+              presignPayload.error || t('errors.uploadFailedGeneric')
+            );
+          }
+
+          const uploadResponse = await fetch(presignPayload.uploadUrl, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': file.type || 'application/octet-stream',
+            },
+            body: file,
+          });
+
+          if (!uploadResponse.ok) {
+            throw new Error(
+              `Avatar direct upload failed with status ${uploadResponse.status}`
+            );
+          }
+
+          const commitResponse = await fetch('/api/internal/storage/avatar', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              userId,
+              path: presignPayload.path,
+            }),
+          });
+
+          const commitPayload = (await commitResponse.json()) as {
+            success: boolean;
+            url?: string;
+            path?: string;
+            error?: string;
+          };
+
+          if (
+            !commitResponse.ok ||
+            !commitPayload.success ||
+            !commitPayload.url ||
+            !commitPayload.path
+          ) {
+            throw new Error(
+              commitPayload.error || t('errors.uploadFailedGeneric')
+            );
+          }
+
+          uploadResult = {
+            url: commitPayload.url,
+            path: commitPayload.path,
+          };
+        } catch (presignError) {
+          console.warn(
+            '[AvatarUpload] presign flow failed, fallback to legacy relay upload:',
+            presignError
+          );
+          uploadResult = await runLegacyUpload();
         }
 
         setState(prev => ({
@@ -121,8 +228,8 @@ export function useAvatarUpload() {
         }));
 
         return {
-          url: payload.url,
-          path: payload.path,
+          url: uploadResult.url,
+          path: uploadResult.path,
         };
       } catch (error) {
         setState(prev => ({

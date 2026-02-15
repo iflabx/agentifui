@@ -1,0 +1,581 @@
+#!/usr/bin/env node
+import { config as loadEnv } from 'dotenv';
+import { spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
+import { setTimeout as sleep } from 'node:timers/promises';
+import { Client } from 'pg';
+
+loadEnv({ path: '.env.test-stack' });
+
+const appPort = Number(process.env.M5_STORAGE_APP_PORT || 3319);
+const appBase = `http://127.0.0.1:${appPort}`;
+const appReadyTimeoutMs = Number(
+  process.env.M5_STORAGE_READY_TIMEOUT_MS || 120000
+);
+
+const fallbackDatabaseUrl =
+  'postgresql://agentif:agentif@172.20.0.1:5432/agentifui';
+const fallbackRedisUrl = 'redis://172.20.0.1:6379/0';
+const fallbackS3Endpoint = 'http://172.20.0.1:9000';
+
+const tinyPngBytes = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7YJ7sAAAAASUVORK5CYII=',
+  'base64'
+);
+
+function randomSuffix() {
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function assertStatus(response, expectedStatus, label) {
+  if (response.status === expectedStatus) {
+    return;
+  }
+
+  throw new Error(
+    `${label} returned ${response.status}, expected ${expectedStatus}`
+  );
+}
+
+class CookieJar {
+  constructor() {
+    this.cookies = new Map();
+  }
+
+  updateFromResponse(response) {
+    const headersWithGetSetCookie = response.headers;
+    const setCookies =
+      typeof headersWithGetSetCookie.getSetCookie === 'function'
+        ? headersWithGetSetCookie.getSetCookie()
+        : [];
+
+    for (const line of setCookies) {
+      const [pair, ...attributes] = line.split(';');
+      const eqIndex = pair.indexOf('=');
+      if (eqIndex < 0) {
+        continue;
+      }
+
+      const name = pair.slice(0, eqIndex).trim();
+      const value = pair.slice(eqIndex + 1).trim();
+      if (!name) {
+        continue;
+      }
+
+      const maxAgeAttr = attributes.find(attribute =>
+        attribute.trim().toLowerCase().startsWith('max-age=')
+      );
+      const maxAge = maxAgeAttr ? Number(maxAgeAttr.split('=')[1]) : Number.NaN;
+      if (Number.isFinite(maxAge) && maxAge <= 0) {
+        this.cookies.delete(name);
+        continue;
+      }
+
+      this.cookies.set(name, value);
+    }
+  }
+
+  toHeader() {
+    if (this.cookies.size === 0) {
+      return '';
+    }
+
+    return Array.from(this.cookies.entries())
+      .map(([key, value]) => `${key}=${value}`)
+      .join('; ');
+  }
+}
+
+function startProcess(command, args, options) {
+  const proc = spawn(command, args, options);
+  proc.stdout.on('data', chunk => {
+    process.stdout.write(chunk);
+  });
+  proc.stderr.on('data', chunk => {
+    process.stderr.write(chunk);
+  });
+  return proc;
+}
+
+async function waitForServer(url, timeoutMs = 120000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        redirect: 'manual',
+      });
+      if (response.status > 0) {
+        return;
+      }
+    } catch {}
+
+    await sleep(500);
+  }
+
+  throw new Error(`Server not ready in ${timeoutMs}ms: ${url}`);
+}
+
+async function requestWithCookies(jar, url, init = {}) {
+  const headers = new Headers(init.headers || {});
+  const cookieHeader = jar.toHeader();
+  if (cookieHeader) {
+    headers.set('cookie', cookieHeader);
+  }
+
+  const response = await fetch(url, {
+    ...init,
+    headers,
+    redirect: 'manual',
+  });
+  jar.updateFromResponse(response);
+  return response;
+}
+
+async function requestJson(jar, path, method, body) {
+  const response = await requestWithCookies(jar, `${appBase}${path}`, {
+    method,
+    headers: {
+      'content-type': 'application/json',
+      origin: appBase,
+      referer: `${appBase}/`,
+    },
+    body: JSON.stringify(body || {}),
+  });
+
+  const payload = await response.json().catch(() => null);
+  return { response, payload };
+}
+
+async function requestForm(jar, path, method, formData) {
+  const response = await requestWithCookies(jar, `${appBase}${path}`, {
+    method,
+    headers: {
+      origin: appBase,
+      referer: `${appBase}/`,
+    },
+    body: formData,
+  });
+
+  const payload = await response.json().catch(() => null);
+  return { response, payload };
+}
+
+async function signUpAndGetUserId(jar, email, password, name) {
+  const signUp = await requestJson(
+    jar,
+    '/api/auth/better/sign-up/email',
+    'POST',
+    {
+      email,
+      password,
+      name,
+      callbackURL: '/chat/new',
+    }
+  );
+  assertStatus(signUp.response, 200, 'sign-up/email');
+
+  const session = await requestWithCookies(
+    jar,
+    `${appBase}/api/auth/better/get-session`,
+    {
+      method: 'GET',
+    }
+  );
+  assertStatus(session, 200, 'get-session');
+
+  const payload = await session.json().catch(() => null);
+  const userId = payload?.user?.id;
+  if (!userId) {
+    throw new Error(`session user id missing for ${email}`);
+  }
+
+  return userId;
+}
+
+async function ensureProfileRow(client, userId, email) {
+  await client.query(
+    `
+      INSERT INTO profiles (id, email, auth_source, role, status, created_at, updated_at)
+      VALUES ($1::uuid, $2, 'native', 'user', 'active', NOW(), NOW())
+      ON CONFLICT (id) DO NOTHING
+    `,
+    [userId, email]
+  );
+}
+
+function createImageBlob() {
+  return new Blob([tinyPngBytes], { type: 'image/png' });
+}
+
+async function main() {
+  const suffix = randomSuffix();
+  const databaseUrl =
+    process.env.DATABASE_URL?.trim() ||
+    process.env.M5_STORAGE_DATABASE_URL?.trim() ||
+    fallbackDatabaseUrl;
+  const redisUrl =
+    process.env.REDIS_URL?.trim() ||
+    process.env.M5_STORAGE_REDIS_URL?.trim() ||
+    fallbackRedisUrl;
+  const s3Endpoint =
+    process.env.S3_ENDPOINT?.trim() ||
+    process.env.M5_STORAGE_S3_ENDPOINT?.trim() ||
+    fallbackS3Endpoint;
+
+  const appProc = startProcess('pnpm', ['next', 'dev', '-p', String(appPort)], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      NODE_ENV: 'development',
+      NEXT_PUBLIC_APP_URL: appBase,
+      BETTER_AUTH_URL: appBase,
+      BETTER_AUTH_SECRET:
+        process.env.BETTER_AUTH_SECRET || randomBytes(32).toString('hex'),
+      DATABASE_URL: databaseUrl,
+      REDIS_URL: redisUrl,
+      S3_ENDPOINT: s3Endpoint,
+      S3_ACCESS_KEY_ID: process.env.S3_ACCESS_KEY_ID || 'minioadmin',
+      S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY || 'minioadmin',
+      S3_BUCKET: process.env.S3_BUCKET || 'agentifui',
+      S3_ENABLE_PATH_STYLE: process.env.S3_ENABLE_PATH_STYLE || '1',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  const stopAll = async exitCode => {
+    if (!appProc.killed && appProc.exitCode === null) {
+      appProc.kill('SIGTERM');
+      await sleep(800);
+      if (appProc.exitCode === null) {
+        appProc.kill('SIGKILL');
+      }
+    }
+
+    process.exit(exitCode);
+  };
+
+  let userAAvatarPath = null;
+  let userAContentImagePath = null;
+
+  const dbClient = new Client({ connectionString: databaseUrl });
+
+  try {
+    await waitForServer(
+      `${appBase}/api/auth/better/get-session`,
+      appReadyTimeoutMs
+    );
+
+    const jarA = new CookieJar();
+    const jarB = new CookieJar();
+    const userAEmail = `m5-a-${suffix}@example.com`;
+    const userBEmail = `m5-b-${suffix}@example.com`;
+    const userAPassword = `M5A!${suffix}`;
+    const userBPassword = `M5B!${suffix}`;
+
+    const userAId = await signUpAndGetUserId(
+      jarA,
+      userAEmail,
+      userAPassword,
+      `M5 User A ${suffix}`
+    );
+    const userBId = await signUpAndGetUserId(
+      jarB,
+      userBEmail,
+      userBPassword,
+      `M5 User B ${suffix}`
+    );
+
+    await dbClient.connect();
+    await ensureProfileRow(dbClient, userAId, userAEmail);
+    await ensureProfileRow(dbClient, userBId, userBEmail);
+
+    const avatarPresign = await requestJson(
+      jarA,
+      '/api/internal/storage/avatar/presign',
+      'POST',
+      {
+        userId: userAId,
+        fileName: 'avatar.png',
+        contentType: 'image/png',
+        fileSize: tinyPngBytes.byteLength,
+      }
+    );
+    assertStatus(avatarPresign.response, 200, 'avatar/presign owner');
+
+    const avatarUploadUrl = avatarPresign.payload?.uploadUrl;
+    userAAvatarPath = avatarPresign.payload?.path;
+    if (!avatarUploadUrl || !userAAvatarPath) {
+      throw new Error('avatar presign payload missing uploadUrl/path');
+    }
+
+    const avatarUpload = await fetch(avatarUploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'image/png',
+      },
+      body: tinyPngBytes,
+    });
+    if (!avatarUpload.ok) {
+      throw new Error(`avatar direct upload failed: ${avatarUpload.status}`);
+    }
+
+    const avatarCommit = await requestJson(
+      jarA,
+      '/api/internal/storage/avatar',
+      'POST',
+      {
+        userId: userAId,
+        path: userAAvatarPath,
+      }
+    );
+    assertStatus(avatarCommit.response, 200, 'avatar commit owner');
+    if (!avatarCommit.payload?.success || !avatarCommit.payload?.url) {
+      throw new Error('avatar commit response missing url');
+    }
+
+    const profileAvatarRow = await dbClient.query(
+      `
+        SELECT avatar_url
+        FROM profiles
+        WHERE id = $1::uuid
+        LIMIT 1
+      `,
+      [userAId]
+    );
+    if (profileAvatarRow.rows[0]?.avatar_url !== avatarCommit.payload.url) {
+      throw new Error('avatar url not persisted to profile');
+    }
+
+    const avatarPresignCrossUser = await requestJson(
+      jarB,
+      '/api/internal/storage/avatar/presign',
+      'POST',
+      {
+        userId: userAId,
+        fileName: 'hijack.png',
+        contentType: 'image/png',
+        fileSize: tinyPngBytes.byteLength,
+      }
+    );
+    assertStatus(
+      avatarPresignCrossUser.response,
+      403,
+      'avatar/presign cross-user'
+    );
+
+    const avatarCommitCrossUser = await requestJson(
+      jarB,
+      '/api/internal/storage/avatar',
+      'POST',
+      {
+        userId: userAId,
+        path: userAAvatarPath,
+      }
+    );
+    assertStatus(
+      avatarCommitCrossUser.response,
+      403,
+      'avatar commit cross-user'
+    );
+
+    const avatarDelete = await requestJson(
+      jarA,
+      '/api/internal/storage/avatar',
+      'DELETE',
+      {
+        userId: userAId,
+        filePath: userAAvatarPath,
+      }
+    );
+    assertStatus(avatarDelete.response, 200, 'avatar delete owner');
+
+    const profileAfterDelete = await dbClient.query(
+      `
+        SELECT avatar_url
+        FROM profiles
+        WHERE id = $1::uuid
+        LIMIT 1
+      `,
+      [userAId]
+    );
+    if (profileAfterDelete.rows[0]?.avatar_url !== null) {
+      throw new Error('avatar_url expected NULL after delete');
+    }
+
+    const contentPresign = await requestJson(
+      jarA,
+      '/api/internal/storage/content-images/presign',
+      'POST',
+      {
+        userId: userAId,
+        fileName: 'content.png',
+        contentType: 'image/png',
+        fileSize: tinyPngBytes.byteLength,
+      }
+    );
+    assertStatus(contentPresign.response, 200, 'content-images/presign owner');
+
+    const contentUploadUrl = contentPresign.payload?.uploadUrl;
+    userAContentImagePath = contentPresign.payload?.path;
+    const contentPublicUrl = contentPresign.payload?.url;
+    if (!contentUploadUrl || !userAContentImagePath || !contentPublicUrl) {
+      throw new Error('content image presign payload missing fields');
+    }
+
+    const contentUpload = await fetch(contentUploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'image/png',
+      },
+      body: tinyPngBytes,
+    });
+    if (!contentUpload.ok) {
+      throw new Error(
+        `content image direct upload failed: ${contentUpload.status}`
+      );
+    }
+
+    const listOwner = await requestWithCookies(
+      jarA,
+      `${appBase}/api/internal/storage/content-images?userId=${encodeURIComponent(userAId)}`,
+      {
+        method: 'GET',
+      }
+    );
+    assertStatus(listOwner, 200, 'content-images list owner');
+    const listOwnerPayload = await listOwner.json().catch(() => null);
+    if (!listOwnerPayload?.success || !Array.isArray(listOwnerPayload.files)) {
+      throw new Error('content image list owner missing files');
+    }
+    if (!listOwnerPayload.files.includes(userAContentImagePath)) {
+      throw new Error('content image path not found in owner list');
+    }
+
+    const listCrossUser = await requestWithCookies(
+      jarB,
+      `${appBase}/api/internal/storage/content-images?userId=${encodeURIComponent(userAId)}`,
+      {
+        method: 'GET',
+      }
+    );
+    assertStatus(listCrossUser, 403, 'content-images list cross-user');
+
+    const deleteCrossUser = await requestJson(
+      jarB,
+      '/api/internal/storage/content-images',
+      'DELETE',
+      {
+        userId: userAId,
+        filePath: userAContentImagePath,
+      }
+    );
+    assertStatus(
+      deleteCrossUser.response,
+      403,
+      'content-images delete cross-user'
+    );
+
+    const contentDelete = await requestJson(
+      jarA,
+      '/api/internal/storage/content-images',
+      'DELETE',
+      {
+        userId: userAId,
+        filePath: userAContentImagePath,
+      }
+    );
+    assertStatus(contentDelete.response, 200, 'content-images delete owner');
+
+    const legacyAvatarForm = new FormData();
+    legacyAvatarForm.append('file', createImageBlob(), 'legacy-avatar.png');
+    legacyAvatarForm.append('userId', userAId);
+    const legacyAvatar = await requestForm(
+      jarA,
+      '/api/internal/storage/avatar',
+      'POST',
+      legacyAvatarForm
+    );
+    assertStatus(legacyAvatar.response, 200, 'avatar legacy upload');
+    const legacyAvatarPath = legacyAvatar.payload?.path;
+    if (!legacyAvatarPath) {
+      throw new Error('avatar legacy upload missing path');
+    }
+
+    const legacyAvatarDelete = await requestJson(
+      jarA,
+      '/api/internal/storage/avatar',
+      'DELETE',
+      {
+        userId: userAId,
+        filePath: legacyAvatarPath,
+      }
+    );
+    assertStatus(legacyAvatarDelete.response, 200, 'avatar legacy delete');
+
+    const legacyContentForm = new FormData();
+    legacyContentForm.append('file', createImageBlob(), 'legacy-content.png');
+    legacyContentForm.append('userId', userAId);
+    const legacyContent = await requestForm(
+      jarA,
+      '/api/internal/storage/content-images',
+      'POST',
+      legacyContentForm
+    );
+    assertStatus(legacyContent.response, 200, 'content-images legacy upload');
+    const legacyContentPath = legacyContent.payload?.path;
+    if (!legacyContentPath) {
+      throw new Error('content-images legacy upload missing path');
+    }
+
+    const legacyContentDelete = await requestJson(
+      jarA,
+      '/api/internal/storage/content-images',
+      'DELETE',
+      {
+        userId: userAId,
+        filePath: legacyContentPath,
+      }
+    );
+    assertStatus(
+      legacyContentDelete.response,
+      200,
+      'content-images legacy delete'
+    );
+
+    console.log(
+      JSON.stringify(
+        {
+          ok: true,
+          checks: {
+            avatarPresignUploadCommit: true,
+            avatarOwnershipGuards: true,
+            contentPresignUploadListDelete: true,
+            contentOwnershipGuards: true,
+            legacyAvatarFallback: true,
+            legacyContentFallback: true,
+          },
+          artifacts: {
+            avatarPath: userAAvatarPath,
+            contentImagePath: userAContentImagePath,
+            contentImagePublicUrl: contentPublicUrl,
+          },
+        },
+        null,
+        2
+      )
+    );
+
+    await stopAll(0);
+  } catch (error) {
+    console.error(
+      '[m5-storage-e2e] failed:',
+      error instanceof Error ? error.message : String(error)
+    );
+    await stopAll(1);
+  } finally {
+    await dbClient.end().catch(() => {});
+  }
+}
+
+main();

@@ -25,7 +25,7 @@ export interface ContentImageUploadState {
  * Hook for content image upload, delete, and validation
  *
  * Provides state management and operations for uploading images
- * to the content-images Supabase Storage bucket
+ * to the internal content-images object storage APIs
  *
  * @returns Object with state and operation functions
  */
@@ -49,7 +49,7 @@ export function useContentImageUpload() {
   }, []);
 
   /**
-   * Upload content image to Supabase Storage
+   * Upload content image to object storage
    *
    * @param file - Image file to upload
    * @param userId - User ID for file path generation
@@ -96,7 +96,7 @@ export function useContentImageUpload() {
   );
 
   /**
-   * Delete content image from Supabase Storage
+   * Delete content image from object storage
    *
    * @param filePath - File path in storage (e.g., user-{userId}/filename.jpg)
    * @throws Error if deletion fails

@@ -60,6 +60,22 @@ export const backendClient = {
       }),
   },
   storage: {
+    presignAvatarUpload: (payload: {
+      userId: string;
+      fileName: string;
+      contentType: string;
+      fileSize: number;
+      expiresInSeconds?: number;
+    }) =>
+      fetchJson('/api/internal/storage/avatar/presign', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    commitAvatarUpload: (payload: { userId: string; path: string }) =>
+      fetchJson('/api/internal/storage/avatar', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
     uploadAvatar: async (file: File, userId: string) => {
       const formData = new FormData();
       formData.append('file', file);
@@ -73,6 +89,17 @@ export const backendClient = {
       fetchJson('/api/internal/storage/avatar', {
         method: 'DELETE',
         body: JSON.stringify({ filePath, userId }),
+      }),
+    presignContentImageUpload: (payload: {
+      userId: string;
+      fileName: string;
+      contentType: string;
+      fileSize: number;
+      expiresInSeconds?: number;
+    }) =>
+      fetchJson('/api/internal/storage/content-images/presign', {
+        method: 'POST',
+        body: JSON.stringify(payload),
       }),
     uploadContentImage: async (file: File, userId: string) => {
       const formData = new FormData();

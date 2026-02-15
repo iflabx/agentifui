@@ -5,23 +5,22 @@ import {
   listObjects,
   putObject,
 } from '@lib/server/storage/minio-s3';
-import crypto from 'node:crypto';
+import {
+  assertOwnedObjectPath,
+  buildUserObjectPath,
+  validateUploadInput,
+} from '@lib/server/storage/object-policy';
 
 import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 
-function resolveExtension(fileName: string, mimeType: string) {
-  const extFromName = fileName.split('.').pop()?.trim().toLowerCase();
-  if (extFromName) {
-    return extFromName;
-  }
-
-  if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') return 'jpg';
-  if (mimeType === 'image/png') return 'png';
-  if (mimeType === 'image/webp') return 'webp';
-  if (mimeType === 'image/gif') return 'gif';
-  return 'bin';
+function canManageTargetUser(
+  currentUserId: string,
+  currentRole: string,
+  targetUserId: string
+) {
+  return currentUserId === targetUserId || currentRole === 'admin';
 }
 
 async function resolveIdentity(request: Request) {
@@ -47,14 +46,6 @@ async function resolveIdentity(request: Request) {
   }
 
   return { ok: true as const, identity: result.data };
-}
-
-function canManageTargetUser(
-  currentUserId: string,
-  currentRole: string,
-  targetUserId: string
-) {
-  return currentUserId === targetUserId || currentRole === 'admin';
 }
 
 export async function GET(request: Request) {
@@ -130,8 +121,23 @@ export async function POST(request: Request) {
       );
     }
 
-    const extension = resolveExtension(file.name, file.type);
-    const filePath = `user-${userId}/${Date.now()}-${crypto.randomUUID()}.${extension}`;
+    const validation = validateUploadInput('content-images', {
+      contentType: file.type,
+      sizeBytes: file.size,
+    });
+    if (!validation.ok) {
+      return NextResponse.json(
+        { success: false, error: validation.error },
+        { status: 400 }
+      );
+    }
+
+    const filePath = buildUserObjectPath(
+      'content-images',
+      userId,
+      file.name,
+      file.type
+    );
     const bytes = Buffer.from(await file.arrayBuffer());
 
     await putObject(
@@ -166,8 +172,9 @@ export async function DELETE(request: Request) {
       filePath?: string;
       userId?: string;
     };
+
     const filePath = (body.filePath || '').trim();
-    const userId = (body.userId || '').trim();
+    const targetUserId = (body.userId || '').trim() || auth.identity.userId;
     if (!filePath) {
       return NextResponse.json(
         { success: false, error: 'Missing filePath' },
@@ -175,7 +182,6 @@ export async function DELETE(request: Request) {
       );
     }
 
-    const targetUserId = userId || auth.identity.userId;
     if (
       !canManageTargetUser(
         auth.identity.userId,
@@ -189,13 +195,11 @@ export async function DELETE(request: Request) {
       );
     }
 
-    if (
-      (auth.identity.role || 'user') !== 'admin' &&
-      !filePath.startsWith(`user-${auth.identity.userId}/`)
-    ) {
+    const ownership = assertOwnedObjectPath(filePath, targetUserId);
+    if (!ownership.ok) {
       return NextResponse.json(
-        { success: false, error: 'Forbidden' },
-        { status: 403 }
+        { success: false, error: ownership.error },
+        { status: 400 }
       );
     }
 

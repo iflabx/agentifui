@@ -1,5 +1,4 @@
 import { PageSection } from '@lib/types/about-page-components';
-import { v4 as uuidv4 } from 'uuid';
 
 /**
  * Result type for content image upload
@@ -27,17 +26,6 @@ export const ALLOWED_IMAGE_TYPES = [
   'image/webp',
   'image/gif',
 ] as const;
-
-/**
- * MIME type to file extension mapping
- */
-const MIME_TO_EXTENSION: Record<string, string> = {
-  'image/jpeg': 'jpg',
-  'image/jpg': 'jpg',
-  'image/png': 'png',
-  'image/webp': 'webp',
-  'image/gif': 'gif',
-};
 
 /**
  * Maximum file size in bytes (10MB)
@@ -75,22 +63,6 @@ export function validateImageFile(file: File): ValidationResult {
 }
 
 /**
- * Generate a unique file path for content image.
- */
-export function generateContentImagePath(
-  userId: string,
-  fileName: string,
-  fileType: string
-): string {
-  const uuid = uuidv4();
-  const timestamp = Date.now();
-  const extension =
-    MIME_TO_EXTENSION[fileType] || fileName.split('.').pop() || 'jpg';
-  const safeFileName = `${timestamp}-${uuid}.${extension}`;
-  return `user-${userId}/${safeFileName}`;
-}
-
-/**
  * Extract file path from storage URL.
  */
 export function extractFilePathFromUrl(url: string): string | null {
@@ -107,18 +79,10 @@ export function extractFilePathFromUrl(url: string): string | null {
   }
 }
 
-/**
- * Upload content image to storage.
- */
-export async function uploadContentImage(
+async function runLegacyRelayUpload(
   file: File,
   userId: string
 ): Promise<ContentImageUploadResult> {
-  const validation = validateImageFile(file);
-  if (!validation.valid) {
-    throw new Error(validation.error);
-  }
-
   const formData = new FormData();
   formData.append('file', file);
   formData.append('userId', userId);
@@ -144,6 +108,81 @@ export async function uploadContentImage(
     url: payload.url,
     path: payload.path,
   };
+}
+
+/**
+ * Upload content image to storage.
+ */
+export async function uploadContentImage(
+  file: File,
+  userId: string
+): Promise<ContentImageUploadResult> {
+  const validation = validateImageFile(file);
+  if (!validation.valid) {
+    throw new Error(validation.error);
+  }
+
+  try {
+    const presignResponse = await fetch(
+      '/api/internal/storage/content-images/presign',
+      {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId,
+          fileName: file.name,
+          contentType: file.type,
+          fileSize: file.size,
+        }),
+      }
+    );
+
+    const presignPayload = (await presignResponse.json()) as {
+      success: boolean;
+      uploadUrl?: string;
+      path?: string;
+      url?: string;
+      error?: string;
+    };
+
+    if (
+      !presignResponse.ok ||
+      !presignPayload.success ||
+      !presignPayload.uploadUrl ||
+      !presignPayload.path ||
+      !presignPayload.url
+    ) {
+      throw new Error(presignPayload.error || 'Failed to create upload URL');
+    }
+
+    const uploadResponse = await fetch(presignPayload.uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': file.type || 'application/octet-stream',
+      },
+      body: file,
+    });
+
+    if (!uploadResponse.ok) {
+      throw new Error(
+        `Content image direct upload failed with status ${uploadResponse.status}`
+      );
+    }
+
+    return {
+      url: presignPayload.url,
+      path: presignPayload.path,
+    };
+  } catch (presignError) {
+    console.warn(
+      '[ContentImageUpload] presign flow failed, fallback to legacy relay upload:',
+      presignError
+    );
+    return runLegacyRelayUpload(file, userId);
+  }
 }
 
 /**
