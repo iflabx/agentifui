@@ -1,5 +1,7 @@
 import { Pool } from 'pg';
 
+import { resolvePgSessionOptionsFromEnv } from './session-options';
+
 const PG_POOL_GLOBAL_KEY = '__agentifui_pg_pool__';
 
 function resolveDatabaseUrl(): string {
@@ -23,11 +25,13 @@ export function getPgPool(): Pool {
     return existing;
   }
 
+  const sessionOptions = resolvePgSessionOptionsFromEnv();
   const pool = new Pool({
     connectionString: resolveDatabaseUrl(),
     max: Number(process.env.PG_POOL_MAX || 10),
     idleTimeoutMillis: Number(process.env.PG_POOL_IDLE_MS || 30000),
     connectionTimeoutMillis: Number(process.env.PG_POOL_CONNECT_MS || 5000),
+    ...(sessionOptions ? { options: sessionOptions } : {}),
   });
 
   globalState[PG_POOL_GLOBAL_KEY] = pool;

@@ -5,6 +5,7 @@
  * Keeps the same API surface used by legacy callers.
  */
 import { getManagedCrudRepository } from '@lib/server/db/repositories';
+import { resolvePgSessionOptionsFromEnv } from '@lib/server/pg/session-options';
 import {
   DatabaseError,
   Result,
@@ -107,14 +108,17 @@ export class DataService {
         max: number;
         idleTimeoutMillis: number;
         connectionTimeoutMillis: number;
+        options?: string;
       }) => SqlPool;
     };
 
+    const sessionOptions = resolvePgSessionOptionsFromEnv();
     const pool = new pgModule.Pool({
       connectionString: this.resolveDatabaseUrl(),
       max: Number(process.env.PG_POOL_MAX || 10),
       idleTimeoutMillis: Number(process.env.PG_POOL_IDLE_MS || 30000),
       connectionTimeoutMillis: Number(process.env.PG_POOL_CONNECT_MS || 5000),
+      ...(sessionOptions ? { options: sessionOptions } : {}),
     });
 
     globalState[PG_POOL_GLOBAL_KEY] = pool;

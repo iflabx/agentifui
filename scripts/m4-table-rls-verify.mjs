@@ -35,6 +35,7 @@ const migrationFiles = [
   'supabase/migrations/20260215030000_m4_rpc_rls_guc_hardening.sql',
   'supabase/migrations/20260215050000_m4_table_rls_phase2.sql',
   'supabase/migrations/20260215070000_m4_table_rls_phase3.sql',
+  'supabase/migrations/20260215080000_m4_rls_strict_mode_switch.sql',
 ];
 
 const phase2Tables = [
