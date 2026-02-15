@@ -76,6 +76,26 @@ export const backendClient = {
         method: 'POST',
         body: JSON.stringify(payload),
       }),
+    presignAvatarDownload: (payload: {
+      userId?: string;
+      path: string;
+      expiresInSeconds?: number;
+    }) => {
+      const params = new URLSearchParams();
+      params.set('path', payload.path);
+      if (payload.userId) {
+        params.set('userId', payload.userId);
+      }
+      if (typeof payload.expiresInSeconds === 'number') {
+        params.set('expiresInSeconds', String(payload.expiresInSeconds));
+      }
+      return fetchJson(
+        `/api/internal/storage/avatar/presign?${params.toString()}`,
+        {
+          method: 'GET',
+        }
+      );
+    },
     uploadAvatar: async (file: File, userId: string) => {
       const formData = new FormData();
       formData.append('file', file);
@@ -101,6 +121,26 @@ export const backendClient = {
         method: 'POST',
         body: JSON.stringify(payload),
       }),
+    presignContentImageDownload: (payload: {
+      userId?: string;
+      path: string;
+      expiresInSeconds?: number;
+    }) => {
+      const params = new URLSearchParams();
+      params.set('path', payload.path);
+      if (payload.userId) {
+        params.set('userId', payload.userId);
+      }
+      if (typeof payload.expiresInSeconds === 'number') {
+        params.set('expiresInSeconds', String(payload.expiresInSeconds));
+      }
+      return fetchJson(
+        `/api/internal/storage/content-images/presign?${params.toString()}`,
+        {
+          method: 'GET',
+        }
+      );
+    },
     uploadContentImage: async (file: File, userId: string) => {
       const formData = new FormData();
       formData.append('file', file);

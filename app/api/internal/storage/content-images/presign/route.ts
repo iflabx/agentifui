@@ -1,9 +1,12 @@
 import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
 import {
   buildPublicObjectUrl,
+  createPresignedDownloadUrl,
   createPresignedUploadUrl,
+  headObject,
 } from '@lib/server/storage/minio-s3';
 import {
+  assertOwnedObjectPath,
   buildUserObjectPath,
   validateUploadInput,
 } from '@lib/server/storage/object-policy';
@@ -18,6 +21,15 @@ function canManageTargetUser(
   targetUserId: string
 ) {
   return currentUserId === targetUserId || currentRole === 'admin';
+}
+
+function parseExpiresInSeconds(raw: string | null): number | undefined {
+  if (!raw) {
+    return undefined;
+  }
+
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 async function resolveIdentity(request: Request) {
@@ -38,6 +50,16 @@ async function resolveIdentity(request: Request) {
       response: NextResponse.json(
         { success: false, error: 'Unauthorized' },
         { status: 401 }
+      ),
+    };
+  }
+
+  if (result.data.status !== 'active') {
+    return {
+      ok: false as const,
+      response: NextResponse.json(
+        { success: false, error: 'Account is not active' },
+        { status: 403 }
       ),
     };
   }
@@ -122,6 +144,77 @@ export async function POST(request: Request) {
     console.error('[ContentImageStoragePresignAPI] POST failed:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to create content image upload URL' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function GET(request: Request) {
+  try {
+    const auth = await resolveIdentity(request);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    const url = new URL(request.url);
+    const path = (url.searchParams.get('path') || '').trim();
+    const targetUserId =
+      (url.searchParams.get('userId') || '').trim() || auth.identity.userId;
+
+    if (!path) {
+      return NextResponse.json(
+        { success: false, error: 'Missing path' },
+        { status: 400 }
+      );
+    }
+
+    if (
+      !canManageTargetUser(
+        auth.identity.userId,
+        auth.identity.role || 'user',
+        targetUserId
+      )
+    ) {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden' },
+        { status: 403 }
+      );
+    }
+
+    const ownership = assertOwnedObjectPath(path, targetUserId);
+    if (!ownership.ok) {
+      return NextResponse.json(
+        { success: false, error: ownership.error },
+        { status: 400 }
+      );
+    }
+
+    const head = await headObject('content-images', path);
+    if (!head.exists) {
+      return NextResponse.json(
+        { success: false, error: 'Content image object not found' },
+        { status: 404 }
+      );
+    }
+
+    const downloadUrl = createPresignedDownloadUrl('content-images', path, {
+      expiresInSeconds: parseExpiresInSeconds(
+        url.searchParams.get('expiresInSeconds')
+      ),
+    });
+
+    return NextResponse.json({
+      success: true,
+      path,
+      downloadUrl,
+      url: buildPublicObjectUrl('content-images', path),
+      contentType: head.contentType,
+      contentLength: head.contentLength,
+    });
+  } catch (error) {
+    console.error('[ContentImageStoragePresignAPI] GET failed:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to create content image download URL' },
       { status: 500 }
     );
   }

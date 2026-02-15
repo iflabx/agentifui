@@ -230,8 +230,7 @@ async function main() {
       NODE_ENV: 'development',
       NEXT_PUBLIC_APP_URL: appBase,
       BETTER_AUTH_URL: appBase,
-      BETTER_AUTH_SECRET:
-        process.env.BETTER_AUTH_SECRET || randomBytes(32).toString('hex'),
+      BETTER_AUTH_SECRET: randomBytes(32).toString('hex'),
       DATABASE_URL: databaseUrl,
       REDIS_URL: redisUrl,
       S3_ENDPOINT: s3Endpoint,
@@ -347,6 +346,40 @@ async function main() {
       throw new Error('avatar url not persisted to profile');
     }
 
+    const avatarDownloadOwner = await requestWithCookies(
+      jarA,
+      `${appBase}/api/internal/storage/avatar/presign?${new URLSearchParams({
+        userId: userAId,
+        path: userAAvatarPath,
+      }).toString()}`,
+      {
+        method: 'GET',
+      }
+    );
+    assertStatus(avatarDownloadOwner, 200, 'avatar download presign owner');
+    const avatarDownloadOwnerPayload = await avatarDownloadOwner
+      .json()
+      .catch(() => null);
+    const avatarDownloadUrl = avatarDownloadOwnerPayload?.downloadUrl;
+    if (!avatarDownloadUrl) {
+      throw new Error('avatar download presign missing downloadUrl');
+    }
+
+    const avatarDownloadResponse = await fetch(avatarDownloadUrl, {
+      method: 'GET',
+    });
+    if (!avatarDownloadResponse.ok) {
+      throw new Error(
+        `avatar download failed: ${avatarDownloadResponse.status}`
+      );
+    }
+    const avatarDownloadBytes = Buffer.from(
+      await avatarDownloadResponse.arrayBuffer()
+    );
+    if (avatarDownloadBytes.byteLength !== tinyPngBytes.byteLength) {
+      throw new Error('avatar download byte length mismatch');
+    }
+
     const avatarPresignCrossUser = await requestJson(
       jarB,
       '/api/internal/storage/avatar/presign',
@@ -377,6 +410,22 @@ async function main() {
       avatarCommitCrossUser.response,
       403,
       'avatar commit cross-user'
+    );
+
+    const avatarDownloadCrossUser = await requestWithCookies(
+      jarB,
+      `${appBase}/api/internal/storage/avatar/presign?${new URLSearchParams({
+        userId: userAId,
+        path: userAAvatarPath,
+      }).toString()}`,
+      {
+        method: 'GET',
+      }
+    );
+    assertStatus(
+      avatarDownloadCrossUser,
+      403,
+      'avatar download presign cross-user'
     );
 
     const avatarDelete = await requestJson(
@@ -436,6 +485,46 @@ async function main() {
       );
     }
 
+    const contentDownloadOwner = await requestWithCookies(
+      jarA,
+      `${appBase}/api/internal/storage/content-images/presign?${new URLSearchParams(
+        {
+          userId: userAId,
+          path: userAContentImagePath,
+        }
+      ).toString()}`,
+      {
+        method: 'GET',
+      }
+    );
+    assertStatus(
+      contentDownloadOwner,
+      200,
+      'content-images download presign owner'
+    );
+    const contentDownloadOwnerPayload = await contentDownloadOwner
+      .json()
+      .catch(() => null);
+    const contentDownloadUrl = contentDownloadOwnerPayload?.downloadUrl;
+    if (!contentDownloadUrl) {
+      throw new Error('content image download presign missing downloadUrl');
+    }
+
+    const contentDownloadResponse = await fetch(contentDownloadUrl, {
+      method: 'GET',
+    });
+    if (!contentDownloadResponse.ok) {
+      throw new Error(
+        `content image download failed: ${contentDownloadResponse.status}`
+      );
+    }
+    const contentDownloadBytes = Buffer.from(
+      await contentDownloadResponse.arrayBuffer()
+    );
+    if (contentDownloadBytes.byteLength !== tinyPngBytes.byteLength) {
+      throw new Error('content image download byte length mismatch');
+    }
+
     const listOwner = await requestWithCookies(
       jarA,
       `${appBase}/api/internal/storage/content-images?userId=${encodeURIComponent(userAId)}`,
@@ -474,6 +563,24 @@ async function main() {
       deleteCrossUser.response,
       403,
       'content-images delete cross-user'
+    );
+
+    const contentDownloadCrossUser = await requestWithCookies(
+      jarB,
+      `${appBase}/api/internal/storage/content-images/presign?${new URLSearchParams(
+        {
+          userId: userAId,
+          path: userAContentImagePath,
+        }
+      ).toString()}`,
+      {
+        method: 'GET',
+      }
+    );
+    assertStatus(
+      contentDownloadCrossUser,
+      403,
+      'content-images download presign cross-user'
     );
 
     const contentDelete = await requestJson(
@@ -549,8 +656,10 @@ async function main() {
           ok: true,
           checks: {
             avatarPresignUploadCommit: true,
+            avatarPresignDownload: true,
             avatarOwnershipGuards: true,
             contentPresignUploadListDelete: true,
+            contentPresignDownload: true,
             contentOwnershipGuards: true,
             legacyAvatarFallback: true,
             legacyContentFallback: true,

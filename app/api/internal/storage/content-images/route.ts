@@ -45,6 +45,16 @@ async function resolveIdentity(request: Request) {
     };
   }
 
+  if (result.data.status !== 'active') {
+    return {
+      ok: false as const,
+      response: NextResponse.json(
+        { success: false, error: 'Account is not active' },
+        { status: 403 }
+      ),
+    };
+  }
+
   return { ok: true as const, identity: result.data };
 }
 
