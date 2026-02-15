@@ -1,8 +1,37 @@
 'use client';
 
-import type { Group } from '@lib/db/group-permissions';
+import { callInternalDataAction } from '@lib/db/internal-data-api';
 import type { AppVisibility, ServiceInstance } from '@lib/types/database';
 import { create } from 'zustand';
+
+interface Group {
+  id: string;
+  name: string;
+  description: string | null;
+  created_by: string;
+  created_at: string;
+  member_count?: number;
+}
+
+interface GroupAppPermission {
+  service_instance_id: string;
+  is_enabled: boolean;
+  usage_quota: number | null;
+}
+
+interface AdminAppListItem {
+  id: string;
+  name: string;
+  instance_id: string;
+  display_name?: string;
+  description?: string;
+  config?: Record<string, unknown>;
+  visibility?: AppVisibility;
+}
+
+function resolveErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
 
 // Permission management store - manage app permissions and group assignments
 export interface AppWithPermissions extends ServiceInstance {
@@ -95,11 +124,26 @@ export const usePermissionManagementStore = create<PermissionManagementStore>(
       }));
 
       try {
-        // Use getAllDifyApps to fetch all apps
-        const { getAllDifyApps } = await import(
-          '@lib/services/dify/app-service'
-        );
-        const appsData = await getAllDifyApps();
+        const response = await fetch('/api/internal/apps?scope=all', {
+          method: 'GET',
+          credentials: 'include',
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to load app list: HTTP ${response.status}`);
+        }
+
+        const payload = (await response.json()) as {
+          success: boolean;
+          apps?: AdminAppListItem[];
+          error?: string;
+        };
+
+        if (!payload.success) {
+          throw new Error(payload.error || 'Failed to load app list');
+        }
+
+        const appsData = payload.apps || [];
 
         // Convert to AppWithPermissions format
         const apps: AppWithPermissions[] = appsData.map(app => ({
@@ -121,10 +165,10 @@ export const usePermissionManagementStore = create<PermissionManagementStore>(
           apps,
           loading: { ...state.loading, apps: false },
         }));
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error('Failed to load app list:', error);
         set(state => ({
-          error: error.message || 'Failed to load app list',
+          error: resolveErrorMessage(error, 'Failed to load app list'),
           loading: { ...state.loading, apps: false },
         }));
       }
@@ -137,8 +181,8 @@ export const usePermissionManagementStore = create<PermissionManagementStore>(
       }));
 
       try {
-        const { getGroups } = await import('@lib/db/group-permissions');
-        const result = await getGroups();
+        const result =
+          await callInternalDataAction<Group[]>('groups.getGroups');
 
         if (result.success) {
           set(state => ({
@@ -148,10 +192,10 @@ export const usePermissionManagementStore = create<PermissionManagementStore>(
         } else {
           throw new Error(result.error.message);
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error('Failed to load group list:', error);
         set(state => ({
-          error: error.message || 'Failed to load group list',
+          error: resolveErrorMessage(error, 'Failed to load group list'),
           loading: { ...state.loading, groups: false },
         }));
       }
@@ -159,15 +203,15 @@ export const usePermissionManagementStore = create<PermissionManagementStore>(
 
     loadAppPermissions: async (appId: string) => {
       try {
-        const { getGroupAppPermissions } = await import(
-          '@lib/db/group-permissions'
-        );
         const { groups } = get();
 
         // Get permissions for each group for the given app
         const groupPermissions = await Promise.all(
           groups.map(async group => {
-            const result = await getGroupAppPermissions(group.id);
+            const result = await callInternalDataAction<GroupAppPermission[]>(
+              'groups.getGroupAppPermissions',
+              { groupId: group.id }
+            );
 
             if (result.success) {
               const appPermission = result.data.find(
@@ -201,9 +245,11 @@ export const usePermissionManagementStore = create<PermissionManagementStore>(
               ? { ...state.selectedApp, groupPermissions }
               : state.selectedApp,
         }));
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error('Failed to load app permissions:', error);
-        set({ error: error.message || 'Failed to load app permissions' });
+        set({
+          error: resolveErrorMessage(error, 'Failed to load app permissions'),
+        });
       }
     },
 
@@ -235,10 +281,15 @@ export const usePermissionManagementStore = create<PermissionManagementStore>(
           // If switching to non-group_only permission, remove all related group permission records
           if (visibility !== 'group_only') {
             try {
-              const { removeAllGroupAppPermissions } = await import(
-                '@lib/db/group-permissions'
+              const cleanupResult = await callInternalDataAction<void>(
+                'groups.removeAllGroupAppPermissions',
+                {
+                  serviceInstanceId: appId,
+                }
               );
-              await removeAllGroupAppPermissions(appId);
+              if (!cleanupResult.success) {
+                throw cleanupResult.error;
+              }
             } catch (cleanupError) {
               console.warn(
                 'Warning during group permission cleanup:',
@@ -269,10 +320,10 @@ export const usePermissionManagementStore = create<PermissionManagementStore>(
         } else {
           throw new Error(payload.error || 'Failed to update app visibility');
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error('Failed to update app visibility:', error);
         set(state => ({
-          error: error.message || 'Failed to update app visibility',
+          error: resolveErrorMessage(error, 'Failed to update app visibility'),
           loading: { ...state.loading, updating: false },
         }));
         return false;
@@ -301,13 +352,17 @@ export const usePermissionManagementStore = create<PermissionManagementStore>(
       }));
 
       try {
-        const { setGroupAppPermission } = await import(
-          '@lib/db/group-permissions'
+        const result = await callInternalDataAction<GroupAppPermission>(
+          'groups.setGroupAppPermission',
+          {
+            groupId,
+            serviceInstanceId: appId,
+            data: {
+              is_enabled: enabled,
+              usage_quota: quota,
+            },
+          }
         );
-        const result = await setGroupAppPermission(groupId, appId, {
-          is_enabled: enabled,
-          usage_quota: quota,
-        });
 
         if (result.success) {
           // Reload app permission info
@@ -318,10 +373,10 @@ export const usePermissionManagementStore = create<PermissionManagementStore>(
         } else {
           throw new Error(result.error.message);
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error('Failed to set group permission:', error);
         set(state => ({
-          error: error.message || 'Failed to set group permission',
+          error: resolveErrorMessage(error, 'Failed to set group permission'),
           loading: { ...state.loading, updating: false },
         }));
         return false;

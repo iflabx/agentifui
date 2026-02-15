@@ -1,4 +1,4 @@
-import { previewDifyFile } from '@lib/services/dify';
+import { previewDifyFile } from '@lib/services/dify/file-service';
 import type { DifyFilePreviewResponse } from '@lib/services/dify/types';
 import type { MessageAttachment } from '@lib/stores/chat-store';
 import { create } from 'zustand';

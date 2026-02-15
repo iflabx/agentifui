@@ -1,5 +1,11 @@
 import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
 import {
+  createApiKey,
+  deleteApiKey,
+  getApiKeyByServiceInstance,
+  updateApiKey,
+} from '@lib/db/api-keys';
+import {
   deleteConversationForUser,
   getUserConversations,
   renameConversationForUser,
@@ -21,6 +27,19 @@ import {
   setGroupAppPermission,
   updateGroup,
 } from '@lib/db/group-permissions';
+import {
+  createProvider,
+  getActiveProviders,
+  updateProvider,
+} from '@lib/db/providers';
+import {
+  createServiceInstance,
+  deleteServiceInstance,
+  getServiceInstanceById,
+  getServiceInstancesByProvider,
+  setDefaultServiceInstance,
+  updateServiceInstance,
+} from '@lib/db/service-instances';
 import {
   createSsoProvider,
   deleteSsoProvider,
@@ -74,6 +93,19 @@ const ADMIN_ACTIONS = new Set([
   'groups.removeGroupAppPermission',
   'groups.removeAllGroupAppPermissions',
   'groups.searchUsersForGroup',
+  'providers.getActiveProviders',
+  'providers.createProvider',
+  'providers.updateProvider',
+  'serviceInstances.getByProvider',
+  'serviceInstances.getById',
+  'serviceInstances.create',
+  'serviceInstances.update',
+  'serviceInstances.delete',
+  'serviceInstances.setDefault',
+  'apiKeys.getByServiceInstance',
+  'apiKeys.create',
+  'apiKeys.update',
+  'apiKeys.delete',
   'sso.getSsoProviders',
   'sso.getSsoProviderStats',
   'sso.getSsoProviderById',
@@ -330,6 +362,77 @@ export async function POST(request: Request) {
             (payload?.excludeUserIds || []) as string[]
           )
         );
+      case 'providers.getActiveProviders':
+        return toResultResponse(await getActiveProviders());
+      case 'providers.createProvider':
+        return toResultResponse(
+          await createProvider(
+            (payload?.provider || {}) as Parameters<typeof createProvider>[0]
+          )
+        );
+      case 'providers.updateProvider':
+        return toResultResponse(
+          await updateProvider(
+            String(payload?.id || ''),
+            (payload?.updates || {}) as Parameters<typeof updateProvider>[1]
+          )
+        );
+      case 'serviceInstances.getByProvider':
+        return toResultResponse(
+          await getServiceInstancesByProvider(String(payload?.providerId || ''))
+        );
+      case 'serviceInstances.getById':
+        return toResultResponse(
+          await getServiceInstanceById(String(payload?.id || ''))
+        );
+      case 'serviceInstances.create':
+        return toResultResponse(
+          await createServiceInstance(
+            (payload?.serviceInstance || {}) as Parameters<
+              typeof createServiceInstance
+            >[0]
+          )
+        );
+      case 'serviceInstances.update':
+        return toResultResponse(
+          await updateServiceInstance(
+            String(payload?.id || ''),
+            (payload?.updates || {}) as Parameters<
+              typeof updateServiceInstance
+            >[1]
+          )
+        );
+      case 'serviceInstances.delete':
+        return toResultResponse(
+          await deleteServiceInstance(String(payload?.id || ''))
+        );
+      case 'serviceInstances.setDefault':
+        return toResultResponse(
+          await setDefaultServiceInstance(String(payload?.instanceId || ''))
+        );
+      case 'apiKeys.getByServiceInstance':
+        return toResultResponse(
+          await getApiKeyByServiceInstance(
+            String(payload?.serviceInstanceId || '')
+          )
+        );
+      case 'apiKeys.create':
+        return toResultResponse(
+          await createApiKey(
+            (payload?.apiKey || {}) as Parameters<typeof createApiKey>[0],
+            Boolean(payload?.isEncrypted)
+          )
+        );
+      case 'apiKeys.update':
+        return toResultResponse(
+          await updateApiKey(
+            String(payload?.id || ''),
+            (payload?.updates || {}) as Parameters<typeof updateApiKey>[1],
+            Boolean(payload?.isEncrypted)
+          )
+        );
+      case 'apiKeys.delete':
+        return toResultResponse(await deleteApiKey(String(payload?.id || '')));
       case 'conversations.getUserConversations': {
         const userId = requireString(payload, 'userId');
         if (!userId) {

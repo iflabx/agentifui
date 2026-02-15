@@ -3,19 +3,7 @@
  * @description Manages SSO providers state using Zustand
  * @module lib/stores/sso-providers-store
  */
-import {
-  type SsoProviderFilters,
-  type SsoProviderStats,
-  type UpdateSsoProviderData,
-  createSsoProvider,
-  deleteSsoProvider,
-  getSsoProviderById,
-  getSsoProviderStats,
-  getSsoProviders,
-  toggleSsoProvider,
-  updateSsoProvider,
-  updateSsoProviderOrder,
-} from '@lib/db/sso-providers';
+import { callInternalDataAction } from '@lib/db/internal-data-api';
 import {
   CreateSsoProviderData,
   SsoProtocol,
@@ -23,6 +11,35 @@ import {
 } from '@lib/types/database';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
+
+interface SsoProviderFilters {
+  protocol?: SsoProtocol;
+  enabled?: boolean;
+  search?: string;
+  sortBy?: 'name' | 'protocol' | 'created_at' | 'display_order';
+  sortOrder?: 'asc' | 'desc';
+  page?: number;
+  pageSize?: number;
+}
+
+interface SsoProviderStats {
+  total: number;
+  enabled: number;
+  disabled: number;
+  byProtocol: Record<SsoProtocol, number>;
+}
+
+interface UpdateSsoProviderData {
+  name?: string;
+  protocol?: SsoProtocol;
+  settings?: SsoProvider['settings'];
+  client_id?: string | null;
+  client_secret?: string | null;
+  metadata_url?: string | null;
+  enabled?: boolean;
+  display_order?: number;
+  button_text?: string | null;
+}
 
 /**
  * Loading states for different operations
@@ -174,7 +191,13 @@ export const useSsoProvidersStore = create<SsoProvidersState>()(
         }));
 
         try {
-          const result = await getSsoProviders(state.filters);
+          const result = await callInternalDataAction<{
+            providers: SsoProvider[];
+            total: number;
+            page: number;
+            pageSize: number;
+            totalPages: number;
+          }>('sso.getSsoProviders', { filters: state.filters });
 
           if (result.success) {
             set(state => ({
@@ -212,7 +235,9 @@ export const useSsoProvidersStore = create<SsoProvidersState>()(
         }));
 
         try {
-          const result = await getSsoProviderStats();
+          const result = await callInternalDataAction<SsoProviderStats>(
+            'sso.getSsoProviderStats'
+          );
 
           if (result.success) {
             set(state => ({
@@ -244,7 +269,10 @@ export const useSsoProvidersStore = create<SsoProvidersState>()(
         }));
 
         try {
-          const result = await getSsoProviderById(providerId);
+          const result = await callInternalDataAction<SsoProvider | null>(
+            'sso.getSsoProviderById',
+            { id: providerId }
+          );
 
           if (result.success) {
             set(state => ({
@@ -334,7 +362,10 @@ export const useSsoProvidersStore = create<SsoProvidersState>()(
         }));
 
         try {
-          const result = await createSsoProvider(data);
+          const result = await callInternalDataAction<SsoProvider>(
+            'sso.createSsoProvider',
+            { data }
+          );
 
           if (result.success) {
             set(state => ({
@@ -372,7 +403,10 @@ export const useSsoProvidersStore = create<SsoProvidersState>()(
         }));
 
         try {
-          const result = await updateSsoProvider(id, data);
+          const result = await callInternalDataAction<SsoProvider>(
+            'sso.updateSsoProvider',
+            { id, data }
+          );
 
           if (result.success) {
             set(state => ({
@@ -411,7 +445,10 @@ export const useSsoProvidersStore = create<SsoProvidersState>()(
         }));
 
         try {
-          const result = await deleteSsoProvider(id);
+          const result = await callInternalDataAction<void>(
+            'sso.deleteSsoProvider',
+            { id }
+          );
 
           if (result.success) {
             set(state => ({
@@ -450,7 +487,10 @@ export const useSsoProvidersStore = create<SsoProvidersState>()(
         }));
 
         try {
-          const result = await toggleSsoProvider(id, enabled);
+          const result = await callInternalDataAction<SsoProvider>(
+            'sso.toggleSsoProvider',
+            { id, enabled }
+          );
 
           if (result.success) {
             set(state => ({
@@ -490,7 +530,10 @@ export const useSsoProvidersStore = create<SsoProvidersState>()(
         }));
 
         try {
-          const result = await updateSsoProviderOrder(updates);
+          const result = await callInternalDataAction<void>(
+            'sso.updateSsoProviderOrder',
+            { updates }
+          );
 
           if (result.success) {
             set(state => ({

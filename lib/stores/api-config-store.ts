@@ -1,20 +1,6 @@
-import {
-  createApiKey,
-  createProvider,
-  createServiceInstance,
-  deleteApiKey,
-  deleteServiceInstance,
-  getActiveProviders,
-  getApiKeyByServiceInstance,
-  getServiceInstanceById,
-  getServiceInstancesByProvider,
-  setDefaultServiceInstance,
-  updateApiKey,
-  updateProvider,
-  updateServiceInstance,
-} from '@lib/db';
-import { ApiKey, Provider, ServiceInstance } from '@lib/types/database';
-import { Result } from '@lib/types/result';
+import { callInternalDataAction } from '@lib/db/internal-data-api';
+import type { ApiKey, Provider, ServiceInstance } from '@lib/types/database';
+import type { Result } from '@lib/types/result';
 import { create } from 'zustand';
 
 export type { Provider, ServiceInstance, ApiKey } from '@lib/types/database';
@@ -68,16 +54,21 @@ export const useApiConfigStore = create<ApiConfigState>((set, get) => ({
 
   createAppInstance: async (instance, apiKey) => {
     try {
-      const newInstanceResult = await createServiceInstance({
-        provider_id: instance.provider_id || '1',
-        display_name: instance.display_name || '',
-        description: instance.description || '',
-        instance_id: instance.instance_id || '',
-        api_path: instance.api_path || '',
-        is_default: instance.is_default || false,
-        visibility: instance.visibility || 'public',
-        config: instance.config || {},
-      });
+      const newInstanceResult = await callInternalDataAction<ServiceInstance>(
+        'serviceInstances.create',
+        {
+          serviceInstance: {
+            provider_id: instance.provider_id || '1',
+            display_name: instance.display_name || '',
+            description: instance.description || '',
+            instance_id: instance.instance_id || '',
+            api_path: instance.api_path || '',
+            is_default: instance.is_default || false,
+            visibility: instance.visibility || 'public',
+            config: instance.config || {},
+          },
+        }
+      );
 
       const newInstance = handleResult(
         newInstanceResult,
@@ -105,18 +96,21 @@ export const useApiConfigStore = create<ApiConfigState>((set, get) => ({
         const { encryptedKey } = await response.json();
 
         // create api key - pass isEncrypted=true to indicate that the key has been encrypted by the API endpoint
-        const newApiKeyResult = await createApiKey(
+        const newApiKeyResult = await callInternalDataAction<ApiKey>(
+          'apiKeys.create',
           {
-            service_instance_id: newInstance.id,
-            provider_id: newInstance.provider_id,
-            key_value: encryptedKey,
-            is_default: true,
-            usage_count: 0,
-            user_id: null,
-            last_used_at: null,
-          },
-          true
-        ); // mark the key as encrypted
+            apiKey: {
+              service_instance_id: newInstance.id,
+              provider_id: newInstance.provider_id,
+              key_value: encryptedKey,
+              is_default: true,
+              usage_count: 0,
+              user_id: null,
+              last_used_at: null,
+            },
+            isEncrypted: true,
+          }
+        );
 
         const newApiKey = handleResult(newApiKeyResult, 'Create API key');
 
@@ -135,7 +129,11 @@ export const useApiConfigStore = create<ApiConfigState>((set, get) => ({
   updateAppInstance: async (id, instance, apiKey) => {
     try {
       // get existing instance information
-      const existingInstanceResult = await getServiceInstanceById(id);
+      const existingInstanceResult =
+        await callInternalDataAction<ServiceInstance | null>(
+          'serviceInstances.getById',
+          { id }
+        );
       const existingInstance = handleResult(
         existingInstanceResult,
         'Get app instance'
@@ -152,22 +150,29 @@ export const useApiConfigStore = create<ApiConfigState>((set, get) => ({
           : existingInstance.config;
 
       // update service instance
-      const updatedInstanceResult = await updateServiceInstance(id, {
-        display_name:
-          instance.display_name !== undefined
-            ? instance.display_name
-            : existingInstance.display_name,
-        description:
-          instance.description !== undefined
-            ? instance.description
-            : existingInstance.description,
-        api_path: instance.api_path || existingInstance.api_path,
-        is_default:
-          instance.is_default !== undefined
-            ? instance.is_default
-            : existingInstance.is_default,
-        config: configToSave, // correctly update config field
-      });
+      const updatedInstanceResult =
+        await callInternalDataAction<ServiceInstance>(
+          'serviceInstances.update',
+          {
+            id,
+            updates: {
+              display_name:
+                instance.display_name !== undefined
+                  ? instance.display_name
+                  : existingInstance.display_name,
+              description:
+                instance.description !== undefined
+                  ? instance.description
+                  : existingInstance.description,
+              api_path: instance.api_path || existingInstance.api_path,
+              is_default:
+                instance.is_default !== undefined
+                  ? instance.is_default
+                  : existingInstance.is_default,
+              config: configToSave,
+            },
+          }
+        );
 
       const updatedInstance = handleResult(
         updatedInstanceResult,
@@ -200,16 +205,20 @@ export const useApiConfigStore = create<ApiConfigState>((set, get) => ({
         const { encryptedKey } = await response.json();
 
         // find existing api key
-        const existingKeyResult = await getApiKeyByServiceInstance(id);
+        const existingKeyResult = await callInternalDataAction<ApiKey | null>(
+          'apiKeys.getByServiceInstance',
+          { serviceInstanceId: id }
+        );
         const existingKey = handleResult(existingKeyResult, 'Get API key');
 
         if (existingKey) {
-          // update existing key - use updated updateApiKey function
-          // pass isEncrypted=true to indicate that the key has been encrypted by the API endpoint
-          const updatedKeyResult = await updateApiKey(
-            existingKey.id,
-            { key_value: encryptedKey },
-            true // mark the key as encrypted
+          const updatedKeyResult = await callInternalDataAction<ApiKey>(
+            'apiKeys.update',
+            {
+              id: existingKey.id,
+              updates: { key_value: encryptedKey },
+              isEncrypted: true,
+            }
           );
 
           const updatedKey = handleResult(updatedKeyResult, 'Update API key');
@@ -222,20 +231,21 @@ export const useApiConfigStore = create<ApiConfigState>((set, get) => ({
             ),
           });
         } else {
-          // create new key - use updated createApiKey function
-          // pass isEncrypted=true to indicate that the key has been encrypted by the API endpoint
-          const newKeyResult = await createApiKey(
+          const newKeyResult = await callInternalDataAction<ApiKey>(
+            'apiKeys.create',
             {
-              service_instance_id: id,
-              provider_id: existingInstance.provider_id,
-              key_value: encryptedKey,
-              is_default: true,
-              usage_count: 0,
-              user_id: null,
-              last_used_at: null,
-            },
-            true
-          ); // mark the key as encrypted
+              apiKey: {
+                service_instance_id: id,
+                provider_id: existingInstance.provider_id,
+                key_value: encryptedKey,
+                is_default: true,
+                usage_count: 0,
+                user_id: null,
+                last_used_at: null,
+              },
+              isEncrypted: true,
+            }
+          );
 
           const newKey = handleResult(newKeyResult, 'Create API key');
 
@@ -255,7 +265,11 @@ export const useApiConfigStore = create<ApiConfigState>((set, get) => ({
   deleteAppInstance: async id => {
     try {
       // get existing instance information
-      const existingInstanceResult = await getServiceInstanceById(id);
+      const existingInstanceResult =
+        await callInternalDataAction<ServiceInstance | null>(
+          'serviceInstances.getById',
+          { id }
+        );
       const existingInstance = handleResult(
         existingInstanceResult,
         'Get app instance'
@@ -269,11 +283,17 @@ export const useApiConfigStore = create<ApiConfigState>((set, get) => ({
       const instanceId = existingInstance.instance_id;
 
       // find and delete related api keys
-      const existingKeyResult = await getApiKeyByServiceInstance(id);
+      const existingKeyResult = await callInternalDataAction<ApiKey | null>(
+        'apiKeys.getByServiceInstance',
+        { serviceInstanceId: id }
+      );
       const existingKey = handleResult(existingKeyResult, 'Get API key');
 
       if (existingKey) {
-        const deletedResult = await deleteApiKey(existingKey.id);
+        const deletedResult = await callInternalDataAction<boolean>(
+          'apiKeys.delete',
+          { id: existingKey.id }
+        );
         handleResult(deletedResult, 'Delete API key');
 
         // update local state - remove from key list
@@ -282,7 +302,10 @@ export const useApiConfigStore = create<ApiConfigState>((set, get) => ({
       }
 
       // delete service instance
-      const deletedResult = await deleteServiceInstance(id);
+      const deletedResult = await callInternalDataAction<boolean>(
+        'serviceInstances.delete',
+        { id }
+      );
       handleResult(deletedResult, 'Delete service instance');
 
       // update local state - remove from instance list
@@ -312,7 +335,10 @@ export const useApiConfigStore = create<ApiConfigState>((set, get) => ({
   setDefaultInstance: async instanceId => {
     try {
       // call database function to set default instance
-      const result = await setDefaultServiceInstance(instanceId);
+      const result = await callInternalDataAction<ServiceInstance>(
+        'serviceInstances.setDefault',
+        { instanceId }
+      );
       const updatedInstance = handleResult(result, 'Set default app instance');
 
       // update local state - update is_default status of all related instances
@@ -345,14 +371,19 @@ export const useApiConfigStore = create<ApiConfigState>((set, get) => ({
 
       // use database function to get all providers
       console.time('[API Config] Get providers');
-      const providersResult = await getActiveProviders();
+      const providersResult = await callInternalDataAction<Provider[]>(
+        'providers.getActiveProviders'
+      );
       const providers = handleResult(providersResult, 'Get active providers');
       console.timeEnd('[API Config] Get providers');
 
       // get service instances in parallel
       console.time('[API Config] Get service instances in parallel');
       const instancePromises = providers.map(provider =>
-        getServiceInstancesByProvider(provider.id)
+        callInternalDataAction<ServiceInstance[]>(
+          'serviceInstances.getByProvider',
+          { providerId: provider.id }
+        )
           .then(result => ({
             provider,
             result,
@@ -396,7 +427,9 @@ export const useApiConfigStore = create<ApiConfigState>((set, get) => ({
 
       console.time('[API Config] Get api keys in parallel');
       const keyPromises = sortedServiceInstances.map(instance =>
-        getApiKeyByServiceInstance(instance.id)
+        callInternalDataAction<ApiKey | null>('apiKeys.getByServiceInstance', {
+          serviceInstanceId: instance.id,
+        })
           .then(result => ({
             instance,
             result,
@@ -482,14 +515,19 @@ export const useApiConfigStore = create<ApiConfigState>((set, get) => ({
 
       // if not exists, create one
       if (!difyProvider && newApiUrl) {
-        const newProviderResult = await createProvider({
-          name: 'Dify',
-          type: 'llm',
-          base_url: newApiUrl,
-          auth_type: 'api_key',
-          is_active: true,
-          is_default: false,
-        });
+        const newProviderResult = await callInternalDataAction<Provider>(
+          'providers.createProvider',
+          {
+            provider: {
+              name: 'Dify',
+              type: 'llm',
+              base_url: newApiUrl,
+              auth_type: 'api_key',
+              is_active: true,
+              is_default: false,
+            },
+          }
+        );
 
         const newProvider = handleResult(
           newProviderResult,
@@ -505,9 +543,13 @@ export const useApiConfigStore = create<ApiConfigState>((set, get) => ({
         difyProvider.base_url !== newApiUrl
       ) {
         // update URL
-        const updatedProviderResult = await updateProvider(difyProvider.id, {
-          base_url: newApiUrl,
-        });
+        const updatedProviderResult = await callInternalDataAction<Provider>(
+          'providers.updateProvider',
+          {
+            id: difyProvider.id,
+            updates: { base_url: newApiUrl },
+          }
+        );
 
         handleResult(updatedProviderResult, 'Update Dify provider');
 
@@ -528,16 +570,22 @@ export const useApiConfigStore = create<ApiConfigState>((set, get) => ({
 
         // if not exists, create one
         if (!defaultInstance) {
-          const newInstanceResult = await createServiceInstance({
-            provider_id: difyProvider.id,
-            display_name: 'Default Dify Application',
-            description: 'Default Dify application instance',
-            instance_id: 'default',
-            api_path: '',
-            is_default: true,
-            visibility: 'public', // default is public app
-            config: {},
-          });
+          const newInstanceResult =
+            await callInternalDataAction<ServiceInstance>(
+              'serviceInstances.create',
+              {
+                serviceInstance: {
+                  provider_id: difyProvider.id,
+                  display_name: 'Default Dify Application',
+                  description: 'Default Dify application instance',
+                  instance_id: 'default',
+                  api_path: '',
+                  is_default: true,
+                  visibility: 'public',
+                  config: {},
+                },
+              }
+            );
 
           const newInstance = handleResult(
             newInstanceResult,
@@ -570,11 +618,13 @@ export const useApiConfigStore = create<ApiConfigState>((set, get) => ({
         );
 
         if (defaultKey) {
-          // update existing key - pass isEncrypted=true to indicate that the key has been encrypted by the API endpoint
-          const updatedKeyResult = await updateApiKey(
-            defaultKey.id,
-            { key_value: encryptedKey },
-            true // mark the key as encrypted
+          const updatedKeyResult = await callInternalDataAction<ApiKey>(
+            'apiKeys.update',
+            {
+              id: defaultKey.id,
+              updates: { key_value: encryptedKey },
+              isEncrypted: true,
+            }
           );
 
           handleResult(updatedKeyResult, 'Update default API key');
@@ -586,19 +636,21 @@ export const useApiConfigStore = create<ApiConfigState>((set, get) => ({
             ),
           });
         } else if (defaultInstance) {
-          // create new key - pass isEncrypted=true to indicate that the key has been encrypted by the API endpoint
-          const newKeyResult = await createApiKey(
+          const newKeyResult = await callInternalDataAction<ApiKey>(
+            'apiKeys.create',
             {
-              service_instance_id: defaultInstance.id,
-              provider_id: difyProvider.id,
-              key_value: encryptedKey,
-              is_default: true,
-              usage_count: 0,
-              user_id: null,
-              last_used_at: null,
-            },
-            true
-          ); // mark the key as encrypted
+              apiKey: {
+                service_instance_id: defaultInstance.id,
+                provider_id: difyProvider.id,
+                key_value: encryptedKey,
+                is_default: true,
+                usage_count: 0,
+                user_id: null,
+                last_used_at: null,
+              },
+              isEncrypted: true,
+            }
+          );
 
           const newKey = handleResult(newKeyResult, 'Create default API key');
 

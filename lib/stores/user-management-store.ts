@@ -4,20 +4,62 @@
  * Uses Zustand to manage the state for the user management interface,
  * including user list, filters, pagination, statistics, etc.
  */
-import {
-  type EnhancedUser,
-  type UserFilters,
-  type UserStats,
-  batchUpdateUserRole,
-  batchUpdateUserStatus,
-  deleteUser,
-  getUserById,
-  getUserList,
-  getUserStats,
-  updateUserProfile,
-} from '@lib/db/users';
+import { callInternalDataAction } from '@lib/db/internal-data-api';
+import type { AccountStatus, UserRole } from '@lib/types/database';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
+
+interface EnhancedUser {
+  id: string;
+  email?: string | null;
+  phone?: string | null;
+  email_confirmed_at?: string | null;
+  phone_confirmed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  last_sign_in_at?: string | null;
+  full_name?: string | null;
+  username?: string | null;
+  avatar_url?: string | null;
+  role: UserRole;
+  status: AccountStatus;
+  auth_source?: string;
+  sso_provider_id?: string | null;
+  employee_number?: string | null;
+  profile_created_at: string;
+  profile_updated_at: string;
+  last_login?: string | null;
+  groups?: Array<{
+    id: string;
+    name: string;
+    description?: string | null;
+    joined_at: string;
+  }>;
+}
+
+interface UserStats {
+  totalUsers: number;
+  activeUsers: number;
+  suspendedUsers: number;
+  pendingUsers: number;
+  adminUsers: number;
+  managerUsers: number;
+  regularUsers: number;
+  newUsersToday: number;
+  newUsersThisWeek: number;
+  newUsersThisMonth: number;
+}
+
+interface UserFilters {
+  role?: UserRole;
+  status?: AccountStatus;
+  auth_source?: string;
+  search?: string;
+  sortBy?: 'created_at' | 'last_sign_in_at' | 'email' | 'full_name';
+  sortOrder?: 'asc' | 'desc';
+  page?: number;
+  pageSize?: number;
+}
 
 // Loading state interface
 interface LoadingState {
@@ -30,9 +72,7 @@ interface LoadingState {
 }
 
 // Filter options type (simplified, no organization/department)
-interface FilterOptions {
-  // No organization/department options needed in group system
-}
+type FilterOptions = Record<string, never>;
 
 // User management state interface
 interface UserManagementState {
@@ -154,7 +194,13 @@ export const useUserManagementStore = create<UserManagementState>()(
         }));
 
         try {
-          const result = await getUserList(state.filters);
+          const result = await callInternalDataAction<{
+            users: EnhancedUser[];
+            total: number;
+            page: number;
+            pageSize: number;
+            totalPages: number;
+          }>('users.getUserList', { filters: state.filters });
 
           if (result.success) {
             set(state => ({
@@ -192,7 +238,8 @@ export const useUserManagementStore = create<UserManagementState>()(
         }));
 
         try {
-          const result = await getUserStats();
+          const result =
+            await callInternalDataAction<UserStats>('users.getUserStats');
 
           if (result.success) {
             set(state => ({
@@ -224,7 +271,10 @@ export const useUserManagementStore = create<UserManagementState>()(
         }));
 
         try {
-          const result = await getUserById(userId);
+          const result = await callInternalDataAction<EnhancedUser | null>(
+            'users.getUserById',
+            { userId }
+          );
 
           if (result.success && result.data) {
             set(state => ({
@@ -255,7 +305,7 @@ export const useUserManagementStore = create<UserManagementState>()(
       },
 
       // Load departments by organization (removed in group system)
-      loadDepartmentsByOrganization: async (organizationName: string) => {
+      loadDepartmentsByOrganization: async (_organizationName: string) => {
         // This feature is removed in group system
         console.log('Department options loading: removed in group system');
       },
@@ -328,7 +378,13 @@ export const useUserManagementStore = create<UserManagementState>()(
         }));
 
         try {
-          const result = await updateUserProfile(userId, updates as any);
+          const result = await callInternalDataAction<EnhancedUser>(
+            'users.updateUserProfile',
+            {
+              userId,
+              updates,
+            }
+          );
 
           if (result.success) {
             // Update local state
@@ -395,7 +451,12 @@ export const useUserManagementStore = create<UserManagementState>()(
         }));
 
         try {
-          const result = await deleteUser(userId);
+          const result = await callInternalDataAction<void>(
+            'users.deleteUser',
+            {
+              userId,
+            }
+          );
 
           if (result.success) {
             // Remove user from local state
@@ -442,7 +503,13 @@ export const useUserManagementStore = create<UserManagementState>()(
         }));
 
         try {
-          const result = await batchUpdateUserStatus(userIds, status);
+          const result = await callInternalDataAction<void>(
+            'users.batchUpdateUserStatus',
+            {
+              userIds,
+              status,
+            }
+          );
 
           if (result.success) {
             // Update local state
@@ -489,7 +556,13 @@ export const useUserManagementStore = create<UserManagementState>()(
         }));
 
         try {
-          const result = await batchUpdateUserRole(userIds, role);
+          const result = await callInternalDataAction<void>(
+            'users.batchUpdateUserRole',
+            {
+              userIds,
+              role,
+            }
+          );
 
           if (result.success) {
             // Update local state

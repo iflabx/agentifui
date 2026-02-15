@@ -407,7 +407,7 @@ const InstanceForm = ({
 
           // get basic info and parameters
           const { getDifyAppInfo, getDifyAppParameters } = await import(
-            '@lib/services/dify'
+            '@lib/services/dify/app-browser-service'
           );
           appInfo = await getDifyAppInfo(formData.instance_id);
           difyParams = await getDifyAppParameters(formData.instance_id);
@@ -433,7 +433,7 @@ const InstanceForm = ({
 
           // use form config as fallback
           const { getDifyAppInfoWithConfig, getDifyAppParametersWithConfig } =
-            await import('@lib/services/dify');
+            await import('@lib/services/dify/app-browser-service');
 
           // get basic info and parameters
           appInfo = await getDifyAppInfoWithConfig(formData.instance_id, {
@@ -471,7 +471,7 @@ const InstanceForm = ({
 
         // use form config directly
         const { getDifyAppInfoWithConfig, getDifyAppParametersWithConfig } =
-          await import('@lib/services/dify');
+          await import('@lib/services/dify/app-browser-service');
 
         // get basic info and parameters
         appInfo = await getDifyAppInfoWithConfig(actualInstanceId, {

@@ -1,14 +1,27 @@
-import type { Group, GroupMember } from '@lib/db/group-permissions';
-import {
-  addGroupMember,
-  createGroup,
-  deleteGroup,
-  getGroupMembers,
-  getGroups,
-  removeGroupMember,
-  updateGroup,
-} from '@lib/db/group-permissions';
+import { callInternalDataAction } from '@lib/db/internal-data-api';
 import { create } from 'zustand';
+
+interface Group {
+  id: string;
+  name: string;
+  description: string | null;
+  created_by: string;
+  created_at: string;
+  member_count?: number;
+}
+
+interface GroupMember {
+  id: string;
+  group_id: string;
+  user_id: string;
+  created_at: string;
+  user?: {
+    id: string;
+    username: string | null;
+    full_name: string | null;
+    email: string | null;
+  };
+}
 
 interface GroupStats {
   totalGroups: number;
@@ -94,7 +107,8 @@ export const useGroupManagementStore = create<GroupManagementState>(
       }));
 
       try {
-        const result = await getGroups();
+        const result =
+          await callInternalDataAction<Group[]>('groups.getGroups');
 
         if (result.success) {
           set(state => ({
@@ -123,7 +137,10 @@ export const useGroupManagementStore = create<GroupManagementState>(
       }));
 
       try {
-        const result = await getGroupMembers(groupId);
+        const result = await callInternalDataAction<GroupMember[]>(
+          'groups.getGroupMembers',
+          { groupId }
+        );
 
         if (result.success) {
           set(state => ({
@@ -155,7 +172,8 @@ export const useGroupManagementStore = create<GroupManagementState>(
       }));
 
       try {
-        const groupsResult = await getGroups();
+        const groupsResult =
+          await callInternalDataAction<Group[]>('groups.getGroups');
 
         if (groupsResult.success) {
           const groups = groupsResult.data;
@@ -199,7 +217,12 @@ export const useGroupManagementStore = create<GroupManagementState>(
       }));
 
       try {
-        const result = await createGroup(data);
+        const result = await callInternalDataAction<Group>(
+          'groups.createGroup',
+          {
+            data,
+          }
+        );
 
         if (result.success) {
           // Directly add the new group to the list to avoid reloading
@@ -239,7 +262,13 @@ export const useGroupManagementStore = create<GroupManagementState>(
       }));
 
       try {
-        const result = await updateGroup(groupId, data);
+        const result = await callInternalDataAction<Group>(
+          'groups.updateGroup',
+          {
+            groupId,
+            data,
+          }
+        );
 
         if (result.success) {
           // Update local state
@@ -278,7 +307,12 @@ export const useGroupManagementStore = create<GroupManagementState>(
       }));
 
       try {
-        const result = await deleteGroup(groupId);
+        const result = await callInternalDataAction<void>(
+          'groups.deleteGroup',
+          {
+            groupId,
+          }
+        );
 
         if (result.success) {
           // Get the member count of the deleted group for updating statistics
@@ -325,7 +359,10 @@ export const useGroupManagementStore = create<GroupManagementState>(
     // Add member
     addMember: async (groupId, userId) => {
       try {
-        const result = await addGroupMember(groupId, userId);
+        const result = await callInternalDataAction<GroupMember>(
+          'groups.addGroupMember',
+          { groupId, userId }
+        );
 
         if (result.success) {
           // Reload the member list for this group
@@ -356,7 +393,10 @@ export const useGroupManagementStore = create<GroupManagementState>(
     // Remove member
     removeMember: async (groupId, userId) => {
       try {
-        const result = await removeGroupMember(groupId, userId);
+        const result = await callInternalDataAction<void>(
+          'groups.removeGroupMember',
+          { groupId, userId }
+        );
 
         if (result.success) {
           // Reload the member list for this group

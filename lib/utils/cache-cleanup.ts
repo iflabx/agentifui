@@ -2,8 +2,12 @@
  * Unified cache cleanup service.
  * Used to clear all related caches during login, logout, or user switching.
  */
-import { clearDifyConfigCache } from '@lib/config/dify-config';
 import { clearProfileCache } from '@lib/hooks/use-profile';
+
+function clearDifyConfigCacheClientSafe() {
+  // Dify runtime config cache lives on server process; browser side only needs
+  // local storage cleanup.
+}
 
 // All localStorage keys that need to be cleared
 const CACHE_KEYS = {
@@ -59,7 +63,7 @@ export const clearSensitiveCache = (): void => {
     clearProfileCache();
 
     // Clear Dify config cache
-    clearDifyConfigCache();
+    clearDifyConfigCacheClientSafe();
 
     // Clear other sensitive localStorage items
     SENSITIVE_CACHE_KEYS.forEach(key => {
@@ -105,7 +109,7 @@ export const clearUserSpecificCache = (): void => {
     clearProfileCache();
 
     // Clear Dify config cache
-    clearDifyConfigCache();
+    clearDifyConfigCacheClientSafe();
 
     // Clear user-specific localStorage items
     USER_SPECIFIC_CACHE_KEYS.forEach(key => {
@@ -136,7 +140,7 @@ export const clearAllCache = (): void => {
     clearProfileCache();
 
     // Clear Dify config cache
-    clearDifyConfigCache();
+    clearDifyConfigCacheClientSafe();
 
     // Clear all localStorage (except for critical system config)
     if (typeof window !== 'undefined') {

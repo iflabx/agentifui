@@ -1,5 +1,4 @@
 import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
-import { getCurrentUserProfile } from '@lib/db';
 
 import { useEffect, useState } from 'react';
 
@@ -64,13 +63,22 @@ export function useAdminAuth(
           return;
         }
 
-        // Use the new data service to get current user profile
-        // getCurrentUserProfile already includes cache and error handling
-        const result = await getCurrentUserProfile();
+        const response = await fetch('/api/internal/profile', {
+          method: 'GET',
+          credentials: 'include',
+        });
+        if (!response.ok) {
+          throw new Error(`Failed to load profile: HTTP ${response.status}`);
+        }
 
-        if (result.success && result.data) {
-          // Check if the role is admin
-          const isUserAdmin = result.data.role === 'admin';
+        const payload = (await response.json()) as {
+          success: boolean;
+          profile?: { role?: string | null } | null;
+          error?: string;
+        };
+
+        if (payload.success && payload.profile) {
+          const isUserAdmin = payload.profile.role === 'admin';
 
           setIsAdmin(isUserAdmin);
 
@@ -80,15 +88,12 @@ export function useAdminAuth(
             // Logged in but not admin, redirect to home page
             router.push('/');
           }
-        } else if (result.success && !result.data) {
+        } else if (payload.success && !payload.profile) {
           // User profile does not exist
           setIsAdmin(false);
           throw new Error('User profile does not exist');
         } else {
-          // Query failed
-          throw new Error(
-            result.error?.message || 'Error checking admin status'
-          );
+          throw new Error(payload.error || 'Error checking admin status');
         }
       } catch (err) {
         console.error('Error checking admin status:', err);
