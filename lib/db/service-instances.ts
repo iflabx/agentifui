@@ -11,6 +11,47 @@ import { Result, success } from '@lib/types/result';
 
 import { ServiceInstance } from '../types/database';
 
+const SQL_IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+const SERVICE_INSTANCE_UPDATE_COLUMNS = new Set([
+  'provider_id',
+  'display_name',
+  'description',
+  'instance_id',
+  'api_path',
+  'is_default',
+  'visibility',
+  'config',
+]);
+
+function normalizeServiceInstanceRow(
+  row: Record<string, unknown>
+): ServiceInstance {
+  const createdAt = row.created_at;
+  const updatedAt = row.updated_at;
+
+  return {
+    id: String(row.id),
+    provider_id: String(row.provider_id),
+    display_name:
+      row.display_name === null || row.display_name === undefined
+        ? null
+        : String(row.display_name),
+    description:
+      row.description === null || row.description === undefined
+        ? null
+        : String(row.description),
+    instance_id: String(row.instance_id),
+    api_path: String(row.api_path ?? ''),
+    is_default: Boolean(row.is_default),
+    visibility: String(row.visibility) as ServiceInstance['visibility'],
+    config: (row.config as ServiceInstance['config']) || {},
+    created_at:
+      createdAt instanceof Date ? createdAt.toISOString() : String(createdAt),
+    updated_at:
+      updatedAt instanceof Date ? updatedAt.toISOString() : String(updatedAt),
+  };
+}
+
 /**
  * Get all service instances for a specific provider (optimized version)
  * @param providerId Provider ID
@@ -107,38 +148,62 @@ export async function getServiceInstanceByInstanceId(
 export async function createServiceInstance(
   serviceInstance: Omit<ServiceInstance, 'id' | 'created_at' | 'updated_at'>
 ): Promise<Result<ServiceInstance>> {
-  return dataService.query(async () => {
-    // If this is the default instance, set other instances to non-default first
-    if (serviceInstance.is_default) {
-      const resetResult = await dataService.rawExecute(
-        `
-          UPDATE service_instances
-          SET is_default = FALSE
-          WHERE provider_id = $1
-            AND is_default = TRUE
-        `,
-        [serviceInstance.provider_id]
-      );
-      if (!resetResult.success) {
-        throw resetResult.error;
+  const transactionResult = await dataService.runInTransaction<ServiceInstance>(
+    async client => {
+      if (serviceInstance.is_default) {
+        await client.query(
+          `
+            UPDATE service_instances
+            SET is_default = FALSE
+            WHERE provider_id = $1::uuid
+              AND is_default = TRUE
+          `,
+          [serviceInstance.provider_id]
+        );
       }
+
+      const insertResult = await client.query<Record<string, unknown>>(
+        `
+          INSERT INTO service_instances (
+            provider_id,
+            instance_id,
+            api_path,
+            display_name,
+            description,
+            is_default,
+            visibility,
+            config
+          )
+          VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8::jsonb)
+          RETURNING *
+        `,
+        [
+          serviceInstance.provider_id,
+          serviceInstance.instance_id,
+          serviceInstance.api_path ?? '',
+          serviceInstance.display_name ?? null,
+          serviceInstance.description ?? null,
+          Boolean(serviceInstance.is_default),
+          serviceInstance.visibility,
+          JSON.stringify(serviceInstance.config || {}),
+        ]
+      );
+
+      const created = insertResult.rows[0];
+      if (!created) {
+        throw new Error('Failed to create service instance');
+      }
+
+      return normalizeServiceInstanceRow(created);
     }
+  );
 
-    // Create new instance
-    const result = await dataService.create<ServiceInstance>(
-      'service_instances',
-      serviceInstance
-    );
+  if (!transactionResult.success) {
+    return transactionResult;
+  }
 
-    if (!result.success) {
-      throw result.error;
-    }
-
-    // Clear related cache
-    cacheService.deletePattern('service_instances:*');
-
-    return result.data;
-  });
+  cacheService.deletePattern('service_instances:*');
+  return success(transactionResult.data);
 }
 
 /**
@@ -151,43 +216,100 @@ export async function updateServiceInstance(
   id: string,
   updates: Partial<Omit<ServiceInstance, 'id' | 'created_at' | 'updated_at'>>
 ): Promise<Result<ServiceInstance>> {
-  return dataService.query(async () => {
-    // If setting as default instance, set other instances to non-default first
-    if (updates.is_default) {
-      const currentInstanceResult = await getServiceInstanceById(id);
-      if (currentInstanceResult.success && currentInstanceResult.data) {
-        const resetResult = await dataService.rawExecute(
-          `
-            UPDATE service_instances
-            SET is_default = FALSE
-            WHERE provider_id = $1
-              AND is_default = TRUE
-              AND id <> $2
-          `,
-          [currentInstanceResult.data.provider_id, id]
-        );
-        if (!resetResult.success) {
-          throw resetResult.error;
-        }
-      }
-    }
-
-    // Update instance
-    const result = await dataService.update<ServiceInstance>(
+  const updateKeys = Object.keys(updates).filter(
+    key => (updates as Record<string, unknown>)[key] !== undefined
+  );
+  if (updateKeys.length === 0) {
+    return dataService.update<ServiceInstance>(
       'service_instances',
       id,
       updates
     );
+  }
 
-    if (!result.success) {
-      throw result.error;
+  const keys = updateKeys.filter(
+    key => SQL_IDENTIFIER.test(key) && SERVICE_INSTANCE_UPDATE_COLUMNS.has(key)
+  );
+  if (keys.length !== updateKeys.length) {
+    return dataService.update<ServiceInstance>(
+      'service_instances',
+      id,
+      updates
+    );
+  }
+
+  const transactionResult = await dataService.runInTransaction<ServiceInstance>(
+    async client => {
+      const currentInstanceResult = await client.query<{
+        provider_id: string;
+      }>(
+        `
+          SELECT provider_id::text
+          FROM service_instances
+          WHERE id = $1::uuid
+          LIMIT 1
+        `,
+        [id]
+      );
+      const currentInstance = currentInstanceResult.rows[0];
+      if (!currentInstance?.provider_id) {
+        throw new Error(`Service instance not found: ${id}`);
+      }
+
+      if (updates.is_default) {
+        await client.query(
+          `
+            UPDATE service_instances
+            SET is_default = FALSE
+            WHERE provider_id = $1::uuid
+              AND is_default = TRUE
+              AND id <> $2::uuid
+          `,
+          [currentInstance.provider_id, id]
+        );
+      }
+
+      const setClauses: string[] = [];
+      const values: unknown[] = [];
+      let index = 1;
+
+      for (const key of keys) {
+        const isJsonColumn = key === 'config';
+        setClauses.push(`${key} = $${index}${isJsonColumn ? '::jsonb' : ''}`);
+        const rawValue = (updates as Record<string, unknown>)[key];
+        if (key === 'config') {
+          values.push(JSON.stringify(rawValue || {}));
+        } else {
+          values.push(rawValue);
+        }
+        index += 1;
+      }
+
+      const updateResult = await client.query<Record<string, unknown>>(
+        `
+          UPDATE service_instances
+          SET ${setClauses.join(', ')}
+          WHERE id = $${index}::uuid
+          RETURNING *
+        `,
+        [...values, id]
+      );
+
+      const updated = updateResult.rows[0];
+      if (!updated) {
+        throw new Error(`Service instance not found: ${id}`);
+      }
+
+      return normalizeServiceInstanceRow(updated);
     }
+  );
 
-    // Clear related cache
-    cacheService.deletePattern('service_instances:*');
+  if (!transactionResult.success) {
+    return transactionResult;
+  }
 
-    return result.data;
-  });
+  cacheService.deletePattern('service_instances:*');
+  return success(transactionResult.data);
 }
 
 /**

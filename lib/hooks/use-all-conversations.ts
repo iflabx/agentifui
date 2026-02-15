@@ -8,12 +8,8 @@ import {
   getCurrentSession,
   subscribeAuthStateChange,
 } from '@lib/auth/better-auth/http-client';
+import { callInternalDataAction } from '@lib/db/internal-data-api';
 import { cacheService } from '@lib/services/db/cache-service';
-import { dataService } from '@lib/services/db/data-service';
-import {
-  SubscriptionKeys,
-  realtimeService,
-} from '@lib/services/db/realtime-service';
 import { Conversation } from '@lib/types/database';
 
 import { useCallback, useEffect, useState } from 'react';
@@ -30,6 +26,11 @@ export function useAllConversations() {
   const [error, setError] = useState<Error | null>(null);
   const [total, setTotal] = useState(0);
   const [userId, setUserId] = useState<string | null>(null);
+
+  type ConversationListPayload = {
+    conversations: Conversation[];
+    total: number;
+  };
 
   // Get current user ID
   useEffect(() => {
@@ -76,6 +77,7 @@ export function useAllConversations() {
   // No limit, fetch all user conversations
   const loadAllConversations = useCallback(
     async (_reset: boolean = false) => {
+      void _reset;
       if (!userId) {
         setConversations([]);
         setIsLoading(false);
@@ -89,46 +91,24 @@ export function useAllConversations() {
       try {
         // Use unified data service to get all conversations
         // Set a large limit to fetch all
-        const result = await dataService.findMany<Conversation>(
-          'conversations',
+        const result = await callInternalDataAction<ConversationListPayload>(
+          'conversations.getUserConversations',
           {
-            user_id: userId,
-            status: 'active',
-          },
-          { column: 'updated_at', ascending: false },
-          { offset: 0, limit: 1000 }, // Large limit to fetch all
-          {
-            cache: true,
-            cacheTTL: 2 * 60 * 1000, // 2 minutes cache, same as sidebar
-            subscribe: true,
-            subscriptionKey: SubscriptionKeys.allConversations(userId),
-            onUpdate: payload => {
-              // Handle realtime updates
-              console.log(
-                '[Realtime update] All conversations changed:',
-                payload
-              );
-
-              // Clear cache and reload
-              cacheService.deletePattern(`conversations:*`);
-
-              // Delay reload to avoid frequent updates
-              setTimeout(() => {
-                loadAllConversations(true);
-              }, 500);
-            },
+            userId,
+            limit: 1000,
+            offset: 0,
           }
         );
 
         if (result.success) {
-          const conversations = result.data;
+          const conversations = result.data.conversations;
 
           setConversations(conversations);
-          setTotal(conversations.length);
+          setTotal(result.data.total);
           setError(null);
         } else {
           console.error('Failed to load all conversations:', result.error);
-          setError(result.error);
+          setError(result.error || new Error('Failed to load conversations'));
           setConversations([]);
           setTotal(0);
         }
@@ -161,27 +141,18 @@ export function useAllConversations() {
     }
   }, [userId, loadAllConversations]);
 
-  // Cleanup: unsubscribe on component unmount
-  useEffect(() => {
-    return () => {
-      if (userId) {
-        realtimeService.unsubscribe(SubscriptionKeys.allConversations(userId));
-      }
-    };
-  }, [userId]);
-
   // Helper to delete a conversation
   const deleteConversation = useCallback(
     async (conversationId: string): Promise<boolean> => {
       if (!userId) return false;
 
       try {
-        const result = await dataService.softDelete<Conversation>(
-          'conversations',
-          conversationId
+        const result = await callInternalDataAction<boolean>(
+          'conversations.deleteConversation',
+          { userId, conversationId }
         );
 
-        if (result.success) {
+        if (result.success && result.data) {
           // Remove from local state immediately
           setConversations(prev =>
             prev.filter(conv => conv.id !== conversationId)
@@ -194,7 +165,7 @@ export function useAllConversations() {
           return true;
         } else {
           console.error('Failed to delete conversation:', result.error);
-          setError(result.error);
+          setError(result.error || new Error('Failed to delete conversation'));
           return false;
         }
       } catch (err) {
@@ -213,13 +184,16 @@ export function useAllConversations() {
       if (!userId) return false;
 
       try {
-        const result = await dataService.update<Conversation>(
-          'conversations',
-          conversationId,
-          { title: newTitle }
+        const result = await callInternalDataAction<boolean>(
+          'conversations.renameConversation',
+          {
+            userId,
+            conversationId,
+            title: newTitle,
+          }
         );
 
-        if (result.success) {
+        if (result.success && result.data) {
           // Update local state
           setConversations(prev =>
             prev.map(conv =>
@@ -227,7 +201,7 @@ export function useAllConversations() {
                 ? {
                     ...conv,
                     title: newTitle,
-                    updated_at: result.data.updated_at,
+                    updated_at: new Date().toISOString(),
                   }
                 : conv
             )
@@ -239,7 +213,7 @@ export function useAllConversations() {
           return true;
         } else {
           console.error('Failed to rename conversation:', result.error);
-          setError(result.error);
+          setError(result.error || new Error('Failed to rename conversation'));
           return false;
         }
       } catch (err) {

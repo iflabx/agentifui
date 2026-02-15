@@ -283,6 +283,76 @@ export async function renameConversation(
 }
 
 /**
+ * Rename conversation with ownership guard.
+ * Only conversation owner can rename.
+ */
+export async function renameConversationForUser(
+  userId: string,
+  conversationId: string,
+  newTitle: string
+): Promise<Result<boolean>> {
+  const title = newTitle.trim();
+  if (!title) {
+    return failure(new Error('Conversation title cannot be empty'));
+  }
+
+  const result = await dataService.rawQuery<{ id: string }>(
+    `
+      UPDATE conversations
+      SET title = $1, updated_at = NOW()
+      WHERE id = $2::uuid
+        AND user_id = $3::uuid
+        AND status = 'active'
+      RETURNING id::text
+    `,
+    [title, conversationId, userId]
+  );
+
+  if (!result.success) {
+    return failure(result.error);
+  }
+
+  if (result.data.length > 0) {
+    dataService.clearCache('conversations');
+    return success(true);
+  }
+
+  return success(false);
+}
+
+/**
+ * Soft delete conversation with ownership guard.
+ * Only conversation owner can delete.
+ */
+export async function deleteConversationForUser(
+  userId: string,
+  conversationId: string
+): Promise<Result<boolean>> {
+  const result = await dataService.rawQuery<{ id: string }>(
+    `
+      UPDATE conversations
+      SET status = 'deleted', updated_at = NOW()
+      WHERE id = $1::uuid
+        AND user_id = $2::uuid
+        AND status = 'active'
+      RETURNING id::text
+    `,
+    [conversationId, userId]
+  );
+
+  if (!result.success) {
+    return failure(result.error);
+  }
+
+  if (result.data.length > 0) {
+    dataService.clearCache('conversations');
+    return success(true);
+  }
+
+  return success(false);
+}
+
+/**
  * Physically delete conversation and its messages (optimized version)
  * @param conversationId Conversation ID
  * @returns Result indicating whether deletion was successful

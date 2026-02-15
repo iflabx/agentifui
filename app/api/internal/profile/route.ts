@@ -7,23 +7,25 @@ export const runtime = 'nodejs';
 
 const PROFILE_SELECT_SQL = `
   SELECT
-    id::text,
-    full_name,
-    username,
-    avatar_url,
-    role::text,
-    status::text,
-    auth_source,
-    sso_provider_id::text,
-    employee_number,
-    email,
-    phone,
-    department,
-    job_title,
-    created_at::text,
-    updated_at::text,
-    last_login::text
-  FROM profiles
+    p.id::text,
+    p.full_name,
+    p.username,
+    p.avatar_url,
+    p.role::text,
+    p.status::text,
+    p.auth_source,
+    p.sso_provider_id::text,
+    p.employee_number,
+    p.email,
+    p.phone,
+    pea.department_name AS department,
+    pea.job_title,
+    p.created_at::text,
+    p.updated_at::text,
+    p.last_login::text
+  FROM profiles p
+  LEFT JOIN profile_external_attributes pea
+    ON pea.user_id = p.id
 `;
 
 async function resolveIdentity(request: Request) {
@@ -87,7 +89,7 @@ export async function GET(request: Request) {
 
     const pool = getPgPool();
     const { rows } = await pool.query(
-      `${PROFILE_SELECT_SQL} WHERE id = $1::uuid LIMIT 1`,
+      `${PROFILE_SELECT_SQL} WHERE p.id = $1::uuid LIMIT 1`,
       [targetUserId]
     );
 
@@ -152,40 +154,32 @@ export async function PATCH(request: Request) {
     values.push(targetUserId);
 
     const pool = getPgPool();
-    const { rows } = await pool.query(
+    const updateResult = await pool.query<{ id: string }>(
       `
         UPDATE profiles
         SET ${setClauses.join(', ')}
         WHERE id = $${values.length}::uuid
-        RETURNING
-          id::text,
-          full_name,
-          username,
-          avatar_url,
-          role::text,
-          status::text,
-          auth_source,
-          sso_provider_id::text,
-          employee_number,
-          email,
-          phone,
-          department,
-          job_title,
-          created_at::text,
-          updated_at::text,
-          last_login::text
+        RETURNING id::text
       `,
       values
     );
 
-    if (!rows[0]) {
+    if (!updateResult.rows[0]) {
       return NextResponse.json(
         { success: false, error: 'Profile not found' },
         { status: 404 }
       );
     }
 
-    return NextResponse.json({ success: true, profile: rows[0] });
+    const profileResult = await pool.query(
+      `${PROFILE_SELECT_SQL} WHERE p.id = $1::uuid LIMIT 1`,
+      [targetUserId]
+    );
+
+    return NextResponse.json({
+      success: true,
+      profile: profileResult.rows[0] || null,
+    });
   } catch (error) {
     console.error('[InternalProfileAPI] PATCH failed:', error);
     return NextResponse.json(

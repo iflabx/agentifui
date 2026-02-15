@@ -7,12 +7,8 @@ import {
   getCurrentSession,
   subscribeAuthStateChange,
 } from '@lib/auth/better-auth/http-client';
+import { callInternalDataAction } from '@lib/db/internal-data-api';
 import { CacheKeys, cacheService } from '@lib/services/db/cache-service';
-import { dataService } from '@lib/services/db/data-service';
-import {
-  SubscriptionKeys,
-  realtimeService,
-} from '@lib/services/db/realtime-service';
 import { Conversation } from '@lib/types/database';
 
 import { useCallback, useEffect, useState } from 'react';
@@ -31,6 +27,11 @@ export function useSidebarConversations(limit: number = 20) {
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+
+  type ConversationListPayload = {
+    conversations: Conversation[];
+    total: number;
+  };
 
   // Get current user ID
   useEffect(() => {
@@ -95,44 +96,25 @@ export function useSidebarConversations(limit: number = 20) {
       try {
         // Use unified data service to get conversation list
         // Supports cache, sorting, and pagination
-        const result = await dataService.findMany<Conversation>(
-          'conversations',
+        const result = await callInternalDataAction<ConversationListPayload>(
+          'conversations.getUserConversations',
           {
-            user_id: userId,
-            status: 'active',
-          },
-          { column: 'updated_at', ascending: false },
-          { offset: 0, limit },
-          {
-            cache: true,
-            cacheTTL: 2 * 60 * 1000, // 2 minutes cache
-            subscribe: true,
-            subscriptionKey: SubscriptionKeys.sidebarConversations(userId),
-            onUpdate: payload => {
-              // Handle real-time updates
-              console.log('[Realtime update] Conversation changed:', payload);
-
-              // Clear cache and reload
-              cacheService.deletePattern(`conversations:*`);
-
-              // Delay reload to avoid frequent updates
-              setTimeout(() => {
-                loadConversations(true);
-              }, 500);
-            },
+            userId,
+            limit,
+            offset: 0,
           }
         );
 
         if (result.success) {
-          const conversations = result.data;
+          const conversations = result.data.conversations;
 
           setConversations(conversations);
-          setTotal(conversations.length);
-          setHasMore(conversations.length === limit); // Simplified hasMore check
+          setTotal(result.data.total);
+          setHasMore(result.data.total > conversations.length);
           setError(null);
         } else {
           console.error('Failed to load conversation list:', result.error);
-          setError(result.error);
+          setError(result.error || new Error('Failed to load conversations'));
           setConversations([]);
           setTotal(0);
           setHasMore(false);
@@ -179,29 +161,18 @@ export function useSidebarConversations(limit: number = 20) {
     }
   }, [userId, loadConversations]);
 
-  // Cleanup: unsubscribe on component unmount
-  useEffect(() => {
-    return () => {
-      if (userId) {
-        realtimeService.unsubscribe(
-          SubscriptionKeys.sidebarConversations(userId)
-        );
-      }
-    };
-  }, [userId]);
-
   // Helper function to delete a conversation
   const deleteConversation = useCallback(
     async (conversationId: string): Promise<boolean> => {
       if (!userId) return false;
 
       try {
-        const result = await dataService.softDelete<Conversation>(
-          'conversations',
-          conversationId
+        const result = await callInternalDataAction<boolean>(
+          'conversations.deleteConversation',
+          { userId, conversationId }
         );
 
-        if (result.success) {
+        if (result.success && result.data) {
           // Remove from local state immediately
           setConversations(prev =>
             prev.filter(conv => conv.id !== conversationId)
@@ -215,7 +186,7 @@ export function useSidebarConversations(limit: number = 20) {
           return true;
         } else {
           console.error('Failed to delete conversation:', result.error);
-          setError(result.error);
+          setError(result.error || new Error('Failed to delete conversation'));
           return false;
         }
       } catch (err) {
@@ -234,13 +205,16 @@ export function useSidebarConversations(limit: number = 20) {
       if (!userId) return false;
 
       try {
-        const result = await dataService.update<Conversation>(
-          'conversations',
-          conversationId,
-          { title: newTitle }
+        const result = await callInternalDataAction<boolean>(
+          'conversations.renameConversation',
+          {
+            userId,
+            conversationId,
+            title: newTitle,
+          }
         );
 
-        if (result.success) {
+        if (result.success && result.data) {
           // Update local state
           setConversations(prev =>
             prev.map(conv =>
@@ -248,7 +222,7 @@ export function useSidebarConversations(limit: number = 20) {
                 ? {
                     ...conv,
                     title: newTitle,
-                    updated_at: result.data.updated_at,
+                    updated_at: new Date().toISOString(),
                   }
                 : conv
             )
@@ -261,7 +235,7 @@ export function useSidebarConversations(limit: number = 20) {
           return true;
         } else {
           console.error('Failed to rename conversation:', result.error);
-          setError(result.error);
+          setError(result.error || new Error('Failed to rename conversation'));
           return false;
         }
       } catch (err) {
