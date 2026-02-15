@@ -231,6 +231,13 @@ async function requestContentImagePresign(jar, userId, fileName) {
   };
 }
 
+async function requestContentImageCommit(jar, userId, path) {
+  return requestJson(jar, '/api/internal/storage/content-images', 'POST', {
+    userId,
+    path,
+  });
+}
+
 async function main() {
   const suffix = randomSuffix();
   const databaseUrl =
@@ -352,7 +359,10 @@ async function main() {
       });
 
       if (uploadResponse.ok) {
-        uploadSuccess += 1;
+        const commit = await requestContentImageCommit(jar, userId, path);
+        if (commit.response.status === 200 && commit.payload?.success) {
+          uploadSuccess += 1;
+        }
       }
 
       await requestJson(jar, '/api/internal/storage/content-images', 'DELETE', {

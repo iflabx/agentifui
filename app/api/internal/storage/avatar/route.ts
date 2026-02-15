@@ -180,6 +180,14 @@ async function handleCommitUpload(request: Request, identity: SessionIdentity) {
     );
   }
 
+  const ownership = assertOwnedObjectPath(filePath, targetUserId);
+  if (!ownership.ok) {
+    return NextResponse.json(
+      { success: false, error: ownership.error },
+      { status: 400 }
+    );
+  }
+
   try {
     const publicUrl = await attachAvatarObject(
       identity,
@@ -192,6 +200,13 @@ async function handleCommitUpload(request: Request, identity: SessionIdentity) {
       path: filePath,
     });
   } catch (error) {
+    await deleteObject('avatars', filePath).catch(cleanupError => {
+      console.warn(
+        '[AvatarStorageAPI] Failed to cleanup committed avatar object:',
+        cleanupError
+      );
+    });
+
     const message = error instanceof Error ? error.message : String(error);
     const status = message.includes('not found') ? 404 : 400;
     return NextResponse.json({ success: false, error: message }, { status });

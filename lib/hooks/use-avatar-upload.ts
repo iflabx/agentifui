@@ -1,5 +1,7 @@
 'use client';
 
+import { STORAGE_UPLOAD_POLICIES } from '@lib/shared/storage-upload-policy';
+
 import { useCallback, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
@@ -36,21 +38,17 @@ export function useAvatarUpload() {
   });
 
   const t = useTranslations('pages.settings.avatarUpload');
+  const avatarPolicy = STORAGE_UPLOAD_POLICIES.avatars;
 
   /**
    * Validate file type and size.
    */
   const validateFile = useCallback(
     (file: File): { valid: boolean; error?: string } => {
-      const allowedTypes = [
-        'image/jpeg',
-        'image/jpg',
-        'image/png',
-        'image/webp',
-      ];
-      const maxSize = 5 * 1024 * 1024; // 5MB
+      const allowedTypes = avatarPolicy.allowedMimeTypes;
+      const maxSize = avatarPolicy.maxBytes;
 
-      if (!allowedTypes.includes(file.type)) {
+      if (!allowedTypes.includes(file.type as (typeof allowedTypes)[number])) {
         return {
           valid: false,
           error: t('errors.unsupportedFileType', {
@@ -70,7 +68,7 @@ export function useAvatarUpload() {
 
       return { valid: true };
     },
-    [t]
+    [avatarPolicy.allowedMimeTypes, avatarPolicy.maxBytes, t]
   );
 
   /**

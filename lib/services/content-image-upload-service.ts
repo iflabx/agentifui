@@ -1,3 +1,4 @@
+import { STORAGE_UPLOAD_POLICIES } from '@lib/shared/storage-upload-policy';
 import { PageSection } from '@lib/types/about-page-components';
 
 /**
@@ -20,17 +21,13 @@ export interface ValidationResult {
  * Allowed image MIME types for content images
  */
 export const ALLOWED_IMAGE_TYPES = [
-  'image/jpeg',
-  'image/jpg',
-  'image/png',
-  'image/webp',
-  'image/gif',
+  ...STORAGE_UPLOAD_POLICIES['content-images'].allowedMimeTypes,
 ] as const;
 
 /**
  * Maximum file size in bytes (10MB)
  */
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_FILE_SIZE = STORAGE_UPLOAD_POLICIES['content-images'].maxBytes;
 
 /**
  * Storage bucket name for content images
@@ -110,6 +107,36 @@ async function runLegacyRelayUpload(
   };
 }
 
+async function runCommitUpload(
+  userId: string,
+  path: string
+): Promise<ContentImageUploadResult> {
+  const response = await fetch('/api/internal/storage/content-images', {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ userId, path }),
+  });
+
+  const payload = (await response.json()) as {
+    success: boolean;
+    url?: string;
+    path?: string;
+    error?: string;
+  };
+
+  if (!response.ok || !payload.success || !payload.path || !payload.url) {
+    throw new Error(payload.error || 'Failed to commit content image upload');
+  }
+
+  return {
+    url: payload.url,
+    path: payload.path,
+  };
+}
+
 /**
  * Upload content image to storage.
  */
@@ -144,7 +171,6 @@ export async function uploadContentImage(
       success: boolean;
       uploadUrl?: string;
       path?: string;
-      url?: string;
       error?: string;
     };
 
@@ -152,8 +178,7 @@ export async function uploadContentImage(
       !presignResponse.ok ||
       !presignPayload.success ||
       !presignPayload.uploadUrl ||
-      !presignPayload.path ||
-      !presignPayload.url
+      !presignPayload.path
     ) {
       throw new Error(presignPayload.error || 'Failed to create upload URL');
     }
@@ -172,10 +197,7 @@ export async function uploadContentImage(
       );
     }
 
-    return {
-      url: presignPayload.url,
-      path: presignPayload.path,
-    };
+    return runCommitUpload(userId, presignPayload.path);
   } catch (presignError) {
     console.warn(
       '[ContentImageUpload] presign flow failed, fallback to legacy relay upload:',

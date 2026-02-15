@@ -467,9 +467,8 @@ async function main() {
 
     const contentUploadUrl = contentPresign.payload?.uploadUrl;
     userAContentImagePath = contentPresign.payload?.path;
-    const contentPublicUrl = contentPresign.payload?.url;
-    if (!contentUploadUrl || !userAContentImagePath || !contentPublicUrl) {
-      throw new Error('content image presign payload missing fields');
+    if (!contentUploadUrl || !userAContentImagePath) {
+      throw new Error('content image presign payload missing uploadUrl/path');
     }
 
     const contentUpload = await fetch(contentUploadUrl, {
@@ -483,6 +482,21 @@ async function main() {
       throw new Error(
         `content image direct upload failed: ${contentUpload.status}`
       );
+    }
+
+    const contentCommit = await requestJson(
+      jarA,
+      '/api/internal/storage/content-images',
+      'POST',
+      {
+        userId: userAId,
+        path: userAContentImagePath,
+      }
+    );
+    assertStatus(contentCommit.response, 200, 'content-images commit owner');
+    const contentPublicUrl = contentCommit.payload?.url;
+    if (!contentCommit.payload?.success || !contentPublicUrl) {
+      throw new Error('content image commit response missing url');
     }
 
     const contentDownloadOwner = await requestWithCookies(
@@ -563,6 +577,21 @@ async function main() {
       deleteCrossUser.response,
       403,
       'content-images delete cross-user'
+    );
+
+    const contentCommitCrossUser = await requestJson(
+      jarB,
+      '/api/internal/storage/content-images',
+      'POST',
+      {
+        userId: userAId,
+        path: userAContentImagePath,
+      }
+    );
+    assertStatus(
+      contentCommitCrossUser.response,
+      403,
+      'content-images commit cross-user'
     );
 
     const contentDownloadCrossUser = await requestWithCookies(

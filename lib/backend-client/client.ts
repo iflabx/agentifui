@@ -121,6 +121,11 @@ export const backendClient = {
         method: 'POST',
         body: JSON.stringify(payload),
       }),
+    commitContentImageUpload: (payload: { userId: string; path: string }) =>
+      fetchJson('/api/internal/storage/content-images', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
     presignContentImageDownload: (payload: {
       userId?: string;
       path: string;

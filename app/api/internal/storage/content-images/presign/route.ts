@@ -1,6 +1,5 @@
 import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
 import {
-  buildPublicObjectUrl,
   createPresignedDownloadUrl,
   createPresignedUploadUrl,
   headObject,
@@ -138,7 +137,6 @@ export async function POST(request: Request) {
       success: true,
       path,
       uploadUrl,
-      url: buildPublicObjectUrl('content-images', path),
     });
   } catch (error) {
     console.error('[ContentImageStoragePresignAPI] POST failed:', error);
@@ -207,7 +205,6 @@ export async function GET(request: Request) {
       success: true,
       path,
       downloadUrl,
-      url: buildPublicObjectUrl('content-images', path),
       contentType: head.contentType,
       contentLength: head.contentLength,
     });

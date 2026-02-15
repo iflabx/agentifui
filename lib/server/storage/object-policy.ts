@@ -1,31 +1,9 @@
+import {
+  STORAGE_UPLOAD_POLICIES,
+  type StorageNamespace,
+  type StorageUploadPolicy,
+} from '@lib/shared/storage-upload-policy';
 import crypto from 'node:crypto';
-
-export type StorageNamespace = 'avatars' | 'content-images';
-
-export type StoragePolicy = {
-  namespace: StorageNamespace;
-  maxBytes: number;
-  allowedMimeTypes: string[];
-};
-
-const STORAGE_POLICIES: Record<StorageNamespace, StoragePolicy> = {
-  avatars: {
-    namespace: 'avatars',
-    maxBytes: 5 * 1024 * 1024,
-    allowedMimeTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'],
-  },
-  'content-images': {
-    namespace: 'content-images',
-    maxBytes: 10 * 1024 * 1024,
-    allowedMimeTypes: [
-      'image/jpeg',
-      'image/jpg',
-      'image/png',
-      'image/webp',
-      'image/gif',
-    ],
-  },
-};
 
 const MIME_EXTENSION_MAP: Record<string, string> = {
   'image/jpeg': 'jpg',
@@ -70,8 +48,10 @@ function resolveExtension(fileName: string, contentType: string): string {
   return fromName || 'bin';
 }
 
+export type StoragePolicy = StorageUploadPolicy;
+
 export function getStoragePolicy(namespace: StorageNamespace): StoragePolicy {
-  return STORAGE_POLICIES[namespace];
+  return STORAGE_UPLOAD_POLICIES[namespace];
 }
 
 export function validateUploadInput(
