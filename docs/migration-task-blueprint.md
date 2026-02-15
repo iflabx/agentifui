@@ -40,7 +40,9 @@
 - M2：完成
 - M3：完成（见 `docs/m3-db-crud-compatibility.md`）
 - M4：完成（Phase1 + Phase2 + Phase3 + Hardening 已完成，见 `docs/m4-rpc-rls-compatibility.md`）
-- M5-M9：未开始
+- M5：完成（`pnpm m5:storage:verify`、`pnpm m5:storage:slo:verify`、`pnpm m5:gate:verify` 已通过）
+- M6：进行中（核心能力已落地，最终验收待执行）
+- M7-M9：未开始
 
 ## 3. 里程碑详细任务
 

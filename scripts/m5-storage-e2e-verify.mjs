@@ -12,6 +12,10 @@ const appBase = `http://127.0.0.1:${appPort}`;
 const appReadyTimeoutMs = Number(
   process.env.M5_STORAGE_READY_TIMEOUT_MS || 120000
 );
+const appStartRetryCount = Math.max(
+  1,
+  Number(process.env.M5_STORAGE_APP_START_RETRIES || 2)
+);
 
 const fallbackDatabaseUrl =
   'postgresql://agentif:agentif@172.20.0.1:5432/agentifui';
@@ -103,18 +107,82 @@ class CookieJar {
 
 function startProcess(command, args, options) {
   const proc = spawn(command, args, options);
+  const stderrLines = [];
   proc.stdout.on('data', chunk => {
     process.stdout.write(chunk);
   });
   proc.stderr.on('data', chunk => {
-    process.stderr.write(chunk);
+    const text = chunk.toString();
+    process.stderr.write(text);
+    stderrLines.push(text.trim());
+    if (stderrLines.length > 80) {
+      stderrLines.shift();
+    }
   });
+  proc.__stderrLines = stderrLines;
   return proc;
 }
 
-async function waitForServer(url, timeoutMs = 120000) {
+async function waitForExit(proc, timeoutMs = 5000) {
+  if (!proc || proc.exitCode !== null) {
+    return proc?.exitCode ?? null;
+  }
+
+  return new Promise(resolve => {
+    let settled = false;
+    const onExit = code => {
+      if (settled) return;
+      settled = true;
+      resolve(code);
+    };
+
+    proc.once('exit', onExit);
+    setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      proc.removeListener('exit', onExit);
+      resolve(null);
+    }, timeoutMs);
+  });
+}
+
+async function terminateProcess(proc) {
+  if (!proc || proc.exitCode !== null) {
+    return;
+  }
+
+  proc.kill('SIGTERM');
+  const termCode = await waitForExit(proc, 3000);
+  if (termCode !== null) {
+    return;
+  }
+
+  proc.kill('SIGKILL');
+  await waitForExit(proc, 2000);
+}
+
+function formatStartupError(proc, baseMessage) {
+  const stderrLines = Array.isArray(proc?.__stderrLines) ? proc.__stderrLines : [];
+  const tail = stderrLines.slice(-6).join('\n');
+  if (!tail) {
+    return baseMessage;
+  }
+
+  return `${baseMessage}\n[stderr tail]\n${tail}`;
+}
+
+async function waitForServer(url, proc, timeoutMs = 120000) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
+    if (proc && proc.exitCode !== null) {
+      throw new Error(
+        formatStartupError(
+          proc,
+          `App process exited early with code ${proc.exitCode}`
+        )
+      );
+    }
+
     try {
       const response = await fetch(url, {
         method: 'GET',
@@ -128,7 +196,9 @@ async function waitForServer(url, timeoutMs = 120000) {
     await sleep(500);
   }
 
-  throw new Error(`Server not ready in ${timeoutMs}ms: ${url}`);
+  throw new Error(
+    formatStartupError(proc, `Server not ready in ${timeoutMs}ms: ${url}`)
+  );
 }
 
 async function requestWithCookies(jar, url, init = {}) {
@@ -242,49 +312,66 @@ async function main() {
     true
   );
 
-  const appProc = startProcess('pnpm', ['next', 'dev', '-p', String(appPort)], {
-    cwd: process.cwd(),
-    env: {
-      ...process.env,
-      NODE_ENV: 'development',
-      NEXT_PUBLIC_APP_URL: appBase,
-      BETTER_AUTH_URL: appBase,
-      BETTER_AUTH_SECRET: randomBytes(32).toString('hex'),
-      DATABASE_URL: databaseUrl,
-      REDIS_URL: redisUrl,
-      S3_ENDPOINT: s3Endpoint,
-      S3_ACCESS_KEY_ID: process.env.S3_ACCESS_KEY_ID || 'minioadmin',
-      S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY || 'minioadmin',
-      S3_BUCKET: process.env.S3_BUCKET || 'agentifui',
-      S3_ENABLE_PATH_STYLE: process.env.S3_ENABLE_PATH_STYLE || '1',
-      S3_PUBLIC_READ_ENABLED: process.env.S3_PUBLIC_READ_ENABLED || '1',
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-
-  const stopAll = async exitCode => {
-    if (!appProc.killed && appProc.exitCode === null) {
-      appProc.kill('SIGTERM');
-      await sleep(800);
-      if (appProc.exitCode === null) {
-        appProc.kill('SIGKILL');
-      }
-    }
-
-    process.exit(exitCode);
+  const appEnv = {
+    ...process.env,
+    NODE_ENV: 'development',
+    NEXT_PUBLIC_APP_URL: appBase,
+    BETTER_AUTH_URL: appBase,
+    BETTER_AUTH_SECRET: randomBytes(32).toString('hex'),
+    DATABASE_URL: databaseUrl,
+    REDIS_URL: redisUrl,
+    S3_ENDPOINT: s3Endpoint,
+    S3_ACCESS_KEY_ID: process.env.S3_ACCESS_KEY_ID || 'minioadmin',
+    S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY || 'minioadmin',
+    S3_BUCKET: process.env.S3_BUCKET || 'agentifui',
+    S3_ENABLE_PATH_STYLE: process.env.S3_ENABLE_PATH_STYLE || '1',
+    S3_PUBLIC_READ_ENABLED: process.env.S3_PUBLIC_READ_ENABLED || '1',
+    NEXT_TELEMETRY_DISABLED: '1',
+    NEXT_DISABLE_SWC_WORKER: process.env.NEXT_DISABLE_SWC_WORKER || '1',
   };
+
+  let appProc = null;
 
   let userAAvatarPath = null;
   let userAContentImagePath = null;
   let contentPublicUrl = null;
+  let exitCode = 0;
 
   const dbClient = new Client({ connectionString: databaseUrl });
 
   try {
-    await waitForServer(
-      `${appBase}/api/auth/better/get-session`,
-      appReadyTimeoutMs
-    );
+    let lastStartupError = null;
+    for (let attempt = 1; attempt <= appStartRetryCount; attempt += 1) {
+      appProc = startProcess('pnpm', ['next', 'dev', '-p', String(appPort)], {
+        cwd: process.cwd(),
+        env: appEnv,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      try {
+        await waitForServer(
+          `${appBase}/api/auth/better/get-session`,
+          appProc,
+          appReadyTimeoutMs
+        );
+        lastStartupError = null;
+        break;
+      } catch (error) {
+        lastStartupError = error;
+        await terminateProcess(appProc);
+        appProc = null;
+        if (attempt < appStartRetryCount) {
+          console.warn(
+            `[m5-storage-e2e] app start attempt ${attempt}/${appStartRetryCount} failed, retrying...`
+          );
+          await sleep(1500);
+        }
+      }
+    }
+
+    if (lastStartupError) {
+      throw lastStartupError;
+    }
 
     const jarA = new CookieJar();
     const jarB = new CookieJar();
@@ -738,16 +825,16 @@ async function main() {
         2
       )
     );
-
-    await stopAll(0);
   } catch (error) {
+    exitCode = 1;
     console.error(
       '[m5-storage-e2e] failed:',
       error instanceof Error ? error.message : String(error)
     );
-    await stopAll(1);
   } finally {
+    await terminateProcess(appProc);
     await dbClient.end().catch(() => {});
+    process.exit(exitCode);
   }
 }
 

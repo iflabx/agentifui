@@ -127,3 +127,27 @@ M5 目标：在不改动前端业务语义的前提下，用 MinIO 替换 Supaba
 1. 目前仅做“对象级”权限与路径约束，不包含对象级加密。
 2. 内容图/头像的持久 URL 仍为稳定对象 URL（与现有前端行为兼容）。
 3. 若后续要全量私有化读取，建议新增“按 path 动态换发下载 URL 的展示层”以避免前端持久化 URL 失效。
+
+## 7. 验收记录（2026-02-15）
+
+本次在本地测试栈（PostgreSQL + Redis + MinIO）完成 M5 收尾验收，结果如下：
+
+1. `pnpm -s m5:storage:verify`：通过
+2. `pnpm -s m5:storage:slo:verify`：通过
+3. `pnpm -s m5:gate:verify`：通过
+
+关键指标（来自 `m5:storage:slo:verify` 输出）：
+
+1. `presignP95Ms=37.86`（阈值：`<=150ms`）
+2. `uploadSuccessRate=1`（阈值：`>=0.999`）
+3. `presignFailures=0`
+
+## 8. 验证脚本稳定性增强（收尾补丁）
+
+为降低门禁执行中的偶发启动不稳定，验证脚本增加了以下保护：
+
+1. 应用启动重试（`M5_STORAGE_APP_START_RETRIES`、`M5_STORAGE_SLO_APP_START_RETRIES`）
+2. 启动等待阶段的“进程早退出”检测（避免盲等超时）
+3. 子进程优雅回收（`SIGTERM` -> `SIGKILL`）
+4. 启动失败时输出 stderr tail 以便快速定位
+5. 默认关闭 telemetry 并限制 SWC worker（降低进程压力）
