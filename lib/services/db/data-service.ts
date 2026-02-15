@@ -4,6 +4,7 @@
  * PostgreSQL-based implementation with cache, retries, and Result wrappers.
  * Keeps the same API surface used by legacy callers.
  */
+import { getManagedCrudRepository } from '@lib/server/db/repositories';
 import {
   DatabaseError,
   Result,
@@ -243,6 +244,12 @@ export class DataService {
 
     const result = await this.query(
       async () => {
+        const repository = getManagedCrudRepository(safeTable, this.getPool());
+        if (repository) {
+          const row = await repository.findOne(filters);
+          return row ? this.normalizeRow<T>(row) : null;
+        }
+
         const { clause, params } = this.buildWhereClause(filters, 1);
         const sql = `SELECT * FROM ${quoteIdentifier(safeTable)} ${clause} LIMIT 1`;
         const pool = this.getPool();
@@ -288,6 +295,12 @@ export class DataService {
 
     const result = await this.query(
       async () => {
+        const repository = getManagedCrudRepository(safeTable, this.getPool());
+        if (repository) {
+          const rows = await repository.findMany(filters, orderBy, pagination);
+          return rows.map(row => this.normalizeRow<T>(row));
+        }
+
         const { clause, params } = this.buildWhereClause(filters, 1);
         const orderClause = this.buildOrderByClause(orderBy);
         const paginationClause = this.buildPaginationClause(pagination);
@@ -328,6 +341,12 @@ export class DataService {
 
     const result = await this.query(
       async () => {
+        const repository = getManagedCrudRepository(safeTable, this.getPool());
+        if (repository) {
+          const row = await repository.create(data as Record<string, unknown>);
+          return this.normalizeRow<T>(row);
+        }
+
         const keys = Object.keys(data as Record<string, unknown>).filter(
           key => (data as Record<string, unknown>)[key] !== undefined
         );
@@ -374,6 +393,20 @@ export class DataService {
 
     const result = await this.query(
       async () => {
+        const repository = getManagedCrudRepository(safeTable, this.getPool());
+        if (repository) {
+          const row = await repository.update(
+            id,
+            data as Record<string, unknown>
+          );
+
+          if (!row) {
+            throw new DatabaseError(`Record not found: ${id}`, 'update');
+          }
+
+          return this.normalizeRow<T>(row);
+        }
+
         const keys = Object.keys(data as Record<string, unknown>).filter(
           key => (data as Record<string, unknown>)[key] !== undefined
         );
@@ -421,6 +454,12 @@ export class DataService {
 
     const result = await this.query(
       async () => {
+        const repository = getManagedCrudRepository(safeTable, this.getPool());
+        if (repository) {
+          await repository.delete(id);
+          return;
+        }
+
         const sql = `DELETE FROM ${quoteIdentifier(safeTable)} WHERE id = $1`;
         const pool = this.getPool();
         await pool.query(sql, [id]);
@@ -462,6 +501,11 @@ export class DataService {
 
     return this.query(
       async () => {
+        const repository = getManagedCrudRepository(safeTable, this.getPool());
+        if (repository) {
+          return repository.count(filters);
+        }
+
         const { clause, params } = this.buildWhereClause(filters, 1);
         const sql = `SELECT COUNT(*)::int AS total FROM ${quoteIdentifier(safeTable)} ${clause}`;
         const pool = this.getPool();
