@@ -1,5 +1,6 @@
 import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
 import { getPgPool } from '@lib/server/pg/pool';
+import { publishTableChangeEvent } from '@lib/server/realtime/publisher';
 
 import { NextResponse } from 'next/server';
 
@@ -154,6 +155,12 @@ export async function PATCH(request: Request) {
     values.push(targetUserId);
 
     const pool = getPgPool();
+    const oldProfileResult = await pool.query(
+      `${PROFILE_SELECT_SQL} WHERE p.id = $1::uuid LIMIT 1`,
+      [targetUserId]
+    );
+    const oldProfileRow = oldProfileResult.rows[0] || null;
+
     const updateResult = await pool.query<{ id: string }>(
       `
         UPDATE profiles
@@ -175,10 +182,20 @@ export async function PATCH(request: Request) {
       `${PROFILE_SELECT_SQL} WHERE p.id = $1::uuid LIMIT 1`,
       [targetUserId]
     );
+    const newProfileRow = profileResult.rows[0] || null;
+
+    await publishTableChangeEvent({
+      table: 'profiles',
+      eventType: 'UPDATE',
+      oldRow: oldProfileRow,
+      newRow: newProfileRow,
+    }).catch(error => {
+      console.warn('[InternalProfileAPI] Realtime publish failed:', error);
+    });
 
     return NextResponse.json({
       success: true,
-      profile: profileResult.rows[0] || null,
+      profile: newProfileRow,
     });
   } catch (error) {
     console.error('[InternalProfileAPI] PATCH failed:', error);

@@ -6,6 +6,8 @@
  */
 import { getManagedCrudRepository } from '@lib/server/db/repositories';
 import { resolvePgSessionOptionsFromEnv } from '@lib/server/pg/session-options';
+import { ensureRealtimeBridge } from '@lib/server/realtime/bridge';
+import { publishTableChangeEvent } from '@lib/server/realtime/publisher';
 import {
   DatabaseError,
   Result,
@@ -15,7 +17,7 @@ import {
 } from '@lib/types/result';
 
 import { cacheService } from './cache-service';
-import { realtimeService } from './realtime-service';
+import { type RealtimeRow, realtimeService } from './realtime-service';
 
 interface QueryOptions {
   cache?: boolean;
@@ -59,6 +61,14 @@ type SqlPool = {
 
 const IDENTIFIER_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 const PG_POOL_GLOBAL_KEY = '__agentifui_pg_pool__';
+const REALTIME_ENABLED_TABLES = new Set([
+  'profiles',
+  'conversations',
+  'messages',
+  'providers',
+  'service_instances',
+  'api_keys',
+]);
 
 function assertIdentifier(identifier: string, label: string): string {
   if (!IDENTIFIER_PATTERN.test(identifier)) {
@@ -73,6 +83,7 @@ function quoteIdentifier(identifier: string): string {
 
 export class DataService {
   private static instance: DataService;
+  private registeredRealtimeSubscriptions = new Set<string>();
 
   private constructor() {}
 
@@ -203,6 +214,87 @@ export class DataService {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
+  private shouldPublishRealtimeForTable(table: string): boolean {
+    return REALTIME_ENABLED_TABLES.has(table);
+  }
+
+  private normalizeRealtimeRow(value: unknown): RealtimeRow | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return null;
+    }
+
+    return this.normalizeRow<RealtimeRow>(value);
+  }
+
+  private async loadRowById(
+    table: string,
+    id: string
+  ): Promise<RealtimeRow | null> {
+    const safeTable = assertIdentifier(table, 'table');
+    const repository = getManagedCrudRepository(safeTable, this.getPool());
+    if (repository) {
+      const row = await repository.findOne({ id });
+      return row ? this.normalizeRow<RealtimeRow>(row) : null;
+    }
+
+    const sql = `SELECT * FROM ${quoteIdentifier(safeTable)} WHERE id = $1 LIMIT 1`;
+    const pool = this.getPool();
+    const queryResult = await pool.query(sql, [id]);
+    const row = queryResult.rows[0];
+    return row ? this.normalizeRow<RealtimeRow>(row) : null;
+  }
+
+  private async publishRealtimeTableChange(input: {
+    table: string;
+    eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+    newRow: unknown;
+    oldRow: unknown;
+  }): Promise<void> {
+    if (!this.shouldPublishRealtimeForTable(input.table)) {
+      return;
+    }
+
+    const newRow = this.normalizeRealtimeRow(input.newRow);
+    const oldRow = this.normalizeRealtimeRow(input.oldRow);
+    if (!newRow && !oldRow) {
+      return;
+    }
+
+    try {
+      await publishTableChangeEvent({
+        table: input.table,
+        eventType: input.eventType,
+        newRow,
+        oldRow,
+      });
+    } catch (error) {
+      console.warn('[DataService] Realtime publish failed:', error);
+    }
+  }
+
+  private registerRealtimeSubscription(
+    key: string,
+    config: {
+      event: 'INSERT' | 'UPDATE' | 'DELETE' | '*';
+      schema: string;
+      table: string;
+      filter?: string;
+    },
+    handler: (payload: unknown) => void
+  ): void {
+    const dedupeKey = `${key}|${config.schema}|${config.table}|${config.event}|${config.filter || ''}`;
+    if (this.registeredRealtimeSubscriptions.has(dedupeKey)) {
+      return;
+    }
+
+    if (typeof window === 'undefined') {
+      ensureRealtimeBridge();
+    }
+
+    this.registeredRealtimeSubscriptions.add(dedupeKey);
+    realtimeService.subscribe(key, config, handler);
+  }
+
   /**
    * Legacy compatibility helper.
    * Existing callers used to pass a Supabase query builder; now pass an async function.
@@ -266,7 +358,7 @@ export class DataService {
     );
 
     if (options.subscribe && options.subscriptionKey && options.onUpdate) {
-      realtimeService.subscribe(
+      this.registerRealtimeSubscription(
         options.subscriptionKey,
         { event: '*', schema: 'public', table },
         options.onUpdate
@@ -326,7 +418,7 @@ export class DataService {
     );
 
     if (options.subscribe && options.subscriptionKey && options.onUpdate) {
-      realtimeService.subscribe(
+      this.registerRealtimeSubscription(
         options.subscriptionKey,
         { event: '*', schema: 'public', table },
         options.onUpdate
@@ -382,6 +474,12 @@ export class DataService {
 
     if (result.success) {
       cacheService.deletePattern(`${table}:*`);
+      await this.publishRealtimeTableChange({
+        table: safeTable,
+        eventType: 'INSERT',
+        newRow: result.data,
+        oldRow: null,
+      });
     }
 
     return result;
@@ -394,6 +492,9 @@ export class DataService {
     options: QueryOptions = {}
   ): Promise<Result<T>> {
     const safeTable = assertIdentifier(table, 'table');
+    const previousRow = this.shouldPublishRealtimeForTable(safeTable)
+      ? await this.loadRowById(safeTable, id).catch(() => null)
+      : null;
 
     const result = await this.query(
       async () => {
@@ -444,6 +545,12 @@ export class DataService {
 
     if (result.success) {
       cacheService.deletePattern(`${table}:*`);
+      await this.publishRealtimeTableChange({
+        table: safeTable,
+        eventType: 'UPDATE',
+        newRow: result.data,
+        oldRow: previousRow,
+      });
     }
 
     return result;
@@ -455,6 +562,9 @@ export class DataService {
     options: QueryOptions = {}
   ): Promise<Result<void>> {
     const safeTable = assertIdentifier(table, 'table');
+    const previousRow = this.shouldPublishRealtimeForTable(safeTable)
+      ? await this.loadRowById(safeTable, id).catch(() => null)
+      : null;
 
     const result = await this.query(
       async () => {
@@ -474,6 +584,12 @@ export class DataService {
 
     if (result.success) {
       cacheService.deletePattern(`${table}:*`);
+      await this.publishRealtimeTableChange({
+        table: safeTable,
+        eventType: 'DELETE',
+        newRow: null,
+        oldRow: previousRow,
+      });
     }
 
     return result;

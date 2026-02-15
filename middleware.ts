@@ -13,6 +13,7 @@ import type { NextRequest } from 'next/server';
 const BETTER_AUTH_BASE_PATH = '/api/auth/better';
 const INTERNAL_PROFILE_STATUS_PATH = '/api/internal/auth/profile-status';
 const INTERNAL_STORAGE_BASE_PATH = '/api/internal/storage';
+const INTERNAL_REALTIME_BASE_PATH = '/api/internal/realtime';
 
 type BetterAuthSessionPayload = {
   user?: {
@@ -76,7 +77,8 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith(BETTER_AUTH_BASE_PATH) ||
     pathname.startsWith(INTERNAL_PROFILE_STATUS_PATH) ||
     pathname.startsWith('/api/auth/sso/providers') ||
-    pathname.startsWith(INTERNAL_STORAGE_BASE_PATH)
+    pathname.startsWith(INTERNAL_STORAGE_BASE_PATH) ||
+    pathname.startsWith(INTERNAL_REALTIME_BASE_PATH)
   ) {
     return response;
   }
