@@ -29,6 +29,26 @@ export type HeadObjectResult = {
 const DEFAULT_PRESIGN_EXPIRES_SECONDS = 5 * 60;
 const MAX_PRESIGN_EXPIRES_SECONDS = 7 * 24 * 60 * 60;
 
+function parseBooleanEnv(
+  value: string | undefined,
+  fallbackValue: boolean
+): boolean {
+  if (!value) {
+    return fallbackValue;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+    return true;
+  }
+
+  if (['0', 'false', 'no', 'off'].includes(normalized)) {
+    return false;
+  }
+
+  return fallbackValue;
+}
+
 function resolveConfig(): S3Config {
   const endpointRaw =
     process.env.S3_ENDPOINT?.trim() || process.env.MINIO_ENDPOINT?.trim() || '';
@@ -56,6 +76,10 @@ function resolveConfig(): S3Config {
     accessKeyId,
     secretAccessKey,
   };
+}
+
+export function isStoragePublicReadEnabled(): boolean {
+  return parseBooleanEnv(process.env.S3_PUBLIC_READ_ENABLED, true);
 }
 
 function sha256Hex(data: string | Buffer): string {

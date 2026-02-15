@@ -9,6 +9,15 @@ loadEnv({ path: '.env.test-stack' });
 
 const appPort = Number(process.env.M5_STORAGE_SLO_APP_PORT || 3320);
 const appBase = `http://127.0.0.1:${appPort}`;
+const appMode = (process.env.M5_STORAGE_SLO_APP_MODE || 'production')
+  .trim()
+  .toLowerCase();
+const skipBuild =
+  process.env.M5_STORAGE_SLO_SKIP_BUILD === '1' ||
+  process.env.M5_STORAGE_SLO_SKIP_BUILD === 'true';
+const allowDevFallback =
+  process.env.M5_STORAGE_SLO_ALLOW_DEV_FALLBACK !== '0' &&
+  process.env.M5_STORAGE_SLO_ALLOW_DEV_FALLBACK !== 'false';
 const appReadyTimeoutMs = Number(
   process.env.M5_STORAGE_SLO_READY_TIMEOUT_MS || 120000
 );
@@ -113,6 +122,19 @@ function startProcess(command, args, options) {
     process.stderr.write(chunk);
   });
   return proc;
+}
+
+function waitForExit(proc, label) {
+  return new Promise((resolve, reject) => {
+    proc.once('error', reject);
+    proc.once('exit', code => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(new Error(`${label} exited with code ${code}`));
+    });
+  });
 }
 
 async function waitForServer(url, timeoutMs = 120000) {
@@ -252,25 +274,61 @@ async function main() {
     process.env.S3_ENDPOINT?.trim() ||
     process.env.M5_STORAGE_SLO_S3_ENDPOINT?.trim() ||
     fallbackS3Endpoint;
+  const appEnv = {
+    ...process.env,
+    NODE_ENV: appMode === 'production' ? 'production' : 'development',
+    NEXT_PUBLIC_APP_URL: appBase,
+    BETTER_AUTH_URL: appBase,
+    BETTER_AUTH_SECRET: randomBytes(32).toString('hex'),
+    DATABASE_URL: databaseUrl,
+    REDIS_URL: redisUrl,
+    S3_ENDPOINT: s3Endpoint,
+    S3_ACCESS_KEY_ID: process.env.S3_ACCESS_KEY_ID || 'minioadmin',
+    S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY || 'minioadmin',
+    S3_BUCKET: process.env.S3_BUCKET || 'agentifui',
+    S3_ENABLE_PATH_STYLE: process.env.S3_ENABLE_PATH_STYLE || '1',
+    S3_PUBLIC_READ_ENABLED: process.env.S3_PUBLIC_READ_ENABLED || '1',
+    STORAGE_PRESIGN_RATE_LIMIT:
+      process.env.STORAGE_PRESIGN_RATE_LIMIT || '10000',
+  };
 
-  const appProc = startProcess('pnpm', ['next', 'dev', '-p', String(appPort)], {
-    cwd: process.cwd(),
-    env: {
-      ...process.env,
-      NODE_ENV: 'development',
-      NEXT_PUBLIC_APP_URL: appBase,
-      BETTER_AUTH_URL: appBase,
-      BETTER_AUTH_SECRET: randomBytes(32).toString('hex'),
-      DATABASE_URL: databaseUrl,
-      REDIS_URL: redisUrl,
-      S3_ENDPOINT: s3Endpoint,
-      S3_ACCESS_KEY_ID: process.env.S3_ACCESS_KEY_ID || 'minioadmin',
-      S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY || 'minioadmin',
-      S3_BUCKET: process.env.S3_BUCKET || 'agentifui',
-      S3_ENABLE_PATH_STYLE: process.env.S3_ENABLE_PATH_STYLE || '1',
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  let resolvedAppMode = appMode;
+  if (appMode === 'production' && !skipBuild) {
+    const buildProc = startProcess('pnpm', ['next', 'build'], {
+      cwd: process.cwd(),
+      env: appEnv,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    try {
+      await waitForExit(buildProc, 'next build');
+    } catch (error) {
+      if (!allowDevFallback) {
+        throw error;
+      }
+      resolvedAppMode = 'development';
+      console.warn(
+        '[m5-storage-slo-verify] next build failed, fallback to next dev for latency sampling'
+      );
+    }
+  }
+
+  appEnv.NODE_ENV =
+    resolvedAppMode === 'production' ? 'production' : 'development';
+
+  const appProc = startProcess(
+    'pnpm',
+    [
+      'next',
+      resolvedAppMode === 'production' ? 'start' : 'dev',
+      '-p',
+      String(appPort),
+    ],
+    {
+      cwd: process.cwd(),
+      env: appEnv,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }
+  );
 
   const stopAll = async exitCode => {
     if (!appProc.killed && appProc.exitCode === null) {

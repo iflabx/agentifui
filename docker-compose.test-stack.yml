@@ -64,6 +64,8 @@ services:
       MINIO_ROOT_USER: ${TEST_MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${TEST_MINIO_ROOT_PASSWORD:-minioadmin}
       TEST_MINIO_BUCKET: ${TEST_MINIO_BUCKET:-agentifui}
+      TEST_MINIO_PUBLIC_READ: ${TEST_MINIO_PUBLIC_READ:-1}
+      TEST_MINIO_CORS_ALLOWED_ORIGINS: ${TEST_MINIO_CORS_ALLOWED_ORIGINS:-http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:3319,http://127.0.0.1:3320}
     entrypoint: /bin/sh
     command:
       - -c
@@ -74,7 +76,24 @@ services:
           sleep 1
         done
         mc mb --ignore-existing "local/$TEST_MINIO_BUCKET"
-        mc anonymous set download "local/$TEST_MINIO_BUCKET" >/dev/null 2>&1 || true
+        if [ "${TEST_MINIO_PUBLIC_READ}" = "1" ]; then
+          mc anonymous set download "local/$TEST_MINIO_BUCKET" >/dev/null 2>&1 || true
+        else
+          mc anonymous set none "local/$TEST_MINIO_BUCKET" >/dev/null 2>&1 || true
+        fi
+        ORIGINS_JSON=$(printf '%s' "$TEST_MINIO_CORS_ALLOWED_ORIGINS" | awk -F',' '{for(i=1;i<=NF;i++){gsub(/^[[:space:]]+|[[:space:]]+$/,"",$i);if(length($i)>0){printf "%s\"%s\"", (count++>0?",":""), $i}}}')
+        cat > /tmp/minio-cors.json <<EOF
+        [
+          {
+            "AllowedOrigins": [${ORIGINS_JSON}],
+            "AllowedMethods": ["GET", "PUT", "POST", "DELETE", "HEAD"],
+            "AllowedHeaders": ["*"],
+            "ExposeHeaders": ["ETag", "Content-Length", "Content-Type"],
+            "MaxAgeSeconds": 3600
+          }
+        ]
+        EOF
+        mc cors set "local/$TEST_MINIO_BUCKET" /tmp/minio-cors.json >/dev/null 2>&1 || true
         echo "MinIO bucket initialized: $TEST_MINIO_BUCKET"
 
 volumes:

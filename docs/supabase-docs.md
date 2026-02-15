@@ -370,98 +370,63 @@ To resolve access permission issues on the SSO login page, the system has added 
 
 ### Storage and File Management
 
-AgentifUI uses Supabase Storage for file storage management, primarily for the user avatar upload feature. The storage system uses a public bucket design, supporting secure permission controls and efficient file management.
+This section reflects the current migration baseline: storage is no longer backed by Supabase Storage. AgentifUI now uses S3-compatible object storage (MinIO in local/test) through internal storage APIs.
 
 #### Bucket Configuration
 
-**`avatars` Bucket**
+**`avatars`**
 
-| Configuration Item  | Value                                                    | Description                                    |
-| ------------------- | -------------------------------------------------------- | ---------------------------------------------- |
-| Bucket ID           | `avatars`                                                | Unique identifier for the bucket               |
-| Bucket Name         | `avatars`                                                | Display name for the bucket                    |
-| Public Access       | `true`                                                   | Enables public access, anyone can view avatars |
-| File Size Limit     | `5242880` (5MB)                                          | Maximum size for a single file                 |
-| Allowed MIME Types  | `['image/jpeg', 'image/jpg', 'image/png', 'image/webp']` | Supported image formats                        |
-| File Path Structure | `user-{userID}/{timestamp}.{extension}`                  | User-isolated file path                        |
+| Configuration Item  | Value                                                    | Description                       |
+| ------------------- | -------------------------------------------------------- | --------------------------------- |
+| Bucket ID           | `avatars`                                                | Unique identifier for the bucket  |
+| Bucket Name         | `avatars`                                                | Display name for the bucket       |
+| Public Access       | `S3_PUBLIC_READ_ENABLED`                                 | `1` public-read, `0` private-read |
+| File Size Limit     | `5242880` (5MB)                                          | Maximum size for a single file    |
+| Allowed MIME Types  | `['image/jpeg', 'image/jpg', 'image/png', 'image/webp']` | Supported image formats           |
+| File Path Structure | `user-{userID}/{timestamp}.{extension}`                  | User-isolated file path           |
 
-#### RLS Security Policies
+**`content-images`**
 
-**Security Policies for `storage.objects` Table:**
-
-| Policy Name             | Operation Type | Permission Logic                                                                            |
-| ----------------------- | -------------- | ------------------------------------------------------------------------------------------- |
-| `avatars_upload_policy` | INSERT         | Authenticated users can upload files; path security is controlled by the application layer. |
-| `avatars_select_policy` | SELECT         | Public access, anyone can view avatars (in line with public bucket design).                 |
-| `avatars_update_policy` | UPDATE         | Users can only update their own uploaded files (based on the `owner` field).                |
-| `avatars_delete_policy` | DELETE         | Users can only delete their own uploaded files (based on the `owner` field).                |
+| Configuration Item  | Value                                                                 | Description                      |
+| ------------------- | --------------------------------------------------------------------- | -------------------------------- |
+| Bucket ID           | `content-images`                                                      | Unique identifier for the bucket |
+| Public Access       | `S3_PUBLIC_READ_ENABLED`                                              | Same read model as avatars       |
+| File Size Limit     | `10485760` (10MB)                                                     | Maximum size for a single file   |
+| Allowed MIME Types  | `['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif']` | Supported image formats          |
+| File Path Structure | `user-{userID}/{timestamp}.{extension}`                               | User-isolated file path          |
 
 #### Secure Design Features
 
 **Permission Control Model:**
 
-- **Public Access Design**: Avatars are public resources that anyone can access and view.
-- **Upload Permission Control**: Only authenticated users can upload files.
-- **Ownership Verification**: Users can only modify and delete files they have uploaded.
-- **Path Security**: The application layer ensures the security of file paths to prevent path traversal attacks.
+- **Upload Permission Control**: Only authenticated and active users can get presigned upload URLs.
+- **Ownership Verification**: Upload commit/delete/download (private mode) enforce `user-{userId}/...` ownership.
+- **Read Mode Switch**: `S3_PUBLIC_READ_ENABLED=1` allows public object reads; `0` enforces authenticated download-presign checks.
+- **Path Security**: The application layer validates namespace path ownership and blocks path traversal payloads.
 
 **File Management Strategy:**
 
-- **Automatic Cleanup**: Automatically deletes the user's old avatar file when a new one is uploaded.
-- **Uniqueness Guarantee**: Uses timestamps to ensure file name uniqueness.
-- **Format Validation**: Dual validation of file formats at both the application and storage layers.
-- **Size Limitation**: 5MB file size limit, suitable for high-quality avatar images.
+- **Automatic Cleanup**: Avatar update deletes old avatar file; commit failures trigger best-effort object rollback.
+- **Uniqueness Guarantee**: Uses timestamp + UUID to ensure object name uniqueness.
+- **Two-step Validation**: Validate payload at presign time and re-validate object metadata at commit time.
+- **Size Limitation**: 5MB avatar / 10MB content image limits.
 
 #### Application Layer Integration
 
-**Avatar Service Implementation** (`lib/services/supabase/avatar-service.ts`):
+**Storage API Endpoints**:
 
-1.  **File Validation**:
-    - Supported formats: JPEG, PNG, WebP.
-    - File size limit: 5MB.
-    - Recommended image dimensions: 400x400 pixels.
-
-2.  **Upload Process**:
-    - User authentication verification.
-    - File format and size validation.
-    - Image compression processing.
-    - Cleanup of old avatar files.
-    - Upload of the new file to the storage bucket.
-    - Update of the avatar URL in the user's profile.
-
-3.  **Deletion Process**:
-    - User authentication verification.
-    - Deletion of the file from the storage bucket.
-    - Clearing of the avatar URL from the user's profile.
-
-4.  **Error Handling**:
-    - Retry mechanism for network errors.
-    - Detailed error message feedback.
-    - Graceful degradation handling.
+1.  Avatar upload: `POST /api/internal/storage/avatar/presign` -> PUT -> `POST /api/internal/storage/avatar` commit.
+2.  Content image upload: `POST /api/internal/storage/content-images/presign` -> PUT -> `POST /api/internal/storage/content-images` commit.
+3.  Download URL: `GET /api/internal/storage/*/presign?path=...`.
+4.  Legacy relay upload remains for compatibility fallback.
 
 #### React Hook Integration
 
-**Avatar Upload Hook** (`lib/hooks/use-avatar-upload.ts`):
+Hook/service:
 
-- **State Management**: Complete upload state management (idle, uploading, processing, complete, error).
-- **Progress Feedback**: Real-time upload progress display.
-- **File Validation**: Front-end pre-validation of file format and size.
-- **Cache Invalidation**: Automatic invalidation of the user profile cache.
-- **Error Handling**: User-friendly error message display.
-
-#### Related Migration Files
-
-| Migration File                                      | Description                                                         | Risk Level |
-| --------------------------------------------------- | ------------------------------------------------------------------- | ---------- |
-| `20250628210700_setup_avatar_storage.sql`           | Creates the `avatars` storage bucket and basic RLS policies.        | Low Risk   |
-| `20250628214015_create_avatar_storage_properly.sql` | Optimizes RLS policies to use `owner` field for permission control. | Low Risk   |
-
-**Migration Notes:**
-
-- The first migration file created the storage bucket and path-based permission controls.
-- The second migration file optimized the permission policy to a simpler control based on the `owner` field.
-- These two migration files together implement the complete avatar storage functionality.
-- The use of a public bucket design simplifies access logic and enhances user experience.
+- Avatar: `lib/hooks/use-avatar-upload.ts`
+- Content image: `lib/services/content-image-upload-service.ts`
+- Both default to presign + commit and fallback to legacy relay path.
 
 ## Row-Level Security (RLS) Policies
 

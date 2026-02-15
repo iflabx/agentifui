@@ -8,13 +8,43 @@
  * - Data validation and sanitization
  */
 
+function parseTrustedHost(candidate: string | undefined): string | null {
+  const raw = (candidate || '').trim();
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return new URL(raw).host;
+  } catch {
+    const withoutScheme = raw.replace(/^[a-z]+:\/\//i, '');
+    return withoutScheme.split('/')[0]?.trim() || null;
+  }
+}
+
+function collectTrustedAvatarHosts() {
+  const configuredHosts = (process.env.TRUSTED_AVATAR_HOSTS || '')
+    .split(',')
+    .map(host => parseTrustedHost(host))
+    .filter((host): host is string => Boolean(host));
+
+  const derivedHosts = [
+    parseTrustedHost(process.env.NEXT_PUBLIC_APP_URL),
+    parseTrustedHost(process.env.S3_PUBLIC_BASE_URL),
+    parseTrustedHost(process.env.S3_ENDPOINT),
+    parseTrustedHost(process.env.NEXT_PUBLIC_SUPABASE_URL),
+  ].filter((host): host is string => Boolean(host));
+
+  return Array.from(new Set([...configuredHosts, ...derivedHosts]));
+}
+
 // Configuration for security settings
 const SECURITY_CONFIG = {
   // Allowed protocols for avatar URLs
   ALLOWED_AVATAR_PROTOCOLS: ['http:', 'https:'],
 
-  // Supabase storage domain (from environment)
-  SUPABASE_STORAGE_DOMAIN: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+  // Trusted avatar hosts (from env and runtime storage config)
+  TRUSTED_AVATAR_HOSTS: collectTrustedAvatarHosts(),
 
   // Maximum URL length to prevent DoS
   MAX_URL_LENGTH: 2048,
@@ -96,10 +126,10 @@ export function sanitizeAvatarUrl(
       }
     }
 
-    // Log warning for non-Supabase URLs (but don't block them)
+    // Log warning for non-trusted avatar hosts (but don't block them).
     if (
-      SECURITY_CONFIG.SUPABASE_STORAGE_DOMAIN &&
-      !trimmedUrl.includes(SECURITY_CONFIG.SUPABASE_STORAGE_DOMAIN)
+      SECURITY_CONFIG.TRUSTED_AVATAR_HOSTS.length > 0 &&
+      !SECURITY_CONFIG.TRUSTED_AVATAR_HOSTS.includes(parsedUrl.host)
     ) {
       console.warn(
         `[Security] Avatar URL from untrusted domain: ${parsedUrl.hostname}`
@@ -387,14 +417,17 @@ export function secureLog(
  * @returns CSP configuration object
  */
 export function createAvatarCSPConfig() {
-  const supabaseDomain = SECURITY_CONFIG.SUPABASE_STORAGE_DOMAIN;
-  const supabaseHost = supabaseDomain ? new URL(supabaseDomain).hostname : '';
+  const trustedHosts = SECURITY_CONFIG.TRUSTED_AVATAR_HOSTS;
+  const trustedSources = trustedHosts.flatMap(host => [
+    `https://${host}`,
+    `http://${host}`,
+  ]);
 
   return {
     'img-src': [
       "'self'",
       'data:', // Allow data URLs for generated avatars
-      supabaseHost ? `https://${supabaseHost}` : '',
+      ...trustedSources,
     ].filter(Boolean),
 
     // Prevent javascript: URLs in any context

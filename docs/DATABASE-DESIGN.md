@@ -324,20 +324,38 @@ Stores global authentication settings.
 
 ### Storage and File Management
 
-AgentifUI uses Supabase Storage for file management, primarily for user avatar uploads. The storage system uses a public bucket design, supporting flexible permission controls and security policies.
+AgentifUI uses S3-compatible object storage (MinIO in local/test) for file management. The storage layer is decoupled from database migrations and managed by internal APIs plus object-path ownership rules.
 
 #### Bucket Configuration
 
-**avatars Bucket**
+**`avatars` Bucket**
 
-| Configuration Item  | Value                                                    | Description                                    |
-| ------------------- | -------------------------------------------------------- | ---------------------------------------------- |
-| Bucket ID           | `avatars`                                                | Unique identifier for the bucket               |
-| Bucket Name         | `avatars`                                                | Display name for the bucket                    |
-| Public Access       | `true`                                                   | Enables public access, anyone can view avatars |
-| File Size Limit     | `5242880` (5MB)                                          | Maximum size for a single file                 |
-| Allowed MIME Types  | `['image/jpeg', 'image/jpg', 'image/png', 'image/webp']` | Supported image formats                        |
-| File Path Structure | `user-{userID}/{timestamp}.{extension}`                  | User-isolated file path structure              |
+| Configuration Item  | Value                                                    | Description                       |
+| ------------------- | -------------------------------------------------------- | --------------------------------- |
+| Bucket ID           | `avatars`                                                | Unique identifier for the bucket  |
+| Bucket Name         | `avatars`                                                | Display name for the bucket       |
+| Public Access       | Controlled by `S3_PUBLIC_READ_ENABLED`                   | `1` public-read, `0` private-read |
+| File Size Limit     | `5242880` (5MB)                                          | Maximum size for a single file    |
+| Allowed MIME Types  | `['image/jpeg', 'image/jpg', 'image/png', 'image/webp']` | Supported image formats           |
+| File Path Structure | `user-{userID}/{timestamp}.{extension}`                  | User-isolated file path structure |
+
+**`content-images` Bucket**
+
+| Configuration Item  | Value                                                                 | Description                       |
+| ------------------- | --------------------------------------------------------------------- | --------------------------------- |
+| Bucket ID           | `content-images`                                                      | Unique identifier for the bucket  |
+| Public Access       | Controlled by `S3_PUBLIC_READ_ENABLED`                                | Same read model as avatars        |
+| File Size Limit     | `10485760` (10MB)                                                     | Maximum size for a single file    |
+| Allowed MIME Types  | `['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif']` | Supported image formats           |
+| File Path Structure | `user-{userID}/{timestamp}.{extension}`                               | User-isolated file path structure |
+
+#### Storage API Workflow
+
+1. Upload presign: server validates MIME/size/actor and issues PUT presigned URL.
+2. Direct PUT to object storage.
+3. Commit step: server re-checks object ownership + `HeadObject` metadata, then returns canonical object URL.
+4. Download presign: server re-checks object existence, and in private mode enforces ownership.
+5. Delete: server enforces ownership and removes object.
 
 ### Other Tables
 

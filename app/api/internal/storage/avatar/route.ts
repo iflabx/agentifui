@@ -5,6 +5,7 @@ import {
   deleteObject,
   extractPathFromPublicUrl,
   headObject,
+  isStoragePublicReadEnabled,
   putObject,
 } from '@lib/server/storage/minio-s3';
 import {
@@ -198,6 +199,7 @@ async function handleCommitUpload(request: Request, identity: SessionIdentity) {
       success: true,
       url: publicUrl,
       path: filePath,
+      readMode: isStoragePublicReadEnabled() ? 'public' : 'private',
     });
   } catch (error) {
     await deleteObject('avatars', filePath).catch(cleanupError => {
@@ -270,6 +272,7 @@ async function handleLegacyUpload(request: Request, identity: SessionIdentity) {
       success: true,
       url: publicUrl,
       path: filePath,
+      readMode: isStoragePublicReadEnabled() ? 'public' : 'private',
     });
   } catch (error) {
     await deleteObject('avatars', filePath).catch(() => {

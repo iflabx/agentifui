@@ -23,6 +23,21 @@ const tinyPngBytes = Buffer.from(
   'base64'
 );
 
+function parseBooleanEnv(value, fallbackValue) {
+  if (!value) {
+    return fallbackValue;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+    return true;
+  }
+  if (['0', 'false', 'no', 'off'].includes(normalized)) {
+    return false;
+  }
+  return fallbackValue;
+}
+
 function randomSuffix() {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -222,6 +237,10 @@ async function main() {
     process.env.S3_ENDPOINT?.trim() ||
     process.env.M5_STORAGE_S3_ENDPOINT?.trim() ||
     fallbackS3Endpoint;
+  const publicReadEnabled = parseBooleanEnv(
+    process.env.S3_PUBLIC_READ_ENABLED,
+    true
+  );
 
   const appProc = startProcess('pnpm', ['next', 'dev', '-p', String(appPort)], {
     cwd: process.cwd(),
@@ -238,6 +257,7 @@ async function main() {
       S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY || 'minioadmin',
       S3_BUCKET: process.env.S3_BUCKET || 'agentifui',
       S3_ENABLE_PATH_STYLE: process.env.S3_ENABLE_PATH_STYLE || '1',
+      S3_PUBLIC_READ_ENABLED: process.env.S3_PUBLIC_READ_ENABLED || '1',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -256,6 +276,7 @@ async function main() {
 
   let userAAvatarPath = null;
   let userAContentImagePath = null;
+  let contentPublicUrl = null;
 
   const dbClient = new Client({ connectionString: databaseUrl });
 
@@ -424,7 +445,7 @@ async function main() {
     );
     assertStatus(
       avatarDownloadCrossUser,
-      403,
+      publicReadEnabled ? 200 : 403,
       'avatar download presign cross-user'
     );
 
@@ -494,7 +515,7 @@ async function main() {
       }
     );
     assertStatus(contentCommit.response, 200, 'content-images commit owner');
-    const contentPublicUrl = contentCommit.payload?.url;
+    contentPublicUrl = contentCommit.payload?.url;
     if (!contentCommit.payload?.success || !contentPublicUrl) {
       throw new Error('content image commit response missing url');
     }
@@ -608,9 +629,23 @@ async function main() {
     );
     assertStatus(
       contentDownloadCrossUser,
-      403,
+      publicReadEnabled ? 200 : 403,
       'content-images download presign cross-user'
     );
+
+    if (contentPublicUrl) {
+      const directRead = await fetch(contentPublicUrl, { method: 'GET' });
+      if (publicReadEnabled && !directRead.ok) {
+        throw new Error(
+          `expected public content URL readable, got ${directRead.status}`
+        );
+      }
+      if (!publicReadEnabled && directRead.ok) {
+        throw new Error(
+          'expected private content URL to reject anonymous direct read'
+        );
+      }
+    }
 
     const contentDelete = await requestJson(
       jarA,

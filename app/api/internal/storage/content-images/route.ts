@@ -3,6 +3,7 @@ import {
   buildPublicObjectUrl,
   deleteObject,
   headObject,
+  isStoragePublicReadEnabled,
   listObjects,
   putObject,
 } from '@lib/server/storage/minio-s3';
@@ -84,6 +85,7 @@ async function attachContentImageObject(
   return {
     path: filePath,
     url: buildPublicObjectUrl('content-images', filePath),
+    readMode: isStoragePublicReadEnabled() ? 'public' : 'private',
   };
 }
 
@@ -120,6 +122,7 @@ async function handleCommitUpload(
       success: true,
       path: payload.path,
       url: payload.url,
+      readMode: payload.readMode,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -181,6 +184,7 @@ async function handleLegacyUpload(
       success: true,
       path: payload.path,
       url: payload.url,
+      readMode: payload.readMode,
     });
   } catch (error) {
     await deleteObject('content-images', filePath).catch(() => {

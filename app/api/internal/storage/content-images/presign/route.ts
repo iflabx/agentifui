@@ -1,8 +1,11 @@
 import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
+import { enforceStoragePresignRateLimit } from '@lib/server/security/storage-rate-limit';
 import {
+  buildPublicObjectUrl,
   createPresignedDownloadUrl,
   createPresignedUploadUrl,
   headObject,
+  isStoragePublicReadEnabled,
 } from '@lib/server/storage/minio-s3';
 import {
   assertOwnedObjectPath,
@@ -71,6 +74,15 @@ export async function POST(request: Request) {
     const auth = await resolveIdentity(request);
     if (!auth.ok) {
       return auth.response;
+    }
+
+    const rateLimitResponse = await enforceStoragePresignRateLimit({
+      actorUserId: auth.identity.userId,
+      namespace: 'content-images',
+      scope: 'upload',
+    });
+    if (rateLimitResponse) {
+      return rateLimitResponse;
     }
 
     const body = (await request.json()) as {
@@ -154,10 +166,19 @@ export async function GET(request: Request) {
       return auth.response;
     }
 
+    const rateLimitResponse = await enforceStoragePresignRateLimit({
+      actorUserId: auth.identity.userId,
+      namespace: 'content-images',
+      scope: 'download',
+    });
+    if (rateLimitResponse) {
+      return rateLimitResponse;
+    }
+
     const url = new URL(request.url);
     const path = (url.searchParams.get('path') || '').trim();
-    const targetUserId =
-      (url.searchParams.get('userId') || '').trim() || auth.identity.userId;
+    const requestedUserId = (url.searchParams.get('userId') || '').trim();
+    const publicReadEnabled = isStoragePublicReadEnabled();
 
     if (!path) {
       return NextResponse.json(
@@ -166,25 +187,35 @@ export async function GET(request: Request) {
       );
     }
 
-    if (
-      !canManageTargetUser(
-        auth.identity.userId,
-        auth.identity.role || 'user',
-        targetUserId
-      )
-    ) {
+    if (path.includes('..')) {
       return NextResponse.json(
-        { success: false, error: 'Forbidden' },
-        { status: 403 }
+        { success: false, error: 'Invalid path' },
+        { status: 400 }
       );
     }
 
-    const ownership = assertOwnedObjectPath(path, targetUserId);
-    if (!ownership.ok) {
-      return NextResponse.json(
-        { success: false, error: ownership.error },
-        { status: 400 }
-      );
+    if (!publicReadEnabled) {
+      const targetUserId = requestedUserId || auth.identity.userId;
+      if (
+        !canManageTargetUser(
+          auth.identity.userId,
+          auth.identity.role || 'user',
+          targetUserId
+        )
+      ) {
+        return NextResponse.json(
+          { success: false, error: 'Forbidden' },
+          { status: 403 }
+        );
+      }
+
+      const ownership = assertOwnedObjectPath(path, targetUserId);
+      if (!ownership.ok) {
+        return NextResponse.json(
+          { success: false, error: ownership.error },
+          { status: 400 }
+        );
+      }
     }
 
     const head = await headObject('content-images', path);
@@ -205,6 +236,10 @@ export async function GET(request: Request) {
       success: true,
       path,
       downloadUrl,
+      url: publicReadEnabled
+        ? buildPublicObjectUrl('content-images', path)
+        : null,
+      readMode: publicReadEnabled ? 'public' : 'private',
       contentType: head.contentType,
       contentLength: head.contentLength,
     });
