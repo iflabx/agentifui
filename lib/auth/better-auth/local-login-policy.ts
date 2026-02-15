@@ -34,11 +34,23 @@ type ProfileLocalLoginStateRow = {
   local_login_updated_at: string | Date | null;
   fallback_password_set_at: string | Date | null;
   fallback_password_updated_by: string | null;
+  updated_at?: string | Date | null;
 };
 
 type CredentialPasswordExistsRow = {
   has_credential_password: boolean | null;
 };
+
+type RealtimeRow = Record<string, unknown>;
+
+type RealtimePublisher = (input: {
+  table: string;
+  eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+  newRow: RealtimeRow | null;
+  oldRow: RealtimeRow | null;
+  schema?: string;
+  commitTimestamp?: string;
+}) => Promise<void>;
 
 export type LocalLoginDecisionReason =
   | 'email_missing'
@@ -142,6 +154,84 @@ function toIsoString(value: string | Date | null | undefined): string | null {
   }
 
   return parsed.toISOString();
+}
+
+function toProfileRealtimeRow(
+  row: ProfileLocalLoginStateRow | null
+): RealtimeRow | null {
+  if (!row?.id) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    email: row.email ?? null,
+    auth_source: row.auth_source ?? null,
+    local_login_enabled: Boolean(row.local_login_enabled),
+    local_login_updated_at: toIsoString(row.local_login_updated_at),
+    fallback_password_set_at: toIsoString(row.fallback_password_set_at),
+    fallback_password_updated_by: row.fallback_password_updated_by ?? null,
+    updated_at: toIsoString(row.updated_at),
+  };
+}
+
+async function publishProfileChangeBestEffort(input: {
+  eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+  oldRow: RealtimeRow | null;
+  newRow: RealtimeRow | null;
+}): Promise<void> {
+  if (process.env.NODE_ENV === 'test') {
+    return;
+  }
+
+  try {
+    const publisherModule = (await import(
+      '@lib/server/realtime/publisher'
+    )) as {
+      publishTableChangeEvent?: RealtimePublisher;
+    };
+    const publisher = publisherModule.publishTableChangeEvent;
+    if (typeof publisher !== 'function') {
+      return;
+    }
+
+    await publisher({
+      table: 'profiles',
+      eventType: input.eventType,
+      oldRow: input.oldRow,
+      newRow: input.newRow,
+    });
+  } catch (error) {
+    console.warn('[AuthLocalLoginPolicy] failed to publish profile realtime:', {
+      error,
+      eventType: input.eventType,
+    });
+  }
+}
+
+async function loadProfileRealtimeRowByUserId(
+  userId: string,
+  context: LocalLoginPolicyContext = SYSTEM_POLICY_CONTEXT
+): Promise<ProfileLocalLoginStateRow | null> {
+  const rows = await queryRowsWithPolicyContext<ProfileLocalLoginStateRow>(
+    `
+      SELECT
+        id::text AS id,
+        email,
+        auth_source,
+        local_login_enabled,
+        local_login_updated_at,
+        fallback_password_set_at,
+        fallback_password_updated_by::text AS fallback_password_updated_by,
+        updated_at
+      FROM profiles
+      WHERE id = $1::uuid
+      LIMIT 1
+    `,
+    [userId],
+    context
+  );
+  return rows[0] || null;
 }
 
 async function getCurrentAuthMode(
@@ -335,19 +425,41 @@ export async function markFallbackPasswordUpdated(
   const normalizedUpdatedBy = updatedByUserId?.trim() || normalizedUserId;
 
   try {
-    await queryRowsWithPolicyContext(
-      `
+    const oldRow = await loadProfileRealtimeRowByUserId(
+      normalizedUserId,
+      context
+    );
+    const updatedRows =
+      await queryRowsWithPolicyContext<ProfileLocalLoginStateRow>(
+        `
       UPDATE profiles
       SET
         fallback_password_set_at = NOW(),
         fallback_password_updated_by = $2::uuid,
         updated_at = NOW()
       WHERE id = $1::uuid
-      RETURNING id::text
+      RETURNING
+        id::text AS id,
+        email,
+        auth_source,
+        local_login_enabled,
+        local_login_updated_at,
+        fallback_password_set_at,
+        fallback_password_updated_by::text AS fallback_password_updated_by,
+        updated_at
       `,
-      [normalizedUserId, normalizedUpdatedBy],
-      context
-    );
+        [normalizedUserId, normalizedUpdatedBy],
+        context
+      );
+
+    const newRow = updatedRows[0] || null;
+    if (newRow) {
+      await publishProfileChangeBestEffort({
+        eventType: 'UPDATE',
+        oldRow: toProfileRealtimeRow(oldRow),
+        newRow: toProfileRealtimeRow(newRow),
+      });
+    }
 
     return success(undefined);
   } catch (error) {
@@ -421,6 +533,10 @@ export async function setUserLocalLoginEnabledByUserId(
   }
 
   try {
+    const oldRow = await loadProfileRealtimeRowByUserId(
+      normalizedUserId,
+      context
+    );
     const rows = await queryRowsWithPolicyContext<ProfileLocalLoginStateRow>(
       `
       UPDATE profiles
@@ -436,7 +552,8 @@ export async function setUserLocalLoginEnabledByUserId(
         local_login_enabled,
         local_login_updated_at,
         fallback_password_set_at,
-        fallback_password_updated_by::text AS fallback_password_updated_by
+        fallback_password_updated_by::text AS fallback_password_updated_by,
+        updated_at
       `,
       [normalizedUserId, enabled],
       context
@@ -446,6 +563,12 @@ export async function setUserLocalLoginEnabledByUserId(
     if (!row) {
       return success(null);
     }
+
+    await publishProfileChangeBestEffort({
+      eventType: 'UPDATE',
+      oldRow: toProfileRealtimeRow(oldRow),
+      newRow: toProfileRealtimeRow(row),
+    });
 
     return success({
       userId: row.id,

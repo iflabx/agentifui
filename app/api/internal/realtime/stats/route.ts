@@ -56,11 +56,13 @@ export async function GET(request: Request) {
     }
 
     const stats = realtimeService.getStats();
+    const subscriptions = realtimeService.listSubscriptions();
     const broker = await getRealtimeBrokerStats();
 
     return NextResponse.json({
       success: true,
       stats,
+      subscriptions,
       broker,
     });
   } catch (error) {

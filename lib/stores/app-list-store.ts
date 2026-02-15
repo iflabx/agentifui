@@ -1,4 +1,4 @@
-import type { UserAccessibleApp } from '@lib/db/group-permissions';
+import { callInternalDataAction } from '@lib/db/internal-data-api';
 import type { DifyAppParametersResponse } from '@lib/services/dify/types';
 import type { AppVisibility, ServiceInstanceConfig } from '@lib/types/database';
 import { create } from 'zustand';
@@ -17,6 +17,26 @@ export interface AppInfo {
   quota_remaining?: number;
   visibility?: AppVisibility;
   provider_name?: string; // Added: provider name for multi-provider support
+}
+
+interface UserAccessibleApp {
+  service_instance_id: string;
+  display_name: string | null;
+  description: string | null;
+  instance_id: string;
+  api_path: string;
+  visibility: 'public' | 'group_only' | 'private';
+  config: ServiceInstanceConfig;
+  usage_quota: number | null;
+  used_count: number;
+  quota_remaining: number | null;
+  group_name: string | null;
+}
+
+interface AppPermissionCheck {
+  has_access: boolean;
+  quota_remaining: number | null;
+  error_message: string | null;
 }
 
 // Added: App parameters cache interface
@@ -66,6 +86,46 @@ const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes - extend cache time to redu
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+async function fetchAllAppListForAdmin(): Promise<AppInfo[]> {
+  const response = await fetch('/api/internal/apps?scope=all', {
+    method: 'GET',
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch all apps: HTTP ${response.status}`);
+  }
+
+  const payload = (await response.json()) as {
+    success: boolean;
+    apps?: AppInfo[];
+    error?: string;
+  };
+  if (!payload.success) {
+    throw new Error(payload.error || 'Failed to fetch all apps');
+  }
+
+  return payload.apps || [];
+}
+
+async function fetchDifyAppParametersByInstanceId(
+  instanceId: string
+): Promise<DifyAppParametersResponse> {
+  const response = await fetch(`/api/dify/${instanceId}/parameters`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch app parameters: HTTP ${response.status}`);
+  }
+
+  return (await response.json()) as DifyAppParametersResponse;
 }
 
 export const useAppListStore = create<AppListState>((set, get) => ({
@@ -143,10 +203,12 @@ export const useAppListStore = create<AppListState>((set, get) => ({
 
     try {
       // Use permission management API to get user accessible apps
-      const { getUserAccessibleApps } = await import(
-        '@lib/db/group-permissions'
+      const result = await callInternalDataAction<UserAccessibleApp[]>(
+        'groups.getUserAccessibleApps',
+        {
+          userId: user.id,
+        }
       );
-      const result = await getUserAccessibleApps(user.id);
 
       if (!result.success) {
         throw new Error(result.error.message);
@@ -257,8 +319,7 @@ export const useAppListStore = create<AppListState>((set, get) => ({
     set({ isLoading: true, error: null });
 
     try {
-      const { getAllDifyApps } = await import('@lib/services/dify/app-service');
-      const rawApps = await getAllDifyApps();
+      const rawApps = await fetchAllAppListForAdmin();
 
       // Add visibility info to all apps
       const apps: AppInfo[] = rawApps.map(app => ({
@@ -315,10 +376,12 @@ export const useAppListStore = create<AppListState>((set, get) => ({
     set({ isLoading: true, error: null });
 
     try {
-      const { getUserAccessibleApps } = await import(
-        '@lib/db/group-permissions'
+      const result = await callInternalDataAction<UserAccessibleApp[]>(
+        'groups.getUserAccessibleApps',
+        {
+          userId,
+        }
       );
-      const result = await getUserAccessibleApps(userId);
 
       if (!result.success) {
         throw new Error(result.error.message);
@@ -385,12 +448,12 @@ export const useAppListStore = create<AppListState>((set, get) => ({
     }
 
     try {
-      const { checkUserAppPermission } = await import(
-        '@lib/db/group-permissions'
-      );
-      const result = await checkUserAppPermission(
-        state.currentUserId,
-        appInstanceId
+      const result = await callInternalDataAction<AppPermissionCheck>(
+        'groups.checkUserAppPermission',
+        {
+          userId: state.currentUserId,
+          serviceInstanceId: appInstanceId,
+        }
       );
 
       if (!result.success) {
@@ -443,9 +506,6 @@ export const useAppListStore = create<AppListState>((set, get) => ({
     set({ isLoadingParameters: true, parametersError: null });
 
     try {
-      const { getDifyAppParameters } = await import(
-        '@lib/services/dify/app-service'
-      );
       const newParametersCache: AppParametersCache = {};
 
       console.log(
@@ -455,7 +515,9 @@ export const useAppListStore = create<AppListState>((set, get) => ({
       // Fetch parameters for all apps concurrently
       const parameterPromises = currentApps.map(async app => {
         try {
-          const parameters = await getDifyAppParameters(app.instance_id); // Use instance_id for API call
+          const parameters = await fetchDifyAppParametersByInstanceId(
+            app.instance_id
+          );
           newParametersCache[app.id] = {
             // Use id as cache key
             data: parameters,
@@ -550,10 +612,9 @@ export const useAppListStore = create<AppListState>((set, get) => ({
     });
 
     try {
-      const { getDifyAppParameters } = await import(
-        '@lib/services/dify/app-service'
+      const parameters = await fetchDifyAppParametersByInstanceId(
+        app.instance_id
       );
-      const parameters = await getDifyAppParameters(app.instance_id);
 
       // Update cache
       const newCache = {

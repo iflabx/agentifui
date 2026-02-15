@@ -48,6 +48,13 @@ type SessionUser = Record<string, unknown> & {
 };
 
 type ProfileStatusRow = {
+  id?: string;
+  full_name?: string | null;
+  avatar_url?: string | null;
+  email?: string | null;
+  auth_source?: string | null;
+  last_login?: string | null;
+  updated_at?: string | null;
   role: string | null;
   status: string | null;
 };
@@ -63,6 +70,17 @@ type ResolveUserIdResult = {
   createdLegacyMapping: boolean;
   ensuredProfile?: EnsureProfileResult;
 };
+
+type RealtimeRow = Record<string, unknown>;
+
+type RealtimePublisher = (input: {
+  table: string;
+  eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+  newRow: RealtimeRow | null;
+  oldRow: RealtimeRow | null;
+  schema?: string;
+  commitTimestamp?: string;
+}) => Promise<void>;
 
 const SYSTEM_CONTEXT: IdentityPersistenceContext = {
   useSystemActor: true,
@@ -199,6 +217,63 @@ function buildSourceIssuer(providerId: string): string {
     getAuthProviderIssuer(providerId) ||
     `${PROVIDER_ISSUER_PREFIX}${providerId}`
   );
+}
+
+function toProfileRealtimeRow(
+  row: ProfileStatusRow | null
+): RealtimeRow | null {
+  if (!row || !row.id) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    full_name: row.full_name ?? null,
+    avatar_url: row.avatar_url ?? null,
+    email: row.email ?? null,
+    auth_source: row.auth_source ?? null,
+    role: row.role ?? null,
+    status: row.status ?? null,
+    last_login: row.last_login ?? null,
+    updated_at: row.updated_at ?? null,
+  };
+}
+
+async function publishProfileChangeBestEffort(input: {
+  eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+  newRow: RealtimeRow | null;
+  oldRow: RealtimeRow | null;
+}): Promise<void> {
+  if (process.env.NODE_ENV === 'test') {
+    return;
+  }
+
+  try {
+    const publisherModule = (await import(
+      '@lib/server/realtime/publisher'
+    )) as {
+      publishTableChangeEvent?: RealtimePublisher;
+    };
+    const publisher = publisherModule.publishTableChangeEvent;
+    if (typeof publisher !== 'function') {
+      return;
+    }
+
+    await publisher({
+      table: 'profiles',
+      eventType: input.eventType,
+      oldRow: input.oldRow,
+      newRow: input.newRow,
+    });
+  } catch (error) {
+    console.warn(
+      '[SessionIdentity] failed to publish profile realtime event:',
+      {
+        error,
+        eventType: input.eventType,
+      }
+    );
+  }
 }
 
 async function upsertPrimarySessionIdentity(
@@ -421,6 +496,13 @@ async function ensureProfileStatus(
           updated_at = NOW()
         WHERE id = $1
         RETURNING
+          id::text AS id,
+          full_name,
+          avatar_url,
+          email,
+          auth_source,
+          last_login::text AS last_login,
+          updated_at::text AS updated_at,
           role::text AS role,
           status::text AS status
         `,
@@ -430,6 +512,11 @@ async function ensureProfileStatus(
 
     const profile = touchedExisting.rows[0];
     if (profile) {
+      await publishProfileChangeBestEffort({
+        eventType: 'UPDATE',
+        oldRow: null,
+        newRow: toProfileRealtimeRow(profile),
+      });
       return success({
         role: profile.role,
         status: profile.status,
@@ -452,6 +539,13 @@ async function ensureProfileStatus(
         ) VALUES ($1, $2, $3, $4, $5, NOW(), NOW(), NOW())
         ON CONFLICT (id) DO NOTHING
         RETURNING
+          id::text AS id,
+          full_name,
+          avatar_url,
+          email,
+          auth_source,
+          last_login::text AS last_login,
+          updated_at::text AS updated_at,
           role::text AS role,
           status::text AS status
         `,
@@ -461,6 +555,11 @@ async function ensureProfileStatus(
 
     const createdProfile = inserted.rows[0];
     if (createdProfile) {
+      await publishProfileChangeBestEffort({
+        eventType: 'INSERT',
+        oldRow: null,
+        newRow: toProfileRealtimeRow(createdProfile),
+      });
       return success({
         role: createdProfile.role,
         status: createdProfile.status,
@@ -481,6 +580,13 @@ async function ensureProfileStatus(
           updated_at = NOW()
         WHERE id = $1
         RETURNING
+          id::text AS id,
+          full_name,
+          avatar_url,
+          email,
+          auth_source,
+          last_login::text AS last_login,
+          updated_at::text AS updated_at,
           role::text AS role,
           status::text AS status
         `,
@@ -489,6 +595,11 @@ async function ensureProfileStatus(
     );
     const profileAfterConflict = touchedAfterConflict.rows[0];
     if (profileAfterConflict) {
+      await publishProfileChangeBestEffort({
+        eventType: 'UPDATE',
+        oldRow: null,
+        newRow: toProfileRealtimeRow(profileAfterConflict),
+      });
       return success({
         role: profileAfterConflict.role,
         status: profileAfterConflict.status,
@@ -510,8 +621,8 @@ async function ensureProfileStatus(
 
 async function cleanupUnlinkedProfile(userId: string): Promise<void> {
   try {
-    await runWithPgSystemContext(client =>
-      client.query(
+    const deleted = await runWithPgSystemContext(client =>
+      client.query<ProfileStatusRow>(
         `
         DELETE FROM profiles
         WHERE id = $1
@@ -520,10 +631,28 @@ async function cleanupUnlinkedProfile(userId: string): Promise<void> {
             FROM user_identities
             WHERE user_id = $1
           )
+        RETURNING
+          id::text AS id,
+          full_name,
+          avatar_url,
+          email,
+          auth_source,
+          last_login::text AS last_login,
+          updated_at::text AS updated_at,
+          role::text AS role,
+          status::text AS status
         `,
         [userId]
       )
     );
+    const deletedProfile = deleted.rows[0];
+    if (deletedProfile) {
+      await publishProfileChangeBestEffort({
+        eventType: 'DELETE',
+        oldRow: toProfileRealtimeRow(deletedProfile),
+        newRow: null,
+      });
+    }
   } catch (error) {
     console.warn(
       `[SessionIdentity] failed to clean transient profile ${userId}:`,

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { config as loadEnv } from 'dotenv';
 import { spawn } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { Client } from 'pg';
 
@@ -142,9 +142,16 @@ class SseCollector {
     }
 
     let eventType = 'message';
+    let eventId = null;
     const dataParts = [];
 
     for (const line of lines) {
+      if (line.startsWith('id:')) {
+        const parsedId = line.slice('id:'.length).trim();
+        eventId = parsedId || null;
+        continue;
+      }
+
       if (line.startsWith('event:')) {
         eventType = line.slice('event:'.length).trim() || 'message';
         continue;
@@ -168,6 +175,7 @@ class SseCollector {
     }
 
     const event = {
+      id: eventId,
       event: eventType,
       data: parsedData,
       receivedAt: Date.now(),
@@ -351,7 +359,138 @@ async function ensureProfileRow(client, userId, email) {
   );
 }
 
-async function openRealtimeStream(jar, key, config) {
+async function promoteProfileToAdmin(client, userId) {
+  await client.query(
+    `
+      UPDATE profiles
+      SET role = 'admin',
+          status = 'active',
+          updated_at = NOW()
+      WHERE id = $1::uuid
+    `,
+    [userId]
+  );
+}
+
+async function createServiceInstanceFixture(client, suffix) {
+  const providerId = randomUUID();
+  const serviceInstanceId = randomUUID();
+
+  await client.query(
+    `
+      INSERT INTO providers (
+        id,
+        name,
+        type,
+        base_url,
+        auth_type,
+        is_active,
+        is_default,
+        created_at,
+        updated_at
+      ) VALUES (
+        $1::uuid,
+        $2,
+        $3,
+        $4,
+        $5,
+        TRUE,
+        FALSE,
+        NOW(),
+        NOW()
+      )
+    `,
+    [
+      providerId,
+      `m6-provider-${suffix}`,
+      'm6-provider',
+      `https://m6-provider-${suffix}.example.test`,
+      'none',
+    ]
+  );
+
+  await client.query(
+    `
+      INSERT INTO service_instances (
+        id,
+        provider_id,
+        display_name,
+        description,
+        instance_id,
+        api_path,
+        is_default,
+        visibility,
+        config,
+        created_at,
+        updated_at
+      ) VALUES (
+        $1::uuid,
+        $2::uuid,
+        $3,
+        $4,
+        $5,
+        $6,
+        FALSE,
+        'public',
+        '{}'::jsonb,
+        NOW(),
+        NOW()
+      )
+    `,
+    [
+      serviceInstanceId,
+      providerId,
+      `M6 Service Instance ${suffix}`,
+      'm6 realtime test service instance',
+      `m6-instance-${suffix}`,
+      `/m6-instance-${suffix}`,
+    ]
+  );
+
+  return {
+    providerId,
+    serviceInstanceId,
+  };
+}
+
+async function createConversationFixture(client, userId, suffix) {
+  const conversationId = randomUUID();
+  await client.query(
+    `
+      INSERT INTO conversations (
+        id,
+        user_id,
+        title,
+        summary,
+        ai_config_id,
+        app_id,
+        external_id,
+        settings,
+        status,
+        last_message_preview,
+        created_at,
+        updated_at
+      ) VALUES (
+        $1::uuid,
+        $2::uuid,
+        $3,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        '{}'::jsonb,
+        'active',
+        NULL,
+        NOW(),
+        NOW()
+      )
+    `,
+    [conversationId, userId, `M6 Conversation ${suffix}`]
+  );
+  return conversationId;
+}
+
+async function openRealtimeStream(jar, key, config, options = {}) {
   const params = new URLSearchParams({
     key,
     schema: config.schema,
@@ -360,6 +499,9 @@ async function openRealtimeStream(jar, key, config) {
   });
   if (config.filter) {
     params.set('filter', config.filter);
+  }
+  if (options.lastEventId) {
+    params.set('lastEventId', options.lastEventId);
   }
 
   const response = await requestWithCookies(
@@ -371,6 +513,9 @@ async function openRealtimeStream(jar, key, config) {
         accept: 'text/event-stream',
         origin: appBase,
         referer: `${appBase}/`,
+        ...(options.lastEventId
+          ? { 'last-event-id': String(options.lastEventId) }
+          : {}),
       },
     }
   );
@@ -425,7 +570,7 @@ async function main() {
   };
 
   const dbClient = new Client({ connectionString: databaseUrl });
-  let collector = null;
+  const collectors = [];
   let exitCode = 0;
 
   try {
@@ -457,6 +602,12 @@ async function main() {
     await dbClient.connect();
     await ensureProfileRow(dbClient, userAId, userAEmail);
     await ensureProfileRow(dbClient, userBId, userBEmail);
+    await promoteProfileToAdmin(dbClient, userAId);
+    const { serviceInstanceId } = await createServiceInstanceFixture(
+      dbClient,
+      suffix
+    );
+    const conversationId = await createConversationFixture(dbClient, userAId, suffix);
 
     const userAProfileKey = `user-profile:${userAId}`;
     const userAStream = await openRealtimeStream(jarA, userAProfileKey, {
@@ -467,14 +618,15 @@ async function main() {
     });
     assertStatus(userAStream, 200, 'realtime stream owner');
 
-    collector = new SseCollector(userAStream);
-    await collector.waitFor(
+    const profileCollector = new SseCollector(userAStream);
+    collectors.push(profileCollector);
+    await profileCollector.waitFor(
       event => event.event === 'ready',
       eventTimeoutMs,
       'stream ready'
     );
 
-    const updatedName = `M6-E2E-${suffix}`;
+    const updatedName = `M6-E2E-1-${suffix}`;
     const patchProfile = await requestJson(jarA, '/api/internal/profile', 'PATCH', {
       updates: {
         full_name: updatedName,
@@ -482,7 +634,7 @@ async function main() {
     });
     assertStatus(patchProfile.response, 200, 'profile patch owner');
 
-    const profileUpdateEvent = await collector.waitFor(
+    const profileUpdateEvent = await profileCollector.waitFor(
       event =>
         event.event === 'message' &&
         event.data?.key === userAProfileKey &&
@@ -493,6 +645,64 @@ async function main() {
       'profile update event'
     );
 
+    const firstProfileEventId =
+      profileUpdateEvent?.id || profileUpdateEvent?.data?.id || '';
+    if (!firstProfileEventId) {
+      throw new Error('profile update event id is missing');
+    }
+
+    await profileCollector.close();
+    const profileCollectorIndex = collectors.indexOf(profileCollector);
+    if (profileCollectorIndex >= 0) {
+      collectors.splice(profileCollectorIndex, 1);
+    }
+
+    const replayName = `M6-E2E-2-${suffix}`;
+    const patchProfileReplay = await requestJson(
+      jarA,
+      '/api/internal/profile',
+      'PATCH',
+      {
+        updates: {
+          full_name: replayName,
+        },
+      }
+    );
+    assertStatus(patchProfileReplay.response, 200, 'profile patch for replay');
+
+    const replayStream = await openRealtimeStream(
+      jarA,
+      userAProfileKey,
+      {
+        schema: 'public',
+        table: 'profiles',
+        event: 'UPDATE',
+        filter: `id=eq.${userAId}`,
+      },
+      {
+        lastEventId: firstProfileEventId,
+      }
+    );
+    assertStatus(replayStream, 200, 'realtime stream replay owner');
+
+    const replayCollector = new SseCollector(replayStream);
+    collectors.push(replayCollector);
+    await replayCollector.waitFor(
+      event => event.event === 'ready',
+      eventTimeoutMs,
+      'replay stream ready'
+    );
+    const replayEvent = await replayCollector.waitFor(
+      event =>
+        event.event === 'message' &&
+        event.data?.key === userAProfileKey &&
+        event.data?.payload?.table === 'profiles' &&
+        event.data?.payload?.eventType === 'UPDATE' &&
+        event.data?.payload?.new?.full_name === replayName,
+      eventTimeoutMs,
+      'profile replay event'
+    );
+
     const crossUserStream = await openRealtimeStream(jarB, userAProfileKey, {
       schema: 'public',
       table: 'profiles',
@@ -501,7 +711,7 @@ async function main() {
     });
     assertStatus(crossUserStream, 403, 'realtime stream cross-user forbidden');
 
-    const nonAdminApiKeysStream = await openRealtimeStream(jarA, 'api-keys', {
+    const nonAdminApiKeysStream = await openRealtimeStream(jarB, 'api-keys', {
       schema: 'public',
       table: 'api_keys',
       event: '*',
@@ -512,6 +722,84 @@ async function main() {
       'realtime stream api-keys admin-only'
     );
 
+    const serviceInstancesKey = 'service-instances';
+    const serviceInstancesStream = await openRealtimeStream(
+      jarA,
+      serviceInstancesKey,
+      {
+        schema: 'public',
+        table: 'service_instances',
+        event: 'UPDATE',
+      }
+    );
+    assertStatus(serviceInstancesStream, 200, 'service-instances stream admin');
+
+    const serviceCollector = new SseCollector(serviceInstancesStream);
+    collectors.push(serviceCollector);
+    await serviceCollector.waitFor(
+      event => event.event === 'ready',
+      eventTimeoutMs,
+      'service-instances stream ready'
+    );
+
+    const patchServiceInstance = await requestJson(jarA, '/api/internal/apps', 'PATCH', {
+      id: serviceInstanceId,
+      visibility: 'private',
+    });
+    assertStatus(patchServiceInstance.response, 200, 'service-instances patch admin');
+
+    const serviceUpdateEvent = await serviceCollector.waitFor(
+      event =>
+        event.event === 'message' &&
+        event.data?.key === serviceInstancesKey &&
+        event.data?.payload?.table === 'service_instances' &&
+        event.data?.payload?.eventType === 'UPDATE' &&
+        event.data?.payload?.new?.id === serviceInstanceId &&
+        event.data?.payload?.new?.visibility === 'private',
+      eventTimeoutMs,
+      'service-instances update event'
+    );
+
+    const conversationMessagesKey = `conversation-messages:${conversationId}`;
+    const ownerConversationStream = await openRealtimeStream(
+      jarA,
+      conversationMessagesKey,
+      {
+        schema: 'public',
+        table: 'messages',
+        event: '*',
+        filter: `conversation_id=eq.${conversationId}`,
+      }
+    );
+    assertStatus(
+      ownerConversationStream,
+      200,
+      'conversation-messages stream owner'
+    );
+    const conversationCollector = new SseCollector(ownerConversationStream);
+    collectors.push(conversationCollector);
+    await conversationCollector.waitFor(
+      event => event.event === 'ready',
+      eventTimeoutMs,
+      'conversation-messages stream ready'
+    );
+
+    const crossConversationStream = await openRealtimeStream(
+      jarB,
+      conversationMessagesKey,
+      {
+        schema: 'public',
+        table: 'messages',
+        event: '*',
+        filter: `conversation_id=eq.${conversationId}`,
+      }
+    );
+    assertStatus(
+      crossConversationStream,
+      403,
+      'conversation-messages stream cross-user forbidden'
+    );
+
     console.log(
       JSON.stringify(
         {
@@ -519,12 +807,23 @@ async function main() {
           checks: {
             ownerProfileStreamConnected: true,
             profileUpdateDelivered: true,
+            profileReplayDelivered: true,
+            serviceInstancesUpdateDelivered: true,
+            ownerConversationStreamConnected: true,
+            conversationCrossUserForbidden: true,
             crossUserProfileForbidden: true,
             apiKeysStreamAdminOnly: true,
           },
           artifacts: {
             userAId,
+            userBId,
             key: userAProfileKey,
+            serviceInstanceId,
+            conversationId,
+            profileEventId: firstProfileEventId,
+            profileReplayEventId: replayEvent?.id || replayEvent?.data?.id || null,
+            serviceUpdateEventId:
+              serviceUpdateEvent?.id || serviceUpdateEvent?.data?.id || null,
             receivedEvent: profileUpdateEvent?.data || null,
           },
         },
@@ -541,8 +840,11 @@ async function main() {
     );
     exitCode = 1;
   } finally {
-    if (collector) {
-      await collector.close().catch(() => {});
+    while (collectors.length > 0) {
+      const collector = collectors.pop();
+      if (collector) {
+        await collector.close().catch(() => {});
+      }
     }
     await dbClient.end().catch(() => {});
     await stopApp();

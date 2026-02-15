@@ -10,6 +10,42 @@ import { callInternalDataAction } from './internal-data-api';
 type ProfileUpdate = Partial<Omit<Profile, 'id' | 'created_at'>>;
 
 const IS_BROWSER = typeof window !== 'undefined';
+type RealtimeRow = Record<string, unknown>;
+
+async function publishProfileChangeBestEffort(input: {
+  eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+  newRow: RealtimeRow | null;
+  oldRow: RealtimeRow | null;
+}) {
+  if (IS_BROWSER) {
+    return;
+  }
+
+  try {
+    const runtimeRequire = eval('require') as (id: string) => unknown;
+    const publisherModule = runtimeRequire('../server/realtime/publisher') as {
+      publishTableChangeEvent?: (payload: {
+        table: string;
+        eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+        newRow: RealtimeRow | null;
+        oldRow: RealtimeRow | null;
+      }) => Promise<void>;
+    };
+    const publisher = publisherModule.publishTableChangeEvent;
+    if (typeof publisher !== 'function') {
+      return;
+    }
+
+    await publisher({
+      table: 'profiles',
+      eventType: input.eventType,
+      oldRow: input.oldRow,
+      newRow: input.newRow,
+    });
+  } catch (error) {
+    console.warn('[UsersDB] Realtime publish failed:', error);
+  }
+}
 
 async function getPool() {
   const { getPgPool } = await import('@lib/server/pg/pool');
@@ -399,6 +435,27 @@ export async function updateUserProfile(
   }
 
   try {
+    const oldProfileRows = await queryRowsWithActorContext<{
+      id: string;
+      role: string | null;
+      status: string | null;
+      updated_at: string | null;
+    }>(
+      undefined,
+      `
+        SELECT
+          id::text AS id,
+          role::text AS role,
+          status::text AS status,
+          updated_at::text AS updated_at
+        FROM profiles
+        WHERE id = $1::uuid
+        LIMIT 1
+      `,
+      [userId]
+    );
+    const oldProfile = oldProfileRows[0] || null;
+
     const updateData = {
       ...updates,
       updated_at: new Date().toISOString(),
@@ -423,6 +480,12 @@ export async function updateUserProfile(
     if (!profile) {
       return failure(new Error('User profile not found'));
     }
+
+    await publishProfileChangeBestEffort({
+      eventType: 'UPDATE',
+      oldRow: oldProfile,
+      newRow: profile as unknown as RealtimeRow,
+    });
 
     return success(profile);
   } catch (error) {
@@ -467,6 +530,27 @@ export async function deleteUser(
   }
 
   try {
+    const oldProfileRows = await queryRowsWithActorContext<{
+      id: string;
+      role: string | null;
+      status: string | null;
+      updated_at: string | null;
+    }>(
+      actorUserId,
+      `
+        SELECT
+          id::text AS id,
+          role::text AS role,
+          status::text AS status,
+          updated_at::text AS updated_at
+        FROM profiles
+        WHERE id = $1::uuid
+        LIMIT 1
+      `,
+      [userId]
+    );
+    const oldProfile = oldProfileRows[0] || null;
+
     if (actorUserId) {
       const rows = await queryRowsWithActorContext<{ deleted: boolean }>(
         actorUserId,
@@ -476,17 +560,33 @@ export async function deleteUser(
       if (!rows[0]?.deleted) {
         return failure(new Error('User not found'));
       }
+
+      if (oldProfile) {
+        await publishProfileChangeBestEffort({
+          eventType: 'DELETE',
+          oldRow: oldProfile,
+          newRow: null,
+        });
+      }
       return success(undefined);
     }
 
     const pool = await getPool();
-    const result = await pool.query(
-      `DELETE FROM profiles WHERE id = $1::uuid`,
+    const result = await pool.query<{ id: string }>(
+      `DELETE FROM profiles WHERE id = $1::uuid RETURNING id::text AS id`,
       [userId]
     );
 
     if (!result.rowCount) {
       return failure(new Error('User not found'));
+    }
+
+    if (oldProfile) {
+      await publishProfileChangeBestEffort({
+        eventType: 'DELETE',
+        oldRow: oldProfile,
+        newRow: null,
+      });
     }
 
     return success(undefined);
@@ -558,6 +658,14 @@ export async function createUserProfile(
       ]
     );
 
+    if (rows[0]) {
+      await publishProfileChangeBestEffort({
+        eventType: 'INSERT',
+        oldRow: null,
+        newRow: rows[0] as unknown as RealtimeRow,
+      });
+    }
+
     return success(rows[0]);
   } catch (error) {
     console.error('Exception while creating user profile:', error);
@@ -589,14 +697,34 @@ export async function batchUpdateUserStatus(
     }
 
     const pool = await getPool();
-    await pool.query(
+    const updatedRows = await pool.query<{
+      id: string;
+      status: string | null;
+      role: string | null;
+      updated_at: string | null;
+    }>(
       `
         UPDATE profiles
         SET status = $2::account_status,
             updated_at = NOW()
         WHERE id = ANY($1::uuid[])
+        RETURNING
+          id::text AS id,
+          status::text AS status,
+          role::text AS role,
+          updated_at::text AS updated_at
       `,
       [userIds, status]
+    );
+
+    await Promise.all(
+      updatedRows.rows.map(async row => {
+        await publishProfileChangeBestEffort({
+          eventType: 'UPDATE',
+          oldRow: null,
+          newRow: row,
+        });
+      })
     );
 
     return success(undefined);
@@ -630,14 +758,34 @@ export async function batchUpdateUserRole(
     }
 
     const pool = await getPool();
-    await pool.query(
+    const updatedRows = await pool.query<{
+      id: string;
+      status: string | null;
+      role: string | null;
+      updated_at: string | null;
+    }>(
       `
         UPDATE profiles
         SET role = $2::user_role,
             updated_at = NOW()
         WHERE id = ANY($1::uuid[])
+        RETURNING
+          id::text AS id,
+          status::text AS status,
+          role::text AS role,
+          updated_at::text AS updated_at
       `,
       [userIds, role]
+    );
+
+    await Promise.all(
+      updatedRows.rows.map(async row => {
+        await publishProfileChangeBestEffort({
+          eventType: 'UPDATE',
+          oldRow: null,
+          newRow: row,
+        });
+      })
     );
 
     return success(undefined);

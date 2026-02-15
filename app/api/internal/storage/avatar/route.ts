@@ -1,5 +1,6 @@
 import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
 import { queryRowsWithPgUserContext } from '@lib/server/pg/user-context';
+import { publishTableChangeEvent } from '@lib/server/realtime/publisher';
 import {
   buildPublicObjectUrl,
   deleteObject,
@@ -89,19 +90,50 @@ async function updateAvatarUrl(
   targetUserId: string,
   avatarUrl: string | null
 ): Promise<boolean> {
-  const rows = await queryRowsWithPgUserContext<{ id: string }>(
+  const oldRows = await queryRowsWithPgUserContext<{
+    id: string;
+    avatar_url: string | null;
+  }>(
+    actorUserId,
+    `
+      SELECT id::text, avatar_url
+      FROM profiles
+      WHERE id = $1::uuid
+      LIMIT 1
+    `,
+    [targetUserId]
+  );
+  const oldRow = oldRows[0] || null;
+
+  const rows = await queryRowsWithPgUserContext<{
+    id: string;
+    avatar_url: string | null;
+  }>(
     actorUserId,
     `
       UPDATE profiles
       SET avatar_url = $2,
           updated_at = NOW()
       WHERE id = $1::uuid
-      RETURNING id::text
+      RETURNING id::text, avatar_url
     `,
     [targetUserId, avatarUrl]
   );
 
-  return Boolean(rows[0]);
+  if (!rows[0]) {
+    return false;
+  }
+
+  await publishTableChangeEvent({
+    table: 'profiles',
+    eventType: 'UPDATE',
+    oldRow,
+    newRow: rows[0],
+  }).catch(error => {
+    console.warn('[AvatarStorageAPI] Realtime publish failed:', error);
+  });
+
+  return true;
 }
 
 async function attachAvatarObject(

@@ -1,7 +1,11 @@
 import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
 import { queryRowsWithPgUserContext } from '@lib/server/pg/user-context';
-import { subscribeRealtimeEvents } from '@lib/server/realtime/redis-broker';
 import {
+  readRealtimeEventsSince,
+  subscribeRealtimeEvents,
+} from '@lib/server/realtime/redis-broker';
+import {
+  type RealtimeEnvelope,
   type SubscriptionConfig,
   SubscriptionConfigs,
   SubscriptionKeys,
@@ -14,6 +18,14 @@ export const runtime = 'nodejs';
 
 const KEEPALIVE_INTERVAL_MS = Number(
   process.env.REALTIME_SSE_KEEPALIVE_MS || 15000
+);
+const REPLAY_MAX_EVENTS = Math.max(
+  1,
+  Number(process.env.REALTIME_SSE_REPLAY_MAX_EVENTS || 500)
+);
+const SENT_EVENT_CACHE_SIZE = Math.max(
+  100,
+  Number(process.env.REALTIME_SSE_SENT_EVENT_CACHE_SIZE || 2048)
 );
 
 type Identity = {
@@ -208,7 +220,10 @@ function resolveConfigFromSearchParams(
   };
 }
 
-function formatSseEvent(event: string, data: string): string {
+function formatSseEvent(event: string, data: string, id?: string): string {
+  if (id) {
+    return `id: ${id}\nevent: ${event}\ndata: ${data}\n\n`;
+  }
   return `event: ${event}\ndata: ${data}\n\n`;
 }
 
@@ -253,6 +268,13 @@ export async function GET(request: Request) {
     }
 
     const encoder = new TextEncoder();
+    const sentEventIds: string[] = [];
+    const sentEventIdSet = new Set<string>();
+    const lastEventIdHeader = (
+      request.headers.get('last-event-id') || ''
+    ).trim();
+    const lastEventIdParam = (url.searchParams.get('lastEventId') || '').trim();
+    const lastEventId = lastEventIdHeader || lastEventIdParam;
     let unsubscribe: (() => void) | null = null;
     let closed = false;
     let keepAliveTimer: ReturnType<typeof setInterval> | null = null;
@@ -276,16 +298,44 @@ export async function GET(request: Request) {
 
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
-        const send = (event: string, data: string) => {
+        const rememberEventId = (id: string) => {
+          if (!id || sentEventIdSet.has(id)) {
+            return;
+          }
+
+          sentEventIds.push(id);
+          sentEventIdSet.add(id);
+          if (sentEventIds.length > SENT_EVENT_CACHE_SIZE) {
+            const removed = sentEventIds.shift();
+            if (removed) {
+              sentEventIdSet.delete(removed);
+            }
+          }
+        };
+
+        const send = (event: string, data: string, id?: string) => {
           if (closed) {
             return;
           }
 
           try {
-            controller.enqueue(encoder.encode(formatSseEvent(event, data)));
+            controller.enqueue(encoder.encode(formatSseEvent(event, data, id)));
           } catch {
             close();
           }
+        };
+
+        const sendEnvelope = (event: RealtimeEnvelope) => {
+          const id = (event.id || '').trim();
+          if (id && sentEventIdSet.has(id)) {
+            return;
+          }
+
+          if (id) {
+            rememberEventId(id);
+          }
+
+          send('message', JSON.stringify(event), id || undefined);
         };
 
         request.signal.addEventListener('abort', () => {
@@ -321,8 +371,28 @@ export async function GET(request: Request) {
             return;
           }
 
-          send('message', JSON.stringify(event));
+          sendEnvelope(event);
         });
+
+        if (lastEventId) {
+          const replayEvents = await readRealtimeEventsSince({
+            sinceId: lastEventId,
+            key,
+            limit: REPLAY_MAX_EVENTS,
+          });
+
+          for (const replayEvent of replayEvents) {
+            if (closed || replayEvent.key !== key) {
+              continue;
+            }
+
+            if (!matchesSubscriptionConfig(config, replayEvent.payload)) {
+              continue;
+            }
+
+            sendEnvelope(replayEvent);
+          }
+        }
       },
       cancel() {
         close();

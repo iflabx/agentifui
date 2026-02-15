@@ -8,6 +8,8 @@ import crypto from 'node:crypto';
 type RealtimeListener = (event: RealtimeEnvelope) => void;
 
 const BROKER_STATE_KEY = '__agentifui_realtime_redis_broker__';
+const BROKER_INSTANCE_ID_KEY =
+  '__agentifui_realtime_redis_broker_instance_id__';
 const DEFAULT_CHANNEL = 'realtime:events';
 const DEFAULT_STREAM_KEY = 'realtime:events:stream';
 
@@ -54,6 +56,18 @@ function getBrokerState(): BrokerState {
     publisher: null,
   };
   globalState[BROKER_STATE_KEY] = created;
+  return created;
+}
+
+function getBrokerInstanceId(): string {
+  const globalState = globalThis as unknown as Record<string, unknown>;
+  const existing = globalState[BROKER_INSTANCE_ID_KEY] as string | undefined;
+  if (existing) {
+    return existing;
+  }
+
+  const created = crypto.randomUUID();
+  globalState[BROKER_INSTANCE_ID_KEY] = created;
   return created;
 }
 
@@ -120,6 +134,10 @@ async function ensureSubscriber() {
         if (typeof parsed.key !== 'string' || !parsed.payload) {
           return;
         }
+        if (parsed.origin && parsed.origin === getBrokerInstanceId()) {
+          // Local publish already dispatched to listeners; skip loopback duplicate.
+          return;
+        }
         dispatchToListeners(parsed);
       } catch (error) {
         console.warn('[RealtimeRedisBroker] invalid pubsub payload:', error);
@@ -139,32 +157,32 @@ export async function publishRealtimeEvent(input: {
   key: string;
   payload: RealtimeDbChangePayload;
 }): Promise<RealtimeEnvelope> {
+  const localEventId = crypto.randomUUID();
+  const origin = getBrokerInstanceId();
   const event: RealtimeEnvelope = {
-    id: crypto.randomUUID(),
+    id: localEventId,
     key: input.key,
     emittedAt: Date.now(),
+    origin,
     payload: input.payload,
   };
 
-  const serialized = JSON.stringify(event);
-
   try {
     const publisher = await getPublisherClient();
-    await publisher.publish(getChannelName(), serialized);
-
     // Keep a bounded stream as a replay/diagnostic window.
-    await publisher.xAdd(
+    const streamId = await publisher.xAdd(
       getStreamKey(),
       '*',
       {
-        id: event.id,
+        id: localEventId,
+        origin,
         key: event.key,
         table: event.payload.table,
         schema: event.payload.schema,
         event_type: event.payload.eventType,
         commit_ts: event.payload.commitTimestamp,
         emitted_at: String(event.emittedAt),
-        payload: serialized,
+        payload: JSON.stringify(event),
       },
       {
         TRIM: {
@@ -174,6 +192,12 @@ export async function publishRealtimeEvent(input: {
         },
       }
     );
+
+    if (streamId) {
+      event.id = String(streamId);
+    }
+
+    await publisher.publish(getChannelName(), JSON.stringify(event));
   } catch (error) {
     console.warn(
       '[RealtimeRedisBroker] publish failed, fallback to local dispatch:',
@@ -181,9 +205,100 @@ export async function publishRealtimeEvent(input: {
     );
   }
 
-  // Always deliver locally to avoid same-process delay and make local fallback work.
+  // Always deliver locally for low-latency same-process dispatch.
   dispatchToListeners(event);
   return event;
+}
+
+function parseStreamEntries(raw: unknown): RealtimeEnvelope[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  const events: RealtimeEnvelope[] = [];
+  for (const item of raw) {
+    if (!Array.isArray(item) || item.length < 2) {
+      continue;
+    }
+
+    const streamId = String(item[0] || '');
+    const keyValues = item[1];
+    if (!streamId || !Array.isArray(keyValues)) {
+      continue;
+    }
+
+    let payloadRaw = '';
+    for (let i = 0; i < keyValues.length - 1; i += 2) {
+      const field = String(keyValues[i] || '');
+      if (field !== 'payload') {
+        continue;
+      }
+      payloadRaw = String(keyValues[i + 1] || '');
+      break;
+    }
+
+    if (!payloadRaw) {
+      continue;
+    }
+
+    try {
+      const parsed = JSON.parse(payloadRaw) as RealtimeEnvelope;
+      if (!parsed || typeof parsed !== 'object') {
+        continue;
+      }
+      if (typeof parsed.key !== 'string' || !parsed.payload) {
+        continue;
+      }
+
+      events.push({
+        ...parsed,
+        id: streamId,
+      });
+    } catch {
+      // Ignore malformed payload and continue scanning.
+    }
+  }
+
+  return events;
+}
+
+export async function readRealtimeEventsSince(input: {
+  sinceId: string;
+  key?: string;
+  limit?: number;
+}): Promise<RealtimeEnvelope[]> {
+  const sinceId = (input.sinceId || '').trim();
+  if (!sinceId) {
+    return [];
+  }
+
+  const keyFilter = input.key?.trim() || '';
+  const limit = Math.max(1, Math.min(2000, Number(input.limit || 300)));
+
+  try {
+    const publisher = await getPublisherClient();
+    const rows = await publisher.sendCommand([
+      'XRANGE',
+      getStreamKey(),
+      `(${sinceId}`,
+      '+',
+      'COUNT',
+      String(limit),
+    ]);
+
+    const events = parseStreamEntries(rows);
+    if (!keyFilter) {
+      return events;
+    }
+
+    return events.filter(event => event.key === keyFilter);
+  } catch (error) {
+    console.warn(
+      '[RealtimeRedisBroker] failed to replay stream events:',
+      error
+    );
+    return [];
+  }
 }
 
 export async function subscribeRealtimeEvents(

@@ -31,6 +31,7 @@ export interface RealtimeEnvelope {
   id: string;
   key: string;
   emittedAt: number;
+  origin?: string;
   payload: RealtimeDbChangePayload;
 }
 
@@ -89,9 +90,8 @@ export function matchesSubscriptionConfig(
 
   const parsedFilter = parseEqFilter(config.filter);
   if (!parsedFilter) {
-    // Keep backward compatibility for unsupported filters:
-    // do not block event delivery when parser cannot understand the filter.
-    return true;
+    // Unsupported filter should not match to avoid accidental over-delivery.
+    return false;
   }
 
   const { field, value } = parsedFilter;

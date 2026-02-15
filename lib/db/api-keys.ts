@@ -11,6 +11,45 @@ import { Result, failure, success } from '@lib/types/result';
 import { ApiKey } from '../types/database';
 import { decryptApiKey, encryptApiKey } from '../utils/encryption';
 
+const IS_BROWSER = typeof window !== 'undefined';
+
+type RealtimeRow = Record<string, unknown>;
+
+async function publishApiKeyChangeBestEffort(input: {
+  eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+  newRow: RealtimeRow | null;
+  oldRow: RealtimeRow | null;
+}) {
+  if (IS_BROWSER) {
+    return;
+  }
+
+  try {
+    const runtimeRequire = eval('require') as (id: string) => unknown;
+    const publisherModule = runtimeRequire('../server/realtime/publisher') as {
+      publishTableChangeEvent?: (payload: {
+        table: string;
+        eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+        newRow: RealtimeRow | null;
+        oldRow: RealtimeRow | null;
+      }) => Promise<void>;
+    };
+    const publisher = publisherModule.publishTableChangeEvent;
+    if (typeof publisher !== 'function') {
+      return;
+    }
+
+    await publisher({
+      table: 'api_keys',
+      eventType: input.eventType,
+      oldRow: input.oldRow,
+      newRow: input.newRow,
+    });
+  } catch (error) {
+    console.warn('[ApiKeysDB] Realtime publish failed:', error);
+  }
+}
+
 /**
  * Get the API key for a specific service instance (optimized version).
  * @param serviceInstanceId Service instance ID
@@ -191,23 +230,63 @@ export async function incrementApiKeyUsage(
   id: string
 ): Promise<Result<boolean>> {
   return dataService.query(async () => {
-    const executeResult = await dataService.rawExecute(
+    const oldRowResult = await dataService.rawQuery<{
+      id: string;
+      usage_count: number | null;
+      last_used_at: string | null;
+      service_instance_id: string;
+    }>(
+      `
+        SELECT
+          id::text AS id,
+          usage_count,
+          last_used_at::text AS last_used_at,
+          service_instance_id::text AS service_instance_id
+        FROM api_keys
+        WHERE id = $1::uuid
+        LIMIT 1
+      `,
+      [id]
+    );
+    if (!oldRowResult.success) {
+      throw oldRowResult.error;
+    }
+
+    const updateResult = await dataService.rawQuery<{
+      id: string;
+      usage_count: number | null;
+      last_used_at: string | null;
+      service_instance_id: string;
+    }>(
       `
         UPDATE api_keys
         SET usage_count = COALESCE(usage_count, 0) + 1,
             last_used_at = NOW(),
             updated_at = NOW()
         WHERE id = $1::uuid
+        RETURNING
+          id::text AS id,
+          usage_count,
+          last_used_at::text AS last_used_at,
+          service_instance_id::text AS service_instance_id
       `,
       [id]
     );
 
-    if (!executeResult.success) {
-      throw executeResult.error;
+    if (!updateResult.success) {
+      throw updateResult.error;
     }
 
     // Clear related cache
     cacheService.deletePattern('api_keys:*');
+
+    if (updateResult.data[0]) {
+      await publishApiKeyChangeBestEffort({
+        eventType: 'UPDATE',
+        oldRow: oldRowResult.data[0] || null,
+        newRow: updateResult.data[0],
+      });
+    }
 
     return true;
   });

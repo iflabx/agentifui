@@ -268,19 +268,37 @@ describe('local-login-policy', () => {
   });
 
   it('updates user local-login state by user id', async () => {
-    queryMock.mockResolvedValueOnce({
-      rows: [
-        {
-          id: '00000000-0000-4000-8000-000000000001',
-          email: 'user@example.com',
-          auth_source: 'oidc',
-          local_login_enabled: false,
-          local_login_updated_at: '2026-02-14T00:00:00.000Z',
-          fallback_password_set_at: '2026-02-14T02:00:00.000Z',
-          fallback_password_updated_by: '00000000-0000-4000-8000-000000000009',
-        },
-      ],
-    });
+    queryMock
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: '00000000-0000-4000-8000-000000000001',
+            email: 'user@example.com',
+            auth_source: 'oidc',
+            local_login_enabled: true,
+            local_login_updated_at: '2026-02-13T00:00:00.000Z',
+            fallback_password_set_at: '2026-02-14T02:00:00.000Z',
+            fallback_password_updated_by:
+              '00000000-0000-4000-8000-000000000009',
+            updated_at: '2026-02-14T03:00:00.000Z',
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: '00000000-0000-4000-8000-000000000001',
+            email: 'user@example.com',
+            auth_source: 'oidc',
+            local_login_enabled: false,
+            local_login_updated_at: '2026-02-14T00:00:00.000Z',
+            fallback_password_set_at: '2026-02-14T02:00:00.000Z',
+            fallback_password_updated_by:
+              '00000000-0000-4000-8000-000000000009',
+            updated_at: '2026-02-14T03:10:00.000Z',
+          },
+        ],
+      });
 
     const result = await setUserLocalLoginEnabledByUserId(
       '00000000-0000-4000-8000-000000000001',

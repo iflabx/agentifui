@@ -3,6 +3,7 @@ import {
   queryRowsWithPgSystemContext,
   queryRowsWithPgUserContext,
 } from '@lib/server/pg/user-context';
+import { publishTableChangeEvent } from '@lib/server/realtime/publisher';
 import { requireAdmin } from '@lib/services/admin/require-admin';
 
 import { NextResponse } from 'next/server';
@@ -27,6 +28,15 @@ interface AppRow extends ScopedAppRow {
   provider_name: string;
   provider_is_active: boolean;
   provider_is_default: boolean;
+}
+
+type RealtimeRow = Record<string, unknown>;
+
+function toRealtimeRow(row: AppRow | null): RealtimeRow | null {
+  if (!row) {
+    return null;
+  }
+  return { ...row };
 }
 
 function toAppDetail(row: AppRow) {
@@ -350,6 +360,8 @@ export async function PATCH(request: Request) {
       );
     }
 
+    const oldRow = await resolveDetailByServiceInstanceId(id);
+
     const rows = await queryRowsWithPgUserContext<AppRow>(
       admin.userId,
       `
@@ -384,6 +396,15 @@ export async function PATCH(request: Request) {
         { status: 404 }
       );
     }
+
+    await publishTableChangeEvent({
+      table: 'service_instances',
+      eventType: 'UPDATE',
+      oldRow: toRealtimeRow(oldRow),
+      newRow: toRealtimeRow(rows[0]),
+    }).catch(error => {
+      console.warn('[InternalAppsAPI] Realtime publish failed:', error);
+    });
 
     return NextResponse.json({
       success: true,

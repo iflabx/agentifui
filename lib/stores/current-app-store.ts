@@ -1,10 +1,12 @@
 // lib/stores/current-app-store.ts
-import { clearDifyConfigCache } from '@lib/config/dify-config';
 import type { ServiceInstance } from '@lib/types/database';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
-// Added: import cache clearing function
+function clearDifyConfigCacheClient(_appId?: string) {
+  // Server-side Dify config cache is process-local and should be invalidated by
+  // write-path hooks; client-side store only needs to refresh its own state.
+}
 
 interface CurrentAppState {
   currentAppId: string | null;
@@ -319,10 +321,10 @@ export const useCurrentAppStore = create<CurrentAppState>()(
 
             // On config change, clear Dify config cache to ensure API calls use latest config
             if (currentState.currentAppId) {
-              clearDifyConfigCache(currentState.currentAppId);
+              clearDifyConfigCacheClient(currentState.currentAppId);
             }
             if (targetInstance.instance_id !== currentState.currentAppId) {
-              clearDifyConfigCache(targetInstance.instance_id);
+              clearDifyConfigCacheClient(targetInstance.instance_id);
             }
 
             set({
@@ -373,9 +375,9 @@ export const useCurrentAppStore = create<CurrentAppState>()(
           // Clear old config cache
           const currentState = get();
           if (currentState.currentAppId) {
-            clearDifyConfigCache(currentState.currentAppId);
+            clearDifyConfigCacheClient(currentState.currentAppId);
           }
-          clearDifyConfigCache(appId);
+          clearDifyConfigCacheClient(appId);
 
           // Update state
           set({

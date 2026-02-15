@@ -11,6 +11,7 @@ import { Result, success } from '@lib/types/result';
 
 import { ServiceInstance } from '../types/database';
 
+const IS_BROWSER = typeof window !== 'undefined';
 const SQL_IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 const SERVICE_INSTANCE_UPDATE_COLUMNS = new Set([
   'provider_id',
@@ -22,6 +23,43 @@ const SERVICE_INSTANCE_UPDATE_COLUMNS = new Set([
   'visibility',
   'config',
 ]);
+
+type RealtimeRow = Record<string, unknown>;
+
+async function publishServiceInstanceChangeBestEffort(input: {
+  eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+  newRow: RealtimeRow | null;
+  oldRow: RealtimeRow | null;
+}) {
+  if (IS_BROWSER) {
+    return;
+  }
+
+  try {
+    const runtimeRequire = eval('require') as (id: string) => unknown;
+    const publisherModule = runtimeRequire('../server/realtime/publisher') as {
+      publishTableChangeEvent?: (payload: {
+        table: string;
+        eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+        newRow: RealtimeRow | null;
+        oldRow: RealtimeRow | null;
+      }) => Promise<void>;
+    };
+    const publisher = publisherModule.publishTableChangeEvent;
+    if (typeof publisher !== 'function') {
+      return;
+    }
+
+    await publisher({
+      table: 'service_instances',
+      eventType: input.eventType,
+      oldRow: input.oldRow,
+      newRow: input.newRow,
+    });
+  } catch (error) {
+    console.warn('[ServiceInstancesDB] Realtime publish failed:', error);
+  }
+}
 
 function normalizeServiceInstanceRow(
   row: Record<string, unknown>
@@ -203,6 +241,11 @@ export async function createServiceInstance(
   }
 
   cacheService.deletePattern('service_instances:*');
+  await publishServiceInstanceChangeBestEffort({
+    eventType: 'INSERT',
+    oldRow: null,
+    newRow: transactionResult.data as unknown as RealtimeRow,
+  });
   return success(transactionResult.data);
 }
 
@@ -216,6 +259,12 @@ export async function updateServiceInstance(
   id: string,
   updates: Partial<Omit<ServiceInstance, 'id' | 'created_at' | 'updated_at'>>
 ): Promise<Result<ServiceInstance>> {
+  const oldInstanceResult = await getServiceInstanceById(id);
+  const oldInstance =
+    oldInstanceResult.success && oldInstanceResult.data
+      ? oldInstanceResult.data
+      : null;
+
   const updateKeys = Object.keys(updates).filter(
     key => (updates as Record<string, unknown>)[key] !== undefined
   );
@@ -309,6 +358,11 @@ export async function updateServiceInstance(
   }
 
   cacheService.deletePattern('service_instances:*');
+  await publishServiceInstanceChangeBestEffort({
+    eventType: 'UPDATE',
+    oldRow: oldInstance as unknown as RealtimeRow | null,
+    newRow: transactionResult.data as unknown as RealtimeRow,
+  });
   return success(transactionResult.data);
 }
 
@@ -533,6 +587,12 @@ export async function setDefaultServiceInstance(
     if (!updatedResult.success) {
       throw updatedResult.error;
     }
+
+    await publishServiceInstanceChangeBestEffort({
+      eventType: 'UPDATE',
+      oldRow: instance as unknown as RealtimeRow,
+      newRow: updatedResult.data as unknown as RealtimeRow | null,
+    });
 
     return updatedResult.data!;
   });

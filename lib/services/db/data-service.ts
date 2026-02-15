@@ -6,8 +6,6 @@
  */
 import { getManagedCrudRepository } from '@lib/server/db/repositories';
 import { resolvePgSessionOptionsFromEnv } from '@lib/server/pg/session-options';
-import { ensureRealtimeBridge } from '@lib/server/realtime/bridge';
-import { publishTableChangeEvent } from '@lib/server/realtime/publisher';
 import {
   DatabaseError,
   Result,
@@ -59,6 +57,15 @@ type SqlPool = {
   connect: () => Promise<SqlClient>;
 };
 
+type RealtimePublisher = (input: {
+  table: string;
+  eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+  newRow: RealtimeRow | null;
+  oldRow: RealtimeRow | null;
+  schema?: string;
+  commitTimestamp?: string;
+}) => Promise<void>;
+
 const IDENTIFIER_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 const PG_POOL_GLOBAL_KEY = '__agentifui_pg_pool__';
 const REALTIME_ENABLED_TABLES = new Set([
@@ -84,6 +91,11 @@ function quoteIdentifier(identifier: string): string {
 export class DataService {
   private static instance: DataService;
   private registeredRealtimeSubscriptions = new Set<string>();
+  private realtimeHandlerIds = new WeakMap<
+    (payload: unknown) => void,
+    number
+  >();
+  private nextRealtimeHandlerId = 1;
 
   private constructor() {}
 
@@ -148,6 +160,54 @@ export class DataService {
     }
 
     throw new DatabaseError('DATABASE_URL (or PGURL) is required', 'pg_pool');
+  }
+
+  private loadRealtimeBridgeEnsurer(): (() => void) | null {
+    if (typeof window !== 'undefined') {
+      return null;
+    }
+
+    try {
+      // Dynamic runtime require prevents client bundle from resolving node-only deps.
+      const runtimeRequire = eval('require') as (id: string) => unknown;
+      const bridgeModule = runtimeRequire('../../server/realtime/bridge') as {
+        ensureRealtimeBridge?: () => void;
+      };
+      return typeof bridgeModule.ensureRealtimeBridge === 'function'
+        ? bridgeModule.ensureRealtimeBridge
+        : null;
+    } catch (error) {
+      console.warn(
+        '[DataService] Failed to load realtime bridge module:',
+        error
+      );
+      return null;
+    }
+  }
+
+  private loadRealtimePublisher(): RealtimePublisher | null {
+    if (typeof window !== 'undefined') {
+      return null;
+    }
+
+    try {
+      // Dynamic runtime require prevents client bundle from resolving node-only deps.
+      const runtimeRequire = eval('require') as (id: string) => unknown;
+      const publisherModule = runtimeRequire(
+        '../../server/realtime/publisher'
+      ) as {
+        publishTableChangeEvent?: RealtimePublisher;
+      };
+      return typeof publisherModule.publishTableChangeEvent === 'function'
+        ? publisherModule.publishTableChangeEvent
+        : null;
+    } catch (error) {
+      console.warn(
+        '[DataService] Failed to load realtime publisher module:',
+        error
+      );
+      return null;
+    }
   }
 
   /**
@@ -261,7 +321,12 @@ export class DataService {
     }
 
     try {
-      await publishTableChangeEvent({
+      const publisher = this.loadRealtimePublisher();
+      if (!publisher) {
+        return;
+      }
+
+      await publisher({
         table: input.table,
         eventType: input.eventType,
         newRow,
@@ -282,17 +347,30 @@ export class DataService {
     },
     handler: (payload: unknown) => void
   ): void {
-    const dedupeKey = `${key}|${config.schema}|${config.table}|${config.event}|${config.filter || ''}`;
+    const handlerId = this.getRealtimeHandlerId(handler);
+    const dedupeKey = `${key}|${config.schema}|${config.table}|${config.event}|${config.filter || ''}|h:${handlerId}`;
     if (this.registeredRealtimeSubscriptions.has(dedupeKey)) {
       return;
     }
 
     if (typeof window === 'undefined') {
-      ensureRealtimeBridge();
+      const ensureBridge = this.loadRealtimeBridgeEnsurer();
+      ensureBridge?.();
     }
 
     this.registeredRealtimeSubscriptions.add(dedupeKey);
     realtimeService.subscribe(key, config, handler);
+  }
+
+  private getRealtimeHandlerId(handler: (payload: unknown) => void): number {
+    const existing = this.realtimeHandlerIds.get(handler);
+    if (existing) {
+      return existing;
+    }
+
+    const created = this.nextRealtimeHandlerId++;
+    this.realtimeHandlerIds.set(handler, created);
+    return created;
   }
 
   /**

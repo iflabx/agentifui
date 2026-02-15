@@ -12,6 +12,47 @@ import { extractMainContentForPreview } from '../../utils/index';
 import { cacheService } from './cache-service';
 import { dataService } from './data-service';
 
+const IS_BROWSER = typeof window !== 'undefined';
+
+type RealtimeRow = Record<string, unknown>;
+
+async function publishMessageChangeBestEffort(input: {
+  eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+  newRow: RealtimeRow | null;
+  oldRow: RealtimeRow | null;
+}) {
+  if (IS_BROWSER) {
+    return;
+  }
+
+  try {
+    const runtimeRequire = eval('require') as (id: string) => unknown;
+    const publisherModule = runtimeRequire(
+      '../../server/realtime/publisher'
+    ) as {
+      publishTableChangeEvent?: (payload: {
+        table: string;
+        eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+        newRow: RealtimeRow | null;
+        oldRow: RealtimeRow | null;
+      }) => Promise<void>;
+    };
+    const publisher = publisherModule.publishTableChangeEvent;
+    if (typeof publisher !== 'function') {
+      return;
+    }
+
+    await publisher({
+      table: 'messages',
+      eventType: input.eventType,
+      oldRow: input.oldRow,
+      newRow: input.newRow,
+    });
+  } catch (error) {
+    console.warn('[MessageService] Realtime publish failed:', error);
+  }
+}
+
 export interface MessagePage {
   messages: Message[];
   hasMore: boolean;
@@ -363,6 +404,18 @@ export class MessageService {
       conversationIds.forEach(convId => {
         cacheService.deletePattern(`conversation:messages:${convId}:*`);
       });
+
+      await Promise.all(
+        Array.from(conversationIds).map(async conversationId => {
+          await publishMessageChangeBestEffort({
+            eventType: 'INSERT',
+            oldRow: null,
+            newRow: {
+              conversation_id: conversationId,
+            },
+          });
+        })
+      );
 
       return queryResult.data.map(item => item.id);
     });
