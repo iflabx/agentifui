@@ -1,12 +1,15 @@
 import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
-import { getPgPool } from '@lib/server/pg/pool';
+import {
+  queryRowsWithPgSystemContext,
+  queryRowsWithPgUserContext,
+} from '@lib/server/pg/user-context';
 import { requireAdmin } from '@lib/services/admin/require-admin';
 
 import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 
-interface AppRow {
+interface ScopedAppRow {
   id: string;
   provider_id: string;
   display_name: string | null;
@@ -18,6 +21,9 @@ interface AppRow {
   config: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
+}
+
+interface AppRow extends ScopedAppRow {
   provider_name: string;
   provider_is_active: boolean;
   provider_is_default: boolean;
@@ -83,6 +89,89 @@ async function requireAuthenticated(request: Request) {
   return { ok: true as const, userId: identity.data.userId };
 }
 
+async function queryScopedAppRows(
+  actorUserId: string | null,
+  sql: string,
+  params: unknown[] = []
+): Promise<ScopedAppRow[]> {
+  if (actorUserId) {
+    return queryRowsWithPgUserContext<ScopedAppRow>(actorUserId, sql, params);
+  }
+
+  return queryRowsWithPgSystemContext<ScopedAppRow>(sql, params);
+}
+
+async function querySystemAppRows(
+  sql: string,
+  params: unknown[] = []
+): Promise<AppRow[]> {
+  return queryRowsWithPgSystemContext<AppRow>(sql, params);
+}
+
+async function listAppDetailsByIds(ids: string[]): Promise<AppRow[]> {
+  if (ids.length === 0) {
+    return [];
+  }
+
+  return querySystemAppRows(
+    `
+      SELECT
+        si.id::text,
+        si.provider_id::text,
+        si.display_name,
+        si.description,
+        si.instance_id,
+        si.api_path,
+        si.is_default,
+        si.visibility,
+        si.config,
+        si.created_at::text,
+        si.updated_at::text,
+        p.name AS provider_name,
+        p.is_active AS provider_is_active,
+        p.is_default AS provider_is_default
+      FROM service_instances si
+      INNER JOIN providers p ON p.id = si.provider_id
+      WHERE si.id = ANY($1::uuid[])
+        AND p.is_active = TRUE
+      ORDER BY si.display_name ASC NULLS LAST, si.instance_id ASC
+    `,
+    [ids]
+  );
+}
+
+async function resolveDetailByServiceInstanceId(
+  serviceInstanceId: string
+): Promise<AppRow | null> {
+  const rows = await querySystemAppRows(
+    `
+      SELECT
+        si.id::text,
+        si.provider_id::text,
+        si.display_name,
+        si.description,
+        si.instance_id,
+        si.api_path,
+        si.is_default,
+        si.visibility,
+        si.config,
+        si.created_at::text,
+        si.updated_at::text,
+        p.name AS provider_name,
+        p.is_active AS provider_is_active,
+        p.is_default AS provider_is_default
+      FROM service_instances si
+      INNER JOIN providers p ON p.id = si.provider_id
+      WHERE si.id = $1::uuid
+        AND p.is_active = TRUE
+      LIMIT 1
+    `,
+    [serviceInstanceId]
+  );
+
+  return rows[0] || null;
+}
+
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
@@ -91,17 +180,26 @@ export async function GET(request: Request) {
     const mode = (url.searchParams.get('mode') || '').trim();
 
     const isPublicScope = scope === 'public';
-    if (!isPublicScope) {
+    const isAllScope = scope === 'all';
+
+    let actorUserId: string | null = null;
+    if (isAllScope) {
+      const admin = await requireAdmin(request.headers);
+      if (!admin.ok) {
+        return admin.response;
+      }
+      actorUserId = admin.userId;
+    } else if (!isPublicScope) {
       const authResult = await requireAuthenticated(request);
       if (!authResult.ok) {
         return authResult.response;
       }
+      actorUserId = authResult.userId;
     }
 
-    const pool = getPgPool();
-
     if (instanceId) {
-      const { rows } = await pool.query<AppRow>(
+      const scopedRows = await queryScopedAppRows(
+        actorUserId,
         `
           SELECT
             si.id::text,
@@ -114,31 +212,36 @@ export async function GET(request: Request) {
             si.visibility,
             si.config,
             si.created_at::text,
-            si.updated_at::text,
-            p.name AS provider_name,
-            p.is_active AS provider_is_active,
-            p.is_default AS provider_is_default
+            si.updated_at::text
           FROM service_instances si
-          INNER JOIN providers p ON p.id = si.provider_id
           WHERE si.instance_id = $1
-            AND p.is_active = TRUE
+            ${isPublicScope ? "AND si.visibility = 'public'" : ''}
           LIMIT 1
         `,
         [instanceId]
       );
 
-      if (!rows[0]) {
+      const scoped = scopedRows[0];
+      if (!scoped) {
         return NextResponse.json(
           { success: false, error: 'App instance not found' },
           { status: 404 }
         );
       }
 
-      return NextResponse.json({ success: true, app: toAppDetail(rows[0]) });
+      const detail = await resolveDetailByServiceInstanceId(scoped.id);
+      if (!detail) {
+        return NextResponse.json(
+          { success: false, error: 'App instance not found' },
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json({ success: true, app: toAppDetail(detail) });
     }
 
     if (mode === 'default') {
-      const { rows } = await pool.query<AppRow>(
+      const rows = await querySystemAppRows(
         `
           SELECT
             si.id::text,
@@ -174,10 +277,8 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: true, app: toAppDetail(rows[0]) });
     }
 
-    const visibilityFilter = isPublicScope
-      ? `AND si.visibility = 'public'`
-      : '';
-    const { rows } = await pool.query<AppRow>(
+    const scopedRows = await queryScopedAppRows(
+      actorUserId,
       `
         SELECT
           si.id::text,
@@ -190,21 +291,30 @@ export async function GET(request: Request) {
           si.visibility,
           si.config,
           si.created_at::text,
-          si.updated_at::text,
-          p.name AS provider_name,
-          p.is_active AS provider_is_active,
-          p.is_default AS provider_is_default
+          si.updated_at::text
         FROM service_instances si
-        INNER JOIN providers p ON p.id = si.provider_id
-        WHERE p.is_active = TRUE
-        ${visibilityFilter}
+        WHERE TRUE
+          ${isPublicScope ? "AND si.visibility = 'public'" : ''}
         ORDER BY si.display_name ASC NULLS LAST, si.instance_id ASC
       `
     );
 
+    if (scopedRows.length === 0) {
+      return NextResponse.json({
+        success: true,
+        apps: [],
+      });
+    }
+
+    const details = await listAppDetailsByIds(scopedRows.map(row => row.id));
+    const detailById = new Map(details.map(row => [row.id, row]));
+    const orderedDetails = scopedRows
+      .map(row => detailById.get(row.id))
+      .filter((row): row is AppRow => Boolean(row));
+
     return NextResponse.json({
       success: true,
-      apps: rows.map(toAppListItem),
+      apps: orderedDetails.map(toAppListItem),
     });
   } catch (error) {
     console.error('[InternalAppsAPI] failed:', error);
@@ -240,8 +350,8 @@ export async function PATCH(request: Request) {
       );
     }
 
-    const pool = getPgPool();
-    const { rows } = await pool.query<AppRow>(
+    const rows = await queryRowsWithPgUserContext<AppRow>(
+      admin.userId,
       `
         UPDATE service_instances si
         SET visibility = $1,

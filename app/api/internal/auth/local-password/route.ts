@@ -47,8 +47,12 @@ export async function GET(request: Request) {
   const [authModeResult, localStateResult, hasPasswordResult] =
     await Promise.all([
       getAuthModeSetting(),
-      getUserLocalLoginStateByUserId(auth.identity.userId),
-      hasCredentialPasswordByAuthUserId(auth.identity.authUserId),
+      getUserLocalLoginStateByUserId(auth.identity.userId, {
+        actorUserId: auth.identity.userId,
+      }),
+      hasCredentialPasswordByAuthUserId(auth.identity.authUserId, {
+        actorUserId: auth.identity.userId,
+      }),
     ]);
 
   if (!authModeResult.success) {

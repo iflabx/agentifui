@@ -1,5 +1,6 @@
 import { auth, getAuthProviderIssuer } from '@lib/auth/better-auth/server';
 import {
+  type IdentityPersistenceContext,
   type UpsertProfileExternalAttributesInput,
   getProfileExternalAttributes,
   getUserIdentityByIssuerSubject,
@@ -7,6 +8,10 @@ import {
   upsertUserIdentity,
 } from '@lib/db/user-identities';
 import { getPgPool } from '@lib/server/pg/pool';
+import {
+  runWithPgSystemContext,
+  runWithPgUserContext,
+} from '@lib/server/pg/user-context';
 import { Result, failure, success } from '@lib/types/result';
 import { randomUUID } from 'node:crypto';
 
@@ -57,6 +62,10 @@ type ResolveUserIdResult = {
   userId: string;
   createdLegacyMapping: boolean;
   ensuredProfile?: EnsureProfileResult;
+};
+
+const SYSTEM_CONTEXT: IdentityPersistenceContext = {
+  useSystemActor: true,
 };
 
 export interface ResolvedSessionIdentity {
@@ -199,27 +208,33 @@ async function upsertPrimarySessionIdentity(
   const fullName = readString(sessionUser.name);
   const split = splitName(fullName);
   const provider = inferProvider(sessionUser);
-  const upsertIdentity = await upsertUserIdentity({
-    user_id: userId,
-    issuer: INTERNAL_AUTH_ISSUER,
-    provider,
-    subject: userId,
-    email: normalizeEmail(sessionUser.email),
-    email_verified: Boolean(sessionUser.emailVerified),
-    given_name: split.givenName,
-    family_name: split.familyName,
-    preferred_username: readFirstString(sessionUser, [
-      'preferred_username',
-      'preferredUsername',
-      'username',
-      'login',
-    ]),
-    raw_claims: {
-      ...sessionUser,
-      _identity_source: 'better-auth/session',
-      _provider_hint: provider,
+  const context: IdentityPersistenceContext = {
+    actorUserId: userId,
+  };
+  const upsertIdentity = await upsertUserIdentity(
+    {
+      user_id: userId,
+      issuer: INTERNAL_AUTH_ISSUER,
+      provider,
+      subject: userId,
+      email: normalizeEmail(sessionUser.email),
+      email_verified: Boolean(sessionUser.emailVerified),
+      given_name: split.givenName,
+      family_name: split.familyName,
+      preferred_username: readFirstString(sessionUser, [
+        'preferred_username',
+        'preferredUsername',
+        'username',
+        'login',
+      ]),
+      raw_claims: {
+        ...sessionUser,
+        _identity_source: 'better-auth/session',
+        _provider_hint: provider,
+      },
     },
-  });
+    context
+  );
 
   if (!upsertIdentity.success) {
     return failure(upsertIdentity.error);
@@ -291,7 +306,8 @@ async function resolveInternalUserId(
 
   const existingIdentity = await getUserIdentityByIssuerSubject(
     INTERNAL_AUTH_ISSUER,
-    authUserId
+    authUserId,
+    SYSTEM_CONTEXT
   );
   if (!existingIdentity.success) {
     return failure(existingIdentity.error);
@@ -307,7 +323,8 @@ async function resolveInternalUserId(
   return withLegacyMappingLock(authUserId, async () => {
     const recheckedIdentity = await getUserIdentityByIssuerSubject(
       INTERNAL_AUTH_ISSUER,
-      authUserId
+      authUserId,
+      SYSTEM_CONTEXT
     );
     if (!recheckedIdentity.success) {
       return failure(recheckedIdentity.error);
@@ -332,27 +349,30 @@ async function resolveInternalUserId(
       return failure(ensuredProfile.error);
     }
 
-    const upsertIdentity = await upsertUserIdentity({
-      user_id: fallbackUserId,
-      issuer: INTERNAL_AUTH_ISSUER,
-      provider: INTERNAL_AUTH_PROVIDER,
-      subject: authUserId,
-      email: normalizeEmail(sessionUser.email),
-      email_verified: Boolean(sessionUser.emailVerified),
-      given_name: split.givenName,
-      family_name: split.familyName,
-      preferred_username: readFirstString(sessionUser, [
-        'preferred_username',
-        'preferredUsername',
-        'username',
-        'login',
-      ]),
-      raw_claims: {
-        ...sessionUser,
-        _identity_source: 'better-auth/session',
-        _provider_hint: provider,
+    const upsertIdentity = await upsertUserIdentity(
+      {
+        user_id: fallbackUserId,
+        issuer: INTERNAL_AUTH_ISSUER,
+        provider: INTERNAL_AUTH_PROVIDER,
+        subject: authUserId,
+        email: normalizeEmail(sessionUser.email),
+        email_verified: Boolean(sessionUser.emailVerified),
+        given_name: split.givenName,
+        family_name: split.familyName,
+        preferred_username: readFirstString(sessionUser, [
+          'preferred_username',
+          'preferredUsername',
+          'username',
+          'login',
+        ]),
+        raw_claims: {
+          ...sessionUser,
+          _identity_source: 'better-auth/session',
+          _provider_hint: provider,
+        },
       },
-    });
+      { actorUserId: fallbackUserId }
+    );
 
     if (!upsertIdentity.success) {
       return failure(upsertIdentity.error);
@@ -382,29 +402,30 @@ async function ensureProfileStatus(
   userId: string,
   sessionUser: SessionUser
 ): Promise<Result<EnsureProfileResult>> {
-  const pool = getPgPool();
   const profileName = readString(sessionUser.name);
   const profileAvatar = readString(sessionUser.image);
   const profileEmail = normalizeEmail(sessionUser.email);
   const profileAuthSource = inferProvider(sessionUser);
 
   try {
-    const touchedExisting = await pool.query<ProfileStatusRow>(
-      `
-      UPDATE profiles
-      SET
-        full_name = COALESCE($2, full_name),
-        avatar_url = COALESCE($3, avatar_url),
-        email = COALESCE($4, email),
-        auth_source = COALESCE($5, auth_source),
-        last_login = NOW(),
-        updated_at = NOW()
-      WHERE id = $1
-      RETURNING
-        role::text AS role,
-        status::text AS status
-      `,
-      [userId, profileName, profileAvatar, profileEmail, profileAuthSource]
+    const touchedExisting = await runWithPgUserContext(userId, client =>
+      client.query<ProfileStatusRow>(
+        `
+        UPDATE profiles
+        SET
+          full_name = COALESCE($2, full_name),
+          avatar_url = COALESCE($3, avatar_url),
+          email = COALESCE($4, email),
+          auth_source = COALESCE($5, auth_source),
+          last_login = NOW(),
+          updated_at = NOW()
+        WHERE id = $1
+        RETURNING
+          role::text AS role,
+          status::text AS status
+        `,
+        [userId, profileName, profileAvatar, profileEmail, profileAuthSource]
+      )
     );
 
     const profile = touchedExisting.rows[0];
@@ -416,24 +437,26 @@ async function ensureProfileStatus(
       });
     }
 
-    const inserted = await pool.query<ProfileStatusRow>(
-      `
-      INSERT INTO profiles (
-        id,
-        full_name,
-        avatar_url,
-        email,
-        auth_source,
-        last_login,
-        created_at,
-        updated_at
-      ) VALUES ($1, $2, $3, $4, $5, NOW(), NOW(), NOW())
-      ON CONFLICT (id) DO NOTHING
-      RETURNING
-        role::text AS role,
-        status::text AS status
-      `,
-      [userId, profileName, profileAvatar, profileEmail, profileAuthSource]
+    const inserted = await runWithPgUserContext(userId, client =>
+      client.query<ProfileStatusRow>(
+        `
+        INSERT INTO profiles (
+          id,
+          full_name,
+          avatar_url,
+          email,
+          auth_source,
+          last_login,
+          created_at,
+          updated_at
+        ) VALUES ($1, $2, $3, $4, $5, NOW(), NOW(), NOW())
+        ON CONFLICT (id) DO NOTHING
+        RETURNING
+          role::text AS role,
+          status::text AS status
+        `,
+        [userId, profileName, profileAvatar, profileEmail, profileAuthSource]
+      )
     );
 
     const createdProfile = inserted.rows[0];
@@ -445,22 +468,24 @@ async function ensureProfileStatus(
       });
     }
 
-    const touchedAfterConflict = await pool.query<ProfileStatusRow>(
-      `
-      UPDATE profiles
-      SET
-        full_name = COALESCE($2, full_name),
-        avatar_url = COALESCE($3, avatar_url),
-        email = COALESCE($4, email),
-        auth_source = COALESCE($5, auth_source),
-        last_login = NOW(),
-        updated_at = NOW()
-      WHERE id = $1
-      RETURNING
-        role::text AS role,
-        status::text AS status
-      `,
-      [userId, profileName, profileAvatar, profileEmail, profileAuthSource]
+    const touchedAfterConflict = await runWithPgUserContext(userId, client =>
+      client.query<ProfileStatusRow>(
+        `
+        UPDATE profiles
+        SET
+          full_name = COALESCE($2, full_name),
+          avatar_url = COALESCE($3, avatar_url),
+          email = COALESCE($4, email),
+          auth_source = COALESCE($5, auth_source),
+          last_login = NOW(),
+          updated_at = NOW()
+        WHERE id = $1
+        RETURNING
+          role::text AS role,
+          status::text AS status
+        `,
+        [userId, profileName, profileAvatar, profileEmail, profileAuthSource]
+      )
     );
     const profileAfterConflict = touchedAfterConflict.rows[0];
     if (profileAfterConflict) {
@@ -484,20 +509,20 @@ async function ensureProfileStatus(
 }
 
 async function cleanupUnlinkedProfile(userId: string): Promise<void> {
-  const pool = getPgPool();
-
   try {
-    await pool.query(
-      `
-      DELETE FROM profiles
-      WHERE id = $1
-        AND NOT EXISTS (
-          SELECT 1
-          FROM user_identities
-          WHERE user_id = $1
-        )
-      `,
-      [userId]
+    await runWithPgSystemContext(client =>
+      client.query(
+        `
+        DELETE FROM profiles
+        WHERE id = $1
+          AND NOT EXISTS (
+            SELECT 1
+            FROM user_identities
+            WHERE user_id = $1
+          )
+        `,
+        [userId]
+      )
     );
   } catch (error) {
     console.warn(
@@ -605,7 +630,9 @@ async function syncExternalAttributes(
     return;
   }
 
-  const existingAttributes = await getProfileExternalAttributes(userId);
+  const existingAttributes = await getProfileExternalAttributes(userId, {
+    actorUserId: userId,
+  });
   if (!existingAttributes.success) {
     console.warn(
       '[SessionIdentity] failed to load existing external attributes:',
@@ -630,7 +657,9 @@ async function syncExternalAttributes(
     }
   }
 
-  const upsert = await upsertProfileExternalAttributes(payload);
+  const upsert = await upsertProfileExternalAttributes(payload, {
+    actorUserId: userId,
+  });
   if (!upsert.success) {
     console.warn(
       '[SessionIdentity] failed to sync external profile attributes:',

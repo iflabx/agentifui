@@ -9,52 +9,276 @@ export interface DifyAppConfig {
   appType?: string;
 }
 
+export interface DifyConfigQueryOptions {
+  actorUserId?: string | null;
+  useSystemActor?: boolean;
+}
+
+type ServiceInstanceSummaryRow = {
+  id: string;
+  instance_id: string;
+};
+
+type ServiceInstanceWithProviderRow = {
+  id: string;
+  instance_id: string;
+  display_name: string | null;
+  description: string | null;
+  config: Record<string, unknown> | null;
+  provider_id: string;
+  provider_name: string;
+  provider_base_url: string;
+};
+
 // Cache for configuration to avoid repeated requests
-// Added cache management functions for manual clearing and validation
 const configCache: Record<
   string,
   { config: DifyAppConfig; timestamp: number }
 > = {};
-const CACHE_TTL = 2 * 60 * 1000; // Cache for 2 minutes to improve config update responsiveness
+const CACHE_TTL = 2 * 60 * 1000;
+
+function normalizeActorUserId(
+  userId: string | null | undefined
+): string | null {
+  if (typeof userId !== 'string') {
+    return null;
+  }
+
+  const normalized = userId.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function buildCacheKey(appId: string, actorUserId: string | null): string {
+  if (!actorUserId) {
+    return `global::${appId}`;
+  }
+
+  return `actor:${actorUserId}::${appId}`;
+}
+
+function readDifyAppType(
+  config: Record<string, unknown> | null
+): string | undefined {
+  if (!config) {
+    return undefined;
+  }
+
+  const appMetadata = config.app_metadata;
+  if (!appMetadata || typeof appMetadata !== 'object') {
+    return undefined;
+  }
+
+  const appType = (appMetadata as Record<string, unknown>).dify_apptype;
+  if (typeof appType !== 'string') {
+    return undefined;
+  }
+
+  const normalized = appType.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+async function queryRowsWithContext<T extends object>(
+  sql: string,
+  params: unknown[] = [],
+  options: DifyConfigQueryOptions = {}
+): Promise<T[]> {
+  const actorUserId = normalizeActorUserId(options.actorUserId);
+
+  const { getPgPool } = await import('@lib/server/pg/pool');
+  if (actorUserId) {
+    const { queryRowsWithPgUserContext } = await import(
+      '@lib/server/pg/user-context'
+    );
+    return queryRowsWithPgUserContext<T>(actorUserId, sql, params);
+  }
+
+  if (options.useSystemActor !== false) {
+    const { queryRowsWithPgSystemContext } = await import(
+      '@lib/server/pg/user-context'
+    );
+    return queryRowsWithPgSystemContext<T>(sql, params);
+  }
+
+  const pool = getPgPool();
+  const { rows } = await pool.query<T>(sql, params);
+  return rows;
+}
+
+async function resolveScopedServiceInstance(
+  appId: string,
+  actorUserId: string
+): Promise<ServiceInstanceSummaryRow | null> {
+  const directRows = await queryRowsWithContext<ServiceInstanceSummaryRow>(
+    `
+      SELECT
+        si.id::text AS id,
+        si.instance_id
+      FROM service_instances si
+      WHERE si.instance_id = $1
+      LIMIT 1
+    `,
+    [appId],
+    { actorUserId }
+  );
+
+  if (directRows[0]) {
+    return directRows[0];
+  }
+
+  const fallbackRows = await queryRowsWithContext<ServiceInstanceSummaryRow>(
+    `
+      SELECT
+        si.id::text AS id,
+        si.instance_id
+      FROM service_instances si
+      WHERE si.is_default = TRUE
+      ORDER BY si.created_at ASC, si.id ASC
+      LIMIT 1
+    `,
+    [],
+    { actorUserId }
+  );
+
+  return fallbackRows[0] || null;
+}
+
+async function resolveServiceInstanceWithProvider(
+  appId: string,
+  actorUserId: string | null
+): Promise<ServiceInstanceWithProviderRow | null> {
+  if (actorUserId) {
+    const scoped = await resolveScopedServiceInstance(appId, actorUserId);
+    if (!scoped) {
+      return null;
+    }
+
+    const rows = await queryRowsWithContext<ServiceInstanceWithProviderRow>(
+      `
+        SELECT
+          si.id::text AS id,
+          si.instance_id,
+          si.display_name,
+          si.description,
+          si.config,
+          p.id::text AS provider_id,
+          p.name AS provider_name,
+          p.base_url AS provider_base_url
+        FROM service_instances si
+        INNER JOIN providers p ON p.id = si.provider_id
+        WHERE si.id = $1::uuid
+          AND p.is_active = TRUE
+        LIMIT 1
+      `,
+      [scoped.id],
+      { useSystemActor: true }
+    );
+
+    if (!rows[0]) {
+      return null;
+    }
+
+    if (scoped.instance_id !== appId) {
+      console.log(
+        `[Get App Config] Requested instance "${appId}" is not accessible, fallback to ${rows[0].instance_id}`
+      );
+    }
+
+    return rows[0];
+  }
+
+  const directRows = await queryRowsWithContext<ServiceInstanceWithProviderRow>(
+    `
+      SELECT
+        si.id::text AS id,
+        si.instance_id,
+        si.display_name,
+        si.description,
+        si.config,
+        p.id::text AS provider_id,
+        p.name AS provider_name,
+        p.base_url AS provider_base_url
+      FROM service_instances si
+      INNER JOIN providers p ON p.id = si.provider_id
+      WHERE si.instance_id = $1
+        AND p.is_active = TRUE
+      LIMIT 1
+    `,
+    [appId],
+    { useSystemActor: true }
+  );
+
+  if (directRows[0]) {
+    return directRows[0];
+  }
+
+  console.log(
+    `[Get App Config] No service instance found for instance_id "${appId}", trying default provider's default instance`
+  );
+
+  const fallbackRows =
+    await queryRowsWithContext<ServiceInstanceWithProviderRow>(
+      `
+      SELECT
+        si.id::text AS id,
+        si.instance_id,
+        si.display_name,
+        si.description,
+        si.config,
+        p.id::text AS provider_id,
+        p.name AS provider_name,
+        p.base_url AS provider_base_url
+      FROM providers p
+      INNER JOIN service_instances si ON si.provider_id = p.id
+      WHERE p.is_default = TRUE
+        AND p.is_active = TRUE
+        AND si.is_default = TRUE
+      LIMIT 1
+    `,
+      [],
+      { useSystemActor: true }
+    );
+
+  return fallbackRows[0] || null;
+}
 
 /**
  * Clear the configuration cache for a specific appId.
  * If appId is not provided, clear all cache.
- * @param appId Application ID (optional)
  */
 export const clearDifyConfigCache = (appId?: string): void => {
   if (appId) {
-    delete configCache[appId];
+    Object.keys(configCache).forEach(key => {
+      if (key.endsWith(`::${appId}`)) {
+        delete configCache[key];
+      }
+    });
     console.log(`[Dify Config Cache] Cleared cache for ${appId}`);
-  } else {
-    Object.keys(configCache).forEach(key => delete configCache[key]);
-    console.log('[Dify Config Cache] Cleared all cache');
+    return;
   }
+
+  Object.keys(configCache).forEach(key => delete configCache[key]);
+  console.log('[Dify Config Cache] Cleared all cache');
 };
 
 /**
  * Force refresh the configuration cache for a specific appId.
- * @param appId Application ID
- * @returns Refreshed configuration
  */
 export const refreshDifyConfigCache = async (
-  appId: string
+  appId: string,
+  options: DifyConfigQueryOptions = {}
 ): Promise<DifyAppConfig | null> => {
   console.log(`[Dify Config Cache] Force refresh config for ${appId}`);
   clearDifyConfigCache(appId);
-  return await getDifyAppConfig(appId);
+  return await getDifyAppConfig(appId, true, options);
 };
 
 /**
  * Get Dify application configuration.
- * Fetch from database, support cache and force refresh.
- * @param appId Dify application ID
- * @param forceRefresh Whether to force refresh and skip cache
- * @returns Dify application config, including apiKey and apiUrl
  */
 export const getDifyAppConfig = async (
   appId: string,
-  forceRefresh: boolean = false
+  forceRefresh: boolean = false,
+  options: DifyConfigQueryOptions = {}
 ): Promise<DifyAppConfig | null> => {
   if (typeof window !== 'undefined') {
     try {
@@ -81,41 +305,39 @@ export const getDifyAppConfig = async (
     }
   }
 
-  // If force refresh, clear cache
+  const actorUserId = normalizeActorUserId(options.actorUserId);
+  const cacheKey = buildCacheKey(appId, actorUserId);
+
   if (forceRefresh) {
     clearDifyConfigCache(appId);
   }
 
-  // Check cache
-  const cached = configCache[appId];
+  const cached = configCache[cacheKey];
   if (cached && Date.now() - cached.timestamp < CACHE_TTL && !forceRefresh) {
-    console.log(`[Get Dify Config] Using cached config: ${appId}`);
+    console.log(`[Get Dify Config] Using cached config: ${cacheKey}`);
     return cached.config;
   }
 
   try {
-    // Fetch config from database
-    const config = await getDifyConfigFromDatabase(appId);
+    const config = await getDifyConfigFromDatabase(appId, {
+      actorUserId,
+      useSystemActor: actorUserId ? false : options.useSystemActor,
+    });
 
     if (config) {
-      console.log(
-        `[Get Dify Config] Successfully fetched config from database`
-      );
-
-      // Update cache
-      configCache[appId] = {
+      configCache[cacheKey] = {
         config,
         timestamp: Date.now(),
       };
 
-      return config;
-    } else {
-      console.error(
-        `[Get Dify Config] No config found in database for ${appId}`
+      console.log(
+        '[Get Dify Config] Successfully fetched config from database'
       );
-
-      return null;
+      return config;
     }
+
+    console.error(`[Get Dify Config] No config found in database for ${appId}`);
+    return null;
   } catch (error) {
     console.error(
       `[Get Dify Config] Error fetching config for ${appId}:`,
@@ -127,135 +349,38 @@ export const getDifyAppConfig = async (
 
 /**
  * Fetch application configuration from database (supports multiple providers)
- * @param appId Application ID
- * @returns Application configuration
  */
 async function getDifyConfigFromDatabase(
-  appId: string
+  appId: string,
+  options: DifyConfigQueryOptions = {}
 ): Promise<DifyAppConfig | null> {
-  // Get master key from environment variable
   const masterKey = process.env.API_ENCRYPTION_KEY;
 
   if (!masterKey) {
     console.error(
       '[Get Dify Config] ERROR: API_ENCRYPTION_KEY environment variable is not set. Cannot decrypt API key.'
     );
-    // Return null because decryption is not possible without master key
     return null;
   }
 
-  const { getPgPool } = await import('@lib/server/pg/pool');
-  const pool = getPgPool();
-  const { rows: directInstanceRows } = await pool.query<{
-    id: string;
-    instance_id: string;
-    display_name: string | null;
-    description: string | null;
-    config: Record<string, any> | null;
-    provider_id: string;
-    provider_name: string;
-    provider_base_url: string;
-  }>(
-    `
-      SELECT
-        si.id::text AS id,
-        si.instance_id,
-        si.display_name,
-        si.description,
-        si.config,
-        p.id::text AS provider_id,
-        p.name AS provider_name,
-        p.base_url AS provider_base_url
-      FROM service_instances si
-      INNER JOIN providers p ON p.id = si.provider_id
-      WHERE si.instance_id = $1
-        AND p.is_active = TRUE
-      LIMIT 1
-    `,
-    [appId]
+  const actorUserId = normalizeActorUserId(options.actorUserId);
+  const serviceInstance = await resolveServiceInstanceWithProvider(
+    appId,
+    actorUserId
   );
 
-  let serviceInstance = directInstanceRows[0];
-  let provider = serviceInstance
-    ? {
-        id: serviceInstance.provider_id,
-        name: serviceInstance.provider_name,
-        base_url: serviceInstance.provider_base_url,
-      }
-    : null;
-
-  // If the specified instance is not found, try to use the default provider's default instance as fallback
-  if (!serviceInstance || !provider) {
-    console.log(
-      `[Get App Config] No service instance found for instance_id "${appId}", trying default provider's default instance`
-    );
-
-    const { rows: fallbackRows } = await pool.query<{
-      id: string;
-      instance_id: string;
-      display_name: string | null;
-      description: string | null;
-      config: Record<string, any> | null;
-      provider_id: string;
-      provider_name: string;
-      provider_base_url: string;
-    }>(
-      `
-        SELECT
-          si.id::text AS id,
-          si.instance_id,
-          si.display_name,
-          si.description,
-          si.config,
-          p.id::text AS provider_id,
-          p.name AS provider_name,
-          p.base_url AS provider_base_url
-        FROM providers p
-        INNER JOIN service_instances si ON si.provider_id = p.id
-        WHERE p.is_default = TRUE
-          AND p.is_active = TRUE
-          AND si.is_default = TRUE
-        LIMIT 1
-      `
-    );
-
-    const fallback = fallbackRows[0];
-    if (!fallback) {
-      console.error(
-        `[Get App Config] No default service instance found for default provider, appId: ${appId}`
-      );
-      return null;
-    }
-
-    serviceInstance = fallback;
-    provider = {
-      id: fallback.provider_id,
-      name: fallback.provider_name,
-      base_url: fallback.provider_base_url,
-    };
-    console.log(
-      `[Get App Config] Using default provider "${provider.name}" default instance: ${fallback.instance_id} (original request: ${appId})`
-    );
-  } else {
-    console.log(
-      `[Get App Config] Found app instance: ${appId}, provider: ${provider.name}`
-    );
-  }
-
-  if (!serviceInstance || !provider) {
+  if (!serviceInstance) {
     console.error(`No service instance or provider found for app "${appId}"`);
     return null;
   }
 
   const instanceId = serviceInstance.id;
-
   if (!instanceId) {
     console.error(`No valid instance ID for Dify app "${appId}"`);
     return null;
   }
 
-  // 4. Get API key
-  const { rows: apiKeyRows } = await pool.query<{ key_value: string }>(
+  const apiKeyRows = await queryRowsWithContext<{ key_value: string }>(
     `
       SELECT key_value
       FROM api_keys
@@ -264,7 +389,8 @@ async function getDifyConfigFromDatabase(
       ORDER BY created_at ASC
       LIMIT 1
     `,
-    [instanceId]
+    [instanceId],
+    { useSystemActor: true }
   );
 
   const apiKey = apiKeyRows[0];
@@ -273,7 +399,6 @@ async function getDifyConfigFromDatabase(
     return null;
   }
 
-  // Check if API key is empty
   if (!apiKey.key_value) {
     console.error('API key value is empty');
     return null;
@@ -282,15 +407,12 @@ async function getDifyConfigFromDatabase(
   try {
     let decryptedKey: string;
 
-    // If the key is not in encrypted format, use it directly
     if (!apiKey.key_value.includes(':')) {
       decryptedKey = apiKey.key_value;
     } else {
       try {
-        // Use masterKey from environment variable to decrypt
         decryptedKey = decryptApiKey(apiKey.key_value, masterKey);
       } catch (decryptError) {
-        // If decryption fails, do not use test key, just log error and return null
         console.error(
           `[Get Dify Config] Failed to decrypt API Key for appID '${appId}':`,
           decryptError
@@ -302,14 +424,13 @@ async function getDifyConfigFromDatabase(
       }
     }
 
-    // 5. Build config
     const config = {
       apiKey: decryptedKey,
-      apiUrl: provider.base_url,
+      apiUrl: serviceInstance.provider_base_url,
       appId: serviceInstance.instance_id,
       displayName: serviceInstance.display_name || serviceInstance.instance_id,
       description: serviceInstance.description || undefined,
-      appType: serviceInstance.config?.app_metadata?.dify_apptype,
+      appType: readDifyAppType(serviceInstance.config),
     };
 
     return config;

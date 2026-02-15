@@ -39,7 +39,7 @@
 - M1：完成
 - M2：完成
 - M3：完成（见 `docs/m3-db-crud-compatibility.md`）
-- M4：完成（Phase1 + Phase2 + Phase3 已完成，见 `docs/m4-rpc-rls-compatibility.md`）
+- M4：完成（Phase1 + Phase2 + Phase3 + Hardening 已完成，见 `docs/m4-rpc-rls-compatibility.md`）
 - M5-M9：未开始
 
 ## 3. 里程碑详细任务
@@ -127,6 +127,8 @@ Gate：
 1. 关键 RPC 保留为 PostgreSQL 函数并建立语义回归
 2. RLS 从 `auth.uid()` 迁移为 GUC 注入模式（`docs/target-stack-deep-analysis.md:111`）
 3. 重点验证：配额、默认实例、管理员查询、用户删除、SSO 相关函数
+4. runtime/migrator 角色分离与 runtime role 硬化（禁止 superuser/bypassrls）
+5. strict mode 开关与 legacy bypass 渐进收口
 
 产出物：
 

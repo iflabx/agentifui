@@ -1,4 +1,4 @@
-# M4 RPC + RLS 语义迁移（Phase1 + Phase2 + Phase3）
+# M4 RPC + RLS 语义迁移（Phase1 + Phase2 + Phase3 + Hardening）
 
 日期：2026-02-15  
 分支：`migration/m0-m1-pg-baseline`
@@ -73,28 +73,56 @@
    - Phase2 + Phase3 全表 `RLS/FORCE` 状态检查
    - admin / self / forbidden / legacy（无 actor）四类场景
 
-## 4. 验证与 Gate
+## 4. Hardening（角色隔离 + strict mode + actor 收口）完成项
+
+1. 运行时 DB 角色硬化与分离：
+   - 新增 `scripts/m4-runtime-role-setup.sh`（创建/修正 runtime role：`NOSUPERUSER` + `NOBYPASSRLS`）
+   - 新增 `scripts/m4-runtime-role-verify.mjs`（校验 runtime role flags + migrator/runtime split）
+   - `m4:gate:verify` 前置 runtime role gate。
+2. strict mode 开关迁移：
+   - 新增 `supabase/migrations/20260215080000_m4_rls_strict_mode_switch.sql`
+   - 新增 helper：`app_rls_guc_enabled()`、`app_rls_strict_mode()`、`app_rls_system_actor()`
+   - `app_rls_legacy_mode()` 改为“默认兼容 + strict 可切换 + system actor 显式旁路”。
+3. 连接层 strict 模式注入：
+   - `lib/server/pg/session-options.ts`
+   - `lib/server/pg/pool.ts`
+   - `lib/services/db/data-service.ts`
+   - 通过 `APP_RLS_STRICT_MODE=1` 启用连接级 `-c app.rls_strict_mode=on`。
+4. 高风险路径 actor/system context 收口：
+   - `app/api/internal/apps/route.ts`
+   - `lib/config/dify-config.ts`
+   - `lib/auth/better-auth/local-login-policy.ts`
+   - `lib/auth/better-auth/session-identity.ts`
+   - `lib/db/user-identities.ts`
+   - `lib/server/pg/user-context.ts`
+
+## 5. 验证与 Gate
 
 命令：
 
-1. `pnpm m4:rpc:verify`
-2. `pnpm m4:rls:verify`
-3. `pnpm m4:gate:verify`（聚合 1 + 2）
+1. `pnpm m4:runtime-role:setup`
+2. `pnpm m4:runtime-role:verify`
+3. `pnpm m4:rpc:verify`
+4. `pnpm m4:rls:verify`
+5. `pnpm m4:gate:verify`（聚合 2 + 3 + 4）
 
-当前结果（2026-02-15）：上述三项均通过。
+当前结果（2026-02-15）：上述 Gate 链路均通过。
 
 补充回归（2026-02-15）：
 
 1. `pnpm m3:gate:verify` 通过（确认 M3 链路未回归）。
 
-## 5. 兼容性策略
+## 6. 兼容性策略
 
 1. 保持“有 actor 强约束、无 actor 兼容旧行为”：
    - 有 actor：执行 RLS 与 RPC 权限收口。
    - 无 actor：`app_rls_legacy_mode()` 允许旧链路继续工作。
-2. 不改变前端调用契约：仍走 existing internal API action。
+2. 支持 strict mode 灰度切换：
+   - `APP_RLS_STRICT_MODE=0`：兼容模式（默认）
+   - `APP_RLS_STRICT_MODE=1`：禁用“无 actor 自动放行”，仅保留显式 system actor 旁路
+3. 不改变前端调用契约：仍走 existing internal API action。
 
-## 6. 当前边界
+## 7. 当前边界
 
 1. M4 范围内的关键 RPC + 关键表 RLS 已完成。
 2. Storage / Realtime 不在 M4 范围（分别属于 M5 / M6）。

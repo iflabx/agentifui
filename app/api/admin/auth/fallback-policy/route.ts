@@ -28,7 +28,9 @@ export async function GET(request: Request) {
     return authResult.response;
   }
 
-  const modeResult = await getAuthModeSetting();
+  const modeResult = await getAuthModeSetting({
+    actorUserId: authResult.userId,
+  });
   if (!modeResult.success) {
     console.error(
       '[AdminAuthFallbackPolicy] failed to read auth mode:',
@@ -67,7 +69,9 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const updateResult = await setAuthModeSetting(authMode);
+  const updateResult = await setAuthModeSetting(authMode, {
+    actorUserId: authResult.userId,
+  });
   if (!updateResult.success) {
     console.error(
       '[AdminAuthFallbackPolicy] failed to update auth mode:',

@@ -9,21 +9,45 @@ import {
   setAuthModeSetting,
   setUserLocalLoginEnabledByUserId,
 } from '@lib/auth/better-auth/local-login-policy';
-import { getPgPool } from '@lib/server/pg/pool';
+import {
+  queryRowsWithPgSystemContext,
+  queryRowsWithPgUserContext,
+} from '@lib/server/pg/user-context';
 
-jest.mock('@lib/server/pg/pool', () => ({
-  getPgPool: jest.fn(),
+jest.mock('@lib/server/pg/user-context', () => ({
+  queryRowsWithPgSystemContext: jest.fn(),
+  queryRowsWithPgUserContext: jest.fn(),
 }));
 
 describe('local-login-policy', () => {
   const queryMock = jest.fn();
-  const mockedGetPgPool = getPgPool as jest.MockedFunction<typeof getPgPool>;
+  const mockedQueryRowsWithPgSystemContext =
+    queryRowsWithPgSystemContext as jest.MockedFunction<
+      typeof queryRowsWithPgSystemContext
+    >;
+  const mockedQueryRowsWithPgUserContext =
+    queryRowsWithPgUserContext as jest.MockedFunction<
+      typeof queryRowsWithPgUserContext
+    >;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockedGetPgPool.mockReturnValue({
-      query: queryMock,
-    } as unknown as ReturnType<typeof getPgPool>);
+    mockedQueryRowsWithPgSystemContext.mockImplementation(
+      async (sql: string, params: unknown[] = []) => {
+        const result = await queryMock(sql, params);
+        return result.rows || [];
+      }
+    );
+    mockedQueryRowsWithPgUserContext.mockImplementation(
+      async (
+        _userId: string | null | undefined,
+        sql: string,
+        params: unknown[] = []
+      ) => {
+        const result = await queryMock(sql, params);
+        return result.rows || [];
+      }
+    );
   });
 
   it('blocks external-idp account when auth_mode is normal', async () => {

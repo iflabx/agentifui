@@ -99,7 +99,10 @@ export async function POST(request: Request) {
   }
 
   const hasPassword = await hasCredentialPasswordByAuthUserId(
-    authResult.identity.authUserId
+    authResult.identity.authUserId,
+    {
+      actorUserId: authResult.identity.userId,
+    }
   );
   if (!hasPassword.success) {
     console.error(
@@ -146,7 +149,10 @@ export async function POST(request: Request) {
 
   const markResult = await markFallbackPasswordUpdated(
     authResult.identity.userId,
-    authResult.identity.userId
+    authResult.identity.userId,
+    {
+      actorUserId: authResult.identity.userId,
+    }
   );
   if (!markResult.success) {
     console.error(

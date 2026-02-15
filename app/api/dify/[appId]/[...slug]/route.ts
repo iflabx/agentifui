@@ -165,7 +165,9 @@ async function proxyToDify(
     console.log(
       `[App: ${appId}] [${req.method}] Getting configuration from database...`
     );
-    difyConfig = await getDifyAppConfig(appId);
+    difyConfig = await getDifyAppConfig(appId, false, {
+      actorUserId: resolvedIdentity.data.userId,
+    });
 
     // validate database configuration
     if (!difyConfig) {

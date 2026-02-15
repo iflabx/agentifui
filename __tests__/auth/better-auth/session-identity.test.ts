@@ -8,6 +8,10 @@ import {
   upsertUserIdentity,
 } from '@lib/db/user-identities';
 import { getPgPool } from '@lib/server/pg/pool';
+import {
+  runWithPgSystemContext,
+  runWithPgUserContext,
+} from '@lib/server/pg/user-context';
 
 jest.mock('@lib/auth/better-auth/server', () => ({
   auth: {
@@ -27,6 +31,11 @@ jest.mock('@lib/db/user-identities', () => ({
 
 jest.mock('@lib/server/pg/pool', () => ({
   getPgPool: jest.fn(),
+}));
+
+jest.mock('@lib/server/pg/user-context', () => ({
+  runWithPgUserContext: jest.fn(),
+  runWithPgSystemContext: jest.fn(),
 }));
 
 type PoolQueryResult = {
@@ -58,6 +67,12 @@ describe('resolveSessionIdentity', () => {
       typeof upsertProfileExternalAttributes
     >;
   const mockedGetPgPool = getPgPool as jest.MockedFunction<typeof getPgPool>;
+  const mockedRunWithPgUserContext =
+    runWithPgUserContext as jest.MockedFunction<typeof runWithPgUserContext>;
+  const mockedRunWithPgSystemContext =
+    runWithPgSystemContext as jest.MockedFunction<
+      typeof runWithPgSystemContext
+    >;
   const queryMock = jest.fn<
     Promise<PoolQueryResult>,
     [queryText: string, params?: unknown[]]
@@ -71,6 +86,17 @@ describe('resolveSessionIdentity', () => {
     delete process.env.EXTERNAL_ATTRIBUTES_SYNC_MODE;
     delete process.env.EXTERNAL_ATTRIBUTES_SYNC_INTERVAL_MS;
     lockQueryMock.mockResolvedValue({ rows: [] });
+    mockedRunWithPgUserContext.mockImplementation(
+      async (_userId: string | null | undefined, operation) =>
+        operation({
+          query: queryMock,
+        } as never)
+    );
+    mockedRunWithPgSystemContext.mockImplementation(async operation =>
+      operation({
+        query: queryMock,
+      } as never)
+    );
     poolConnectMock.mockResolvedValue({
       query: lockQueryMock,
       release: lockReleaseMock,

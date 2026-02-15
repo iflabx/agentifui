@@ -18,7 +18,9 @@ export async function GET(
   }
 
   const { userId } = await params;
-  const result = await getUserLocalLoginStateByUserId(userId);
+  const result = await getUserLocalLoginStateByUserId(userId, {
+    actorUserId: authResult.userId,
+  });
   if (!result.success) {
     console.error(
       '[AdminAuthFallbackPolicyUser] failed to read user fallback state:',
@@ -67,7 +69,10 @@ export async function PATCH(
 
   const updateResult = await setUserLocalLoginEnabledByUserId(
     userId,
-    payload.localLoginEnabled
+    payload.localLoginEnabled,
+    {
+      actorUserId: authResult.userId,
+    }
   );
   if (!updateResult.success) {
     console.error(

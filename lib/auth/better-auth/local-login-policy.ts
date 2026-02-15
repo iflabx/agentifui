@@ -1,7 +1,20 @@
 import { getPgPool } from '@lib/server/pg/pool';
+import {
+  queryRowsWithPgSystemContext,
+  queryRowsWithPgUserContext,
+} from '@lib/server/pg/user-context';
 import { Result, failure, success } from '@lib/types/result';
 
 export type AuthMode = 'normal' | 'degraded';
+
+export interface LocalLoginPolicyContext {
+  actorUserId?: string | null;
+  useSystemActor?: boolean;
+}
+
+const SYSTEM_POLICY_CONTEXT: LocalLoginPolicyContext = {
+  useSystemActor: true,
+};
 
 type ProfileLocalLoginRow = {
   id: string;
@@ -74,6 +87,34 @@ function normalizeEmail(email: string | null | undefined): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
+function normalizeActorUserId(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+async function queryRowsWithPolicyContext<T extends object>(
+  sql: string,
+  params: unknown[] = [],
+  context: LocalLoginPolicyContext = SYSTEM_POLICY_CONTEXT
+): Promise<T[]> {
+  const actorUserId = normalizeActorUserId(context.actorUserId);
+  if (actorUserId) {
+    return queryRowsWithPgUserContext<T>(actorUserId, sql, params);
+  }
+
+  if (context.useSystemActor !== false) {
+    return queryRowsWithPgSystemContext<T>(sql, params);
+  }
+
+  const pool = getPgPool();
+  const { rows } = await pool.query<T>(sql, params);
+  return rows;
+}
+
 function normalizeAuthMode(input: string | null | undefined): AuthMode {
   if (input === 'degraded') {
     return 'degraded';
@@ -103,20 +144,22 @@ function toIsoString(value: string | Date | null | undefined): string | null {
   return parsed.toISOString();
 }
 
-async function getCurrentAuthMode(): Promise<Result<AuthMode>> {
-  const pool = getPgPool();
-
+async function getCurrentAuthMode(
+  context: LocalLoginPolicyContext = SYSTEM_POLICY_CONTEXT
+): Promise<Result<AuthMode>> {
   try {
-    const query = await pool.query<AuthModeRow>(
+    const rows = await queryRowsWithPolicyContext<AuthModeRow>(
       `
       SELECT auth_mode
       FROM auth_settings
       ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
       LIMIT 1
-      `
+      `,
+      [],
+      context
     );
 
-    return success(normalizeAuthMode(query.rows[0]?.auth_mode));
+    return success(normalizeAuthMode(rows[0]?.auth_mode));
   } catch (error) {
     return failure(
       error instanceof Error
@@ -126,21 +169,22 @@ async function getCurrentAuthMode(): Promise<Result<AuthMode>> {
   }
 }
 
-export async function getAuthModeSetting(): Promise<Result<AuthMode>> {
-  return getCurrentAuthMode();
+export async function getAuthModeSetting(
+  context: LocalLoginPolicyContext = SYSTEM_POLICY_CONTEXT
+): Promise<Result<AuthMode>> {
+  return getCurrentAuthMode(context);
 }
 
 export async function setAuthModeSetting(
-  authMode: AuthMode
+  authMode: AuthMode,
+  context: LocalLoginPolicyContext = SYSTEM_POLICY_CONTEXT
 ): Promise<Result<AuthMode>> {
   if (!isAuthMode(authMode)) {
     return failure(new Error('Invalid auth mode'));
   }
 
-  const pool = getPgPool();
-
   try {
-    const updated = await pool.query<AuthModeRow>(
+    const updatedRows = await queryRowsWithPolicyContext<AuthModeRow>(
       `
       WITH target AS (
         SELECT id
@@ -153,23 +197,25 @@ export async function setAuthModeSetting(
       WHERE id = (SELECT id FROM target)
       RETURNING auth_mode
       `,
-      [authMode]
+      [authMode],
+      context
     );
 
-    if (updated.rows[0]) {
-      return success(normalizeAuthMode(updated.rows[0].auth_mode));
+    if (updatedRows[0]) {
+      return success(normalizeAuthMode(updatedRows[0].auth_mode));
     }
 
-    const inserted = await pool.query<AuthModeRow>(
+    const insertedRows = await queryRowsWithPolicyContext<AuthModeRow>(
       `
       INSERT INTO auth_settings (auth_mode, created_at, updated_at)
       VALUES ($1, NOW(), NOW())
       RETURNING auth_mode
       `,
-      [authMode]
+      [authMode],
+      context
     );
 
-    return success(normalizeAuthMode(inserted.rows[0]?.auth_mode));
+    return success(normalizeAuthMode(insertedRows[0]?.auth_mode));
   } catch (error) {
     return failure(
       error instanceof Error
@@ -180,12 +226,11 @@ export async function setAuthModeSetting(
 }
 
 async function getProfileByEmail(
-  email: string
+  email: string,
+  context: LocalLoginPolicyContext = SYSTEM_POLICY_CONTEXT
 ): Promise<Result<ProfileLocalLoginRow | null>> {
-  const pool = getPgPool();
-
   try {
-    const query = await pool.query<ProfileLocalLoginRow>(
+    const rows = await queryRowsWithPolicyContext<ProfileLocalLoginRow>(
       `
       SELECT
         p.id::text AS id,
@@ -197,11 +242,11 @@ async function getProfileByEmail(
       WHERE lower(u.email) = $1
       LIMIT 1
       `,
-      [email]
+      [email],
+      context
     );
-    const row = query.rows[0];
 
-    // Only treat it as a resolved profile when the profile row exists.
+    const row = rows[0];
     return success(row?.id ? row : null);
   } catch (error) {
     return failure(
@@ -213,12 +258,11 @@ async function getProfileByEmail(
 }
 
 async function hasCredentialPasswordByEmail(
-  email: string
+  email: string,
+  context: LocalLoginPolicyContext = SYSTEM_POLICY_CONTEXT
 ): Promise<Result<boolean>> {
-  const pool = getPgPool();
-
   try {
-    const query = await pool.query<CredentialPasswordExistsRow>(
+    const rows = await queryRowsWithPolicyContext<CredentialPasswordExistsRow>(
       `
       SELECT EXISTS (
         SELECT 1
@@ -230,10 +274,11 @@ async function hasCredentialPasswordByEmail(
           AND a.password IS NOT NULL
       ) AS has_credential_password
       `,
-      [email]
+      [email],
+      context
     );
 
-    return success(Boolean(query.rows[0]?.has_credential_password));
+    return success(Boolean(rows[0]?.has_credential_password));
   } catch (error) {
     return failure(
       error instanceof Error
@@ -244,17 +289,16 @@ async function hasCredentialPasswordByEmail(
 }
 
 export async function hasCredentialPasswordByAuthUserId(
-  authUserId: string
+  authUserId: string,
+  context: LocalLoginPolicyContext = SYSTEM_POLICY_CONTEXT
 ): Promise<Result<boolean>> {
   const normalizedAuthUserId = authUserId.trim();
   if (!normalizedAuthUserId) {
     return failure(new Error('authUserId is required'));
   }
 
-  const pool = getPgPool();
-
   try {
-    const query = await pool.query<CredentialPasswordExistsRow>(
+    const rows = await queryRowsWithPolicyContext<CredentialPasswordExistsRow>(
       `
       SELECT EXISTS (
         SELECT 1
@@ -264,10 +308,11 @@ export async function hasCredentialPasswordByAuthUserId(
           AND password IS NOT NULL
       ) AS has_credential_password
       `,
-      [normalizedAuthUserId]
+      [normalizedAuthUserId],
+      context
     );
 
-    return success(Boolean(query.rows[0]?.has_credential_password));
+    return success(Boolean(rows[0]?.has_credential_password));
   } catch (error) {
     return failure(
       error instanceof Error
@@ -279,7 +324,8 @@ export async function hasCredentialPasswordByAuthUserId(
 
 export async function markFallbackPasswordUpdated(
   userId: string,
-  updatedByUserId?: string | null
+  updatedByUserId?: string | null,
+  context: LocalLoginPolicyContext = SYSTEM_POLICY_CONTEXT
 ): Promise<Result<void>> {
   const normalizedUserId = userId.trim();
   if (!normalizedUserId) {
@@ -287,10 +333,9 @@ export async function markFallbackPasswordUpdated(
   }
 
   const normalizedUpdatedBy = updatedByUserId?.trim() || normalizedUserId;
-  const pool = getPgPool();
 
   try {
-    await pool.query(
+    await queryRowsWithPolicyContext(
       `
       UPDATE profiles
       SET
@@ -298,8 +343,10 @@ export async function markFallbackPasswordUpdated(
         fallback_password_updated_by = $2::uuid,
         updated_at = NOW()
       WHERE id = $1::uuid
+      RETURNING id::text
       `,
-      [normalizedUserId, normalizedUpdatedBy]
+      [normalizedUserId, normalizedUpdatedBy],
+      context
     );
 
     return success(undefined);
@@ -313,16 +360,16 @@ export async function markFallbackPasswordUpdated(
 }
 
 export async function getUserLocalLoginStateByUserId(
-  userId: string
+  userId: string,
+  context: LocalLoginPolicyContext = SYSTEM_POLICY_CONTEXT
 ): Promise<Result<UserLocalLoginState | null>> {
   const normalizedUserId = userId.trim();
   if (!normalizedUserId) {
     return failure(new Error('userId is required'));
   }
 
-  const pool = getPgPool();
   try {
-    const query = await pool.query<ProfileLocalLoginStateRow>(
+    const rows = await queryRowsWithPolicyContext<ProfileLocalLoginStateRow>(
       `
       SELECT
         id::text AS id,
@@ -336,10 +383,11 @@ export async function getUserLocalLoginStateByUserId(
       WHERE id = $1::uuid
       LIMIT 1
       `,
-      [normalizedUserId]
+      [normalizedUserId],
+      context
     );
 
-    const row = query.rows[0];
+    const row = rows[0];
     if (!row) {
       return success(null);
     }
@@ -364,16 +412,16 @@ export async function getUserLocalLoginStateByUserId(
 
 export async function setUserLocalLoginEnabledByUserId(
   userId: string,
-  enabled: boolean
+  enabled: boolean,
+  context: LocalLoginPolicyContext = SYSTEM_POLICY_CONTEXT
 ): Promise<Result<UserLocalLoginState | null>> {
   const normalizedUserId = userId.trim();
   if (!normalizedUserId) {
     return failure(new Error('userId is required'));
   }
 
-  const pool = getPgPool();
   try {
-    const query = await pool.query<ProfileLocalLoginStateRow>(
+    const rows = await queryRowsWithPolicyContext<ProfileLocalLoginStateRow>(
       `
       UPDATE profiles
       SET
@@ -390,10 +438,11 @@ export async function setUserLocalLoginEnabledByUserId(
         fallback_password_set_at,
         fallback_password_updated_by::text AS fallback_password_updated_by
       `,
-      [normalizedUserId, enabled]
+      [normalizedUserId, enabled],
+      context
     );
 
-    const row = query.rows[0];
+    const row = rows[0];
     if (!row) {
       return success(null);
     }
@@ -419,7 +468,7 @@ export async function setUserLocalLoginEnabledByUserId(
 export async function evaluateLocalLoginByEmail(
   rawEmail: string | null | undefined
 ): Promise<Result<LocalLoginDecision>> {
-  const authMode = await getCurrentAuthMode();
+  const authMode = await getCurrentAuthMode(SYSTEM_POLICY_CONTEXT);
   if (!authMode.success) {
     return failure(authMode.error);
   }
@@ -435,7 +484,7 @@ export async function evaluateLocalLoginByEmail(
     });
   }
 
-  const profileResult = await getProfileByEmail(email);
+  const profileResult = await getProfileByEmail(email, SYSTEM_POLICY_CONTEXT);
   if (!profileResult.success) {
     return failure(profileResult.error);
   }
@@ -482,7 +531,10 @@ export async function evaluateLocalLoginByEmail(
     });
   }
 
-  const credentialPassword = await hasCredentialPasswordByEmail(email);
+  const credentialPassword = await hasCredentialPasswordByEmail(
+    email,
+    SYSTEM_POLICY_CONTEXT
+  );
   if (!credentialPassword.success) {
     return failure(credentialPassword.error);
   }
@@ -507,12 +559,11 @@ export async function evaluateLocalLoginByEmail(
 }
 
 export async function recordLocalLoginAudit(
-  input: LocalLoginAuditInput
+  input: LocalLoginAuditInput,
+  context: LocalLoginPolicyContext = SYSTEM_POLICY_CONTEXT
 ): Promise<void> {
-  const pool = getPgPool();
-
   try {
-    await pool.query(
+    await queryRowsWithPolicyContext(
       `
       INSERT INTO auth_local_login_audit_logs (
         user_id,
@@ -524,6 +575,7 @@ export async function recordLocalLoginAudit(
         ip_address,
         user_agent
       ) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8)
+      RETURNING id::text
       `,
       [
         input.userId || null,
@@ -534,7 +586,8 @@ export async function recordLocalLoginAudit(
         input.statusCode ?? null,
         input.ipAddress || null,
         input.userAgent || null,
-      ]
+      ],
+      context
     );
   } catch (error) {
     console.warn('[AuthLocalLoginPolicy] failed to insert local-login audit:', {

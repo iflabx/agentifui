@@ -19,7 +19,9 @@ export async function GET(
     const url = new URL(request.url);
     const forceRefresh = url.searchParams.get('forceRefresh') === '1';
 
-    const config = await getDifyAppConfig(appId, forceRefresh);
+    const config = await getDifyAppConfig(appId, forceRefresh, {
+      actorUserId: authResult.userId,
+    });
     return NextResponse.json({
       success: true,
       config,
