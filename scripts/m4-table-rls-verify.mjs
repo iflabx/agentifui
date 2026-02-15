@@ -12,11 +12,16 @@ const rootDir = path.resolve(__dirname, '..');
 
 const fallbackDatabaseUrl =
   'postgresql://agentif:agentif@172.20.0.1:5432/agentifui';
-const databaseUrl =
+const runtimeDatabaseUrl =
   process.env.DATABASE_URL?.trim() ||
   process.env.PGURL?.trim() ||
   process.env.M4_RLS_DATABASE_URL?.trim() ||
   fallbackDatabaseUrl;
+const migratorDatabaseUrl =
+  process.env.MIGRATOR_DATABASE_URL?.trim() ||
+  process.env.M4_MIGRATOR_DATABASE_URL?.trim() ||
+  process.env.M4_RLS_MIGRATOR_DATABASE_URL?.trim() ||
+  runtimeDatabaseUrl;
 
 const migrationFiles = [
   'supabase/migrations/20260214010100_add_missing_rpc_functions.sql',
@@ -55,13 +60,12 @@ const phase3Tables = [
 ];
 
 const allTargetTables = [...phase2Tables, ...phase3Tables];
-const rlsVerifierRole = 'agentif_rls_tester';
 
 function applyMigration(relativePath) {
   const absolutePath = path.resolve(rootDir, relativePath);
   const result = spawnSync(
     'psql',
-    [databaseUrl, '-v', 'ON_ERROR_STOP=1', '-f', absolutePath],
+    [migratorDatabaseUrl, '-v', 'ON_ERROR_STOP=1', '-f', absolutePath],
     {
       cwd: rootDir,
       encoding: 'utf8',
@@ -85,7 +89,6 @@ async function withActorContext(pool, actorUserId, operation) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await client.query(`SET LOCAL ROLE ${rlsVerifierRole}`);
     await client.query(`SELECT set_config('app.current_user_id', $1::text, true)`, [
       actorUserId || '',
     ]);
@@ -120,29 +123,6 @@ async function withActorContext(pool, actorUserId, operation) {
 
 async function queryWithActor(pool, actorUserId, sql, params = []) {
   return withActorContext(pool, actorUserId, client => client.query(sql, params));
-}
-
-async function ensureRlsVerifierRole(pool) {
-  await pool.query(`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1
-        FROM pg_roles
-        WHERE rolname = '${rlsVerifierRole}'
-      ) THEN
-        CREATE ROLE ${rlsVerifierRole} NOINHERIT;
-      END IF;
-    END
-    $$;
-  `);
-
-  await pool.query(`GRANT USAGE ON SCHEMA public TO ${rlsVerifierRole}`);
-  await pool.query(
-    `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${rlsVerifierRole}`
-  );
-  await pool.query(`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${rlsVerifierRole}`);
-  await pool.query(`GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO ${rlsVerifierRole}`);
 }
 
 async function expectPgError(operation, expectedCode, label) {
@@ -501,7 +481,7 @@ async function main() {
     executionB: randomUUID(),
   };
 
-  const pool = new Pool({ connectionString: databaseUrl });
+  const pool = new Pool({ connectionString: runtimeDatabaseUrl });
 
   const checks = {
     rlsEnabledForAllTables: false,
@@ -532,7 +512,6 @@ async function main() {
   };
 
   try {
-    await ensureRlsVerifierRole(pool);
     await seedFixtures(pool, ids);
 
     const rlsStatusRows = await pool.query(

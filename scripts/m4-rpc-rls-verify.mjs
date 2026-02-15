@@ -12,11 +12,16 @@ const rootDir = path.resolve(__dirname, '..');
 
 const fallbackDatabaseUrl =
   'postgresql://agentif:agentif@172.20.0.1:5432/agentifui';
-const databaseUrl =
+const runtimeDatabaseUrl =
   process.env.DATABASE_URL?.trim() ||
   process.env.PGURL?.trim() ||
   process.env.M4_RPC_DATABASE_URL?.trim() ||
   fallbackDatabaseUrl;
+const migratorDatabaseUrl =
+  process.env.MIGRATOR_DATABASE_URL?.trim() ||
+  process.env.M4_MIGRATOR_DATABASE_URL?.trim() ||
+  process.env.M4_RPC_MIGRATOR_DATABASE_URL?.trim() ||
+  runtimeDatabaseUrl;
 
 const migrationFiles = [
   'supabase/migrations/20260214010100_add_missing_rpc_functions.sql',
@@ -36,7 +41,7 @@ function applyMigration(relativePath) {
   const absolutePath = path.resolve(rootDir, relativePath);
   const result = spawnSync(
     'psql',
-    [databaseUrl, '-v', 'ON_ERROR_STOP=1', '-f', absolutePath],
+    [migratorDatabaseUrl, '-v', 'ON_ERROR_STOP=1', '-f', absolutePath],
     {
       cwd: rootDir,
       encoding: 'utf8',
@@ -287,7 +292,7 @@ async function main() {
     sso2: randomUUID(),
   };
 
-  const pool = new Pool({ connectionString: databaseUrl });
+  const pool = new Pool({ connectionString: runtimeDatabaseUrl });
   const checks = {
     userAccessibleApps: false,
     userScopeForbidden: false,
