@@ -15,6 +15,27 @@ export async function runWithPgUserContext<T>(
       `SELECT set_config('app.current_user_id', $1::text, true)`,
       [userId ?? '']
     );
+    await client.query(
+      `SELECT set_config('app.current_user_role', $1::text, true)`,
+      ['']
+    );
+
+    if (userId) {
+      const roleResult = await client.query<{ role: string }>(
+        `
+          SELECT COALESCE(role::text, 'user') AS role
+          FROM profiles
+          WHERE id = $1::uuid
+          LIMIT 1
+        `,
+        [userId]
+      );
+
+      await client.query(
+        `SELECT set_config('app.current_user_role', $1::text, true)`,
+        [roleResult.rows[0]?.role || '']
+      );
+    }
 
     const result = await operation(client);
     await client.query('COMMIT');

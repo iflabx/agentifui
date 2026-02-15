@@ -28,6 +28,7 @@ const migrationFiles = [
   'supabase/migrations/20260214192000_add_better_auth_phone_fields.sql',
   'supabase/migrations/20260214201000_add_fallback_password_profile_metadata.sql',
   'supabase/migrations/20260215030000_m4_rpc_rls_guc_hardening.sql',
+  'supabase/migrations/20260215050000_m4_table_rls_phase2.sql',
 ];
 
 function applyMigration(relativePath) {
@@ -61,6 +62,23 @@ async function withActorContext(pool, actorUserId, operation) {
     await client.query(`SELECT set_config('app.current_user_id', $1::text, true)`, [
       actorUserId || '',
     ]);
+    await client.query(`SELECT set_config('app.current_user_role', $1::text, true)`, [
+      '',
+    ]);
+    if (actorUserId) {
+      const roleResult = await client.query(
+        `
+          SELECT COALESCE(role::text, 'user') AS role
+          FROM profiles
+          WHERE id = $1::uuid
+          LIMIT 1
+        `,
+        [actorUserId]
+      );
+      await client.query(`SELECT set_config('app.current_user_role', $1::text, true)`, [
+        roleResult.rows[0]?.role || '',
+      ]);
+    }
     const result = await operation(client);
     await client.query('COMMIT');
     return result;
