@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { Client } from 'pg'
+import pg from 'pg'
 import { performance } from 'node:perf_hooks'
 import {
   buildPublicTableRef,
@@ -10,6 +10,11 @@ import {
   resolveM7TableList,
   resolveM7TargetDatabaseUrl,
 } from './m7-shared.mjs'
+
+const { Client, types } = pg
+// Preserve timestamp precision during migration; JS Date truncates microseconds.
+types.setTypeParser(1114, value => value)
+types.setTypeParser(1184, value => value)
 
 const sourceDatabaseUrl = resolveM7SourceDatabaseUrl()
 const targetDatabaseUrl = resolveM7TargetDatabaseUrl()
@@ -30,6 +35,7 @@ function buildUpsertSql(tableName, columns, pkColumns, rowCount) {
   const columnSql = columns.map(column => quoteIdent(column)).join(', ')
   const pkSql = pkColumns.map(column => quoteIdent(column)).join(', ')
   const nonPkColumns = columns.filter(column => !pkColumns.includes(column))
+  const targetTableName = quoteIdent(tableName)
 
   const placeholders = []
   const values = []
@@ -46,7 +52,12 @@ function buildUpsertSql(tableName, columns, pkColumns, rowCount) {
     nonPkColumns.length > 0
       ? `DO UPDATE SET ${nonPkColumns
           .map(column => `${quoteIdent(column)} = EXCLUDED.${quoteIdent(column)}`)
-          .join(', ')}`
+          .join(', ')} WHERE ${nonPkColumns
+          .map(
+            column =>
+              `${targetTableName}.${quoteIdent(column)} IS DISTINCT FROM EXCLUDED.${quoteIdent(column)}`
+          )
+          .join(' OR ')}`
       : 'DO NOTHING'
 
   return {
