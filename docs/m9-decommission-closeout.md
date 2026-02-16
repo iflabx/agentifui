@@ -2,7 +2,7 @@
 
 版本：v1  
 日期：2026-02-16  
-状态：进行中
+状态：完成
 
 ## 1. 目标
 
@@ -43,9 +43,23 @@ M9 目标是完成迁移后的退场与收口：
    - `lib/supabase/*`
    - `NEXT_PUBLIC_SUPABASE_*`
    - `SUPABASE_DATABASE_URL`
+4. 运行时残留扫描复核（2026-02-16）：
+   - 扫描范围：`app`、`components`、`lib`、`scripts`
+   - 结果：`CLEAN`（未检出运行时 Supabase 依赖/回退变量）
+5. PostgreSQL 恢复演练完成（2026-02-16T03:11:35Z）：
+   - 产物：`artifacts/m9/drills/20260216T031135Z/postgres/summary.json`
+   - 关键表对账：`profiles / conversations / messages` 行数一致
+   - `RTO=5s (0.08 min)`，`RPO=0.00 min`
+6. MinIO 对象恢复演练完成（2026-02-16T03:13:01Z）：
+   - 产物：`artifacts/m9/drills/20260216T031135Z/minio/summary.json`
+   - 探针对象校验：`checksum match = true`
+   - `RTO=1s (0.02 min)`，`RPO=0.00 min`
+7. M9 Gate 结论：
+   - 满足“无运行时 Supabase 依赖”与“备份/恢复演练通过（RTO/RPO 达标）”
+   - M9 状态由“进行中”更新为“完成”
 
-## 4. 待完成
+## 4. 收口结论
 
-1. 执行并留档至少 1 次 PostgreSQL 恢复演练（记录 RTO/RPO）。
-2. 执行并留档至少 1 次 MinIO 对象恢复演练（记录恢复校验结果）。
-3. 完成 M9 最终门禁评审并将状态由“进行中”改为“完成”。
+1. 迁移后运行基线（PostgreSQL + Redis + MinIO + better-auth）已完成退场收口。
+2. Supabase 运行时依赖与环境变量回退已清零，仅保留历史文档归档。
+3. 备份/恢复演练已留档，且当前演练数据满足门槛：`RTO <= 15 分钟`、`RPO <= 1 分钟`。
