@@ -24,18 +24,18 @@ const migratorDatabaseUrl =
   runtimeDatabaseUrl;
 
 const migrationFiles = [
-  'supabase/migrations/20260214010100_add_missing_rpc_functions.sql',
-  'supabase/migrations/20260214020100_create_local_pg_baseline_schema.sql',
-  'supabase/migrations/20260214061000_add_external_identity_profile_tables.sql',
-  'supabase/migrations/20260214133000_enforce_single_idp_binding.sql',
-  'supabase/migrations/20260214153000_create_better_auth_tables.sql',
-  'supabase/migrations/20260214161000_add_local_login_policy_controls.sql',
-  'supabase/migrations/20260214192000_add_better_auth_phone_fields.sql',
-  'supabase/migrations/20260214201000_add_fallback_password_profile_metadata.sql',
-  'supabase/migrations/20260215030000_m4_rpc_rls_guc_hardening.sql',
-  'supabase/migrations/20260215050000_m4_table_rls_phase2.sql',
-  'supabase/migrations/20260215070000_m4_table_rls_phase3.sql',
-  'supabase/migrations/20260215080000_m4_rls_strict_mode_switch.sql',
+  'database/migrations/20260214010100_add_missing_rpc_functions.sql',
+  'database/migrations/20260214020100_create_local_pg_baseline_schema.sql',
+  'database/migrations/20260214061000_add_external_identity_profile_tables.sql',
+  'database/migrations/20260214133000_enforce_single_idp_binding.sql',
+  'database/migrations/20260214153000_create_better_auth_tables.sql',
+  'database/migrations/20260214161000_add_local_login_policy_controls.sql',
+  'database/migrations/20260214192000_add_better_auth_phone_fields.sql',
+  'database/migrations/20260214201000_add_fallback_password_profile_metadata.sql',
+  'database/migrations/20260215030000_m4_rpc_rls_guc_hardening.sql',
+  'database/migrations/20260215050000_m4_table_rls_phase2.sql',
+  'database/migrations/20260215070000_m4_table_rls_phase3.sql',
+  'database/migrations/20260215080000_m4_rls_strict_mode_switch.sql',
 ];
 
 const phase2Tables = [

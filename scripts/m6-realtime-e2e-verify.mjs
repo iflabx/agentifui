@@ -19,7 +19,7 @@ const appStartRetryCount = Math.max(
 );
 const eventTimeoutMs = Number(process.env.M6_REALTIME_EVENT_TIMEOUT_MS || 12000);
 const m6MigrationFileUrl = new URL(
-  '../supabase/migrations/20260215170000_m6_realtime_outbox_cdc.sql',
+  '../database/migrations/20260215170000_m6_realtime_outbox_cdc.sql',
   import.meta.url
 );
 

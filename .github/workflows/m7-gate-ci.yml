@@ -7,7 +7,7 @@ on:
       - 'scripts/m7-*.sh'
       - 'docs/m7-*.md'
       - 'docs/migration-task-blueprint.md'
-      - 'supabase/migrations/202602*.sql'
+      - 'database/migrations/202602*.sql'
       - 'package.json'
   workflow_dispatch:
   schedule:

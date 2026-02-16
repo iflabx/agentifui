@@ -19,6 +19,7 @@ yarn-error.log*
 
 # Database
 supabase/migrations/*.sql
+database/migrations/*.sql
 *.db
 *.sqlite
 

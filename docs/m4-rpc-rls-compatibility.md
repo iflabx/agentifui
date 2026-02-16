@@ -5,7 +5,7 @@
 
 ## 1. Phase1（RPC/GUC）完成项
 
-1. 新增 GUC 兼容层与 `auth.uid()` shim（`supabase/migrations/20260215030000_m4_rpc_rls_guc_hardening.sql`）。
+1. 新增 GUC 兼容层与 `auth.uid()` shim（`database/migrations/20260215030000_m4_rpc_rls_guc_hardening.sql`）。
 2. 关键 RPC 权限收口（admin / self+admin）：
    - `set_default_service_instance`
    - `get_user_accessible_apps`
@@ -28,7 +28,7 @@
 
 ## 2. Phase2（表级 RLS）完成项
 
-1. 新增核心表 RLS 迁移包：`supabase/migrations/20260215050000_m4_table_rls_phase2.sql`。
+1. 新增核心表 RLS 迁移包：`database/migrations/20260215050000_m4_table_rls_phase2.sql`。
 2. 对以下核心表启用 `ENABLE ROW LEVEL SECURITY` + `FORCE ROW LEVEL SECURITY`：
    - `profiles`
    - `conversations`
@@ -51,7 +51,7 @@
 
 ## 3. Phase3（剩余关键表 RLS 收尾）完成项
 
-1. 新增剩余关键表 RLS 迁移包：`supabase/migrations/20260215070000_m4_table_rls_phase3.sql`。
+1. 新增剩余关键表 RLS 迁移包：`database/migrations/20260215070000_m4_table_rls_phase3.sql`。
 2. 对以下表启用 `ENABLE ROW LEVEL SECURITY` + `FORCE ROW LEVEL SECURITY`：
    - `providers`
    - `service_instances`
@@ -80,7 +80,7 @@
    - 新增 `scripts/m4-runtime-role-verify.mjs`（校验 runtime role flags + migrator/runtime split）
    - `m4:gate:verify` 前置 runtime role gate。
 2. strict mode 开关迁移：
-   - 新增 `supabase/migrations/20260215080000_m4_rls_strict_mode_switch.sql`
+   - 新增 `database/migrations/20260215080000_m4_rls_strict_mode_switch.sql`
    - 新增 helper：`app_rls_guc_enabled()`、`app_rls_strict_mode()`、`app_rls_system_actor()`
    - `app_rls_legacy_mode()` 改为“默认兼容 + strict 可切换 + system actor 显式旁路”。
 3. 连接层 strict 模式注入：

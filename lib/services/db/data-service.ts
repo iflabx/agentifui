@@ -375,7 +375,7 @@ export class DataService {
 
   /**
    * Legacy compatibility helper.
-   * Existing callers used to pass a Supabase query builder; now pass an async function.
+   * Existing callers used to pass a query builder; now pass an async function.
    */
   async executeQuery<T>(
     queryBuilder: (() => Promise<T>) | Promise<T>,

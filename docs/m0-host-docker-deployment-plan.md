@@ -133,7 +133,7 @@ bash scripts/test-stack.sh reset
 
 ## 6. M0 RPC 一键回归（可选）
 
-当 `supabase/migrations/20260214010100_add_missing_rpc_functions.sql` 合入后，可在开发容器中执行：
+当 `database/migrations/20260214010100_add_missing_rpc_functions.sql` 合入后，可在开发容器中执行：
 
 ```bash
 bash scripts/m0-rpc-verify.sh

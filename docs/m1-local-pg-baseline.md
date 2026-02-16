@@ -6,7 +6,7 @@
 ## 1. 已新增内容
 
 1. 基线迁移 SQL：
-   - `supabase/migrations/20260214020100_create_local_pg_baseline_schema.sql`
+   - `database/migrations/20260214020100_create_local_pg_baseline_schema.sql`
 2. 一键验证脚本：
    - `scripts/m1-schema-verify.sh`
 3. npm 脚本：

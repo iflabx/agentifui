@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MIGRATION_FILE="${ROOT_DIR}/supabase/migrations/20260214010100_add_missing_rpc_functions.sql"
+MIGRATION_FILE="${ROOT_DIR}/database/migrations/20260214010100_add_missing_rpc_functions.sql"
 PGURL="${PGURL:-postgresql://agentif:agentif@172.20.0.1:5432/agentifui}"
 
 echo "[M0] Using database: ${PGURL}"

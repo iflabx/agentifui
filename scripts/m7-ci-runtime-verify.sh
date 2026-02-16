@@ -60,7 +60,7 @@ SQL
 
 echo "[m7-ci-runtime] applying migrations..."
 for db_url in "${M7_SOURCE_DATABASE_URL}" "${M7_TARGET_DATABASE_URL}"; do
-  for migration in "${ROOT_DIR}"/supabase/migrations/202602*.sql; do
+  for migration in "${ROOT_DIR}"/database/migrations/202602*.sql; do
     psql "${db_url}" -v ON_ERROR_STOP=1 -f "${migration}" >/dev/null
   done
 done

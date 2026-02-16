@@ -9,7 +9,7 @@ import { useRouter } from 'next/navigation';
 
 /**
  * Legacy SSO processing page.
- * The old CAS -> Supabase session bootstrap flow has been removed.
+ * The old CAS -> legacy session bootstrap flow has been removed.
  */
 export default function SSOProcessingPage() {
   const router = useRouter();

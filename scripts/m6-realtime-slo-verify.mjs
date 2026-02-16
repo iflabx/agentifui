@@ -31,7 +31,7 @@ const fallbackDatabaseUrl =
 const fallbackRedisUrl = 'redis://172.20.0.1:6379/0';
 const fallbackS3Endpoint = 'http://172.20.0.1:9000';
 const m6MigrationFileUrl = new URL(
-  '../supabase/migrations/20260215170000_m6_realtime_outbox_cdc.sql',
+  '../database/migrations/20260215170000_m6_realtime_outbox_cdc.sql',
   import.meta.url
 );
 

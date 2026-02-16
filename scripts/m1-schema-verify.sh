@@ -4,14 +4,14 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PGURL="${PGURL:-postgresql://agentif:agentif@172.20.0.1:5432/agentifui}"
 MIGRATION_FILES=(
-  "${ROOT_DIR}/supabase/migrations/20260214010100_add_missing_rpc_functions.sql"
-  "${ROOT_DIR}/supabase/migrations/20260214020100_create_local_pg_baseline_schema.sql"
-  "${ROOT_DIR}/supabase/migrations/20260214061000_add_external_identity_profile_tables.sql"
-  "${ROOT_DIR}/supabase/migrations/20260214133000_enforce_single_idp_binding.sql"
-  "${ROOT_DIR}/supabase/migrations/20260214153000_create_better_auth_tables.sql"
-  "${ROOT_DIR}/supabase/migrations/20260214161000_add_local_login_policy_controls.sql"
-  "${ROOT_DIR}/supabase/migrations/20260214192000_add_better_auth_phone_fields.sql"
-  "${ROOT_DIR}/supabase/migrations/20260214201000_add_fallback_password_profile_metadata.sql"
+  "${ROOT_DIR}/database/migrations/20260214010100_add_missing_rpc_functions.sql"
+  "${ROOT_DIR}/database/migrations/20260214020100_create_local_pg_baseline_schema.sql"
+  "${ROOT_DIR}/database/migrations/20260214061000_add_external_identity_profile_tables.sql"
+  "${ROOT_DIR}/database/migrations/20260214133000_enforce_single_idp_binding.sql"
+  "${ROOT_DIR}/database/migrations/20260214153000_create_better_auth_tables.sql"
+  "${ROOT_DIR}/database/migrations/20260214161000_add_local_login_policy_controls.sql"
+  "${ROOT_DIR}/database/migrations/20260214192000_add_better_auth_phone_fields.sql"
+  "${ROOT_DIR}/database/migrations/20260214201000_add_fallback_password_profile_metadata.sql"
 )
 
 echo "[M1] Using database: ${PGURL}"
