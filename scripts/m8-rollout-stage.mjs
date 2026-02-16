@@ -146,7 +146,12 @@ export async function runStage(overrides = {}) {
   const requireSwitchCommand = resolveBoolean(
     overrides.requireSwitchCommand,
     process.env.M8_REQUIRE_SWITCH_COMMAND,
-    false
+    true
+  )
+  const requireVerifyTrafficCommand = resolveBoolean(
+    overrides.requireVerifyTrafficCommand,
+    process.env.M8_REQUIRE_VERIFY_TRAFFIC_COMMAND,
+    true
   )
   const requireSmoke = resolveBoolean(
     overrides.requireSmoke,
@@ -156,12 +161,12 @@ export async function runStage(overrides = {}) {
   const requireReconcile = resolveBoolean(
     overrides.requireReconcile,
     process.env.M8_REQUIRE_RECONCILE,
-    false
+    true
   )
   const requireRollbackCommand = resolveBoolean(
     overrides.requireRollbackCommand,
     process.env.M8_REQUIRE_ROLLBACK_COMMAND,
-    false
+    true
   )
   const forceRollback = resolveBoolean(
     overrides.forceRollback,
@@ -181,7 +186,7 @@ export async function runStage(overrides = {}) {
   const smokeCommand = resolveString(
     overrides.smokeCommand,
     process.env.M8_SMOKE_COMMAND,
-    'pnpm -s m7:ci:verify'
+    'bash scripts/m8-smoke-verify.sh'
   )
   const reconcileCommand = resolveString(
     overrides.reconcileCommand,
@@ -195,6 +200,15 @@ export async function runStage(overrides = {}) {
   const rollbackCommand = resolveString(
     overrides.rollbackCommand,
     process.env.M8_ROLLBACK_COMMAND
+  )
+  const verifyTrafficCommand = resolveString(
+    overrides.verifyTrafficCommand,
+    process.env.M8_VERIFY_TRAFFIC_COMMAND
+  )
+  const allowDryRunPass = resolveBoolean(
+    overrides.allowDryRunPass,
+    process.env.M8_ALLOW_DRY_RUN_PASS,
+    false
   )
 
   const sharedEnv = {
@@ -241,8 +255,37 @@ export async function runStage(overrides = {}) {
   steps.push(switchStep)
   await persistStepArtifacts(stageDir, switchStep)
 
+  let verifyTrafficStep
+  if (verifyTrafficCommand) {
+    if (dryRun) {
+      verifyTrafficStep = buildSkippedStep(
+        'verify-traffic-weight',
+        'dry-run',
+        verifyTrafficCommand
+      )
+    } else {
+      verifyTrafficStep = await runShellCommand({
+        id: 'verify-traffic-weight',
+        command: verifyTrafficCommand,
+        env: sharedEnv,
+      })
+    }
+  } else if (requireVerifyTrafficCommand) {
+    verifyTrafficStep = buildFailedStep(
+      'verify-traffic-weight',
+      'missing M8_VERIFY_TRAFFIC_COMMAND'
+    )
+  } else {
+    verifyTrafficStep = buildSkippedStep(
+      'verify-traffic-weight',
+      'traffic verify command not configured'
+    )
+  }
+  steps.push(verifyTrafficStep)
+  await persistStepArtifacts(stageDir, verifyTrafficStep)
+
   let waitStep
-  if (enforceWait && !dryRun) {
+  if (enforceWait && !dryRun && switchStep.ok && verifyTrafficStep.ok) {
     const waitStartedAt = performance.now()
     const waitMs = observeMinutes * 60 * 1000
     await sleep(waitMs)
@@ -262,60 +305,79 @@ export async function runStage(overrides = {}) {
       stderr: '',
     }
   } else {
-    waitStep = buildSkippedStep(
-      'observe-window',
-      enforceWait ? 'dry-run' : 'enforce wait disabled'
-    )
+    let reason = 'enforce wait disabled'
+    if (enforceWait && dryRun) {
+      reason = 'dry-run'
+    } else if (enforceWait && (!switchStep.ok || !verifyTrafficStep.ok)) {
+      reason = 'pre-check failed'
+    }
+    waitStep = buildSkippedStep('observe-window', reason)
   }
   steps.push(waitStep)
   await persistStepArtifacts(stageDir, waitStep)
 
+  const prechecksReadyForDeepValidation = switchStep.ok && verifyTrafficStep.ok
+
   let smokeStep
-  if (smokeCommand) {
-    smokeStep = await runShellCommand({
-      id: 'smoke-check',
-      command: smokeCommand,
+  let reconcileStep
+  let metricsStep
+  if (!prechecksReadyForDeepValidation) {
+    smokeStep = buildSkippedStep('smoke-check', 'pre-check failed')
+    reconcileStep = buildSkippedStep('sample-reconcile', 'pre-check failed')
+    metricsStep = buildSkippedStep('metrics-check', 'pre-check failed')
+  } else {
+    if (smokeCommand) {
+      smokeStep = await runShellCommand({
+        id: 'smoke-check',
+        command: smokeCommand,
+        env: sharedEnv,
+      })
+    } else if (requireSmoke) {
+      smokeStep = buildFailedStep('smoke-check', 'missing M8_SMOKE_COMMAND')
+    } else {
+      smokeStep = buildSkippedStep(
+        'smoke-check',
+        'smoke command not configured'
+      )
+    }
+
+    if (reconcileCommand) {
+      reconcileStep = await runShellCommand({
+        id: 'sample-reconcile',
+        command: reconcileCommand,
+        env: sharedEnv,
+      })
+    } else if (requireReconcile) {
+      reconcileStep = buildFailedStep(
+        'sample-reconcile',
+        'missing M8_RECONCILE_COMMAND'
+      )
+    } else {
+      reconcileStep = buildSkippedStep(
+        'sample-reconcile',
+        'reconcile command not configured'
+      )
+    }
+
+    metricsStep = await runShellCommand({
+      id: 'metrics-check',
+      command: metricsCommand,
       env: sharedEnv,
     })
-  } else if (requireSmoke) {
-    smokeStep = buildFailedStep('smoke-check', 'missing M8_SMOKE_COMMAND')
-  } else {
-    smokeStep = buildSkippedStep('smoke-check', 'smoke command not configured')
   }
+
   steps.push(smokeStep)
   await persistStepArtifacts(stageDir, smokeStep)
-
-  let reconcileStep
-  if (reconcileCommand) {
-    reconcileStep = await runShellCommand({
-      id: 'sample-reconcile',
-      command: reconcileCommand,
-      env: sharedEnv,
-    })
-  } else if (requireReconcile) {
-    reconcileStep = buildFailedStep(
-      'sample-reconcile',
-      'missing M8_RECONCILE_COMMAND'
-    )
-  } else {
-    reconcileStep = buildSkippedStep(
-      'sample-reconcile',
-      'reconcile command not configured'
-    )
-  }
   steps.push(reconcileStep)
   await persistStepArtifacts(stageDir, reconcileStep)
-
-  const metricsStep = await runShellCommand({
-    id: 'metrics-check',
-    command: metricsCommand,
-    env: sharedEnv,
-  })
   steps.push(metricsStep)
   await persistStepArtifacts(stageDir, metricsStep)
 
   if (!switchStep.ok) {
     rollbackReasons.push('traffic switch step failed')
+  }
+  if (!verifyTrafficStep.ok) {
+    rollbackReasons.push('traffic verify step failed')
   }
   if (!smokeStep.ok) {
     rollbackReasons.push('smoke check failed')
@@ -378,9 +440,11 @@ export async function runStage(overrides = {}) {
     metricsStep.ok
 
   const rollbackValidationPassed =
-    rollbackRequired && (rollbackStep.ok || rollbackStep.skipped)
+    rollbackRequired &&
+    ((rollbackStep.ok && !rollbackStep.skipped) ||
+      (dryRun && allowDryRunPass && rollbackStep.ok && rollbackStep.skipped))
 
-  const ok = expectRollback ? rollbackValidationPassed : stagePassedWithoutRollback
+  let ok = expectRollback ? rollbackValidationPassed : stagePassedWithoutRollback
   let stageOutcome = 'progress'
   if (expectRollback) {
     stageOutcome = ok ? 'rollback-validated' : 'rollback-drill-failed'
@@ -388,6 +452,10 @@ export async function runStage(overrides = {}) {
     stageOutcome = 'rollback-required'
   } else if (!ok) {
     stageOutcome = 'failed-checks'
+  }
+  if (dryRun && !allowDryRunPass) {
+    ok = false
+    stageOutcome = 'dry-run-not-allowed'
   }
 
   const summary = {
@@ -406,13 +474,16 @@ export async function runStage(overrides = {}) {
       dryRun,
       enforceWait,
       requireSwitchCommand,
+      requireVerifyTrafficCommand,
       requireSmoke,
       requireReconcile,
       requireRollbackCommand,
       forceRollback,
       expectRollback,
+      allowDryRunPass,
       commands: {
         switchCommand: switchCommand || null,
+        verifyTrafficCommand: verifyTrafficCommand || null,
         smokeCommand: smokeCommand || null,
         reconcileCommand: reconcileCommand || null,
         metricsCommand,

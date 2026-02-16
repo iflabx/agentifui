@@ -49,8 +49,25 @@ async function run() {
       command: 'node scripts/m8-rollout-run.mjs',
       env: {
         M8_REPORT_DIR: path.join(reportDir, 'rollout'),
-        M8_DRY_RUN: process.env.M8_GATE_ROLLOUT_DRY_RUN || process.env.M8_DRY_RUN || '1',
+        M8_DRY_RUN:
+          process.env.M8_GATE_ROLLOUT_DRY_RUN || process.env.M8_DRY_RUN || '0',
         M8_STOP_AFTER_PERCENT: process.env.M8_GATE_ROLLOUT_STOP_AFTER_PERCENT || '',
+        M8_APPROVED: process.env.M8_GATE_APPROVED || process.env.M8_APPROVED || '0',
+        M8_REQUIRE_SWITCH_COMMAND:
+          process.env.M8_REQUIRE_SWITCH_COMMAND || '1',
+        M8_REQUIRE_VERIFY_TRAFFIC_COMMAND:
+          process.env.M8_REQUIRE_VERIFY_TRAFFIC_COMMAND || '1',
+        M8_REQUIRE_SMOKE: process.env.M8_REQUIRE_SMOKE || '1',
+        M8_REQUIRE_RECONCILE: process.env.M8_REQUIRE_RECONCILE || '1',
+        M8_REQUIRE_ROLLBACK_COMMAND:
+          process.env.M8_REQUIRE_ROLLBACK_COMMAND || '1',
+        M8_ALLOW_DRY_RUN_PASS: process.env.M8_ALLOW_DRY_RUN_PASS || '0',
+        M8_METRICS_STRICT: process.env.M8_METRICS_STRICT || '1',
+        M8_METRICS_REQUIRE_ALL_SIGNALS:
+          process.env.M8_METRICS_REQUIRE_ALL_SIGNALS || '1',
+        M8_REQUIRE_100_STABILITY: process.env.M8_REQUIRE_100_STABILITY || '1',
+        M8_REQUIRED_100_STABILITY_MINUTES:
+          process.env.M8_REQUIRED_100_STABILITY_MINUTES || '1440',
       },
     })
   }
@@ -64,9 +81,28 @@ async function run() {
         M8_DRY_RUN:
           process.env.M8_GATE_ROLLBACK_DRY_RUN ||
           process.env.M8_DRY_RUN ||
-          '1',
+          '0',
+        M8_REQUIRE_SWITCH_COMMAND:
+          process.env.M8_REQUIRE_SWITCH_COMMAND || '1',
+        M8_REQUIRE_VERIFY_TRAFFIC_COMMAND:
+          process.env.M8_REQUIRE_VERIFY_TRAFFIC_COMMAND || '1',
+        M8_REQUIRE_SMOKE: process.env.M8_REQUIRE_SMOKE || '1',
+        M8_REQUIRE_RECONCILE: process.env.M8_REQUIRE_RECONCILE || '1',
+        M8_REQUIRE_ROLLBACK_COMMAND:
+          process.env.M8_REQUIRE_ROLLBACK_COMMAND || '1',
+        M8_ALLOW_DRY_RUN_PASS: process.env.M8_ALLOW_DRY_RUN_PASS || '0',
+        M8_METRICS_STRICT: process.env.M8_METRICS_STRICT || '1',
+        M8_METRICS_REQUIRE_ALL_SIGNALS:
+          process.env.M8_METRICS_REQUIRE_ALL_SIGNALS || '1',
+        M8_REQUIRE_100_STABILITY: process.env.M8_REQUIRE_100_STABILITY || '1',
+        M8_REQUIRED_100_STABILITY_MINUTES:
+          process.env.M8_REQUIRED_100_STABILITY_MINUTES || '1440',
       },
     })
+  }
+
+  if (checks.length === 0) {
+    throw new Error('m8 gate has no checks enabled')
   }
 
   const startedAt = performance.now()

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
+import { open, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { performance } from 'node:perf_hooks'
-import { parsePositiveInt } from './m7-shared.mjs'
+import { parseBooleanEnv, parsePositiveInt } from './m7-shared.mjs'
 import {
   ensureDir,
   nowTimestamp,
@@ -18,7 +19,9 @@ function renderSummaryMarkdown(summary) {
   lines.push(`- Timestamp: ${summary.timestamp}`)
   lines.push(`- Report Dir: ${summary.reportDir}`)
   lines.push(`- Overall: ${summary.ok ? 'PASS' : 'FAIL'}`)
-  lines.push(`- Completed Stages: ${summary.completedStages.length}/${summary.plannedStages.length}`)
+  lines.push(
+    `- Completed Stages: ${summary.completedStages.length}/${summary.plannedStages.length}`
+  )
   lines.push('')
   lines.push('| Stage | Observe(min) | Status | Outcome | Duration(ms) |')
   lines.push('| --- | ---: | --- | --- | ---: |')
@@ -42,35 +45,76 @@ async function run() {
   const plannedStages = parseRolloutStages(process.env.M8_ROLLOUT_STAGES)
   const stopAfterPercent = parsePositiveInt(process.env.M8_STOP_AFTER_PERCENT, 0)
   const startFromPercent = parsePositiveInt(process.env.M8_START_FROM_PERCENT, 0)
+  const dryRun = parseBooleanEnv(process.env.M8_DRY_RUN, false)
+  const approved = parseBooleanEnv(process.env.M8_APPROVED, false)
+  const lockFilePath =
+    process.env.M8_LOCK_FILE?.trim() ||
+    path.join(process.cwd(), '.m8-rollout.lock')
+  const allowDryRunPass = parseBooleanEnv(process.env.M8_ALLOW_DRY_RUN_PASS, false)
 
   const reportDir =
     process.env.M8_REPORT_DIR?.trim() ||
     path.join(process.cwd(), 'artifacts', 'm8', nowTimestamp())
   await ensureDir(reportDir)
 
+  if (!dryRun && !approved) {
+    throw new Error(
+      'M8 rollout apply requires explicit approval: set M8_APPROVED=1'
+    )
+  }
+
+  let lockHandle = null
+  try {
+    lockHandle = await open(lockFilePath, 'wx')
+  } catch {
+    throw new Error(`M8 rollout lock already held: ${lockFilePath}`)
+  }
+
+  await writeFile(
+    lockFilePath,
+    JSON.stringify(
+      {
+        pid: process.pid,
+        startedAt: new Date().toISOString(),
+        reportDir,
+        dryRun,
+      },
+      null,
+      2
+    ),
+    'utf8'
+  )
+
   const startedAt = performance.now()
   const stageResults = []
+  try {
+    for (const stage of plannedStages) {
+      if (startFromPercent > 0 && stage.percent < startFromPercent) {
+        continue
+      }
+      if (stopAfterPercent > 0 && stage.percent > stopAfterPercent) {
+        break
+      }
 
-  for (const stage of plannedStages) {
-    if (startFromPercent > 0 && stage.percent < startFromPercent) {
-      continue
-    }
-    if (stopAfterPercent > 0 && stage.percent > stopAfterPercent) {
-      break
-    }
+      const stageSummary = await runStage({
+        stagePercent: stage.percent,
+        observeMinutes: stage.observeMinutes,
+        reportRoot: reportDir,
+        stageSlug: `stage-${String(stage.percent).padStart(3, '0')}`,
+        stageName: `${stage.percent}%`,
+        allowDryRunPass,
+      })
 
-    const stageSummary = await runStage({
-      stagePercent: stage.percent,
-      observeMinutes: stage.observeMinutes,
-      reportRoot: reportDir,
-      stageSlug: `stage-${String(stage.percent).padStart(3, '0')}`,
-      stageName: `${stage.percent}%`,
-    })
-
-    stageResults.push(stageSummary)
-    if (!stageSummary.ok) {
-      break
+      stageResults.push(stageSummary)
+      if (!stageSummary.ok) {
+        break
+      }
     }
+  } finally {
+    if (lockHandle) {
+      await lockHandle.close().catch(() => {})
+    }
+    await unlink(lockFilePath).catch(() => {})
   }
 
   const failedStage = stageResults.find(stage => !stage.ok) || null
@@ -78,6 +122,15 @@ async function run() {
     ok: failedStage === null,
     timestamp: new Date().toISOString(),
     reportDir,
+    lockFilePath,
+    lockReleased: true,
+    config: {
+      dryRun,
+      approved,
+      allowDryRunPass,
+      startFromPercent,
+      stopAfterPercent,
+    },
     plannedStages,
     completedStages: stageResults.map(stage => stage.stage.percent),
     failedStage,

@@ -3,75 +3,107 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import {
   parseBooleanEnv,
-  parsePositiveInt,
   parseCommaList,
+  parsePositiveInt,
 } from './m7-shared.mjs'
-import { runShellCommand } from './m8-shared.mjs'
+import { parsePercentage, runShellCommand } from './m8-shared.mjs'
 
 function parseNumber(value, fallbackValue) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : fallbackValue
 }
 
-function pickNumber(payload, keys, fallbackValue = 0) {
+function pickMetric(payload, keys, fallbackValue = 0) {
   for (const key of keys) {
-    if (key in payload) {
-      const parsed = Number(payload[key])
-      if (Number.isFinite(parsed)) {
-        return parsed
-      }
+    if (!(key in payload)) {
+      continue
+    }
+    const parsed = Number(payload[key])
+    if (Number.isFinite(parsed)) {
+      return { value: parsed, present: true, sourceKey: key }
     }
   }
-  return fallbackValue
+  return { value: fallbackValue, present: false, sourceKey: null }
 }
 
 function normalizeMetrics(rawPayload) {
   const payload = rawPayload && typeof rawPayload === 'object' ? rawPayload : {}
-  const root = payload.metrics && typeof payload.metrics === 'object' ? payload.metrics : payload
+  const root =
+    payload.metrics && typeof payload.metrics === 'object'
+      ? payload.metrics
+      : payload
+
+  const http5xxRatePct = pickMetric(root, [
+    'http5xxRatePct',
+    'fiveXXRatePct',
+    'errorRate5xxPct',
+    'http_5xx_rate_pct',
+  ])
+  const http5xxSustainedMinutes = pickMetric(root, [
+    'http5xxSustainedMinutes',
+    'fiveXXSustainedMinutes',
+    'errorRate5xxSustainedMinutes',
+    'http_5xx_sustained_minutes',
+  ])
+  const realtimeP95Ms = pickMetric(root, [
+    'realtimeP95Ms',
+    'realtimeP95LatencyMs',
+    'realtime_p95_ms',
+  ])
+  const realtimeSustainedMinutes = pickMetric(root, [
+    'realtimeSustainedMinutes',
+    'realtimeLatencySustainedMinutes',
+    'realtime_sustained_minutes',
+  ])
+  const loginFailureRatePct = pickMetric(root, [
+    'loginFailureRatePct',
+    'authFailureRatePct',
+    'login_failure_rate_pct',
+  ])
+  const loginFailureSustainedMinutes = pickMetric(root, [
+    'loginFailureSustainedMinutes',
+    'authFailureSustainedMinutes',
+    'login_failure_sustained_minutes',
+  ])
+  const unexplainedReconcileDiffCount = pickMetric(root, [
+    'unexplainedReconcileDiffCount',
+    'reconcileDiffCount',
+    'unexplained_reconcile_diff_count',
+  ])
+  const authBypassEventCount = pickMetric(root, [
+    'authBypassEventCount',
+    'authBypassEvents',
+    'auth_bypass_event_count',
+  ])
+  const at100StableMinutes = pickMetric(root, [
+    'at100StableMinutes',
+    'stableAtCurrentPercentMinutes',
+    'stable_minutes_at_current_percent',
+  ])
 
   return {
-    http5xxRatePct: pickNumber(root, [
-      'http5xxRatePct',
-      'fiveXXRatePct',
-      'errorRate5xxPct',
-      'http_5xx_rate_pct',
-    ]),
-    http5xxSustainedMinutes: pickNumber(root, [
-      'http5xxSustainedMinutes',
-      'fiveXXSustainedMinutes',
-      'errorRate5xxSustainedMinutes',
-      'http_5xx_sustained_minutes',
-    ]),
-    realtimeP95Ms: pickNumber(root, [
-      'realtimeP95Ms',
-      'realtimeP95LatencyMs',
-      'realtime_p95_ms',
-    ]),
-    realtimeSustainedMinutes: pickNumber(root, [
-      'realtimeSustainedMinutes',
-      'realtimeLatencySustainedMinutes',
-      'realtime_sustained_minutes',
-    ]),
-    loginFailureRatePct: pickNumber(root, [
-      'loginFailureRatePct',
-      'authFailureRatePct',
-      'login_failure_rate_pct',
-    ]),
-    loginFailureSustainedMinutes: pickNumber(root, [
-      'loginFailureSustainedMinutes',
-      'authFailureSustainedMinutes',
-      'login_failure_sustained_minutes',
-    ]),
-    unexplainedReconcileDiffCount: pickNumber(root, [
-      'unexplainedReconcileDiffCount',
-      'reconcileDiffCount',
-      'unexplained_reconcile_diff_count',
-    ]),
-    authBypassEventCount: pickNumber(root, [
-      'authBypassEventCount',
-      'authBypassEvents',
-      'auth_bypass_event_count',
-    ]),
+    metrics: {
+      http5xxRatePct: http5xxRatePct.value,
+      http5xxSustainedMinutes: http5xxSustainedMinutes.value,
+      realtimeP95Ms: realtimeP95Ms.value,
+      realtimeSustainedMinutes: realtimeSustainedMinutes.value,
+      loginFailureRatePct: loginFailureRatePct.value,
+      loginFailureSustainedMinutes: loginFailureSustainedMinutes.value,
+      unexplainedReconcileDiffCount: unexplainedReconcileDiffCount.value,
+      authBypassEventCount: authBypassEventCount.value,
+      at100StableMinutes: at100StableMinutes.value,
+    },
+    signalPresence: {
+      http5xxRatePct: http5xxRatePct.present,
+      http5xxSustainedMinutes: http5xxSustainedMinutes.present,
+      realtimeP95Ms: realtimeP95Ms.present,
+      realtimeSustainedMinutes: realtimeSustainedMinutes.present,
+      loginFailureRatePct: loginFailureRatePct.present,
+      loginFailureSustainedMinutes: loginFailureSustainedMinutes.present,
+      unexplainedReconcileDiffCount: unexplainedReconcileDiffCount.present,
+      authBypassEventCount: authBypassEventCount.present,
+      at100StableMinutes: at100StableMinutes.present,
+    },
   }
 }
 
@@ -81,7 +113,11 @@ async function loadMetricsFromPath(filePath) {
 }
 
 async function loadMetricsPayload() {
-  const strictMode = parseBooleanEnv(process.env.M8_METRICS_STRICT, false)
+  const strictMode = parseBooleanEnv(process.env.M8_METRICS_STRICT, true)
+  const allowSynthetic = parseBooleanEnv(
+    process.env.M8_ALLOW_SYNTHETIC_METRICS,
+    false
+  )
   const metricsJsonRaw = process.env.M8_METRICS_JSON?.trim() || ''
   const metricsPath = process.env.M8_METRICS_PATH?.trim() || ''
   const metricsCommand = process.env.M8_METRICS_COMMAND?.trim() || ''
@@ -125,9 +161,15 @@ async function loadMetricsPayload() {
     }
   }
 
-  if (strictMode) {
+  if (strictMode && !allowSynthetic) {
     throw new Error(
-      'metrics input missing in strict mode: set M8_METRICS_JSON or M8_METRICS_PATH or M8_METRICS_COMMAND'
+      'metrics input missing: set M8_METRICS_JSON or M8_METRICS_PATH or M8_METRICS_COMMAND'
+    )
+  }
+
+  if (!allowSynthetic) {
+    throw new Error(
+      'synthetic metrics are disabled; set M8_ALLOW_SYNTHETIC_METRICS=1 to bypass'
     )
   }
 
@@ -142,6 +184,7 @@ async function loadMetricsPayload() {
       loginFailureSustainedMinutes: 0,
       unexplainedReconcileDiffCount: 0,
       authBypassEventCount: 0,
+      at100StableMinutes: 0,
     },
     synthetic: true,
   }
@@ -171,6 +214,15 @@ function evaluateMetrics(metrics) {
   const thresholdLoginFailureMinutes = parsePositiveInt(
     process.env.M8_THRESHOLD_LOGIN_FAILURE_MINUTES,
     5
+  )
+  const targetPercent = parsePercentage(process.env.M8_TARGET_PERCENT, 0)
+  const require100Stability = parseBooleanEnv(
+    process.env.M8_REQUIRE_100_STABILITY,
+    true
+  )
+  const required100StableMinutes = parsePositiveInt(
+    process.env.M8_REQUIRED_100_STABILITY_MINUTES,
+    1440
   )
 
   const checks = [
@@ -241,36 +293,64 @@ function evaluateMetrics(metrics) {
         maxCount: 0,
       },
     },
+    {
+      id: '100-percent-stability-window',
+      description: '100% stage must stay stable for >= 1440 minutes',
+      triggered:
+        targetPercent === 100 &&
+        require100Stability &&
+        metrics.at100StableMinutes < required100StableMinutes,
+      observed: {
+        targetPercent,
+        at100StableMinutes: metrics.at100StableMinutes,
+      },
+      threshold: {
+        targetPercent: 100,
+        minStableMinutes: required100StableMinutes,
+      },
+    },
   ]
 
   return {
     checks,
     rollbackRequired: checks.some(check => check.triggered),
+    config: {
+      targetPercent,
+      require100Stability,
+      required100StableMinutes,
+    },
   }
 }
 
 async function run() {
   const payload = await loadMetricsPayload()
-  const metrics = normalizeMetrics(payload.raw)
+  const normalized = normalizeMetrics(payload.raw)
+  const metrics = normalized.metrics
   const evaluated = evaluateMetrics(metrics)
-  const requiredSignals = parseCommaList(
-    process.env.M8_REQUIRED_METRIC_SIGNALS,
-    [
-      'http5xxRatePct',
-      'http5xxSustainedMinutes',
-      'realtimeP95Ms',
-      'realtimeSustainedMinutes',
-      'loginFailureRatePct',
-      'loginFailureSustainedMinutes',
-      'unexplainedReconcileDiffCount',
-      'authBypassEventCount',
-    ]
-  )
+  const requiredSignals = parseCommaList(process.env.M8_REQUIRED_METRIC_SIGNALS, [
+    'http5xxRatePct',
+    'http5xxSustainedMinutes',
+    'realtimeP95Ms',
+    'realtimeSustainedMinutes',
+    'loginFailureRatePct',
+    'loginFailureSustainedMinutes',
+    'unexplainedReconcileDiffCount',
+    'authBypassEventCount',
+  ])
+
+  if (evaluated.config.targetPercent === 100 && evaluated.config.require100Stability) {
+    if (!requiredSignals.includes('at100StableMinutes')) {
+      requiredSignals.push('at100StableMinutes')
+    }
+  }
 
   const missingSignals = requiredSignals.filter(
-    key => !(key in metrics) || Number.isNaN(Number(metrics[key]))
+    key => normalized.signalPresence[key] !== true
   )
-  const strictSignals = parseBooleanEnv(process.env.M8_METRICS_REQUIRE_ALL_SIGNALS, false)
+  const strictSignals = parseBooleanEnv(
+    process.env.M8_METRICS_REQUIRE_ALL_SIGNALS,
+    true
+  )
   const signalsComplete = missingSignals.length === 0
 
   const ok = !evaluated.rollbackRequired && (!strictSignals || signalsComplete)
@@ -282,6 +362,11 @@ async function run() {
     checks: {
       rollbackRequired: evaluated.rollbackRequired,
       signalsComplete,
+    },
+    config: {
+      strictSignals,
+      requiredSignals,
+      ...evaluated.config,
     },
     missingSignals,
     metrics,

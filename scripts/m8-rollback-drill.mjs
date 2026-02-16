@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import path from 'node:path'
-import { parsePositiveInt } from './m7-shared.mjs'
+import { parseBooleanEnv, parsePositiveInt } from './m7-shared.mjs'
 import { ensureDir, nowTimestamp, writeJson, writeText } from './m8-shared.mjs'
 import { runStage } from './m8-rollout-stage.mjs'
 
@@ -29,6 +29,10 @@ async function run() {
     process.env.M8_DRILL_OBSERVE_MINUTES,
     5
   )
+  const allowDryRunPass = parseBooleanEnv(
+    process.env.M8_ALLOW_DRY_RUN_PASS,
+    false
+  )
   const reportDir =
     process.env.M8_REPORT_DIR?.trim() ||
     path.join(process.cwd(), 'artifacts', 'm8', 'rollback-drill', nowTimestamp())
@@ -42,6 +46,8 @@ async function run() {
     reportRoot: reportDir,
     forceRollback: true,
     expectRollback: true,
+    requireRollbackCommand: true,
+    allowDryRunPass,
   })
 
   const summary = {

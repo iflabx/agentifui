@@ -214,6 +214,7 @@ Gate：
 1. 切流记录与每阶段验收报告
 2. 回滚演练报告
 3. 自动化执行脚本与 runbook（`docs/m8-rollout-rollback-runbook.md`）
+4. M8 CI 门禁工作流（`.github/workflows/m8-gate-ci.yml`）
 
 Gate：
 

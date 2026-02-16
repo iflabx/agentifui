@@ -1,0 +1,65 @@
+name: M8 Gate CI
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/m8-*.mjs'
+      - 'scripts/m8-*.sh'
+      - 'docs/m8-*.md'
+      - 'docs/migration-task-blueprint.md'
+      - 'package.json'
+  workflow_dispatch:
+  schedule:
+    - cron: '30 */12 * * *'
+
+concurrency:
+  group: m8-gate-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  m8-gate-sim:
+    name: M8 Gate Simulated
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run M8 gate (strict simulation)
+        env:
+          M8_DRY_RUN: '1'
+          M8_ALLOW_DRY_RUN_PASS: '1'
+          M8_ENFORCE_WAIT: '0'
+          M8_METRICS_STRICT: '1'
+          M8_METRICS_REQUIRE_ALL_SIGNALS: '1'
+          M8_REQUIRE_100_STABILITY: '1'
+          M8_REQUIRED_100_STABILITY_MINUTES: '1440'
+          M8_GATE_RUN_ROLLOUT: '1'
+          M8_GATE_RUN_ROLLBACK_DRILL: '1'
+          M8_SWITCH_TRAFFIC_COMMAND: >-
+            node -e "console.log(JSON.stringify({ok:true,step:\"switch\",targetPercent:process.env.M8_TARGET_PERCENT||null}))"
+          M8_VERIFY_TRAFFIC_COMMAND: >-
+            node -e "console.log(JSON.stringify({ok:true,step:\"verify-traffic\",targetPercent:process.env.M8_TARGET_PERCENT||null}))"
+          M8_SMOKE_COMMAND: >-
+            node -e "console.log(JSON.stringify({ok:true,step:\"smoke\"}))"
+          M8_RECONCILE_COMMAND: >-
+            node -e "console.log(JSON.stringify({ok:true,step:\"reconcile\"}))"
+          M8_ROLLBACK_COMMAND: >-
+            node -e "console.log(JSON.stringify({ok:true,step:\"rollback\"}))"
+          M8_METRICS_JSON: >-
+            {"http5xxRatePct":0,"http5xxSustainedMinutes":0,"realtimeP95Ms":0,"realtimeSustainedMinutes":0,"loginFailureRatePct":0,"loginFailureSustainedMinutes":0,"unexplainedReconcileDiffCount":0,"authBypassEventCount":0,"at100StableMinutes":1440}
+        run: pnpm -s m8:gate:verify
