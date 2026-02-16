@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { Client } from 'pg'
 import {
+  assertSourceTargetIsolation,
   buildPublicTableRef,
+  parseBooleanEnv,
   quoteIdent,
   resolveM7SourceDatabaseUrl,
   resolveM7TableList,
@@ -10,6 +12,10 @@ import {
 
 const sourceDatabaseUrl = resolveM7SourceDatabaseUrl()
 const targetDatabaseUrl = resolveM7TargetDatabaseUrl()
+const allowSameSourceTarget = parseBooleanEnv(
+  process.env.M7_ALLOW_SAME_SOURCE_TARGET,
+  false
+)
 const tableNames = resolveM7TableList()
 const bucketTables = ['conversations', 'messages', 'app_executions']
 
@@ -126,6 +132,13 @@ async function getConstraintMetrics(client) {
 }
 
 async function run() {
+  assertSourceTargetIsolation({
+    sourceDatabaseUrl,
+    targetDatabaseUrl,
+    allowSameSourceTarget,
+    context: 'm7-reconcile-verify',
+  })
+
   const sourceClient = new Client({ connectionString: sourceDatabaseUrl })
   const targetClient = new Client({ connectionString: targetDatabaseUrl })
   await sourceClient.connect()

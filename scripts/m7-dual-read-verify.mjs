@@ -1,11 +1,32 @@
 #!/usr/bin/env node
 import { Client } from 'pg'
-import { parsePositiveInt, resolveM7SourceDatabaseUrl, resolveM7TargetDatabaseUrl } from './m7-shared.mjs'
+import {
+  assertSourceTargetIsolation,
+  parseBooleanEnv,
+  parsePositiveInt,
+  resolveM7SourceDatabaseUrl,
+  resolveM7TargetDatabaseUrl,
+} from './m7-shared.mjs'
 
 const sourceDatabaseUrl = resolveM7SourceDatabaseUrl()
 const targetDatabaseUrl = resolveM7TargetDatabaseUrl()
+const allowSameSourceTarget = parseBooleanEnv(
+  process.env.M7_ALLOW_SAME_SOURCE_TARGET,
+  false
+)
 const sampleUsers = parsePositiveInt(process.env.M7_DUAL_READ_SAMPLE_USERS, 30)
 const rowLimit = parsePositiveInt(process.env.M7_DUAL_READ_ROW_LIMIT, 50)
+const sampleStrategyRaw =
+  process.env.M7_DUAL_READ_SAMPLE_STRATEGY?.trim().toLowerCase() || 'sample'
+const sampleStrategy = sampleStrategyRaw === 'all' ? 'all' : 'sample'
+const requireFullCoverage = parseBooleanEnv(
+  process.env.M7_DUAL_READ_REQUIRE_FULL_COVERAGE,
+  false
+)
+const minCoverageRatioRaw = Number(process.env.M7_DUAL_READ_MIN_COVERAGE || 0)
+const minCoverageRatio = Number.isFinite(minCoverageRatioRaw)
+  ? Math.min(1, Math.max(0, minCoverageRatioRaw))
+  : 0
 
 const userScopedPaths = [
   {
@@ -160,12 +181,25 @@ async function queryReadHash(client, sql, params) {
 }
 
 async function run() {
+  assertSourceTargetIsolation({
+    sourceDatabaseUrl,
+    targetDatabaseUrl,
+    allowSameSourceTarget,
+    context: 'm7-dual-read-verify',
+  })
+
   const sourceClient = new Client({ connectionString: sourceDatabaseUrl })
   const targetClient = new Client({ connectionString: targetDatabaseUrl })
   await sourceClient.connect()
   await targetClient.connect()
 
   try {
+    const totalUsersResult = await sourceClient.query(`
+      SELECT COUNT(*)::bigint AS c
+      FROM profiles
+    `)
+    const totalUsers = Number(totalUsersResult.rows[0]?.c || 0)
+
     const [sourceTables, targetTables] = await Promise.all([
       loadTableSet(sourceClient),
       loadTableSet(targetClient),
@@ -189,16 +223,27 @@ async function run() {
       reason: 'table_not_shared_between_source_target',
     }))
 
-    const sampleUserRows = await sourceClient.query(
-      `
-        SELECT id::text AS id
-        FROM profiles
-        ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
-        LIMIT $1
-      `,
-      [sampleUsers]
-    )
+    const sampleUserRows =
+      sampleStrategy === 'all'
+        ? await sourceClient.query(`
+            SELECT id::text AS id
+            FROM profiles
+            ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+          `)
+        : await sourceClient.query(
+            `
+              SELECT id::text AS id
+              FROM profiles
+              ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+              LIMIT $1
+            `,
+            [sampleUsers]
+          )
     const sampledUserIds = sampleUserRows.rows.map(row => row.id)
+    const coverageRatio =
+      totalUsers === 0
+        ? 1
+        : Number((sampledUserIds.length / totalUsers).toFixed(6))
 
     const pathSummary = []
     const mismatches = []
@@ -270,7 +315,13 @@ async function run() {
     }
 
     const checks = {
-      sampledUsersLoaded: sampledUserIds.length > 0,
+      sampledUsersLoaded: totalUsers === 0 ? true : sampledUserIds.length > 0,
+      coverageSufficient:
+        totalUsers === 0
+          ? true
+          : requireFullCoverage
+            ? sampledUserIds.length === totalUsers
+            : coverageRatio >= minCoverageRatio,
       userPathsMatch: pathSummary
         .filter(item => item.scope === 'user')
         .every(item => item.mismatchCount === 0),
@@ -287,9 +338,14 @@ async function run() {
       config: {
         sampleUsers,
         rowLimit,
+        sampleStrategy,
+        requireFullCoverage,
+        minCoverageRatio,
       },
       scope: {
+        totalUsers,
         sampledUsers: sampledUserIds.length,
+        coverageRatio,
         sampledUserIds: sampledUserIds.slice(0, 20),
       },
       paths: pathSummary,

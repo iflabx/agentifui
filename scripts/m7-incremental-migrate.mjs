@@ -2,6 +2,7 @@
 import pg from 'pg'
 import { performance } from 'node:perf_hooks'
 import {
+  assertSourceTargetIsolation,
   buildPublicTableRef,
   parseBooleanEnv,
   parseCommaList,
@@ -33,6 +34,9 @@ const pipelineName = process.env.M7_PIPELINE_NAME?.trim() || 'default'
 const checkpointTable =
   process.env.M7_CHECKPOINT_TABLE?.trim() || 'migration_sync_checkpoints'
 const checkpointTableRef = `${quoteIdent('public')}.${quoteIdent(checkpointTable)}`
+const lockEnabled = !parseBooleanEnv(process.env.M7_DISABLE_LOCK, false)
+const lockKey =
+  process.env.M7_LOCK_KEY?.trim() || `m7:incremental:${pipelineName}`
 
 function buildUpsertSql(tableName, columns, pkColumns, rowCount) {
   const tableRef = buildPublicTableRef(tableName)
@@ -124,6 +128,29 @@ async function ensureCheckpointTable(targetClient) {
       PRIMARY KEY (pipeline_name, table_name)
     )
   `)
+}
+
+async function acquireAdvisoryLock(client, lockName) {
+  const { rows } = await client.query(
+    `
+      SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS locked
+    `,
+    [lockName]
+  )
+  if (!rows[0]?.locked) {
+    throw new Error(
+      `advisory lock already held for ${lockName}; another incremental migration may be running`
+    )
+  }
+}
+
+async function releaseAdvisoryLock(client, lockName) {
+  await client.query(
+    `
+      SELECT pg_advisory_unlock(hashtextextended($1, 0))
+    `,
+    [lockName]
+  )
 }
 
 async function loadCheckpoint(targetClient, tableName) {
@@ -440,11 +467,12 @@ async function migrateTableIncremental({
 }
 
 async function run() {
-  if (!dryRun && !allowSameSourceTarget && sourceDatabaseUrl === targetDatabaseUrl) {
-    throw new Error(
-      'source and target database URLs are identical; set M7_ALLOW_SAME_SOURCE_TARGET=1 to bypass'
-    )
-  }
+  assertSourceTargetIsolation({
+    sourceDatabaseUrl,
+    targetDatabaseUrl,
+    allowSameSourceTarget,
+    context: 'm7-incremental-migrate',
+  })
 
   const sourceClient = new Client({ connectionString: sourceDatabaseUrl })
   const targetClient = new Client({ connectionString: targetDatabaseUrl })
@@ -453,7 +481,12 @@ async function run() {
 
   const startedAt = performance.now()
   const tables = []
+  let lockAcquired = false
   try {
+    if (lockEnabled) {
+      await acquireAdvisoryLock(targetClient, lockKey)
+      lockAcquired = true
+    }
     await ensureCheckpointTable(targetClient)
 
     for (const tableName of tableNames) {
@@ -489,6 +522,11 @@ async function run() {
       targetDatabaseUrl,
       pipelineName,
       checkpointTable,
+      lock: {
+        enabled: lockEnabled,
+        key: lockKey,
+        acquired: lockAcquired,
+      },
       checks,
       totals: {
         eligibleRows,
@@ -505,6 +543,9 @@ async function run() {
       process.exitCode = 1
     }
   } finally {
+    if (lockAcquired) {
+      await releaseAdvisoryLock(targetClient, lockKey).catch(() => {})
+    }
     await sourceClient.end().catch(() => {})
     await targetClient.end().catch(() => {})
   }

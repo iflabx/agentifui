@@ -2,6 +2,7 @@
 import pg from 'pg'
 import { performance } from 'node:perf_hooks'
 import {
+  assertSourceTargetIsolation,
   buildPublicTableRef,
   parseBooleanEnv,
   parsePositiveInt,
@@ -20,14 +21,36 @@ const sourceDatabaseUrl = resolveM7SourceDatabaseUrl()
 const targetDatabaseUrl = resolveM7TargetDatabaseUrl()
 const tableNames = resolveM7TableList()
 const dryRun = parseBooleanEnv(process.env.M7_DRY_RUN, true)
+const allowSameSourceTarget = parseBooleanEnv(
+  process.env.M7_ALLOW_SAME_SOURCE_TARGET,
+  false
+)
 const batchSize = parsePositiveInt(process.env.M7_BATCH_SIZE, 1000)
 
-function buildOrderExpression(pkColumns) {
-  if (pkColumns.length === 1) {
-    return `${quoteIdent(pkColumns[0])} ASC`
+function buildOrderExpressionByText(pkColumns) {
+  return pkColumns
+    .map(column => `${quoteIdent(column)}::text ASC`)
+    .join(', ')
+}
+
+function buildKeysetWhereClause(pkColumns, cursorPkValues, startParamIndex = 1) {
+  if (!cursorPkValues || cursorPkValues.length === 0) {
+    return {
+      sql: '',
+      params: [],
+    }
   }
 
-  return pkColumns.map(column => `${quoteIdent(column)} ASC`).join(', ')
+  const lhsTuple = `(${pkColumns
+    .map(column => `${quoteIdent(column)}::text`)
+    .join(', ')})`
+  const rhsTuple = `(${cursorPkValues
+    .map((_, index) => `$${startParamIndex + index}::text`)
+    .join(', ')})`
+  return {
+    sql: `WHERE ${lhsTuple} > ${rhsTuple}`,
+    params: cursorPkValues,
+  }
 }
 
 function buildUpsertSql(tableName, columns, pkColumns, rowCount) {
@@ -152,14 +175,19 @@ async function migrateTable({
   let processedRows = 0
   if (!dryRunMode && sourceCount > 0) {
     const columnSql = commonColumns.map(column => quoteIdent(column)).join(', ')
-    const orderSql = buildOrderExpression(primaryKeyColumns)
-    for (let offset = 0; offset < sourceCount; offset += effectiveBatchSize) {
+    const orderSql = buildOrderExpressionByText(primaryKeyColumns)
+    let cursorPkValues = null
+
+    while (true) {
+      const keyset = buildKeysetWhereClause(primaryKeyColumns, cursorPkValues)
+      const limitParamIndex = keyset.params.length + 1
       const sourceBatch = await sourceClient.query(
         `SELECT ${columnSql}
            FROM ${tableRef}
+          ${keyset.sql}
           ORDER BY ${orderSql}
-          LIMIT $1 OFFSET $2`,
-        [effectiveBatchSize, offset]
+          LIMIT $${limitParamIndex}`,
+        [...keyset.params, effectiveBatchSize]
       )
       const rows = sourceBatch.rows
       if (rows.length === 0) {
@@ -183,6 +211,10 @@ async function migrateTable({
       }
 
       processedRows += rows.length
+      const lastRow = rows[rows.length - 1]
+      cursorPkValues = primaryKeyColumns.map(column =>
+        String(lastRow[column] ?? '')
+      )
     }
   }
 
@@ -199,6 +231,13 @@ async function migrateTable({
 }
 
 async function run() {
+  assertSourceTargetIsolation({
+    sourceDatabaseUrl,
+    targetDatabaseUrl,
+    allowSameSourceTarget,
+    context: 'm7-data-migrate',
+  })
+
   const sourceClient = new Client({ connectionString: sourceDatabaseUrl })
   const targetClient = new Client({ connectionString: targetDatabaseUrl })
   await sourceClient.connect()

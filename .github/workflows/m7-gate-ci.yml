@@ -7,9 +7,11 @@ on:
       - 'scripts/m7-*.sh'
       - 'docs/m7-*.md'
       - 'docs/migration-task-blueprint.md'
-      - 'supabase/migrations/20260216*.sql'
+      - 'supabase/migrations/202602*.sql'
       - 'package.json'
   workflow_dispatch:
+  schedule:
+    - cron: '0 */12 * * *'
 
 concurrency:
   group: m7-gate-ci-${{ github.ref }}
@@ -39,4 +41,65 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run M7 CI verify
+        run: pnpm m7:ci:verify
+
+  m7-runtime-gate:
+    name: M7 Runtime Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: m7-static-gate
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      minio:
+        image: bitnami/minio:latest
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+          MINIO_DEFAULT_BUCKETS: agentifui
+        ports:
+          - 9000:9000
+        options: >-
+          --health-cmd "curl -f http://localhost:9000/minio/health/live || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run M7 runtime smoke
+        env:
+          PG_ADMIN_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+          S3_ENDPOINT: http://127.0.0.1:9000
+          S3_ACCESS_KEY_ID: minioadmin
+          S3_SECRET_ACCESS_KEY: minioadmin
+          S3_BUCKET: agentifui
+          S3_ENABLE_PATH_STYLE: '1'
+          M7_CI_RUNTIME_SMOKE: '1'
         run: pnpm m7:ci:verify

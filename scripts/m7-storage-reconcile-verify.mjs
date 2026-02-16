@@ -3,6 +3,7 @@ import { Client } from 'pg'
 import {
   extractNamespacePathFromUrlLike,
   listS3Objects,
+  parseBooleanEnv,
   parsePositiveInt,
   resolveM7StorageDatabaseUrl,
   toSortedArray,
@@ -12,6 +13,17 @@ const databaseUrl = resolveM7StorageDatabaseUrl()
 const maxUserCount = parsePositiveInt(process.env.M7_STORAGE_MAX_USERS, 2000)
 const maxMissingRate = Number(process.env.M7_STORAGE_MAX_MISSING_RATE || 0.001)
 const maxOrphanRate = Number(process.env.M7_STORAGE_MAX_ORPHAN_RATE || 0.001)
+const scanStrategyRaw =
+  process.env.M7_STORAGE_SCAN_STRATEGY?.trim().toLowerCase() || 'sample'
+const scanStrategy = scanStrategyRaw === 'all' ? 'all' : 'sample'
+const requireFullCoverage = parseBooleanEnv(
+  process.env.M7_STORAGE_REQUIRE_FULL_COVERAGE,
+  false
+)
+const minCoverageRatioRaw = Number(process.env.M7_STORAGE_MIN_COVERAGE || 0)
+const minCoverageRatio = Number.isFinite(minCoverageRatioRaw)
+  ? Math.min(1, Math.max(0, minCoverageRatioRaw))
+  : 0
 
 function normalizeRate(value) {
   if (!Number.isFinite(value) || value < 0) {
@@ -92,16 +104,31 @@ async function run() {
   await client.connect()
 
   try {
-    const userRows = await client.query(
-      `
-        SELECT id::text AS id
-        FROM profiles
-        ORDER BY created_at ASC
-        LIMIT $1
-      `,
-      [maxUserCount]
-    )
+    const totalUsersResult = await client.query(`
+      SELECT COUNT(*)::bigint AS c
+      FROM profiles
+    `)
+    const totalUsers = Number(totalUsersResult.rows[0]?.c || 0)
+
+    const userRows =
+      scanStrategy === 'all'
+        ? await client.query(`
+            SELECT id::text AS id
+            FROM profiles
+            ORDER BY created_at ASC
+          `)
+        : await client.query(
+            `
+              SELECT id::text AS id
+              FROM profiles
+              ORDER BY created_at ASC
+              LIMIT $1
+            `,
+            [maxUserCount]
+          )
     const userIds = userRows.rows.map(row => row.id)
+    const coverageRatio =
+      totalUsers === 0 ? 1 : Number((userIds.length / totalUsers).toFixed(6))
 
     const avatarRows = await client.query(`
       SELECT avatar_url
@@ -167,6 +194,12 @@ async function run() {
     })
 
     const checks = {
+      coverageSufficient:
+        totalUsers === 0
+          ? true
+          : requireFullCoverage
+            ? userIds.length === totalUsers
+            : coverageRatio >= minCoverageRatio,
       avatarMissingRateWithinThreshold: avatarStats.checks.missingRateWithinThreshold,
       avatarOrphanRateWithinThreshold: avatarStats.checks.orphanRateWithinThreshold,
       contentMissingRateWithinThreshold:
@@ -183,8 +216,16 @@ async function run() {
         maxMissingRate,
         maxOrphanRate,
       },
+      config: {
+        scanStrategy,
+        maxUserCount,
+        requireFullCoverage,
+        minCoverageRatio,
+      },
       scope: {
+        totalUsers,
         scopedUsers: userIds.length,
+        coverageRatio,
         userSample: userIds.slice(0, 20),
       },
       namespaces: [avatarStats, contentStats],

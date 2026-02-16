@@ -11,21 +11,30 @@ export const FALLBACK_S3_BUCKET = 'agentifui'
 export const FALLBACK_S3_REGION = 'us-east-1'
 
 const DEFAULT_TABLES = [
+  'auth_settings',
+  'auth_users',
+  'auth_accounts',
+  'auth_sessions',
+  'auth_verifications',
+  'auth_local_login_audit_logs',
   'profiles',
-  'conversations',
-  'messages',
-  'app_executions',
+  'providers',
+  'service_instances',
+  'ai_configs',
+  'sso_providers',
+  'domain_sso_mappings',
   'groups',
   'group_members',
   'group_app_permissions',
-  'service_instances',
+  'conversations',
+  'messages',
+  'app_executions',
   'api_keys',
-  'sso_providers',
-  'domain_sso_mappings',
-  'providers',
   'user_identities',
   'profile_external_attributes',
   'user_preferences',
+  'api_logs',
+  'realtime_outbox_events',
 ]
 
 export function parseBooleanEnv(value, fallbackValue) {
@@ -78,11 +87,16 @@ export function resolveM7TableList() {
 }
 
 export function resolveM7SourceDatabaseUrl() {
-  return (
+  const value =
     process.env.M7_SOURCE_DATABASE_URL?.trim() ||
     process.env.SUPABASE_DATABASE_URL?.trim() ||
-    resolveM7TargetDatabaseUrl()
-  )
+    ''
+  if (!value) {
+    throw new Error(
+      'M7 source database URL is required: set M7_SOURCE_DATABASE_URL or SUPABASE_DATABASE_URL'
+    )
+  }
+  return value
 }
 
 export function resolveM7TargetDatabaseUrl() {
@@ -99,6 +113,53 @@ export function resolveM7StorageDatabaseUrl() {
     process.env.M7_STORAGE_DATABASE_URL?.trim() ||
     resolveM7TargetDatabaseUrl()
   )
+}
+
+function normalizeDatabaseUrl(value) {
+  const parsed = new URL(value)
+  parsed.hash = ''
+  parsed.pathname = parsed.pathname.replace(/\/$/, '')
+  const sortedEntries = [...parsed.searchParams.entries()].sort(([aKey], [bKey]) =>
+    aKey.localeCompare(bKey)
+  )
+  parsed.search = ''
+  for (const [key, val] of sortedEntries) {
+    parsed.searchParams.append(key, val)
+  }
+  return parsed.toString()
+}
+
+export function isSameDatabaseUrl(sourceDatabaseUrl, targetDatabaseUrl) {
+  try {
+    return (
+      normalizeDatabaseUrl(sourceDatabaseUrl) ===
+      normalizeDatabaseUrl(targetDatabaseUrl)
+    )
+  } catch {
+    return sourceDatabaseUrl === targetDatabaseUrl
+  }
+}
+
+export function assertSourceTargetIsolation({
+  sourceDatabaseUrl,
+  targetDatabaseUrl,
+  allowSameSourceTarget = false,
+  context = 'm7',
+}) {
+  if (!sourceDatabaseUrl?.trim()) {
+    throw new Error(`${context}: source database URL is empty`)
+  }
+  if (!targetDatabaseUrl?.trim()) {
+    throw new Error(`${context}: target database URL is empty`)
+  }
+  if (
+    !allowSameSourceTarget &&
+    isSameDatabaseUrl(sourceDatabaseUrl, targetDatabaseUrl)
+  ) {
+    throw new Error(
+      `${context}: source and target database URLs are identical; set M7_ALLOW_SAME_SOURCE_TARGET=1 to bypass`
+    )
+  }
 }
 
 export function quoteIdent(value) {
@@ -327,6 +388,43 @@ export async function listS3Objects(namespace, prefix = '') {
   }
 
   return [...objects].sort()
+}
+
+export async function ensureS3BucketExists() {
+  const headResponse = await signedRequest({
+    method: 'HEAD',
+  })
+  if (headResponse.ok || headResponse.status === 403) {
+    return {
+      created: false,
+      status: headResponse.status,
+    }
+  }
+  if (headResponse.status !== 404) {
+    const bodyText = await headResponse.text().catch(() => '')
+    throw new Error(
+      `ensureS3BucketExists HEAD failed: ${headResponse.status}${
+        bodyText ? ` ${bodyText}` : ''
+      }`
+    )
+  }
+
+  const createResponse = await signedRequest({
+    method: 'PUT',
+  })
+  if (!createResponse.ok) {
+    const bodyText = await createResponse.text().catch(() => '')
+    throw new Error(
+      `ensureS3BucketExists PUT failed: ${createResponse.status}${
+        bodyText ? ` ${bodyText}` : ''
+      }`
+    )
+  }
+
+  return {
+    created: true,
+    status: createResponse.status,
+  }
 }
 
 export function extractNamespacePathFromUrlLike(value, namespace) {

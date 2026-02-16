@@ -7,6 +7,7 @@ const execFileAsync = promisify(execFile)
 
 const scriptChecks = [
   ['node', ['--check', 'scripts/m7-shared.mjs']],
+  ['node', ['--check', 'scripts/m7-s3-bootstrap.mjs']],
   ['node', ['--check', 'scripts/m7-data-migrate.mjs']],
   ['node', ['--check', 'scripts/m7-incremental-migrate.mjs']],
   ['node', ['--check', 'scripts/m7-reconcile-verify.mjs']],
@@ -17,6 +18,7 @@ const scriptChecks = [
   ['node', ['--check', 'scripts/m7-batch-apply.mjs']],
   ['node', ['--check', 'scripts/m7-batch-rollback.mjs']],
   ['node', ['--check', 'scripts/m7-alert-notify.mjs']],
+  ['bash', ['-n', 'scripts/m7-ci-runtime-verify.sh']],
   ['bash', ['-n', 'scripts/m7-gate-verify.sh']],
 ]
 
@@ -28,13 +30,30 @@ const requiredPackageScripts = [
   'm7:reconcile:verify',
   'm7:dual-read:verify',
   'm7:storage:verify',
+  'm7:s3:bootstrap',
   'm7:lag:verify',
   'm7:batch:apply',
   'm7:batch:rollback',
   'm7:gate:report',
   'm7:gate:verify',
   'm7:alert:notify',
+  'm7:ci:runtime:verify',
 ]
+
+function parseBoolean(value, fallbackValue) {
+  if (!value) {
+    return fallbackValue
+  }
+
+  const normalized = value.trim().toLowerCase()
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+    return true
+  }
+  if (['0', 'false', 'no', 'off'].includes(normalized)) {
+    return false
+  }
+  return fallbackValue
+}
 
 async function runCommand(command, args) {
   const result = await execFileAsync(command, args, {
@@ -76,12 +95,32 @@ async function run() {
     docsMentionsPresent: missingDocMentions.length === 0,
   }
 
+  const runtimeSmokeEnabled = parseBoolean(
+    process.env.M7_CI_RUNTIME_SMOKE,
+    false
+  )
+  let runtimeSmoke = {
+    enabled: runtimeSmokeEnabled,
+    ok: true,
+    command: null,
+  }
+  if (runtimeSmokeEnabled) {
+    const runtimeCommand = ['pnpm', 'm7:ci:runtime:verify']
+    await runCommand(runtimeCommand[0], runtimeCommand.slice(1))
+    runtimeSmoke = {
+      enabled: true,
+      ok: true,
+      command: runtimeCommand.join(' '),
+    }
+  }
+
   const payload = {
-    ok: Object.values(checks).every(Boolean),
+    ok: Object.values(checks).every(Boolean) && runtimeSmoke.ok,
     checks,
     syntaxCommands: commandResults,
     missingScripts,
     missingDocMentions,
+    runtimeSmoke,
   }
 
   console.log(JSON.stringify(payload, null, 2))

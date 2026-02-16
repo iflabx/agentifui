@@ -83,6 +83,15 @@ M7 目标：提供可重复执行的数据迁移与对账能力，覆盖：
 - M7 静态 CI 门禁（语法、命令接线、文档命令清单）
 - GitHub Workflow：`.github/workflows/m7-gate-ci.yml`
 
+13. `scripts/m7-s3-bootstrap.mjs`
+
+- MinIO bucket 自举（存在则跳过，不存在则创建）
+
+14. `scripts/m7-ci-runtime-verify.sh`
+
+- M7 运行时门禁：双库初始化、迁移、对账、存储联通
+- 默认用于 CI 运行时 smoke（非静态语法检查）
+
 ## 3. NPM 命令
 
 1. `pnpm m7:migrate:dry-run`
@@ -99,12 +108,14 @@ M7 目标：提供可重复执行的数据迁移与对账能力，覆盖：
 12. `pnpm m7:batch:rollback`
 13. `pnpm m7:alert:notify`
 14. `pnpm m7:ci:verify`
+15. `pnpm m7:s3:bootstrap`
+16. `pnpm m7:ci:runtime:verify`
 
 ## 4. 关键环境变量
 
 数据库：
 
-1. `M7_SOURCE_DATABASE_URL`：源库（未设置时回退 `SUPABASE_DATABASE_URL`，再回退目标库）
+1. `M7_SOURCE_DATABASE_URL`：源库（未设置时回退 `SUPABASE_DATABASE_URL`，不再回退目标库）
 2. `M7_TARGET_DATABASE_URL`：目标库（默认 `MIGRATOR_DATABASE_URL`/`DATABASE_URL`）
 3. `M7_STORAGE_DATABASE_URL`：存储引用抽取用数据库（默认目标库）
 
@@ -117,18 +128,26 @@ M7 目标：提供可重复执行的数据迁移与对账能力，覆盖：
 5. `M7_PIPELINE_NAME`：checkpoint 命名空间（默认 `default`）
 6. `M7_CHECKPOINT_TABLE`：checkpoint 表名（默认 `migration_sync_checkpoints`）
 7. `M7_ALLOW_SAME_SOURCE_TARGET`：允许 source/target 相同并执行 apply（默认 `0`，建议保持关闭）
+8. `M7_DISABLE_LOCK`：禁用迁移 advisory lock（默认 `0`）
+9. `M7_LOCK_KEY`：自定义 advisory lock key（默认 `m7:incremental:<pipeline>`）
 
 存储对账参数：
 
 1. `M7_STORAGE_MAX_USERS`：按用户前缀扫描的用户上限（默认 `2000`）
 2. `M7_STORAGE_MAX_MISSING_RATE`：失联引用率阈值（默认 `0.001`）
 3. `M7_STORAGE_MAX_ORPHAN_RATE`：孤儿对象率阈值（默认 `0.001`）
-4. `S3_ENDPOINT` / `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` / `S3_BUCKET`
+4. `M7_STORAGE_SCAN_STRATEGY`：`sample/all`（默认 `sample`）
+5. `M7_STORAGE_REQUIRE_FULL_COVERAGE`：是否要求全量用户扫描（默认 `0`）
+6. `M7_STORAGE_MIN_COVERAGE`：最小用户覆盖率（默认 `0`）
+7. `S3_ENDPOINT` / `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` / `S3_BUCKET`
 
 双读采样参数：
 
 1. `M7_DUAL_READ_SAMPLE_USERS`：采样用户数（默认 `30`）
 2. `M7_DUAL_READ_ROW_LIMIT`：每用户每路径最大读取行数（默认 `50`）
+3. `M7_DUAL_READ_SAMPLE_STRATEGY`：`sample/all`（默认 `sample`）
+4. `M7_DUAL_READ_REQUIRE_FULL_COVERAGE`：是否要求全量用户覆盖（默认 `0`）
+5. `M7_DUAL_READ_MIN_COVERAGE`：最小用户覆盖率（默认 `0`）
 
 门禁归档参数：
 
@@ -152,6 +171,10 @@ M7 目标：提供可重复执行的数据迁移与对账能力，覆盖：
 3. `M7_BATCH_ID`：批次 ID（默认时间戳）
 4. `M7_BATCH_DIR`：批次报告目录（默认 `artifacts/m7/batches/<batchId>/`）
 5. `M7_BATCH_CHECKPOINT_SNAPSHOT`：`m7:batch:rollback` 使用的 checkpoint 快照路径
+6. `M7_BATCH_CAPTURE_DATA_SNAPSHOT`：批次前是否创建目标库数据快照（默认 `1`）
+7. `M7_BATCH_DATA_SNAPSHOT_SCHEMA`：数据快照 schema（默认 `m7_batch_snapshot_<batchId>`）
+8. `M7_BATCH_DUAL_READ_STRATEGY`：批次内 dual-read 策略（默认 `all`）
+9. `M7_BATCH_STORAGE_SCAN_STRATEGY`：批次内存储对账策略（默认 `all`）
 
 告警参数：
 
@@ -159,16 +182,19 @@ M7 目标：提供可重复执行的数据迁移与对账能力，覆盖：
 2. `M7_ALERT_WEBHOOK_URL`：webhook 地址
 3. `M7_ALERT_NOTIFY_ON_SUCCESS`：成功是否通知（默认 `0`）
 4. `M7_ALERT_FAIL_ON_GATE_FAILURE`：gate 失败是否返回非 0（默认 `1`）
+5. `M7_ALERT_WEBHOOK_SECRET`：HMAC 签名密钥（header: `x-m7-signature`）
+6. `M7_ALERT_MAX_RETRIES`：Webhook 最大重试次数（默认 `3`）
+7. `M7_ALERT_RETRY_BASE_MS`：重试基础间隔（默认 `500`）
 
 ## 5. 当前阶段说明
 
-当前交付已覆盖 M7 Phase 1 + Phase 2 + Phase 3（门禁、归档、批次执行）。
+当前交付已覆盖 M7 Phase 1 + Phase 2 + Phase 3 + Phase 4：
 
-仍待 M7 后续补齐（Phase 4）：
-
-1. 增量迁移与业务流量并行时的延迟指标告警
-2. 对账结果接入 CI/告警平台
-3. 迁移批次审批与回滚脚本自动化
+1. 滞后门禁（lag verify）已接入默认 gate
+2. 告警通知已支持 webhook + 重试 + 签名
+3. 批次执行已支持 checkpoint + 数据快照回滚
+4. CI 已接入静态 + 运行时门禁
+5. 已补充 `20260216023000_preserve_explicit_updated_at_in_trigger.sql`，确保迁移显式写入 `updated_at` 时不会被触发器覆盖，避免对账误差
 
 ## 6. 常用执行示例
 
@@ -178,3 +204,7 @@ M7 目标：提供可重复执行的数据迁移与对账能力，覆盖：
    `pnpm -s m7:batch:rollback -- artifacts/m7/batches/<batchId>/checkpoint-before.json`
 3. 回滚 checkpoint（环境变量）：
    `M7_BATCH_CHECKPOINT_SNAPSHOT=artifacts/m7/batches/<batchId>/checkpoint-before.json pnpm -s m7:batch:rollback`
+4. 回滚数据(schema) + checkpoint：
+   `M7_BATCH_CHECKPOINT_SNAPSHOT=artifacts/m7/batches/<batchId>/checkpoint-before.json M7_BATCH_DATA_SNAPSHOT_SCHEMA=m7_batch_snapshot_<batchId> pnpm -s m7:batch:rollback`
+5. 容器内 runtime smoke（源/目标/MinIO 在宿主）：
+   `PG_ADMIN_URL=postgresql://agentif:agentif@172.20.0.1:5432/agentifui M7_SOURCE_DATABASE_URL=postgresql://agentif:agentif@172.20.0.1:5432/agentifui_source M7_TARGET_DATABASE_URL=postgresql://agentif:agentif@172.20.0.1:5432/agentifui_target M7_STORAGE_DATABASE_URL=postgresql://agentif:agentif@172.20.0.1:5432/agentifui_target S3_ENDPOINT=http://172.20.0.1:9000 S3_ACCESS_KEY_ID=minioadmin S3_SECRET_ACCESS_KEY=minioadmin S3_BUCKET=agentifui S3_ENABLE_PATH_STYLE=1 pnpm -s m7:ci:runtime:verify`
