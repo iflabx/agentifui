@@ -15,6 +15,7 @@ import { parseSsoProvidersFromEnv, toDefaultSsoConfig } from './sso-providers';
 const BETTER_AUTH_BASE_PATH = '/api/auth/better';
 const MEMORY_DB_KEY = '__agentifui_better_auth_memory_db__';
 const BETTER_AUTH_KYSELY_KEY = '__agentifui_better_auth_kysely__';
+const INTERNAL_AUTH_PROXY_HEADER = 'x-agentifui-internal-auth-proxy';
 type KyselyDb = unknown;
 
 function getBaseUrl(): string {
@@ -30,13 +31,19 @@ function getBaseUrl(): string {
 }
 
 function getSecret(): string {
-  if (process.env.BETTER_AUTH_SECRET) {
-    return process.env.BETTER_AUTH_SECRET;
+  const betterAuthSecret = process.env.BETTER_AUTH_SECRET?.trim();
+  if (betterAuthSecret) {
+    return betterAuthSecret;
+  }
+
+  const authSecretFallback = process.env.AUTH_SECRET?.trim();
+  if (authSecretFallback) {
+    return authSecretFallback;
   }
 
   if (process.env.NODE_ENV === 'production') {
     throw new Error(
-      'BETTER_AUTH_SECRET is required in production when better-auth is enabled'
+      'BETTER_AUTH_SECRET (or AUTH_SECRET fallback) is required in production when better-auth is enabled'
     );
   }
 
@@ -260,6 +267,31 @@ function getAuthSessionConfig() {
   };
 }
 
+function hasInternalAuthProxyHeader(request: Request): boolean {
+  return request.headers.get(INTERNAL_AUTH_PROXY_HEADER) === '1';
+}
+
+function getAuthRateLimitConfig() {
+  const bypassInternalProxyRule = (
+    request: Request,
+    currentRule: { window: number; max: number }
+  ) => {
+    if (hasInternalAuthProxyHeader(request)) {
+      // Internal middleware proxy calls should not consume external client rate budget.
+      return false;
+    }
+
+    return currentRule;
+  };
+
+  return {
+    customRules: {
+      '/get-session': bypassInternalProxyRule,
+      '/sign-out': bypassInternalProxyRule,
+    },
+  };
+}
+
 const parsedSsoProviders = parseSsoProvidersFromEnv(
   process.env.BETTER_AUTH_SSO_PROVIDERS_JSON,
   {
@@ -438,6 +470,7 @@ export const auth = betterAuth({
   secret: getSecret(),
   database: getAuthDatabaseConfig(),
   secondaryStorage: getAuthSecondaryStorage(),
+  rateLimit: getAuthRateLimitConfig(),
   user: {
     modelName: 'auth_users',
     fields: {

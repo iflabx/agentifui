@@ -14,6 +14,8 @@ const BETTER_AUTH_BASE_PATH = '/api/auth/better';
 const INTERNAL_PROFILE_STATUS_PATH = '/api/internal/auth/profile-status';
 const INTERNAL_STORAGE_BASE_PATH = '/api/internal/storage';
 const INTERNAL_REALTIME_BASE_PATH = '/api/internal/realtime';
+const INTERNAL_AUTH_PROXY_HEADER = 'x-agentifui-internal-auth-proxy';
+const INTERNAL_FETCH_TIMEOUT_MS_FALLBACK = 3000;
 
 type BetterAuthSessionPayload = {
   user?: {
@@ -27,6 +29,112 @@ type ProfileStatusPayload = {
   role: string | null;
   status: string | null;
 };
+
+function parsePositiveInteger(
+  value: string | undefined,
+  fallback: number
+): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.floor(parsed);
+}
+
+function normalizeOrigin(value: string | undefined): string | null {
+  const normalized = value?.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  try {
+    return new URL(normalized).origin;
+  } catch {
+    return null;
+  }
+}
+
+function swapLoopbackOrigin(origin: string): string | null {
+  try {
+    const parsed = new URL(origin);
+    if (parsed.hostname === 'localhost') {
+      parsed.hostname = '127.0.0.1';
+      return parsed.origin;
+    }
+    if (parsed.hostname === '127.0.0.1') {
+      parsed.hostname = 'localhost';
+      return parsed.origin;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function resolveInternalOrigins(request: NextRequest): string[] {
+  const origins: string[] = [];
+  const pushUnique = (candidate: string | null) => {
+    if (candidate && !origins.includes(candidate)) {
+      origins.push(candidate);
+    }
+  };
+
+  pushUnique(normalizeOrigin(process.env.BETTER_AUTH_URL));
+  pushUnique(normalizeOrigin(process.env.NEXT_PUBLIC_APP_URL));
+  pushUnique(normalizeOrigin(process.env.AUTH_BASE_URL));
+  pushUnique(request.nextUrl.origin);
+  pushUnique(swapLoopbackOrigin(request.nextUrl.origin));
+
+  return origins;
+}
+
+function createAbortControllerWithTimeout(timeoutMs: number): {
+  controller: AbortController;
+  clear: () => void;
+} {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
+
+  return {
+    controller,
+    clear: () => clearTimeout(timeoutId),
+  };
+}
+
+async function fetchInternalEndpoint(
+  request: NextRequest,
+  path: string,
+  init: RequestInit
+): Promise<Response> {
+  const origins = resolveInternalOrigins(request);
+  const timeoutMs = parsePositiveInteger(
+    process.env.MIDDLEWARE_INTERNAL_FETCH_TIMEOUT_MS,
+    INTERNAL_FETCH_TIMEOUT_MS_FALLBACK
+  );
+
+  let lastError: unknown = null;
+  for (const origin of origins) {
+    const url = `${origin}${path}`;
+    const { controller, clear } = createAbortControllerWithTimeout(timeoutMs);
+    try {
+      return await fetch(url, {
+        ...init,
+        signal: controller.signal,
+      });
+    } catch (error) {
+      lastError = error;
+    } finally {
+      clear();
+    }
+  }
+
+  throw (
+    lastError ||
+    new Error(`[Middleware] Failed internal fetch for path ${path}`)
+  );
+}
 
 // This middleware intercepts all requests.
 // Uses better-auth + PostgreSQL profile checks for route protection.
@@ -196,14 +304,14 @@ async function signOutAndRedirect(request: NextRequest, url: URL) {
   const redirectResponse = NextResponse.redirect(url);
 
   try {
-    const signOutUrl = new URL(
+    const signOutResponse = await fetchInternalEndpoint(
+      request,
       `${BETTER_AUTH_BASE_PATH}/sign-out`,
-      request.url
+      {
+        method: 'POST',
+        headers: createAuthProxyHeaders(request),
+      }
     );
-    const signOutResponse = await fetch(signOutUrl.toString(), {
-      method: 'POST',
-      headers: createAuthProxyHeaders(request),
-    });
 
     const setCookies = extractSetCookies(signOutResponse.headers);
     for (const cookie of setCookies) {
@@ -223,14 +331,14 @@ async function getSessionFromAuthApi(
   request: NextRequest
 ): Promise<BetterAuthSessionPayload | null> {
   try {
-    const sessionUrl = new URL(
+    const sessionResponse = await fetchInternalEndpoint(
+      request,
       `${BETTER_AUTH_BASE_PATH}/get-session`,
-      request.url
+      {
+        method: 'GET',
+        headers: createAuthProxyHeaders(request),
+      }
     );
-    const sessionResponse = await fetch(sessionUrl.toString(), {
-      method: 'GET',
-      headers: createAuthProxyHeaders(request),
-    });
 
     if (sessionResponse.status === 401) {
       return null;
@@ -276,10 +384,17 @@ function createAuthProxyHeaders(request: NextRequest): HeadersInit {
   }
   if (forwardedProto) {
     headers.set('x-forwarded-proto', forwardedProto);
+  } else if (request.nextUrl.protocol) {
+    headers.set('x-forwarded-proto', request.nextUrl.protocol.replace(':', ''));
   }
   if (forwardedHost) {
     headers.set('x-forwarded-host', forwardedHost);
+  } else if (request.nextUrl.host) {
+    headers.set('x-forwarded-host', request.nextUrl.host);
   }
+
+  // Tell better-auth this is an internal middleware proxy request.
+  headers.set(INTERNAL_AUTH_PROXY_HEADER, '1');
 
   return headers;
 }
@@ -300,11 +415,14 @@ function extractSetCookies(headers: Headers): string[] {
 async function getProfileStatusFromApi(
   request: NextRequest
 ): Promise<ProfileStatusPayload | null> {
-  const profileUrl = new URL(INTERNAL_PROFILE_STATUS_PATH, request.url);
-  const profileResponse = await fetch(profileUrl.toString(), {
-    method: 'GET',
-    headers: createAuthProxyHeaders(request),
-  });
+  const profileResponse = await fetchInternalEndpoint(
+    request,
+    INTERNAL_PROFILE_STATUS_PATH,
+    {
+      method: 'GET',
+      headers: createAuthProxyHeaders(request),
+    }
+  );
 
   if (profileResponse.status === 401) {
     return null;
