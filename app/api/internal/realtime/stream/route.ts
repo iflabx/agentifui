@@ -1,5 +1,6 @@
 import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
 import { queryRowsWithPgUserContext } from '@lib/server/pg/user-context';
+import { ensureRealtimeOutboxDispatcher } from '@lib/server/realtime/outbox-dispatcher';
 import {
   readRealtimeEventsSince,
   subscribeRealtimeEvents,
@@ -234,6 +235,9 @@ export async function GET(request: Request) {
       return auth.response;
     }
 
+    // Ensure DB outbox dispatcher is running before binding SSE stream.
+    ensureRealtimeOutboxDispatcher();
+
     const url = new URL(request.url);
     const key = (url.searchParams.get('key') || '').trim();
     if (!key) {
@@ -375,11 +379,29 @@ export async function GET(request: Request) {
         });
 
         if (lastEventId) {
-          const replayEvents = await readRealtimeEventsSince({
+          const replayEventsWithProbe = await readRealtimeEventsSince({
             sinceId: lastEventId,
             key,
-            limit: REPLAY_MAX_EVENTS,
+            limit: REPLAY_MAX_EVENTS + 1,
           });
+          const replayOverflow =
+            replayEventsWithProbe.length > REPLAY_MAX_EVENTS;
+          const replayEvents = replayOverflow
+            ? replayEventsWithProbe.slice(0, REPLAY_MAX_EVENTS)
+            : replayEventsWithProbe;
+
+          if (replayOverflow) {
+            send(
+              'replay-gap',
+              JSON.stringify({
+                key,
+                reason: 'replay_window_truncated',
+                lastEventId,
+                replayLimit: REPLAY_MAX_EVENTS,
+                ts: Date.now(),
+              })
+            );
+          }
 
           for (const replayEvent of replayEvents) {
             if (closed || replayEvent.key !== key) {

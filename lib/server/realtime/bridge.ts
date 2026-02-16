@@ -1,5 +1,6 @@
 import { realtimeService } from '@lib/services/db/realtime-service';
 
+import { ensureRealtimeOutboxDispatcher } from './outbox-dispatcher';
 import { subscribeRealtimeEvents } from './redis-broker';
 
 const BRIDGE_STATE_KEY = '__agentifui_realtime_bridge__';
@@ -32,6 +33,9 @@ export function ensureRealtimeBridge(): void {
   if (typeof window !== 'undefined') {
     return;
   }
+
+  // Ensure DB-outbox CDC pump is live before attaching in-process bridge.
+  ensureRealtimeOutboxDispatcher();
 
   const state = getBridgeState();
   if (state.started || state.startPromise) {

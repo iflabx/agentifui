@@ -4,7 +4,24 @@ import {
   deriveRealtimeKeysForTableChange,
 } from '@lib/services/db/realtime-service';
 
+import { ensureRealtimeOutboxDispatcher } from './outbox-dispatcher';
 import { publishRealtimeEvent } from './redis-broker';
+
+function resolveRealtimeSourceMode(): 'db-outbox' | 'app-direct' | 'hybrid' {
+  const normalized = (process.env.REALTIME_SOURCE_MODE || 'db-outbox')
+    .trim()
+    .toLowerCase();
+
+  if (normalized === 'app-direct') {
+    return 'app-direct';
+  }
+
+  if (normalized === 'hybrid') {
+    return 'hybrid';
+  }
+
+  return 'db-outbox';
+}
 
 export async function publishTableChangeEvent(input: {
   table: string;
@@ -14,6 +31,15 @@ export async function publishTableChangeEvent(input: {
   schema?: string;
   commitTimestamp?: string;
 }): Promise<void> {
+  // Keep dispatcher alive so DB outbox events can be forwarded to Redis/SSE.
+  ensureRealtimeOutboxDispatcher();
+
+  const sourceMode = resolveRealtimeSourceMode();
+  if (sourceMode === 'db-outbox') {
+    // In DB outbox mode, publish is emitted by PG trigger + outbox dispatcher.
+    return;
+  }
+
   const payload: RealtimeDbChangePayload = {
     schema: input.schema || 'public',
     table: input.table,

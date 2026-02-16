@@ -27,6 +27,11 @@ type RealtimeBroker = {
   streamLength: number;
   localListenerCount: number;
   subscriberReady: boolean;
+  pubSubSubscriberCount: number;
+  publishFailureTotal: number;
+  publishFailureLastAt: string | null;
+  publishFailureLastError: string | null;
+  outboxPendingCount: number;
 };
 
 type RealtimeStatsResponse = {
@@ -168,7 +173,7 @@ export default function AdminRealtimePage() {
 
       {!loading && stats && broker ? (
         <>
-          <div className="grid gap-4 md:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-6">
             <div className="rounded-md border border-stone-300 bg-white p-4 dark:border-stone-700 dark:bg-stone-900">
               <div className="text-xs text-stone-500 dark:text-stone-400">
                 Active Subscriptions
@@ -199,6 +204,54 @@ export default function AdminRealtimePage() {
               </div>
               <div className="mt-2 text-2xl font-semibold text-stone-900 dark:text-stone-100">
                 {broker.subscriberReady ? 'YES' : 'NO'}
+              </div>
+            </div>
+            <div className="rounded-md border border-stone-300 bg-white p-4 dark:border-stone-700 dark:bg-stone-900">
+              <div className="text-xs text-stone-500 dark:text-stone-400">
+                Cluster Subscribers
+              </div>
+              <div className="mt-2 text-2xl font-semibold text-stone-900 dark:text-stone-100">
+                {broker.pubSubSubscriberCount}
+              </div>
+            </div>
+            <div className="rounded-md border border-stone-300 bg-white p-4 dark:border-stone-700 dark:bg-stone-900">
+              <div className="text-xs text-stone-500 dark:text-stone-400">
+                Outbox Pending
+              </div>
+              <div className="mt-2 text-2xl font-semibold text-stone-900 dark:text-stone-100">
+                {broker.outboxPendingCount}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-md border border-stone-300 bg-white p-4 dark:border-stone-700 dark:bg-stone-900">
+            <h2 className="text-sm font-semibold text-stone-900 dark:text-stone-100">
+              Publish Health
+            </h2>
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              <div>
+                <div className="text-xs text-stone-500 dark:text-stone-400">
+                  Total Publish Failures
+                </div>
+                <div className="text-lg font-semibold text-stone-900 dark:text-stone-100">
+                  {broker.publishFailureTotal}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-stone-500 dark:text-stone-400">
+                  Last Failure At
+                </div>
+                <div className="text-sm text-stone-800 dark:text-stone-200">
+                  {broker.publishFailureLastAt || '-'}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-stone-500 dark:text-stone-400">
+                  Last Failure Error
+                </div>
+                <div className="text-sm text-stone-800 dark:text-stone-200">
+                  {broker.publishFailureLastError || '-'}
+                </div>
               </div>
             </div>
           </div>

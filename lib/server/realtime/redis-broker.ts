@@ -1,4 +1,5 @@
 import { redisManager } from '@lib/infra/redis';
+import { getPgPool } from '@lib/server/pg/pool';
 import type {
   RealtimeDbChangePayload,
   RealtimeEnvelope,
@@ -12,6 +13,12 @@ const BROKER_INSTANCE_ID_KEY =
   '__agentifui_realtime_redis_broker_instance_id__';
 const DEFAULT_CHANNEL = 'realtime:events';
 const DEFAULT_STREAM_KEY = 'realtime:events:stream';
+const METRIC_PUBLISH_FAILURE_TOTAL_KEY =
+  'realtime:broker:publish:failures:total';
+const METRIC_PUBLISH_FAILURE_LAST_AT_KEY =
+  'realtime:broker:publish:failures:last_at';
+const METRIC_PUBLISH_FAILURE_LAST_ERROR_KEY =
+  'realtime:broker:publish:failures:last_error';
 
 type BrokerState = {
   listeners: Set<RealtimeListener>;
@@ -24,6 +31,33 @@ type BrokerState = {
     ? T | null
     : null;
 };
+
+function parseBooleanEnv(
+  value: string | undefined,
+  fallback: boolean
+): boolean {
+  const normalized = (value || '').trim().toLowerCase();
+  if (!normalized) {
+    return fallback;
+  }
+
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+    return true;
+  }
+
+  if (['0', 'false', 'no', 'off'].includes(normalized)) {
+    return false;
+  }
+
+  return fallback;
+}
+
+function allowLocalFallbackOnPublishFailure(): boolean {
+  return parseBooleanEnv(
+    process.env.REALTIME_PUBLISH_ALLOW_LOCAL_FALLBACK,
+    false
+  );
+}
 
 function getChannelName(): string {
   return process.env.REALTIME_REDIS_CHANNEL?.trim() || DEFAULT_CHANNEL;
@@ -99,6 +133,33 @@ async function getSubscriberClient() {
   }
   state.subscriber = subscriber;
   return subscriber;
+}
+
+async function recordPublishFailureMetric(error: unknown): Promise<void> {
+  try {
+    const publisher = await getPublisherClient();
+    const nowIso = new Date().toISOString();
+    const errorText =
+      (error instanceof Error ? error.message : String(error)).slice(0, 300) ||
+      'unknown publish failure';
+
+    await publisher.sendCommand([
+      'INCR',
+      redisManager.withPrefix(METRIC_PUBLISH_FAILURE_TOTAL_KEY),
+    ]);
+    await publisher.sendCommand([
+      'SET',
+      redisManager.withPrefix(METRIC_PUBLISH_FAILURE_LAST_AT_KEY),
+      nowIso,
+    ]);
+    await publisher.sendCommand([
+      'SET',
+      redisManager.withPrefix(METRIC_PUBLISH_FAILURE_LAST_ERROR_KEY),
+      errorText,
+    ]);
+  } catch {
+    // best-effort metrics only
+  }
 }
 
 function dispatchToListeners(event: RealtimeEnvelope) {
@@ -199,9 +260,21 @@ export async function publishRealtimeEvent(input: {
 
     await publisher.publish(getChannelName(), JSON.stringify(event));
   } catch (error) {
-    console.warn(
-      '[RealtimeRedisBroker] publish failed, fallback to local dispatch:',
-      error
+    await recordPublishFailureMetric(error);
+
+    if (allowLocalFallbackOnPublishFailure()) {
+      console.warn(
+        '[RealtimeRedisBroker] publish failed, fallback to local dispatch:',
+        error
+      );
+      dispatchToListeners(event);
+      return event;
+    }
+
+    throw new Error(
+      `[RealtimeRedisBroker] publish failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`
     );
   }
 
@@ -327,9 +400,19 @@ export async function getRealtimeBrokerStats(): Promise<{
   streamLength: number;
   localListenerCount: number;
   subscriberReady: boolean;
+  pubSubSubscriberCount: number;
+  publishFailureTotal: number;
+  publishFailureLastAt: string | null;
+  publishFailureLastError: string | null;
+  outboxPendingCount: number;
 }> {
   const state = getBrokerState();
   let streamLength = 0;
+  let pubSubSubscriberCount = 0;
+  let publishFailureTotal = 0;
+  let publishFailureLastAt: string | null = null;
+  let publishFailureLastError: string | null = null;
+  let outboxPendingCount = 0;
 
   try {
     const publisher = await getPublisherClient();
@@ -338,8 +421,66 @@ export async function getRealtimeBrokerStats(): Promise<{
     if (Number.isFinite(parsed) && parsed >= 0) {
       streamLength = parsed;
     }
+
+    const numSubRaw = await publisher.sendCommand([
+      'PUBSUB',
+      'NUMSUB',
+      getChannelName(),
+    ]);
+    if (Array.isArray(numSubRaw) && numSubRaw.length >= 2) {
+      const parsedNumSub = Number(numSubRaw[1]);
+      if (Number.isFinite(parsedNumSub) && parsedNumSub >= 0) {
+        pubSubSubscriberCount = parsedNumSub;
+      }
+    }
+
+    const failureTotalRaw = await publisher.sendCommand([
+      'GET',
+      redisManager.withPrefix(METRIC_PUBLISH_FAILURE_TOTAL_KEY),
+    ]);
+    const failureTotalParsed = Number(failureTotalRaw);
+    if (Number.isFinite(failureTotalParsed) && failureTotalParsed >= 0) {
+      publishFailureTotal = failureTotalParsed;
+    }
+
+    const failureLastAtRaw = await publisher.sendCommand([
+      'GET',
+      redisManager.withPrefix(METRIC_PUBLISH_FAILURE_LAST_AT_KEY),
+    ]);
+    const failureLastAtText =
+      failureLastAtRaw === null || failureLastAtRaw === undefined
+        ? ''
+        : String(failureLastAtRaw);
+    publishFailureLastAt =
+      failureLastAtText.trim().length > 0 ? failureLastAtText.trim() : null;
+
+    const failureLastErrorRaw = await publisher.sendCommand([
+      'GET',
+      redisManager.withPrefix(METRIC_PUBLISH_FAILURE_LAST_ERROR_KEY),
+    ]);
+    const failureLastErrorText =
+      failureLastErrorRaw === null || failureLastErrorRaw === undefined
+        ? ''
+        : String(failureLastErrorRaw);
+    publishFailureLastError =
+      failureLastErrorText.trim().length > 0
+        ? failureLastErrorText.trim()
+        : null;
   } catch {
     // best-effort metrics only
+  }
+
+  try {
+    const pool = getPgPool();
+    const { rows } = await pool.query<{ total: string | number }>(
+      'SELECT COUNT(*)::bigint::text AS total FROM realtime_outbox_events'
+    );
+    const parsed = Number(rows[0]?.total || 0);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      outboxPendingCount = parsed;
+    }
+  } catch {
+    // Table may not exist before M6 migration; ignore.
   }
 
   return {
@@ -348,5 +489,10 @@ export async function getRealtimeBrokerStats(): Promise<{
     streamLength,
     localListenerCount: state.listeners.size,
     subscriberReady: state.subscriberReady,
+    pubSubSubscriberCount,
+    publishFailureTotal,
+    publishFailureLastAt,
+    publishFailureLastError,
+    outboxPendingCount,
   };
 }

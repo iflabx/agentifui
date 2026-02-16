@@ -1,7 +1,7 @@
 # AgentifUI 迁移任务蓝图（里程碑 + 依赖 + 风险门槛）
 
 版本：v1  
-日期：2026-02-14  
+日期：2026-02-16  
 目标栈：PostgreSQL 18 + Drizzle ORM + Redis 7.x + MinIO + better-auth
 
 ## 1. 蓝图目标与约束
@@ -33,7 +33,7 @@
 | M8     | 灰度切流与回滚演练 | 5%->20%->50%->100%                    | 3-5 天   | M7 完成           | 稳定运行 24h         |
 | M9     | 退场与收口         | Supabase 依赖清理、运维固化           | 3-5 天   | M8 完成           | 技术债清零与文档归档 |
 
-## 2.1 当前进度（2026-02-15）
+## 2.1 当前进度（2026-02-16）
 
 - M0：完成
 - M1：完成
@@ -41,7 +41,7 @@
 - M3：完成（见 `docs/m3-db-crud-compatibility.md`）
 - M4：完成（Phase1 + Phase2 + Phase3 + Hardening 已完成，见 `docs/m4-rpc-rls-compatibility.md`）
 - M5：完成（`pnpm m5:storage:verify`、`pnpm m5:storage:slo:verify`、`pnpm m5:gate:verify` 已通过）
-- M6：进行中（核心能力已落地，最终验收待执行）
+- M6：完成（`pnpm m6:realtime:verify`、`pnpm m6:realtime:slo:verify`、`pnpm m6:gate:verify` 已通过）
 - M7-M9：未开始
 
 ## 3. 里程碑详细任务
