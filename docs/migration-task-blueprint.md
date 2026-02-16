@@ -42,7 +42,8 @@
 - M4：完成（Phase1 + Phase2 + Phase3 + Hardening 已完成，见 `docs/m4-rpc-rls-compatibility.md`）
 - M5：完成（`pnpm m5:storage:verify`、`pnpm m5:storage:slo:verify`、`pnpm m5:gate:verify` 已通过）
 - M6：完成（`pnpm m6:realtime:verify`、`pnpm m6:realtime:slo:verify`、`pnpm m6:gate:verify` 已通过）
-- M7-M9：未开始
+- M7：进行中（Phase 1 工具链已落地，见 `docs/m7-data-migration-reconciliation.md`）
+- M8-M9：未开始
 
 ## 3. 里程碑详细任务
 

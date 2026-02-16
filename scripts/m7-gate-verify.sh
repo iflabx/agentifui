@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DEFAULT_DATABASE_URL="postgresql://agentif:agentif@172.20.0.1:5432/agentifui"
+DEFAULT_S3_ENDPOINT="http://172.20.0.1:9000"
+
+export M7_TARGET_DATABASE_URL="${M7_TARGET_DATABASE_URL:-${MIGRATOR_DATABASE_URL:-${DATABASE_URL:-$DEFAULT_DATABASE_URL}}}"
+export M7_SOURCE_DATABASE_URL="${M7_SOURCE_DATABASE_URL:-${SUPABASE_DATABASE_URL:-$M7_TARGET_DATABASE_URL}}"
+export M7_STORAGE_DATABASE_URL="${M7_STORAGE_DATABASE_URL:-$M7_TARGET_DATABASE_URL}"
+
+export S3_ENDPOINT="${S3_ENDPOINT:-${M7_STORAGE_S3_ENDPOINT:-$DEFAULT_S3_ENDPOINT}}"
+export S3_ACCESS_KEY_ID="${S3_ACCESS_KEY_ID:-minioadmin}"
+export S3_SECRET_ACCESS_KEY="${S3_SECRET_ACCESS_KEY:-minioadmin}"
+export S3_BUCKET="${S3_BUCKET:-agentifui}"
+export S3_ENABLE_PATH_STYLE="${S3_ENABLE_PATH_STYLE:-1}"
+
+if [[ "${M7_GATE_RUN_MIGRATION_DRY_RUN:-1}" == "1" ]]; then
+  pnpm m7:migrate:dry-run
+fi
+
+pnpm m7:reconcile:verify
+pnpm m7:storage:verify
