@@ -43,8 +43,8 @@
 - M5：完成（`pnpm m5:storage:verify`、`pnpm m5:storage:slo:verify`、`pnpm m5:gate:verify` 已通过）
 - M6：完成（`pnpm m6:realtime:verify`、`pnpm m6:realtime:slo:verify`、`pnpm m6:gate:verify` 已通过）
 - M7：完成（Phase 1-4 已闭环：增量 checkpoint、双读/存储对账、滞后门禁、批次回滚、CI 运行时门禁）
-- M8：进行中（已落地自动化 gate/rollout/rollback 脚本，见 `docs/m8-rollout-rollback-runbook.md`）
-- M9：未开始
+- M8：完成（已完成非 dry-run gate 验收与 `M8_ENFORCE_WAIT=1` 缩窗回归，产物位于 `artifacts/m8/gate/non-dryrun-*`）
+- M9：进行中（Supabase SDK/env 回退已清理，活跃迁移脚本已迁至 `database/migrations/`）
 
 ## 3. 里程碑详细任务
 
@@ -233,6 +233,7 @@ Gate：
 
 1. 技术债清单归零
 2. 迁移后基线文档（架构图、运行手册、告警规则）
+3. M9 收口执行记录（`docs/m9-decommission-closeout.md`）
 
 Gate：
 

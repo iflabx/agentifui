@@ -115,7 +115,7 @@ M7 目标：提供可重复执行的数据迁移与对账能力，覆盖：
 
 数据库：
 
-1. `M7_SOURCE_DATABASE_URL`：源库（未设置时回退 `SUPABASE_DATABASE_URL`，不再回退目标库）
+1. `M7_SOURCE_DATABASE_URL`：源库（必填，不再回退 Supabase 变量）
 2. `M7_TARGET_DATABASE_URL`：目标库（默认 `MIGRATOR_DATABASE_URL`/`DATABASE_URL`）
 3. `M7_STORAGE_DATABASE_URL`：存储引用抽取用数据库（默认目标库）
 

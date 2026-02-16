@@ -5,7 +5,7 @@
 > Maintained by the **ifLabX community** and sponsored by **ifLabX Corp**.
 
 AgentifUI is a modern, multi-device intelligent-chat front-end built with the Next.js 15 App Router.
-By combining **Supabase Auth**, **Dify API**, **Zustand** state management and layered data services, it delivers a secure, scalable and easy-to-maintain LLM chat experience—ideal for corporate knowledge bases, AI assistants and other enterprise scenarios.
+By combining **better-auth**, **PostgreSQL/Redis/MinIO**, **Dify API**, **Zustand** state management and layered data services, it delivers a secure, scalable and easy-to-maintain LLM chat experience—ideal for corporate knowledge bases, AI assistants and other enterprise scenarios.
 
 | Edition        | License     | Scope & Extras                                                     |
 | -------------- | ----------- | ------------------------------------------------------------------ |
@@ -20,7 +20,7 @@ By combining **Supabase Auth**, **Dify API**, **Zustand** state management and l
 - Multiple apps / conversation management
 - Message persistence with resume-from-breakpoint
 - **Dify API** integration with streaming responses
-- **Supabase** authentication & role-based access
+- **better-auth** authentication with OIDC/SSO support
 - Encrypted API-key storage and per-user / per-instance key rotation
 - High-performance message pagination & caching
 - Light/Dark theme switch & a11y-friendly components
@@ -30,14 +30,14 @@ By combining **Supabase Auth**, **Dify API**, **Zustand** state management and l
 
 ## 🛠 Tech Stack
 
-| Layer                 | Tools                                                         |
-| --------------------- | ------------------------------------------------------------- |
-| Framework             | **Next.js 15** (App Router), **React 18**, **Tailwind CSS 4** |
-| State                 | **Zustand**                                                   |
-| Back end-as-a-Service | **Supabase** (Auth + Postgres DB + Storage)                   |
-| LLM / Chat API        | **Dify**, OpenAI, others                                      |
-| Utilities             | clsx/cn, Lucide Icons, lodash, date-fns                       |
-| Language              | **TypeScript** everywhere                                     |
+| Layer          | Tools                                                         |
+| -------------- | ------------------------------------------------------------- |
+| Framework      | **Next.js 15** (App Router), **React 18**, **Tailwind CSS 4** |
+| State          | **Zustand**                                                   |
+| Backend        | **PostgreSQL 18**, **Redis 7.x**, **MinIO**, **better-auth**  |
+| LLM / Chat API | **Dify**, OpenAI, others                                      |
+| Utilities      | clsx/cn, Lucide Icons, lodash, date-fns                       |
+| Language       | **TypeScript** everywhere                                     |
 
 ---
 
@@ -52,17 +52,17 @@ DB Access Layer  (lib/db/*)
 ↓
 Service Layer    (lib/services/*)
 ↓
-Supabase Client
+PostgreSQL + Redis + MinIO + better-auth
 ```
 
 ### Core Design Highlights
 
-| Area                 | Why it matters                                                                                   |
-| -------------------- | ------------------------------------------------------------------------------------------------ |
-| **Security**         | Relies on DB-verified conversation IDs only—no transient state writes, guaranteeing consistency. |
-| **Maintainability**  | Seamless conversion between temporary IDs, Dify IDs and DB IDs makes the data-flow resilient.    |
-| **Easy Integration** | Encrypted API-key vault, per-user/instance key scope and graceful fallback mechanism.            |
-| **Data Sovereignty** | Strict end-to-end TypeScript types + Supabase **RLS** ensure row-level isolation.                |
+| Area                 | Why it matters                                                                                                 |
+| -------------------- | -------------------------------------------------------------------------------------------------------------- |
+| **Security**         | Relies on DB-verified conversation IDs only—no transient state writes, guaranteeing consistency.               |
+| **Maintainability**  | Seamless conversion between temporary IDs, Dify IDs and DB IDs makes the data-flow resilient.                  |
+| **Easy Integration** | Encrypted API-key vault, per-user/instance key scope and graceful fallback mechanism.                          |
+| **Data Sovereignty** | Strict end-to-end TypeScript types + PostgreSQL **RLS** and runtime role isolation ensure row-level isolation. |
 
 ---
 
@@ -74,7 +74,7 @@ Supabase Client
 
 ```bash
 # Quick deployment on Ubuntu/Debian server
-# Installs: NVM, pnpm, PM2, Supabase CLI, Docker, Dify, AgentifUI
+# Installs: NVM, pnpm, PM2, Docker, Dify, AgentifUI
 
 # Follow the 13-step guide in docs/QUICK-DEPLOYMENT.md
 ```
@@ -89,7 +89,7 @@ pnpm install
 
 # 2 — Copy environment template and configure
 cp .env.example .env.local
-# Edit .env.local with your Supabase and other settings
+# Edit .env.local with your PostgreSQL / Redis / MinIO and other settings
 
 # 3 — Run development server
 pnpm run dev
@@ -102,7 +102,9 @@ http://localhost:3000
 
 - Node.js 18+ (22+ recommended)
 - pnpm 9+
-- Supabase account or local Supabase instance
+- PostgreSQL 18
+- Redis 7.x
+- MinIO (or S3-compatible object storage)
 
 ### Development Tools
 
@@ -138,7 +140,7 @@ pnpm run build
 | `components/` | Shared & domain UI components            |
 | `lib/`        | Data, services, hooks, state             |
 | `docs/`       | Architecture, DB schema & API-key design |
-| `supabase/`   | SQL migrations & RLS policies            |
+| `database/`   | SQL migrations & RLS policies            |
 
 ---
 

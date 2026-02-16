@@ -9,7 +9,7 @@ AgentifUI demonstrates **enterprise-grade architecture** with modern tech stack,
 ### Tech Stack
 
 - **Frontend**: Next.js 15 (App Router), React 19, TypeScript
-- **Backend**: Supabase (Auth + PostgreSQL + Storage)
+- **Backend**: PostgreSQL + Redis + MinIO + better-auth
 - **State Management**: Zustand
 - **UI Framework**: Tailwind CSS 4, Radix UI
 - **API Integration**: Dify LLM services
@@ -36,7 +36,7 @@ The system follows a clean 3-tier architecture pattern:
 
 - `lib/db/` - Database operations
 - `lib/services/db/` - Advanced data services
-- `supabase/` - Migrations and RLS policies
+- `database/` - Migrations and RLS policies
 - Caching and real-time subscriptions
 
 ## Layer Separation Analysis
@@ -68,7 +68,7 @@ The system follows a clean 3-tier architecture pattern:
 - **Streaming**: Real-time chat responses
 - **Batching**: Efficient database operations
 - **Memory Management**: Automatic cleanup patterns
-- **Connection Pooling**: Supabase optimization
+- **Connection Pooling**: PostgreSQL pooling and runtime role isolation
 
 ## Security Architecture
 
@@ -80,7 +80,7 @@ The system follows a clean 3-tier architecture pattern:
    - Encrypted database storage
 
 2. **Authentication & Authorization**
-   - Supabase Auth with SSO support
+   - better-auth with OIDC/SSO support
    - Row Level Security (RLS) policies
    - Admin role management
 
@@ -106,7 +106,7 @@ The system follows a clean 3-tier architecture pattern:
 
 - **Zustand Stores**: Lightweight, efficient state management
 - **Modular Design**: Separate stores for different domains
-- **Real-time Sync**: Integration with Supabase subscriptions
+- **Real-time Sync**: Integration with Redis-backed channels
 
 ### Data Layer (`lib/db/`)
 
@@ -186,7 +186,7 @@ The system follows a clean 3-tier architecture pattern:
 ### Internal APIs
 
 - **RESTful Design**: Standard HTTP methods
-- **Authentication**: Supabase Auth integration
+- **Authentication**: better-auth integration
 - **Validation**: Request/response validation
 - **Rate Limiting**: Protection against abuse
 
@@ -195,13 +195,13 @@ The system follows a clean 3-tier architecture pattern:
 ### Development Environment
 
 - **Next.js Dev Server**: Hot reload and debugging
-- **Supabase Local**: Local database development
+- **Test Stack Containers**: Local PostgreSQL/Redis/MinIO development
 - **Type Checking**: Continuous type validation
 
 ### Production Environment
 
 - **Next.js Build**: Optimized static generation
-- **Supabase Cloud**: Managed database and auth
+- **Managed Data Services**: PostgreSQL/Redis/MinIO with centralized auth
 - **PM2**: Process management
 - **CDN**: Asset optimization
 
