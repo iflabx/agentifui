@@ -8,8 +8,8 @@
 
 当前判定：
 
-- 决策层文档已足够：`docs/target-stack-deep-analysis.md:1`
-- 实施前仍有 P0 缺口：`docs/target-stack-deep-analysis.md:347`
+- 决策层文档已足够：`docs/archive/supabase/target-stack-deep-analysis.md:1`
+- 实施前仍有 P0 缺口：`docs/archive/supabase/target-stack-deep-analysis.md:347`
 
 本文件输出 4 类可执行补齐件：
 
@@ -33,11 +33,11 @@
 
 3. 切换门槛缺少量化阈值
 
-- 已有“满足 SLO”文字，但未量化：`docs/target-stack-deep-analysis.md:240`, `docs/target-stack-deep-analysis.md:333`
+- 已有“满足 SLO”文字，但未量化：`docs/archive/supabase/target-stack-deep-analysis.md:240`, `docs/archive/supabase/target-stack-deep-analysis.md:333`
 
 4. 对账方案缺少脚本级定义
 
-- 已有维度但未给 SQL 模板：`docs/target-stack-deep-analysis.md:244`
+- 已有维度但未给 SQL 模板：`docs/archive/supabase/target-stack-deep-analysis.md:244`
 
 ## 3. RPC 契约矩阵（实施基线）
 

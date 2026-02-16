@@ -23,7 +23,7 @@
 
 1. 缺失 RPC 定义追溯：`increment_api_key_usage`、`update_sso_provider_order`（`docs/implementation-readiness-gap-closure.md:23`, `docs/implementation-readiness-gap-closure.md:63`）
 2. 管理 API 鉴权未收敛（`app/api/admin/status/route.ts:8`, `app/api/admin/translations/route.ts:164`）
-3. 存在 Supabase 深度耦合点：auth / rpc / storage / realtime（`docs/target-stack-deep-analysis.md:11`, `docs/target-stack-deep-analysis.md:36`, `docs/target-stack-deep-analysis.md:40`）
+3. 存在 Supabase 深度耦合点：auth / rpc / storage / realtime（`docs/archive/supabase/target-stack-deep-analysis.md:11`, `docs/archive/supabase/target-stack-deep-analysis.md:36`, `docs/archive/supabase/target-stack-deep-analysis.md:40`）
 4. 运行时仍依赖内存缓存与内存并发去重（`lib/services/db/cache-service.ts:16`, `app/api/auth/sso-signin/route.ts:12`）
 
 ## 3. 方法映射（P0）
@@ -61,6 +61,6 @@
 
 与当前分析文档的对齐关系：
 
-1. 对齐“兼容层 + 分阶段替换”策略（`docs/target-stack-deep-analysis.md:13`, `docs/backend-compatibility-components-checklist.md:206`）
+1. 对齐“兼容层 + 分阶段替换”策略（`docs/archive/supabase/target-stack-deep-analysis.md:13`, `docs/archive/supabase/backend-compatibility-components-checklist.md:206`）
 2. 覆盖实施前 P0 缺口（`docs/implementation-readiness-gap-closure.md:21`）
 3. 支撑后续任务蓝图中的里程碑依赖与风险 Gate

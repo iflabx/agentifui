@@ -25,6 +25,12 @@ M9 目标是完成迁移后的退场与收口：
 4. 活跃迁移文件重定位：
    - `supabase/migrations/202602*.sql` -> `database/migrations/202602*.sql`
    - 同步更新 M0/M1/M4/M6/M7 脚本、CI 与相关文档路径引用
+5. 历史文档归档完成：
+   - 归档目录：`docs/archive/supabase/`
+   - 归档索引：`docs/archive/supabase/README.md`
+6. 运维手册补齐：
+   - 新增 `docs/operations-backup-restore-emergency.md`
+   - 覆盖 PostgreSQL / Redis / MinIO 的备份、恢复与应急流程
 
 ## 3. 验证结果
 
@@ -40,6 +46,6 @@ M9 目标是完成迁移后的退场与收口：
 
 ## 4. 待完成
 
-1. 文档退场清理（README / 快速部署 / 架构文档中的 Supabase 叙述收口）。
-2. 历史 Supabase 分析文档归档策略（保留历史依据但移出主运行手册）。
-3. M9 最终验收清单与运维手册补齐（备份/恢复/应急）。
+1. 执行并留档至少 1 次 PostgreSQL 恢复演练（记录 RTO/RPO）。
+2. 执行并留档至少 1 次 MinIO 对象恢复演练（记录恢复校验结果）。
+3. 完成 M9 最终门禁评审并将状态由“进行中”改为“完成”。

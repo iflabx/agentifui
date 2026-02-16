@@ -14,8 +14,8 @@
 
 约束来源：
 
-1. Supabase 依赖面覆盖 Auth/RPC/Storage/Realtime（`docs/target-stack-deep-analysis.md:11`, `docs/target-stack-deep-analysis.md:40`）
-2. SQL 资产规模大（96 个迁移）（`docs/project-architecture-analysis.md:82`）
+1. Supabase 依赖面覆盖 Auth/RPC/Storage/Realtime（`docs/archive/supabase/target-stack-deep-analysis.md:11`, `docs/archive/supabase/target-stack-deep-analysis.md:40`）
+2. SQL 资产规模大（96 个迁移）（`docs/archive/supabase/project-architecture-analysis.md:82`）
 3. 当前存在 P0 缺口（RPC 缺失、管理 API 鉴权缺失）（`docs/implementation-readiness-gap-closure.md:21`）
 
 ## 2. 里程碑总览
@@ -70,10 +70,10 @@ Gate：
 
 关键任务：
 
-1. DB 单入口抽象（参考 `docs/lobehub-methods-benchmark.md:26`）
-2. Redis Manager 与 prefix 机制（参考 `docs/lobehub-methods-benchmark.md:29`）
+1. DB 单入口抽象（参考 `docs/archive/supabase/lobehub-methods-benchmark.md:26`）
+2. Redis Manager 与 prefix 机制（参考 `docs/archive/supabase/lobehub-methods-benchmark.md:29`）
 3. MinIO/S3 网关模块与 env 校验
-4. BFF 目录与兼容客户端目录落位（`docs/backend-compatibility-components-checklist.md:177`）
+4. BFF 目录与兼容客户端目录落位（`docs/archive/supabase/backend-compatibility-components-checklist.md:177`）
 
 产出物：
 
@@ -89,8 +89,8 @@ Gate：
 
 关键任务：
 
-1. better-auth 中心化配置与 API 接入（参考 `docs/lobehub-methods-benchmark.md:27`）
-2. CAS SSO provider registry + fail-fast（参考 `docs/lobehub-methods-benchmark.md:28`）
+1. better-auth 中心化配置与 API 接入（参考 `docs/archive/supabase/lobehub-methods-benchmark.md:27`）
+2. CAS SSO provider registry + fail-fast（参考 `docs/archive/supabase/lobehub-methods-benchmark.md:28`）
 3. 会话与幂等态迁移到 Redis（二级存储）
 4. 中间件替换 `supabase.auth.getUser()` 语义：保持账号状态与角色拦截等价（`middleware.ts:110`, `middleware.ts:196`, `middleware.ts:209`）
 
@@ -129,7 +129,7 @@ Gate：
 关键任务：
 
 1. 关键 RPC 保留为 PostgreSQL 函数并建立语义回归
-2. RLS 从 `auth.uid()` 迁移为 GUC 注入模式（`docs/target-stack-deep-analysis.md:111`）
+2. RLS 从 `auth.uid()` 迁移为 GUC 注入模式（`docs/archive/supabase/target-stack-deep-analysis.md:111`）
 3. 重点验证：配额、默认实例、管理员查询、用户删除、SSO 相关函数
 4. runtime/migrator 角色分离与 runtime role 硬化（禁止 superuser/bypassrls）
 5. strict mode 开关与 legacy bypass 渐进收口
@@ -234,6 +234,7 @@ Gate：
 1. 技术债清单归零
 2. 迁移后基线文档（架构图、运行手册、告警规则）
 3. M9 收口执行记录（`docs/m9-decommission-closeout.md`）
+4. 运维手册（`docs/operations-backup-restore-emergency.md`）
 
 Gate：
 

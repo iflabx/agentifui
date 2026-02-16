@@ -9,7 +9,7 @@
 核心判断：
 
 - 现有项目对 Supabase 的依赖不是单一数据库，而是 Auth + RLS/RPC + Storage + Realtime 的组合平台能力：`package.json:75`, `package.json:76`, `lib/supabase/client.ts:1`, `lib/services/db/realtime-service.ts:94`, `lib/hooks/use-avatar-upload.ts:143`。
-- 代码与 SQL 资产规模已达到“重构级迁移”：`supabase/migrations` 有 96 个迁移文件（项目分析文档已记录）：`docs/project-architecture-analysis.md:82`。
+- 代码与 SQL 资产规模已达到“重构级迁移”：`supabase/migrations` 有 96 个迁移文件（项目分析文档已记录）：`docs/archive/supabase/project-architecture-analysis.md:82`。
 - 若目标是“前端页面与交互基本不变”，最佳路线不是重写，而是“兼容层 + 分阶段切流”。
 
 本文按 10 个分析维度完整给出结论、缺口与实施基线。
@@ -47,7 +47,7 @@
 
 ### 4.1 迁移资产规模（历史）
 
-- 迁移文件数：96（`supabase/migrations`）：`docs/project-architecture-analysis.md:82`。
+- 迁移文件数：96（`supabase/migrations`）：`docs/archive/supabase/project-architecture-analysis.md:82`。
 - 历史对象统计（基于迁移文本扫描）：
 - `CREATE TABLE` 22
 - `CREATE OR REPLACE FUNCTION` 95
