@@ -119,23 +119,37 @@ async function run() {
     })
   }
 
-  checks.push(
-    {
+  if (parseBooleanEnv(process.env.M7_GATE_RUN_DB_RECONCILE, true)) {
+    checks.push({
       id: 'db-reconcile',
       command: ['node', 'scripts/m7-reconcile-verify.mjs'],
       env: {},
-    },
-    {
+    })
+  }
+
+  if (parseBooleanEnv(process.env.M7_GATE_RUN_DUAL_READ, true)) {
+    checks.push({
       id: 'dual-read-sampling',
       command: ['node', 'scripts/m7-dual-read-verify.mjs'],
       env: {},
-    },
-    {
+    })
+  }
+
+  if (parseBooleanEnv(process.env.M7_GATE_RUN_STORAGE_RECONCILE, true)) {
+    checks.push({
       id: 'storage-reconcile',
       command: ['node', 'scripts/m7-storage-reconcile-verify.mjs'],
       env: {},
-    }
-  )
+    })
+  }
+
+  if (parseBooleanEnv(process.env.M7_GATE_RUN_LAG_VERIFY, true)) {
+    checks.push({
+      id: 'lag-verify',
+      command: ['node', 'scripts/m7-lag-verify.mjs'],
+      env: {},
+    })
+  }
 
   await mkdir(reportDir, { recursive: true })
 

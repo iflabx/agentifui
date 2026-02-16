@@ -1,0 +1,42 @@
+name: M7 Gate CI
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/m7-*.mjs'
+      - 'scripts/m7-*.sh'
+      - 'docs/m7-*.md'
+      - 'docs/migration-task-blueprint.md'
+      - 'supabase/migrations/20260216*.sql'
+      - 'package.json'
+  workflow_dispatch:
+
+concurrency:
+  group: m7-gate-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  m7-static-gate:
+    name: M7 Static Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run M7 CI verify
+        run: pnpm m7:ci:verify

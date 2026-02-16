@@ -10,6 +10,7 @@ M7 目标：提供可重复执行的数据迁移与对账能力，覆盖：
 4. 双读采样比对（关键读路径）
 5. 存储对账（DB 引用 vs MinIO 对象）
 6. 对账报告归档（JSON + Markdown）
+7. 批次审批执行与 checkpoint 回滚自动化
 
 ## 2. 脚本清单
 
@@ -57,6 +58,31 @@ M7 目标：提供可重复执行的数据迁移与对账能力，覆盖：
   1. 环境变量归一化
   2. 调用 `m7-gate-verify.mjs`
 
+8. `scripts/m7-lag-verify.mjs`
+
+- 增量迁移新鲜度门禁
+- 核心指标：`source.max(watermark)` 与 checkpoint `last_watermark` 的滞后秒数
+
+9. `scripts/m7-batch-apply.mjs`
+
+- 批次执行器（需要显式审批开关）
+- 执行前保存 checkpoint 快照，执行后保存 summary
+- 失败时可自动回滚 checkpoint（可关闭）
+
+10. `scripts/m7-batch-rollback.mjs`
+
+- 手动回滚 checkpoint 到指定快照
+
+11. `scripts/m7-alert-notify.mjs`
+
+- 读取最新 gate summary（或指定 summary）并发送 webhook
+- 可配置仅失败通知，且可在 gate 失败时返回非 0 退出码
+
+12. `scripts/m7-ci-verify.mjs`
+
+- M7 静态 CI 门禁（语法、命令接线、文档命令清单）
+- GitHub Workflow：`.github/workflows/m7-gate-ci.yml`
+
 ## 3. NPM 命令
 
 1. `pnpm m7:migrate:dry-run`
@@ -68,6 +94,11 @@ M7 目标：提供可重复执行的数据迁移与对账能力，覆盖：
 7. `pnpm m7:storage:verify`
 8. `pnpm m7:gate:report`
 9. `pnpm m7:gate:verify`
+10. `pnpm m7:lag:verify`
+11. `pnpm m7:batch:apply`
+12. `pnpm m7:batch:rollback`
+13. `pnpm m7:alert:notify`
+14. `pnpm m7:ci:verify`
 
 ## 4. 关键环境变量
 
@@ -104,13 +135,46 @@ M7 目标：提供可重复执行的数据迁移与对账能力，覆盖：
 1. `M7_REPORT_DIR`：报告目录（默认 `artifacts/m7/<timestamp>/`）
 2. `M7_GATE_RUN_MIGRATION_DRY_RUN`：是否执行全量 dry-run（默认 `1`）
 3. `M7_GATE_RUN_INCREMENTAL_DRY_RUN`：是否执行增量 dry-run（默认 `1`）
+4. `M7_GATE_RUN_DB_RECONCILE`：是否执行 DB 对账（默认 `1`）
+5. `M7_GATE_RUN_DUAL_READ`：是否执行双读采样（默认 `1`）
+6. `M7_GATE_RUN_STORAGE_RECONCILE`：是否执行存储对账（默认 `1`）
+7. `M7_GATE_RUN_LAG_VERIFY`：是否执行滞后检查（默认 `1`）
+
+滞后门禁参数：
+
+1. `M7_MAX_LAG_SECONDS`：允许的最大滞后秒数（默认 `300`）
+2. `M7_LAG_REQUIRE_CHECKPOINT`：是否要求有 checkpoint（默认 `1`）
+
+批次执行参数：
+
+1. `M7_BATCH_APPROVED`：审批开关，必须为 `1` 才能执行 `m7:batch:apply`
+2. `M7_BATCH_AUTO_ROLLBACK`：失败是否自动回滚 checkpoint（默认 `1`）
+3. `M7_BATCH_ID`：批次 ID（默认时间戳）
+4. `M7_BATCH_DIR`：批次报告目录（默认 `artifacts/m7/batches/<batchId>/`）
+5. `M7_BATCH_CHECKPOINT_SNAPSHOT`：`m7:batch:rollback` 使用的 checkpoint 快照路径
+
+告警参数：
+
+1. `M7_ALERT_SUMMARY_PATH`：summary 路径（默认自动选取最新）
+2. `M7_ALERT_WEBHOOK_URL`：webhook 地址
+3. `M7_ALERT_NOTIFY_ON_SUCCESS`：成功是否通知（默认 `0`）
+4. `M7_ALERT_FAIL_ON_GATE_FAILURE`：gate 失败是否返回非 0（默认 `1`）
 
 ## 5. 当前阶段说明
 
-当前交付已覆盖 M7 Phase 1 + Phase 2。
+当前交付已覆盖 M7 Phase 1 + Phase 2 + Phase 3（门禁、归档、批次执行）。
 
-仍待 M7 后续补齐（Phase 3）：
+仍待 M7 后续补齐（Phase 4）：
 
 1. 增量迁移与业务流量并行时的延迟指标告警
 2. 对账结果接入 CI/告警平台
 3. 迁移批次审批与回滚脚本自动化
+
+## 6. 常用执行示例
+
+1. 批次执行（同库演练）：
+   `M7_BATCH_APPROVED=1 M7_ALLOW_SAME_SOURCE_TARGET=1 pnpm -s m7:batch:apply`
+2. 回滚 checkpoint（参数传递）：
+   `pnpm -s m7:batch:rollback -- artifacts/m7/batches/<batchId>/checkpoint-before.json`
+3. 回滚 checkpoint（环境变量）：
+   `M7_BATCH_CHECKPOINT_SNAPSHOT=artifacts/m7/batches/<batchId>/checkpoint-before.json pnpm -s m7:batch:rollback`
