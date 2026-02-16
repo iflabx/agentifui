@@ -68,6 +68,9 @@ type RealtimePublisher = (input: {
 
 const IDENTIFIER_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 const PG_POOL_GLOBAL_KEY = '__agentifui_pg_pool__';
+const REALTIME_BRIDGE_ENSURER_GLOBAL_KEY =
+  '__agentifui_realtime_bridge_ensurer__';
+const REALTIME_PUBLISHER_GLOBAL_KEY = '__agentifui_realtime_publisher__';
 const REALTIME_ENABLED_TABLES = new Set([
   'profiles',
   'conversations',
@@ -96,6 +99,10 @@ export class DataService {
     number
   >();
   private nextRealtimeHandlerId = 1;
+  private realtimeBridgeEnsurer: (() => void) | null | undefined;
+  private realtimePublisher: RealtimePublisher | null | undefined;
+  private realtimeBridgeWarned = false;
+  private realtimePublisherWarned = false;
 
   private constructor() {}
 
@@ -162,9 +169,55 @@ export class DataService {
     throw new DatabaseError('DATABASE_URL (or PGURL) is required', 'pg_pool');
   }
 
+  private loadGlobalRealtimeBridgeEnsurer(): (() => void) | null {
+    const globalState = globalThis as unknown as Record<string, unknown>;
+    const candidate = globalState[REALTIME_BRIDGE_ENSURER_GLOBAL_KEY];
+    return typeof candidate === 'function' ? (candidate as () => void) : null;
+  }
+
+  private loadGlobalRealtimePublisher(): RealtimePublisher | null {
+    const globalState = globalThis as unknown as Record<string, unknown>;
+    const candidate = globalState[REALTIME_PUBLISHER_GLOBAL_KEY];
+    return typeof candidate === 'function'
+      ? (candidate as RealtimePublisher)
+      : null;
+  }
+
+  private warnRealtimeBridgeLoadOnce(error: unknown): void {
+    if (this.realtimeBridgeWarned) {
+      return;
+    }
+    this.realtimeBridgeWarned = true;
+    console.warn(
+      '[DataService] Failed to load realtime bridge module; realtime bridge disabled in this runtime:',
+      error
+    );
+  }
+
+  private warnRealtimePublisherLoadOnce(error: unknown): void {
+    if (this.realtimePublisherWarned) {
+      return;
+    }
+    this.realtimePublisherWarned = true;
+    console.warn(
+      '[DataService] Failed to load realtime publisher module; realtime publish disabled in this runtime:',
+      error
+    );
+  }
+
   private loadRealtimeBridgeEnsurer(): (() => void) | null {
     if (typeof window !== 'undefined') {
       return null;
+    }
+
+    if (this.realtimeBridgeEnsurer !== undefined) {
+      return this.realtimeBridgeEnsurer;
+    }
+
+    const globalBridgeEnsurer = this.loadGlobalRealtimeBridgeEnsurer();
+    if (globalBridgeEnsurer) {
+      this.realtimeBridgeEnsurer = globalBridgeEnsurer;
+      return globalBridgeEnsurer;
     }
 
     try {
@@ -173,14 +226,16 @@ export class DataService {
       const bridgeModule = runtimeRequire('../../server/realtime/bridge') as {
         ensureRealtimeBridge?: () => void;
       };
-      return typeof bridgeModule.ensureRealtimeBridge === 'function'
-        ? bridgeModule.ensureRealtimeBridge
-        : null;
+      const ensurer =
+        typeof bridgeModule.ensureRealtimeBridge === 'function'
+          ? bridgeModule.ensureRealtimeBridge
+          : null;
+
+      this.realtimeBridgeEnsurer = ensurer;
+      return ensurer;
     } catch (error) {
-      console.warn(
-        '[DataService] Failed to load realtime bridge module:',
-        error
-      );
+      this.warnRealtimeBridgeLoadOnce(error);
+      this.realtimeBridgeEnsurer = null;
       return null;
     }
   }
@@ -188,6 +243,16 @@ export class DataService {
   private loadRealtimePublisher(): RealtimePublisher | null {
     if (typeof window !== 'undefined') {
       return null;
+    }
+
+    if (this.realtimePublisher !== undefined) {
+      return this.realtimePublisher;
+    }
+
+    const globalPublisher = this.loadGlobalRealtimePublisher();
+    if (globalPublisher) {
+      this.realtimePublisher = globalPublisher;
+      return globalPublisher;
     }
 
     try {
@@ -198,14 +263,16 @@ export class DataService {
       ) as {
         publishTableChangeEvent?: RealtimePublisher;
       };
-      return typeof publisherModule.publishTableChangeEvent === 'function'
-        ? publisherModule.publishTableChangeEvent
-        : null;
+      const publisher =
+        typeof publisherModule.publishTableChangeEvent === 'function'
+          ? publisherModule.publishTableChangeEvent
+          : null;
+
+      this.realtimePublisher = publisher;
+      return publisher;
     } catch (error) {
-      console.warn(
-        '[DataService] Failed to load realtime publisher module:',
-        error
-      );
+      this.warnRealtimePublisherLoadOnce(error);
+      this.realtimePublisher = null;
       return null;
     }
   }

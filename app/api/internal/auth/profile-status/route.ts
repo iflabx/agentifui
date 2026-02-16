@@ -1,4 +1,5 @@
 import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
+import '@lib/server/realtime/runtime-registry';
 
 import { NextResponse } from 'next/server';
 

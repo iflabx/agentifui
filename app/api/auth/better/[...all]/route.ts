@@ -5,6 +5,7 @@ import {
   recordLocalLoginAudit,
 } from '@lib/auth/better-auth/local-login-policy';
 import { auth } from '@lib/auth/better-auth/server';
+import '@lib/server/realtime/runtime-registry';
 import { toNextJsHandler } from 'better-auth/next-js';
 
 const handler = toNextJsHandler(auth);
