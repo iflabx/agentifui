@@ -112,7 +112,7 @@ export function ConversationTitleButton({
         user_id: found.user_id,
         created_at: found.created_at,
         updated_at: found.updated_at,
-        supabase_pk: found.id,
+        db_pk: found.id,
         app_id: found.app_id,
         isPending: false,
       } as CombinedConversation;
@@ -188,8 +188,8 @@ export function ConversationTitleButton({
       return;
     }
 
-    const supabasePK = finalConversation?.supabase_pk;
-    if (!supabasePK) {
+    const dbPK = finalConversation?.db_pk;
+    if (!dbPK) {
       alert(t('incompleteInfo'));
       setShowRenameDialog(false);
       return;
@@ -198,7 +198,7 @@ export function ConversationTitleButton({
     setIsOperating(true);
     try {
       const { renameConversation } = await import('@lib/db/conversations');
-      const result = await renameConversation(supabasePK, newTitle.trim());
+      const result = await renameConversation(dbPK, newTitle.trim());
 
       if (result.success) {
         // After title update, it will be automatically synchronized through refresh() and conversationEvents.emit()
@@ -233,8 +233,8 @@ export function ConversationTitleButton({
       return;
     }
 
-    const supabasePK = finalConversation?.supabase_pk;
-    if (!supabasePK) {
+    const dbPK = finalConversation?.db_pk;
+    if (!dbPK) {
       alert(t('incompleteInfo'));
       setShowDeleteDialog(false);
       return;
@@ -243,7 +243,7 @@ export function ConversationTitleButton({
     setIsOperating(true);
     try {
       const { deleteConversation } = await import('@lib/db/conversations');
-      const result = await deleteConversation(supabasePK);
+      const result = await deleteConversation(dbPK);
 
       if (result.success) {
         // After successful deletion, jump to new conversation page - consistent with sidebar logic

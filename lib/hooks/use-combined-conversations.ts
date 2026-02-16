@@ -28,7 +28,7 @@ export interface CombinedConversation extends Partial<Conversation> {
   isPending?: boolean; // whether this is a temporary conversation
   pendingStatus?: PendingConversation['status']; // status of the temporary conversation
   tempId?: string; // temporary ID
-  supabase_pk?: string; // database primary key (Supabase ID)
+  db_pk?: string; // database primary key
 
   // Typewriter effect state for the title
   titleTypewriterState?: {
@@ -100,7 +100,7 @@ export function useCombinedConversations() {
       finalConversations.push({
         ...dbConv,
         id: realId, // Use realId as the primary ID for CombinedConversation
-        supabase_pk: dbConv.id, // Store Supabase PK
+        db_pk: dbConv.id, // Store database PK
         isPending: false,
         pendingStatus: undefined,
         tempId: undefined,
@@ -136,7 +136,7 @@ export function useCombinedConversations() {
         isPending: true,
         pendingStatus: pending.status,
         tempId: pending.tempId,
-        supabase_pk: pending.supabase_pk, // Use supabase_pk from pending store if available
+        db_pk: pending.db_pk, // Use db_pk from pending store if available
 
         // Map typewriter effect state
         titleTypewriterState: pending.titleTypewriterState,
@@ -260,7 +260,7 @@ export function useCombinedConversations() {
           (p.status === 'persisted_optimistic' ||
             p.status === 'title_resolved') &&
           // Must have database primary key
-          p.supabase_pk &&
+          p.db_pk &&
           // Title must be finalized
           p.isTitleFinal;
 
@@ -279,7 +279,7 @@ export function useCombinedConversations() {
             p.status !== 'title_resolved'
           )
             reasons.push(`Status not completed (${p.status})`);
-          if (!p.supabase_pk) reasons.push('No database primary key');
+          if (!p.db_pk) reasons.push('No database primary key');
           if (!p.isTitleFinal) reasons.push('Title not finalized');
 
           if (reasons.length > 0 && ageInMinutes > 5) {

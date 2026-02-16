@@ -16,7 +16,7 @@ export interface PendingConversation {
   isTitleFinal: boolean; // Whether the title is finalized (from /name API)
   createdAt: string; // Creation time
   updatedAt: string; // Last update time
-  supabase_pk?: string; // Database primary key (Supabase ID), used when stored in DB but still pending
+  db_pk?: string; // Database primary key, used when stored in DB but still pending
 
   // Typewriter effect state
   titleTypewriterState?: {
@@ -51,7 +51,7 @@ interface PendingConversationState {
   updateTitle: (id: string, title: string, isFinal: boolean) => void; // Update title and set if it's final
   removePending: (id: string) => void; // id can be tempId or realId
   markAsOptimistic: (id: string) => void; // Mark conversation as optimistically persisted
-  setSupabasePK: (id: string, supabasePK: string) => void; // Set Supabase PK for a pending conversation stored in DB
+  setDatabasePK: (id: string, dbPK: string) => void; // Set database PK for a pending conversation stored in DB
 
   // Typewriter effect actions
   startTitleTypewriter: (id: string, targetTitle: string) => void; // Start typewriter effect for title
@@ -61,7 +61,7 @@ interface PendingConversationState {
   // Atomic state update to avoid race conditions
   markAsPersistedComplete: (
     id: string,
-    supabasePK: string,
+    dbPK: string,
     finalTitle?: string
   ) => void; // Atomically mark as fully persisted
 
@@ -266,7 +266,7 @@ export const usePendingConversationStore = create<PendingConversationState>(
       });
     },
 
-    setSupabasePK: (id: string, supabasePK: string) => {
+    setDatabasePK: (id: string, dbPK: string) => {
       set(state => {
         const newMap = new Map(state.pendingConversations);
         let entryKey: string | undefined = id;
@@ -286,14 +286,14 @@ export const usePendingConversationStore = create<PendingConversationState>(
         if (entry && entryKey) {
           newMap.set(entryKey, {
             ...entry,
-            supabase_pk: supabasePK,
+            db_pk: dbPK,
             updatedAt: new Date().toISOString(),
           });
-          // console.log(`[PendingConversationStore] Set supabase_pk for ${entryKey} (realId: ${entry.realId}) to ${supabasePK}`);
+          // console.log(`[PendingConversationStore] Set db_pk for ${entryKey} (realId: ${entry.realId}) to ${dbPK}`);
           return { pendingConversations: newMap };
         }
         console.warn(
-          `[PendingConversationStore] setSupabasePK: ID not found: ${id}`
+          `[PendingConversationStore] setDatabasePK: ID not found: ${id}`
         );
         return state;
       });
@@ -462,7 +462,7 @@ export const usePendingConversationStore = create<PendingConversationState>(
     // Atomically mark as fully persisted, avoiding race conditions
     markAsPersistedComplete: (
       id: string,
-      supabasePK: string,
+      dbPK: string,
       finalTitle?: string
     ) => {
       set(state => {
@@ -487,7 +487,7 @@ export const usePendingConversationStore = create<PendingConversationState>(
             status: 'title_resolved',
             isTitleFinal: true,
             title: finalTitle || entry.title,
-            supabase_pk: supabasePK,
+            db_pk: dbPK,
             updatedAt: new Date().toISOString(),
           });
           return { pendingConversations: newMap };

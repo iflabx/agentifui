@@ -121,8 +121,8 @@ export function SidebarChatList({
     async (newTitle: string) => {
       if (!selectedConversation) return;
 
-      const supabasePK = selectedConversation.supabase_pk;
-      if (!supabasePK) {
+      const dbPK = selectedConversation.db_pk;
+      if (!dbPK) {
         alert(t('syncingMessage'));
         setShowRenameDialog(false);
         return;
@@ -131,7 +131,7 @@ export function SidebarChatList({
       setIsOperating(true);
       try {
         const { renameConversation } = await import('@lib/db/conversations');
-        const result = await renameConversation(supabasePK, newTitle.trim());
+        const result = await renameConversation(dbPK, newTitle.trim());
 
         if (result.success) {
           // After renaming successfully, update the page title directly, no need to refresh the page
@@ -171,8 +171,8 @@ export function SidebarChatList({
   const handleDeleteConfirm = React.useCallback(async () => {
     if (!selectedConversation) return;
 
-    const supabasePK = selectedConversation.supabase_pk;
-    if (!supabasePK) {
+    const dbPK = selectedConversation.db_pk;
+    if (!dbPK) {
       alert(t('syncingMessage'));
       setShowDeleteDialog(false);
       return;
@@ -181,7 +181,7 @@ export function SidebarChatList({
     setIsOperating(true);
     try {
       const { deleteConversation } = await import('@lib/db/conversations');
-      const result = await deleteConversation(supabasePK);
+      const result = await deleteConversation(dbPK);
 
       if (result.success) {
         refresh();
@@ -326,7 +326,7 @@ export function SidebarChatList({
     chat: CombinedConversation,
     itemIsLoading: boolean
   ) => {
-    const canPerformActions = !!chat.supabase_pk;
+    const canPerformActions = !!chat.db_pk;
     const isTempChat = !chat.id || chat.id.startsWith('temp-');
     const isMenuOpen = openDropdownId === chat.id;
 
