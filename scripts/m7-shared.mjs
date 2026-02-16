@@ -87,13 +87,10 @@ export function resolveM7TableList() {
 }
 
 export function resolveM7SourceDatabaseUrl() {
-  const value =
-    process.env.M7_SOURCE_DATABASE_URL?.trim() ||
-    process.env.SUPABASE_DATABASE_URL?.trim() ||
-    ''
+  const value = process.env.M7_SOURCE_DATABASE_URL?.trim() || ''
   if (!value) {
     throw new Error(
-      'M7 source database URL is required: set M7_SOURCE_DATABASE_URL or SUPABASE_DATABASE_URL'
+      'M7 source database URL is required: set M7_SOURCE_DATABASE_URL'
     )
   }
   return value

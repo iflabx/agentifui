@@ -6,12 +6,12 @@ DEFAULT_S3_ENDPOINT="http://172.20.0.1:9000"
 
 export M7_TARGET_DATABASE_URL="${M7_TARGET_DATABASE_URL:-${MIGRATOR_DATABASE_URL:-${DATABASE_URL:-$DEFAULT_DATABASE_URL}}}"
 export M7_ALLOW_SAME_SOURCE_TARGET="${M7_ALLOW_SAME_SOURCE_TARGET:-0}"
-export M7_SOURCE_DATABASE_URL="${M7_SOURCE_DATABASE_URL:-${SUPABASE_DATABASE_URL:-}}"
+export M7_SOURCE_DATABASE_URL="${M7_SOURCE_DATABASE_URL:-}"
 if [[ -z "${M7_SOURCE_DATABASE_URL}" ]]; then
   if [[ "${M7_ALLOW_SAME_SOURCE_TARGET}" == "1" ]]; then
     export M7_SOURCE_DATABASE_URL="${M7_TARGET_DATABASE_URL}"
   else
-    echo "[m7-gate-verify] M7_SOURCE_DATABASE_URL (or SUPABASE_DATABASE_URL) is required." >&2
+    echo "[m7-gate-verify] M7_SOURCE_DATABASE_URL is required." >&2
     echo "[m7-gate-verify] To run same-source smoke, set M7_ALLOW_SAME_SOURCE_TARGET=1 explicitly." >&2
     exit 1
   fi

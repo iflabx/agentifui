@@ -32,7 +32,6 @@ function collectTrustedAvatarHosts() {
     parseTrustedHost(process.env.NEXT_PUBLIC_APP_URL),
     parseTrustedHost(process.env.S3_PUBLIC_BASE_URL),
     parseTrustedHost(process.env.S3_ENDPOINT),
-    parseTrustedHost(process.env.NEXT_PUBLIC_SUPABASE_URL),
   ].filter((host): host is string => Boolean(host));
 
   return Array.from(new Set([...configuredHosts, ...derivedHosts]));
