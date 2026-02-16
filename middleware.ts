@@ -79,11 +79,14 @@ function resolveInternalOrigins(request: NextRequest): string[] {
     }
   };
 
+  // Always try the current request origin first to avoid cross-instance
+  // session mismatches when env base URLs point to a different runtime.
+  pushUnique(request.nextUrl.origin);
+  pushUnique(swapLoopbackOrigin(request.nextUrl.origin));
+
   pushUnique(normalizeOrigin(process.env.BETTER_AUTH_URL));
   pushUnique(normalizeOrigin(process.env.NEXT_PUBLIC_APP_URL));
   pushUnique(normalizeOrigin(process.env.AUTH_BASE_URL));
-  pushUnique(request.nextUrl.origin);
-  pushUnique(swapLoopbackOrigin(request.nextUrl.origin));
 
   return origins;
 }
