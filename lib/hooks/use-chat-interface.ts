@@ -16,8 +16,8 @@
  * - Error handling and retry
  */
 import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
-import { getConversationByExternalId } from '@lib/db/conversations';
 import { useCurrentApp } from '@lib/hooks/use-current-app';
+import { getConversationByExternalId } from '@lib/services/client/conversations-api';
 import {
   stopDifyStreamingTask,
   streamDifyChat,

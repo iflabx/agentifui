@@ -36,38 +36,70 @@ type ServiceInstanceWithProvider = ServiceInstance & {
   } | null;
 };
 
+const NO_DEFAULT_APP_MESSAGE =
+  'No default service instance found. Please configure a default app instance.';
+const DEFAULT_APP_RETRY_COOLDOWN_MS = 30_000;
+
+let defaultAppRetryAfter = 0;
+
+type AppLookupResult = {
+  app: ServiceInstanceWithProvider | null;
+  defaultMissing: boolean;
+};
+
 async function fetchAppFromInternalApi(
   query: URLSearchParams
-): Promise<ServiceInstanceWithProvider | null> {
+): Promise<AppLookupResult> {
   const response = await fetch(`/api/internal/apps?${query.toString()}`, {
     method: 'GET',
     credentials: 'include',
   });
 
   if (!response.ok) {
-    return null;
+    return {
+      app: null,
+      defaultMissing:
+        query.get('mode') === 'default' && response.status === 404,
+    };
   }
 
   const payload = (await response.json()) as {
     success: boolean;
     app?: ServiceInstanceWithProvider;
+    defaultMissing?: boolean;
   };
 
-  if (!payload.success || !payload.app) {
-    return null;
-  }
-
-  return payload.app;
+  return {
+    app: payload.success && payload.app ? payload.app : null,
+    defaultMissing: Boolean(payload.defaultMissing),
+  };
 }
 
 async function fetchDefaultAppInstance() {
-  return fetchAppFromInternalApi(new URLSearchParams({ mode: 'default' }));
+  if (defaultAppRetryAfter > Date.now()) {
+    return null;
+  }
+
+  const result = await fetchAppFromInternalApi(
+    new URLSearchParams({ mode: 'default' })
+  );
+  if (result.app) {
+    defaultAppRetryAfter = 0;
+    return result.app;
+  }
+
+  if (result.defaultMissing) {
+    defaultAppRetryAfter = Date.now() + DEFAULT_APP_RETRY_COOLDOWN_MS;
+  }
+
+  return null;
 }
 
 async function fetchActiveAppInstance(instanceId: string) {
-  return fetchAppFromInternalApi(
+  const result = await fetchAppFromInternalApi(
     new URLSearchParams({ instanceId: instanceId.trim() })
   );
+  return result.app;
 }
 
 export const useCurrentAppStore = create<CurrentAppState>()(
@@ -113,6 +145,16 @@ export const useCurrentAppStore = create<CurrentAppState>()(
           return;
         }
 
+        if (defaultAppRetryAfter > Date.now()) {
+          set({
+            currentAppId: null,
+            currentAppInstance: null,
+            isLoadingAppId: false,
+            errorLoadingAppId: NO_DEFAULT_APP_MESSAGE,
+          });
+          return;
+        }
+
         // Security check: ensure user is logged in before initializing app store
         // Prevent unauthenticated users from triggering cache creation
         try {
@@ -146,16 +188,14 @@ export const useCurrentAppStore = create<CurrentAppState>()(
               currentAppInstance: defaultInstance,
               isLoadingAppId: false,
               lastValidatedAt: Date.now(), // Set validation timestamp
+              errorLoadingAppId: null,
             });
           } else {
-            const errorMessage =
-              'No default service instance found. Please configure a default app instance.';
-            console.warn(errorMessage);
             set({
               currentAppId: null,
               currentAppInstance: null,
               isLoadingAppId: false,
-              errorLoadingAppId: errorMessage,
+              errorLoadingAppId: NO_DEFAULT_APP_MESSAGE,
             });
           }
         } catch (error) {
@@ -193,12 +233,12 @@ export const useCurrentAppStore = create<CurrentAppState>()(
               currentAppInstance: refreshed,
               isLoadingAppId: false,
               lastValidatedAt: Date.now(), // Set validation timestamp
+              errorLoadingAppId: null,
             });
           } else {
-            const errorMessage = 'Default service instance not found';
             set({
               isLoadingAppId: false,
-              errorLoadingAppId: errorMessage,
+              errorLoadingAppId: NO_DEFAULT_APP_MESSAGE,
             });
           }
         } catch (error) {
@@ -280,17 +320,14 @@ export const useCurrentAppStore = create<CurrentAppState>()(
 
             if (!currentInstance) {
               // Current app does not exist, fallback to default provider's default app
-              console.warn(
-                `[validateAndRefreshConfig] Current app ${currentState.currentAppId} not found, fallback to default app`
-              );
-
               const defaultInstance = await fetchDefaultAppInstance();
 
               if (!defaultInstance) {
-                console.warn(
-                  '[validateAndRefreshConfig] Default service instance also not found, clearing current config'
-                );
-                get().clearCurrentApp();
+                set({
+                  currentAppId: null,
+                  currentAppInstance: null,
+                  errorLoadingAppId: NO_DEFAULT_APP_MESSAGE,
+                });
                 return;
               }
 

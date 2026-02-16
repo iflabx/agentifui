@@ -10,7 +10,7 @@
  *
  * Updated to use new unified data service and messageService
  */
-import { getConversationByExternalId } from '@lib/db/conversations';
+import { getConversationByExternalId } from '@lib/services/client/conversations-api';
 import { messageService } from '@lib/services/db/message-service';
 import { useChatScrollStore } from '@lib/stores/chat-scroll-store';
 import { ChatMessage, useChatStore } from '@lib/stores/chat-store';

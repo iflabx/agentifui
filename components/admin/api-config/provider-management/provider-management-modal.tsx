@@ -8,13 +8,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@components/ui/dialog';
+import { useTheme } from '@lib/hooks/use-theme';
 import {
   createProvider,
   deleteProvider,
   getAllProviders,
   updateProvider,
-} from '@lib/db/providers';
-import { useTheme } from '@lib/hooks/use-theme';
+} from '@lib/services/client/providers-api';
 import { Provider } from '@lib/types/database';
 import { cn } from '@lib/utils';
 import { Plus } from 'lucide-react';

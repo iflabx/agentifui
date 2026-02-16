@@ -86,6 +86,7 @@
     "m8:rollback:drill": "node scripts/m8-rollback-drill.mjs",
     "m8:gate:report": "node scripts/m8-gate-verify.mjs",
     "m8:gate:verify": "bash scripts/m8-gate-verify.sh",
+    "guard:client-db-imports": "node scripts/check-client-db-imports.mjs",
     "i18n:check": "python3 scripts/i18n-refactor-helper.py quick-check",
     "i18n:validate": "python3 scripts/validate-i18n-consistency.py",
     "i18n:detect": "python3 scripts/i18n-refactor-helper.py detect-missing",

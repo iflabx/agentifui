@@ -335,6 +335,77 @@ export async function getConversationByExternalId(
 }
 
 /**
+ * Query conversation by external ID with ownership guard.
+ * Only returns an active conversation belonging to the provided user.
+ */
+export async function getConversationByExternalIdForUser(
+  userId: string,
+  externalId: string
+): Promise<Result<Conversation | null>> {
+  const normalizedUserId = userId.trim();
+  const normalizedExternalId = externalId.trim();
+
+  if (!normalizedUserId) {
+    return failure(new Error('User ID is required'));
+  }
+
+  if (!normalizedExternalId) {
+    return success(null);
+  }
+
+  const result = await dataService.rawQuery<Conversation>(
+    `
+      SELECT
+        id::text AS id,
+        user_id::text AS user_id,
+        ai_config_id,
+        title,
+        summary,
+        settings,
+        created_at::text AS created_at,
+        updated_at::text AS updated_at,
+        status,
+        external_id,
+        app_id,
+        last_message_preview,
+        metadata
+      FROM conversations
+      WHERE external_id = $1
+        AND user_id = $2::uuid
+        AND status = 'active'
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `,
+    [normalizedExternalId, normalizedUserId]
+  );
+
+  if (!result.success) {
+    return failure(result.error);
+  }
+
+  return success(result.data[0] || null);
+}
+
+/**
+ * Create conversation with ownership guard.
+ * Enforces payload user_id to match the authenticated actor.
+ */
+export async function createConversationForUser(
+  userId: string,
+  conversation: Omit<Conversation, 'id' | 'created_at' | 'updated_at'>
+): Promise<Result<Conversation>> {
+  const normalizedUserId = userId.trim();
+  if (!normalizedUserId) {
+    return failure(new Error('User ID is required'));
+  }
+
+  return createConversation({
+    ...conversation,
+    user_id: normalizedUserId,
+  });
+}
+
+/**
  * Rename conversation (optimized version)
  * @param conversationId Conversation ID
  * @param newTitle New title

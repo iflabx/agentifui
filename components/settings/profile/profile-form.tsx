@@ -1,7 +1,6 @@
 'use client';
 
 import { UserAvatar } from '@components/ui';
-import { updateUserProfile } from '@lib/db/profiles';
 import {
   DateFormatPresets,
   useDateFormatter,
@@ -15,18 +14,16 @@ import { motion } from 'framer-motion';
 import {
   AlertCircle,
   AtSign,
-  Building2,
   Calendar,
   Camera,
   Check,
   Edit3,
   User,
-  UserCircle,
 } from 'lucide-react';
 
 import { useCallback, useState } from 'react';
 
-import { useFormatter, useTranslations } from 'next-intl';
+import { useTranslations } from 'next-intl';
 
 import { AvatarModal } from './avatar-modal';
 
@@ -43,7 +40,6 @@ interface ProfileFormProps {
 
 export function ProfileForm({ profile, onSuccess }: ProfileFormProps) {
   const t = useTranslations('pages.settings.profileSettings');
-  const format = useFormatter();
   const { mutate: refreshProfile } = useProfile(); // Add refresh profile function
   const { formatDate } = useDateFormatter();
 
@@ -114,7 +110,10 @@ export function ProfileForm({ profile, onSuccess }: ProfileFormProps) {
 
       // Build update data based on SSO mode
       // In SSO mode, do not update the name and avatar URL
-      const updateData: any = {
+      const updateData: {
+        username: string;
+        full_name?: string;
+      } = {
         username: formData.username,
       };
 
@@ -122,17 +121,47 @@ export function ProfileForm({ profile, onSuccess }: ProfileFormProps) {
         updateData.full_name = formData.full_name;
       }
 
-      // Update user profile
-      const result = await updateUserProfile(profile.id, updateData);
+      const response = await fetch('/api/internal/profile', {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: profile.id,
+          updates: updateData,
+        }),
+      });
 
-      if (result.success && result.data) {
+      const payload = (await response.json()) as {
+        success: boolean;
+        profile?: {
+          id: string;
+          full_name: string | null;
+          username: string | null;
+          avatar_url: string | null;
+          role: DatabaseProfile['role'];
+          created_at: string;
+          updated_at: string;
+          employee_number?: string | null;
+          auth_last_sign_in_at?: string | null;
+        } | null;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.success || !payload.profile) {
+        throw new Error(payload.error || t('updateFailed'));
+      }
+
+      const updatedProfile = payload.profile;
+      if (updatedProfile) {
         // Update localStorage cache, ensure that the latest data can be seen immediately on other pages
         // Need type conversion to match the ExtendedProfile interface
         const extendedProfile: ExtendedProfile = {
-          ...result.data,
-          full_name: result.data.full_name || null,
-          username: result.data.username || null,
-          avatar_url: result.data.avatar_url || null,
+          ...updatedProfile,
+          full_name: updatedProfile.full_name || null,
+          username: updatedProfile.username || null,
+          avatar_url: updatedProfile.avatar_url || null,
           // Remove organization-related fields
           auth_last_sign_in_at: profile.auth_last_sign_in_at,
         };
@@ -147,13 +176,13 @@ export function ProfileForm({ profile, onSuccess }: ProfileFormProps) {
         if (onSuccess) {
           onSuccess();
         }
-      } else {
-        throw new Error(result.error?.message || t('updateFailed'));
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const messageText =
+        error instanceof Error ? error.message : t('updateFailed');
       setMessage({
         type: 'error',
-        text: error.message || t('updateFailed'),
+        text: messageText,
       });
     } finally {
       setIsSubmitting(false);

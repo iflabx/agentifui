@@ -6,7 +6,9 @@ import {
   updateApiKey,
 } from '@lib/db/api-keys';
 import {
+  createConversationForUser,
   deleteConversationForUser,
+  getConversationByExternalIdForUser,
   getUserConversations,
   renameConversationForUser,
 } from '@lib/db/conversations';
@@ -29,7 +31,9 @@ import {
 } from '@lib/db/group-permissions';
 import {
   createProvider,
+  deleteProvider,
   getActiveProviders,
+  getAllProviders,
   updateProvider,
 } from '@lib/db/providers';
 import {
@@ -93,9 +97,11 @@ const ADMIN_ACTIONS = new Set([
   'groups.removeGroupAppPermission',
   'groups.removeAllGroupAppPermissions',
   'groups.searchUsersForGroup',
+  'providers.getAllProviders',
   'providers.getActiveProviders',
   'providers.createProvider',
   'providers.updateProvider',
+  'providers.deleteProvider',
   'serviceInstances.getByProvider',
   'serviceInstances.getById',
   'serviceInstances.create',
@@ -120,6 +126,8 @@ const AUTH_ACTIONS = new Set([
   'groups.getUserAccessibleApps',
   'groups.checkUserAppPermission',
   'groups.incrementAppUsage',
+  'conversations.getConversationByExternalId',
+  'conversations.createConversation',
   'conversations.getUserConversations',
   'conversations.renameConversation',
   'conversations.deleteConversation',
@@ -362,6 +370,8 @@ export async function POST(request: Request) {
             (payload?.excludeUserIds || []) as string[]
           )
         );
+      case 'providers.getAllProviders':
+        return toResultResponse(await getAllProviders());
       case 'providers.getActiveProviders':
         return toResultResponse(await getActiveProviders());
       case 'providers.createProvider':
@@ -376,6 +386,10 @@ export async function POST(request: Request) {
             String(payload?.id || ''),
             (payload?.updates || {}) as Parameters<typeof updateProvider>[1]
           )
+        );
+      case 'providers.deleteProvider':
+        return toResultResponse(
+          await deleteProvider(String(payload?.id || ''))
         );
       case 'serviceInstances.getByProvider':
         return toResultResponse(
@@ -434,7 +448,7 @@ export async function POST(request: Request) {
       case 'apiKeys.delete':
         return toResultResponse(await deleteApiKey(String(payload?.id || '')));
       case 'conversations.getUserConversations': {
-        const userId = requireString(payload, 'userId');
+        const userId = (actorUserId || requireString(payload, 'userId')).trim();
         if (!userId) {
           return toErrorResponse('Missing userId', 400);
         }
@@ -448,8 +462,33 @@ export async function POST(request: Request) {
           await getUserConversations(userId, limit, offset, appId)
         );
       }
+      case 'conversations.getConversationByExternalId': {
+        const userId = (actorUserId || requireString(payload, 'userId')).trim();
+        const externalId = requireString(payload, 'externalId');
+        if (!userId || !externalId) {
+          return toErrorResponse('Missing required fields', 400);
+        }
+
+        return toResultResponse(
+          await getConversationByExternalIdForUser(userId, externalId)
+        );
+      }
+      case 'conversations.createConversation': {
+        const userId = (actorUserId || requireString(payload, 'userId')).trim();
+        const conversation = (payload?.conversation || {}) as Parameters<
+          typeof createConversationForUser
+        >[1];
+
+        if (!userId) {
+          return toErrorResponse('Missing userId', 400);
+        }
+
+        return toResultResponse(
+          await createConversationForUser(userId, conversation)
+        );
+      }
       case 'conversations.renameConversation': {
-        const userId = requireString(payload, 'userId');
+        const userId = (actorUserId || requireString(payload, 'userId')).trim();
         const conversationId = requireString(payload, 'conversationId');
         const title = requireString(payload, 'title');
         if (!userId || !conversationId || !title) {
@@ -461,7 +500,7 @@ export async function POST(request: Request) {
         );
       }
       case 'conversations.deleteConversation': {
-        const userId = requireString(payload, 'userId');
+        const userId = (actorUserId || requireString(payload, 'userId')).trim();
         const conversationId = requireString(payload, 'conversationId');
         if (!userId || !conversationId) {
           return toErrorResponse('Missing required fields', 400);

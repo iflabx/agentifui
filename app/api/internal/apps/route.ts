@@ -278,10 +278,11 @@ export async function GET(request: Request) {
       );
 
       if (!rows[0]) {
-        return NextResponse.json(
-          { success: false, error: 'Default app instance not found' },
-          { status: 404 }
-        );
+        return NextResponse.json({
+          success: true,
+          app: null,
+          defaultMissing: true,
+        });
       }
 
       return NextResponse.json({ success: true, app: toAppDetail(rows[0]) });

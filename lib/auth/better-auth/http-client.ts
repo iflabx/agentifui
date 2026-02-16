@@ -45,6 +45,46 @@ interface InternalProfileStatusPayload {
 const AUTH_STATE_CHANGE_EVENT = 'agentifui:auth-state-changed';
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const DEFAULT_SESSION_CACHE_TTL_MS = 5000;
+const DEFAULT_SESSION_THROTTLE_BACKOFF_MS = 2000;
+const DEFAULT_SESSION_STALE_GRACE_MS = 60_000;
+
+let sessionCacheValue: BetterAuthSession | null = null;
+let sessionCacheAt = 0;
+let sessionInflight: Promise<BetterAuthSession | null> | null = null;
+let sessionBackoffUntil = 0;
+
+function parsePositiveIntEnv(
+  value: string | undefined,
+  fallback: number
+): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.floor(parsed);
+}
+
+function getSessionCacheTtlMs(): number {
+  return parsePositiveIntEnv(
+    process.env.NEXT_PUBLIC_AUTH_SESSION_CACHE_TTL_MS,
+    DEFAULT_SESSION_CACHE_TTL_MS
+  );
+}
+
+function getSessionThrottleBackoffMs(): number {
+  return parsePositiveIntEnv(
+    process.env.NEXT_PUBLIC_AUTH_SESSION_THROTTLE_BACKOFF_MS,
+    DEFAULT_SESSION_THROTTLE_BACKOFF_MS
+  );
+}
+
+function getSessionStaleGraceMs(): number {
+  return parsePositiveIntEnv(
+    process.env.NEXT_PUBLIC_AUTH_SESSION_STALE_GRACE_MS,
+    DEFAULT_SESSION_STALE_GRACE_MS
+  );
+}
 
 function isUuid(value: string): boolean {
   return UUID_PATTERN.test(value.trim());
@@ -86,6 +126,11 @@ async function getInternalProfileStatus(): Promise<InternalProfileStatusPayload 
 }
 
 function emitAuthStateChanged() {
+  sessionCacheValue = null;
+  sessionCacheAt = 0;
+  sessionInflight = null;
+  sessionBackoffUntil = 0;
+
   if (typeof window === 'undefined') {
     return;
   }
@@ -283,7 +328,7 @@ export function subscribeAuthStateChange(listener: () => void): () => void {
   };
 }
 
-export async function getCurrentSession(): Promise<BetterAuthSession | null> {
+async function fetchCurrentSessionUncached(): Promise<BetterAuthSession | null> {
   const response = await fetch('/api/auth/better/get-session', {
     method: 'GET',
     credentials: 'include',
@@ -348,6 +393,62 @@ export async function getCurrentSession(): Promise<BetterAuthSession | null> {
   };
 
   return patchedSession;
+}
+
+function isRateLimitSessionError(error: unknown): boolean {
+  return error instanceof Error && /\(429\)/.test(error.message);
+}
+
+export async function getCurrentSession(options?: {
+  forceRefresh?: boolean;
+}): Promise<BetterAuthSession | null> {
+  const now = Date.now();
+  const forceRefresh = options?.forceRefresh === true;
+  const cacheTtlMs = getSessionCacheTtlMs();
+  const staleGraceMs = getSessionStaleGraceMs();
+
+  if (
+    !forceRefresh &&
+    sessionCacheAt > 0 &&
+    now - sessionCacheAt <= cacheTtlMs
+  ) {
+    return sessionCacheValue;
+  }
+
+  if (!forceRefresh && now < sessionBackoffUntil) {
+    if (sessionCacheAt > 0 && now - sessionCacheAt <= staleGraceMs) {
+      return sessionCacheValue;
+    }
+    return null;
+  }
+
+  if (!forceRefresh && sessionInflight) {
+    return sessionInflight;
+  }
+
+  const requestPromise = (async () => {
+    try {
+      const session = await fetchCurrentSessionUncached();
+      sessionCacheValue = session;
+      sessionCacheAt = Date.now();
+      sessionBackoffUntil = 0;
+      return session;
+    } catch (error) {
+      if (isRateLimitSessionError(error)) {
+        sessionBackoffUntil = Date.now() + getSessionThrottleBackoffMs();
+        if (sessionCacheAt > 0 && Date.now() - sessionCacheAt <= staleGraceMs) {
+          return sessionCacheValue;
+        }
+        return null;
+      }
+      throw error;
+    } finally {
+      sessionInflight = null;
+    }
+  })();
+
+  sessionInflight = requestPromise;
+  return requestPromise;
 }
 
 export async function getCurrentUser(): Promise<BetterAuthUser | null> {

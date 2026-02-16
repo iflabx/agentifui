@@ -16,7 +16,10 @@
  * - Favorite apps management
  */
 import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
-import { createConversation, updateConversation } from '@lib/db/conversations';
+import {
+  createConversation,
+  updateConversation,
+} from '@lib/services/client/conversations-api';
 import { streamDifyChat } from '@lib/services/dify/chat-service';
 import { renameConversation } from '@lib/services/dify/conversation-service';
 import { DifyStreamResponse } from '@lib/services/dify/types';
