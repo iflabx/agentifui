@@ -1,3 +1,4 @@
+import { formatUiErrorMessage, toUiError } from '@lib/errors/ui-error';
 import { useProfile } from '@lib/hooks/use-profile';
 import { toUserFacingAgentError } from '@lib/services/agent-error/user-facing-error';
 import {
@@ -517,7 +518,12 @@ export function useWorkflowExecution(instanceId: string) {
           locale:
             typeof navigator !== 'undefined' ? navigator.language : 'en-US',
         });
-        const errorMessage = normalizedError.userMessage;
+        const uiError = toUiError(
+          error,
+          normalizedError.userMessage,
+          'dify-proxy'
+        );
+        const errorMessage = formatUiErrorMessage(uiError);
         getActions().setError(errorMessage, true);
 
         // If there is a current execution record, try to save error status and collected data
@@ -550,9 +556,10 @@ export function useWorkflowExecution(instanceId: string) {
               error_details: {
                 message: errorMessage,
                 raw_message: rawErrorMessage,
-                code: normalizedError.code,
+                code: uiError.code || normalizedError.code,
                 kind: normalizedError.kind,
                 suggestion: normalizedError.suggestion,
+                request_id: uiError.requestId || null,
                 timestamp: new Date().toISOString(),
                 collected_node_data: nodeExecutionData,
               },

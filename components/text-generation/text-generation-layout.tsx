@@ -52,6 +52,7 @@ export function TextGenerationLayout({
     executeTextGeneration,
     stopTextGeneration,
     retryTextGeneration,
+    clearError,
     resetTextGeneration,
   } = useTextGenerationExecution(instanceId);
 
@@ -122,8 +123,8 @@ export function TextGenerationLayout({
 
   // --- Clear error ---
   const handleClearError = useCallback(() => {
-    // Here you can add the logic to clear the error
-  }, []);
+    clearError();
+  }, [clearError]);
 
   // --- View result callback ---
   const handleViewResult = useCallback(

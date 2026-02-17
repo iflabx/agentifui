@@ -3,6 +3,11 @@
  * @description Implements interaction logic with Dify chat-related APIs
  * @module lib/services/dify/chat-service
  */
+import {
+  AppRequestError,
+  extractAppErrorDetail,
+  extractErrorMessage,
+} from '@lib/errors/app-error';
 import { parseSseStream } from '@lib/utils/sse-parser';
 
 import {
@@ -145,14 +150,30 @@ export async function streamDifyChat(
 
     // Check response status, throw if not 2xx
     if (!response.ok) {
-      let errorBody = 'Unknown error';
+      let rawBody = '';
       try {
-        errorBody = await response.text();
+        rawBody = await response.text();
       } catch {
         // Ignore error when reading error body
       }
-      throw new Error(
-        `Dify API request failed with status ${response.status}: ${response.statusText}. Body: ${errorBody}`
+      let parsedBody: unknown = null;
+      if (rawBody.trim().length > 0) {
+        try {
+          parsedBody = JSON.parse(rawBody);
+        } catch {
+          parsedBody = null;
+        }
+      }
+
+      const fallbackMessage =
+        rawBody.trim().length > 0
+          ? `Dify API request failed (${response.status}): ${rawBody}`
+          : `Dify API request failed (${response.status}): ${response.statusText}`;
+      const message = extractErrorMessage(parsedBody, fallbackMessage);
+      throw new AppRequestError(
+        message,
+        response.status,
+        extractAppErrorDetail(parsedBody)
       );
     }
 
@@ -539,14 +560,29 @@ export async function stopDifyStreamingTask(
     );
 
     if (!response.ok) {
-      let errorBody = 'Unknown error';
+      let rawBody = '';
       try {
-        errorBody = await response.text();
+        rawBody = await response.text();
       } catch {
         // Ignore error when reading error body
       }
-      throw new Error(
-        `Failed to stop Dify task ${taskId}. Status: ${response.status} ${response.statusText}. Body: ${errorBody}`
+      let parsedBody: unknown = null;
+      if (rawBody.trim().length > 0) {
+        try {
+          parsedBody = JSON.parse(rawBody);
+        } catch {
+          parsedBody = null;
+        }
+      }
+      const fallbackMessage =
+        rawBody.trim().length > 0
+          ? `Failed to stop Dify task ${taskId}. ${rawBody}`
+          : `Failed to stop Dify task ${taskId}. ${response.status} ${response.statusText}`;
+      const message = extractErrorMessage(parsedBody, fallbackMessage);
+      throw new AppRequestError(
+        message,
+        response.status,
+        extractAppErrorDetail(parsedBody)
       );
     }
 

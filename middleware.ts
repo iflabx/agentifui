@@ -6,6 +6,7 @@ import {
   AUTH_SYSTEM_ERRORS,
   getAccountStatusError,
 } from '@lib/constants/auth-errors';
+import { REQUEST_ID_HEADER, resolveRequestId } from '@lib/errors/app-error';
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
@@ -144,18 +145,24 @@ async function fetchInternalEndpoint(
 export async function middleware(request: NextRequest) {
   const url = new URL(request.url);
   const pathname = url.pathname;
+  const requestId = resolveRequestId(request);
 
   // 1. Prioritize CORS preflight requests
   if (request.method === 'OPTIONS') {
     console.log(`[Middleware] CORS preflight request: ${pathname}`);
-    return handleCorsPreflightRequest(request);
+    const preflightResponse = handleCorsPreflightRequest(request);
+    preflightResponse.headers.set(REQUEST_ID_HEADER, requestId);
+    return preflightResponse;
   }
 
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set(REQUEST_ID_HEADER, requestId);
   const response = NextResponse.next({
     request: {
-      headers: request.headers,
+      headers: requestHeaders,
     },
   });
+  response.headers.set(REQUEST_ID_HEADER, requestId);
 
   // 2. Automatically add CORS headers to all API routes
   // This ensures that all APIs receive uniform CORS protection, without manual addition

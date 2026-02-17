@@ -1,3 +1,8 @@
+import {
+  AppRequestError,
+  extractAppErrorDetail,
+  extractErrorMessage,
+} from '@lib/errors/app-error';
 import { Result, failure, success } from '@lib/types/result';
 
 interface InternalDataApiSuccess<T> {
@@ -7,7 +12,9 @@ interface InternalDataApiSuccess<T> {
 
 interface InternalDataApiFailure {
   success: false;
-  error: string;
+  error: string | Record<string, unknown>;
+  request_id?: string;
+  app_error?: Record<string, unknown>;
 }
 
 type InternalDataApiResponse<T> =
@@ -32,8 +39,8 @@ function toErrorMessage<T>(
     return networkError.message;
   }
 
-  if (json && 'error' in json && json.error) {
-    return json.error;
+  if (json && !json.success) {
+    return extractErrorMessage(json, `Internal data action failed: ${action}`);
   }
 
   if (response) {
@@ -126,8 +133,14 @@ export async function callInternalDataAction<T>(
     }
 
     if (!response || !json || !response.ok || !json.success) {
+      const detail = extractAppErrorDetail(json);
+      const status = response?.status || 500;
       return failure(
-        new Error(toErrorMessage(action, response, json, networkError))
+        new AppRequestError(
+          toErrorMessage(action, response, json, networkError),
+          status,
+          detail
+        )
       );
     }
 

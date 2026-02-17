@@ -1,7 +1,14 @@
-import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { createCipheriv, createHash, randomBytes } from 'node:crypto';
 
 import type { ApiRuntimeConfig } from '../config';
+import {
+  REQUEST_ID_HEADER,
+  buildApiErrorDetail,
+  buildApiErrorEnvelope,
+  maybeReadLegacyError,
+} from '../lib/app-error';
+import { recordApiErrorEvent } from '../lib/error-events';
 import {
   queryRowsWithPgSystemContext,
   queryRowsWithPgUserContext,
@@ -317,6 +324,11 @@ const LOCAL_SSO_ACTIONS = new Set([
   'sso.updateSsoProviderOrder',
 ]);
 
+const LOCAL_ERROR_OBSERVABILITY_ACTIONS = new Set([
+  'errors.getSummary',
+  'errors.getRecent',
+]);
+
 const ADMIN_ACTIONS = new Set([
   'users.getUserList',
   'users.getUserStats',
@@ -361,6 +373,8 @@ const ADMIN_ACTIONS = new Set([
   'sso.deleteSsoProvider',
   'sso.toggleSsoProvider',
   'sso.updateSsoProviderOrder',
+  'errors.getSummary',
+  'errors.getRecent',
 ]);
 
 const AUTH_ACTIONS = new Set([
@@ -483,6 +497,98 @@ function toFailureResponse(error: unknown): ApiActionResponse {
     },
     handler: 'local',
   };
+}
+
+function enrichResponsePayload(
+  request: FastifyRequest,
+  payload: unknown,
+  statusCode: number,
+  actorUserId?: string
+): unknown {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    if (statusCode >= 400) {
+      const detail = buildApiErrorDetail({
+        status: statusCode,
+        source: 'internal-data',
+        requestId: request.id,
+        userMessage: 'Request failed',
+      });
+      void recordApiErrorEvent({
+        detail,
+        statusCode,
+        method: request.method,
+        route: request.url,
+        actorUserId,
+      }).catch(error => {
+        request.log.warn(
+          { err: error },
+          '[FastifyAPI][internal-data] failed to record error event'
+        );
+      });
+      return buildApiErrorEnvelope(detail, 'Request failed');
+    }
+    return payload;
+  }
+
+  const payloadObject = payload as Record<string, unknown>;
+  const success = payloadObject.success;
+  if (success === false) {
+    if (!payloadObject.request_id) {
+      payloadObject.request_id = request.id;
+    }
+
+    if (!payloadObject.app_error) {
+      const legacyMessage =
+        maybeReadLegacyError(payloadObject) || 'Request failed';
+      const detail = buildApiErrorDetail({
+        status: statusCode,
+        source: 'internal-data',
+        requestId: request.id,
+        userMessage: legacyMessage,
+      });
+      payloadObject.app_error = detail;
+      void recordApiErrorEvent({
+        detail,
+        statusCode,
+        method: request.method,
+        route: request.url,
+        actorUserId,
+      }).catch(error => {
+        request.log.warn(
+          { err: error },
+          '[FastifyAPI][internal-data] failed to record error event'
+        );
+      });
+    }
+    return payloadObject;
+  }
+
+  if (success === true && !payloadObject.request_id) {
+    payloadObject.request_id = request.id;
+  }
+
+  return payloadObject;
+}
+
+function sendActionResponse(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  response: ApiActionResponse,
+  actorUserId?: string
+) {
+  return reply
+    .status(response.statusCode)
+    .header('content-type', response.contentType)
+    .header(INTERNAL_DATA_HANDLER_HEADER, response.handler)
+    .header(REQUEST_ID_HEADER, request.id)
+    .send(
+      enrichResponsePayload(
+        request,
+        response.payload,
+        response.statusCode,
+        actorUserId
+      )
+    );
 }
 
 function readString(value: unknown): string {
@@ -4248,6 +4354,87 @@ async function handleSsoAction(
   return null;
 }
 
+async function handleErrorObservabilityAction(
+  action: string,
+  payload: Record<string, unknown> | undefined
+): Promise<ApiActionResponse | null> {
+  if (!LOCAL_ERROR_OBSERVABILITY_ACTIONS.has(action)) {
+    return null;
+  }
+
+  if (action === 'errors.getSummary') {
+    const hours = Math.min(parsePositiveInt(payload?.hours, 24), 720);
+    const rows = await queryRowsWithPgSystemContext<{
+      total_unique: string;
+      total_occurrences: string;
+      critical_count: string;
+      error_count: string;
+      warn_count: string;
+      latest_at: string | null;
+    }>(
+      `
+        SELECT
+          COUNT(*)::text AS total_unique,
+          COALESCE(SUM(occurrence_count), 0)::text AS total_occurrences,
+          COUNT(*) FILTER (WHERE severity = 'critical')::text AS critical_count,
+          COUNT(*) FILTER (WHERE severity = 'error')::text AS error_count,
+          COUNT(*) FILTER (WHERE severity = 'warn')::text AS warn_count,
+          MAX(last_seen_at)::text AS latest_at
+        FROM error_events
+        WHERE last_seen_at >= NOW() - ($1::text || ' hours')::interval
+      `,
+      [hours]
+    );
+    const summary = rows[0];
+    return toSuccessResponse({
+      totalUnique: Number(summary?.total_unique || 0),
+      totalOccurrences: Number(summary?.total_occurrences || 0),
+      criticalCount: Number(summary?.critical_count || 0),
+      errorCount: Number(summary?.error_count || 0),
+      warnCount: Number(summary?.warn_count || 0),
+      latestAt: summary?.latest_at || null,
+    });
+  }
+
+  if (action === 'errors.getRecent') {
+    const limit = Math.min(parsePositiveInt(payload?.limit, 50), 200);
+    const offset = parsePositiveInt(payload?.offset, 0);
+    const rows = await queryRowsWithPgSystemContext<Record<string, unknown>>(
+      `
+        SELECT
+          id,
+          fingerprint,
+          code,
+          source,
+          severity,
+          retryable,
+          user_message,
+          developer_message,
+          http_status,
+          method,
+          route,
+          request_id,
+          trace_id,
+          actor_user_id,
+          context_json,
+          first_seen_at,
+          last_seen_at,
+          occurrence_count,
+          created_at,
+          updated_at
+        FROM error_events
+        ORDER BY last_seen_at DESC
+        LIMIT $1
+        OFFSET $2
+      `,
+      [limit, offset]
+    );
+    return toSuccessResponse(rows);
+  }
+
+  return null;
+}
+
 async function handleLocalInternalDataAction(
   action: string,
   payload: Record<string, unknown> | undefined,
@@ -4316,6 +4503,14 @@ async function handleLocalInternalDataAction(
   const ssoResult = await handleSsoAction(action, payload, actorUserId);
   if (ssoResult) {
     return ssoResult;
+  }
+
+  const errorObservabilityResult = await handleErrorObservabilityAction(
+    action,
+    payload
+  );
+  if (errorObservabilityResult) {
+    return errorObservabilityResult;
   }
 
   return null;
@@ -4413,11 +4608,7 @@ export const internalDataRoutes: FastifyPluginAsync<
 
     if (!action) {
       const response = toErrorResponse('Missing action', 400);
-      return reply
-        .status(response.statusCode)
-        .header('content-type', response.contentType)
-        .header(INTERNAL_DATA_HANDLER_HEADER, response.handler)
-        .send(response.payload);
+      return sendActionResponse(request, reply, response);
     }
 
     try {
@@ -4428,11 +4619,12 @@ export const internalDataRoutes: FastifyPluginAsync<
         payload
       );
       if (permission.error) {
-        return reply
-          .status(permission.error.statusCode)
-          .header('content-type', permission.error.contentType)
-          .header(INTERNAL_DATA_HANDLER_HEADER, permission.error.handler)
-          .send(permission.error.payload);
+        return sendActionResponse(
+          request,
+          reply,
+          permission.error,
+          permission.actorUserId
+        );
       }
 
       const localHandled = await handleLocalInternalDataAction(
@@ -4442,11 +4634,12 @@ export const internalDataRoutes: FastifyPluginAsync<
       );
 
       if (localHandled) {
-        return reply
-          .status(localHandled.statusCode)
-          .header('content-type', localHandled.contentType)
-          .header(INTERNAL_DATA_HANDLER_HEADER, localHandled.handler)
-          .send(localHandled.payload);
+        return sendActionResponse(
+          request,
+          reply,
+          localHandled,
+          permission.actorUserId
+        );
       }
 
       if (!options.config.internalDataLegacyFallbackEnabled) {
@@ -4454,11 +4647,12 @@ export const internalDataRoutes: FastifyPluginAsync<
           `Unsupported action: ${action}`,
           400
         );
-        return reply
-          .status(unsupported.statusCode)
-          .header('content-type', unsupported.contentType)
-          .header(INTERNAL_DATA_HANDLER_HEADER, unsupported.handler)
-          .send(unsupported.payload);
+        return sendActionResponse(
+          request,
+          reply,
+          unsupported,
+          permission.actorUserId
+        );
       }
 
       const legacyHandled = await proxyLegacyInternalDataRequest(
@@ -4467,18 +4661,15 @@ export const internalDataRoutes: FastifyPluginAsync<
         options.config
       );
 
-      return reply
-        .status(legacyHandled.statusCode)
-        .header('content-type', legacyHandled.contentType)
-        .header(INTERNAL_DATA_HANDLER_HEADER, legacyHandled.handler)
-        .send(legacyHandled.payload);
+      return sendActionResponse(
+        request,
+        reply,
+        legacyHandled,
+        permission.actorUserId
+      );
     } catch (error) {
       const failed = toFailureResponse(error);
-      return reply
-        .status(failed.statusCode)
-        .header('content-type', failed.contentType)
-        .header(INTERNAL_DATA_HANDLER_HEADER, failed.handler)
-        .send(failed.payload);
+      return sendActionResponse(request, reply, failed);
     }
   });
 };

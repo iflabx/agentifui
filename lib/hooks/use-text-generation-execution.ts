@@ -1,3 +1,4 @@
+import { formatUiErrorMessage, toUiError } from '@lib/errors/ui-error';
 import { useProfile } from '@lib/hooks/use-profile';
 import { toUserFacingAgentError } from '@lib/services/agent-error/user-facing-error';
 import {
@@ -452,7 +453,12 @@ export function useTextGenerationExecution(instanceId: string) {
           locale:
             typeof navigator !== 'undefined' ? navigator.language : 'en-US',
         });
-        const friendlyErrorMessage = normalizedError.userMessage;
+        const uiError = toUiError(
+          error,
+          normalizedError.userMessage,
+          'dify-proxy'
+        );
+        const friendlyErrorMessage = formatUiErrorMessage(uiError);
 
         // Set error state
         getActions().setError(friendlyErrorMessage, true);
@@ -671,6 +677,10 @@ export function useTextGenerationExecution(instanceId: string) {
     }
   }, [formData, executeTextGeneration, getActions]);
 
+  const clearError = useCallback(() => {
+    getActions().clearError();
+  }, [getActions]);
+
   /**
    * Reset state
    */
@@ -758,6 +768,7 @@ export function useTextGenerationExecution(instanceId: string) {
     executeTextGeneration,
     stopTextGeneration,
     retryTextGeneration,
+    clearError,
     resetTextGeneration,
     loadTextGenerationHistory,
   };

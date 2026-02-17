@@ -4,6 +4,7 @@ import { cn } from '@lib/utils';
 import {
   ArrowRight,
   Bell,
+  Bug,
   Building2,
   Key,
   KeyRound,
@@ -113,6 +114,12 @@ export default function AdminPage() {
       description: tLayout('menuItems.permissions.description'),
       icon: ShieldCheck,
       href: '/admin/permissions',
+    },
+    {
+      title: 'Errors',
+      description: 'Unified error observability and diagnostics',
+      icon: Bug,
+      href: '/admin/errors',
     },
   ];
 

@@ -2,6 +2,12 @@ import cors from '@fastify/cors';
 import Fastify from 'fastify';
 
 import { type ApiRuntimeConfig, loadApiRuntimeConfig } from './config';
+import {
+  REQUEST_ID_HEADER,
+  buildApiErrorDetail,
+  buildApiErrorEnvelope,
+} from './lib/app-error';
+import { recordApiErrorEvent } from './lib/error-events';
 import { adminAuthFallbackPolicyRoutes } from './routes/admin-auth-fallback-policy';
 import { adminAuthFallbackPolicyUserRoutes } from './routes/admin-auth-fallback-policy-user';
 import { adminEncryptRoutes } from './routes/admin-encrypt';
@@ -66,10 +72,27 @@ export async function createApiServer(config: ApiRuntimeConfig) {
       return;
     }
     const statusCode = resolveHttpStatusCode(error);
-    reply.status(statusCode).send({
-      success: false,
-      error: 'Fastify API internal error',
+    const detail = buildApiErrorDetail({
+      status: statusCode,
+      source: 'fastify-api',
+      requestId: request.id,
+      userMessage: 'Fastify API internal error',
+      developerMessage: error instanceof Error ? error.message : String(error),
     });
+    const payload = buildApiErrorEnvelope(detail, 'Fastify API internal error');
+    void recordApiErrorEvent({
+      detail,
+      statusCode,
+      method: request.method,
+      route: request.url,
+    }).catch(logError => {
+      request.log.warn(
+        { err: logError },
+        '[FastifyAPI] failed to record global error event'
+      );
+    });
+    reply.header(REQUEST_ID_HEADER, request.id);
+    reply.status(statusCode).send(payload);
   });
 
   return app;

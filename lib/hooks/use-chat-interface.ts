@@ -16,6 +16,7 @@
  * - Error handling and retry
  */
 import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
+import { formatUiErrorMessage, toUiError } from '@lib/errors/ui-error';
 import { useCurrentApp } from '@lib/hooks/use-current-app';
 import { getConversationByExternalId } from '@lib/services/client/conversations-api';
 import {
@@ -309,8 +310,9 @@ export function useChatInterface(
         console.error('[handleSubmit] Failed to get app config:', error);
 
         // Error recovery: add error message to chat UI for user feedback
-        const errorMessage =
-          error instanceof Error ? error.message : 'Failed to get app config';
+        const errorMessage = formatUiErrorMessage(
+          toUiError(error, 'Failed to get app config', 'frontend')
+        );
         addMessage({
           text: `Sorry, failed to get app config: ${errorMessage}. Please check your network or contact admin.`,
           isUser: false,
@@ -1067,7 +1069,9 @@ export function useChatInterface(
       } catch (error) {
         console.error('[handleSubmit] Error occurred during streaming:', error);
         streamError = error as Error;
-        const errorMessage = streamError?.message || 'Unknown error'; // Ensure error message is not empty
+        const errorMessage = formatUiErrorMessage(
+          toUiError(streamError, 'Unknown error', 'dify-proxy')
+        ); // Ensure error message is not empty
 
         // Error handling:
         // 1. Update UI state, show error message

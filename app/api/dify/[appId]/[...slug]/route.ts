@@ -3,6 +3,17 @@ import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
 import { getDifyAppConfig } from '@lib/config/dify-config';
 import { type DifyAppConfig } from '@lib/config/dify-config';
 import {
+  REQUEST_ID_HEADER,
+  buildAppErrorDetail,
+  buildAppErrorEnvelope,
+  resolveRequestId,
+} from '@lib/errors/app-error';
+import { recordErrorEvent } from '@lib/server/errors/error-events';
+import {
+  runWithRequestErrorContext,
+  updateRequestErrorContext,
+} from '@lib/server/errors/request-context';
+import {
   type AgentErrorSource,
   toUserFacingAgentError,
 } from '@lib/services/agent-error/user-facing-error';
@@ -136,6 +147,10 @@ function withAgentErrorEnvelope(
     source: AgentErrorSource;
     status: number;
     locale?: string;
+    requestId: string;
+    route: string;
+    method: string;
+    actorUserId?: string;
   }
 ): unknown {
   const rawMessage = extractErrorMessage(payload);
@@ -150,18 +165,62 @@ function withAgentErrorEnvelope(
     message: rawMessage,
     locale: context.locale,
   });
+  const appError = buildAppErrorDetail({
+    status: context.status,
+    code: errorEnvelope.code,
+    source: 'dify-proxy',
+    requestId: context.requestId,
+    userMessage: errorEnvelope.userMessage,
+    developerMessage: rawMessage,
+    retryable: errorEnvelope.retryable,
+    context: {
+      agent_source: errorEnvelope.source,
+      agent_kind: errorEnvelope.kind,
+      suggestion: errorEnvelope.suggestion,
+    },
+  });
+  const appEnvelope = buildAppErrorEnvelope(appError, rawMessage);
+
+  void recordErrorEvent({
+    code: appError.code,
+    source: appError.source,
+    severity: appError.severity,
+    retryable: appError.retryable,
+    userMessage: appError.userMessage,
+    developerMessage: appError.developerMessage,
+    requestId: context.requestId,
+    actorUserId: context.actorUserId,
+    httpStatus: context.status,
+    method: context.method,
+    route: context.route,
+    context: appError.context,
+  }).catch(error => {
+    console.warn(
+      '[Dify API] failed to record error event:',
+      error instanceof Error ? error.message : String(error)
+    );
+  });
 
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     return {
-      error: rawMessage,
+      ...appEnvelope,
       agent_error: errorEnvelope,
     };
   }
 
   return {
     ...(payload as ErrorPayloadObject),
+    ...appEnvelope,
     agent_error: errorEnvelope,
   };
+}
+
+function withRequestIdHeader<T extends Response>(
+  response: T,
+  requestId: string
+): T {
+  response.headers.set(REQUEST_ID_HEADER, requestId);
+  return response;
 }
 
 function resolveRequestLocale(req: NextRequest): string | undefined {
@@ -193,8 +252,16 @@ function createMinimalHeaders(contentType?: string): Headers {
 async function proxyToDify(
   req: NextRequest, // original Next.js request object
   // modification point 1: receive context object containing params
-  context: { params: Promise<DifyApiParams> } // Unified use of Promise type
+  context: { params: Promise<DifyApiParams> }, // Unified use of Promise type
+  requestId: string
 ) {
+  // modification point 2: use await to get the value of params
+  const params = await context.params;
+  const appId = params.appId;
+  const slug = params.slug;
+  const routePath = `/api/dify/${appId}/${slug.join('/')}`;
+  const requestLocale = resolveRequestLocale(req);
+
   // Security: resolve user identity via the unified auth->internal UUID path.
   const resolvedIdentity = await resolveSessionIdentity(req.headers);
   if (!resolvedIdentity.success) {
@@ -202,20 +269,36 @@ async function proxyToDify(
       '[Dify API] Failed to resolve session identity:',
       resolvedIdentity.error
     );
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const payload = withAgentErrorEnvelope(
+      { error: 'Unauthorized' },
+      {
+        source: 'agent-generic',
+        status: 401,
+        locale: requestLocale,
+        requestId,
+        route: routePath,
+        method: req.method,
+      }
+    );
+    return NextResponse.json(payload, { status: 401 });
   }
 
   if (!resolvedIdentity.data) {
-    console.log(
-      `[Dify API] Unauthorized access attempt to appId: ${(await context.params).appId}`
+    console.log(`[Dify API] Unauthorized access attempt to appId: ${appId}`);
+    const payload = withAgentErrorEnvelope(
+      { error: 'Unauthorized' },
+      {
+        source: 'agent-generic',
+        status: 401,
+        locale: requestLocale,
+        requestId,
+        route: routePath,
+        method: req.method,
+      }
     );
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json(payload, { status: 401 });
   }
-
-  // modification point 2: use await to get the value of params
-  const params = await context.params;
-  const appId = params.appId;
-  const slug = params.slug;
+  updateRequestErrorContext({ actorUserId: resolvedIdentity.data.userId });
 
   // check if there is temporary configuration (for form synchronization)
   // if the request body contains _temp_config, use temporary configuration instead of database configuration
@@ -257,13 +340,21 @@ async function proxyToDify(
     console.error(
       `[App: ${appId}] [${req.method}] Invalid request: Slug path is missing.`
     );
-    const baseResponse = new Response(
-      JSON.stringify({ error: 'Invalid request: slug path is missing.' }),
+    const errorPayload = withAgentErrorEnvelope(
+      { error: 'Invalid request: slug path is missing.' },
       {
+        source: 'agent-generic',
         status: 400,
-        headers: createMinimalHeaders('application/json'), // use helper function
+        locale: requestLocale,
+        requestId,
+        route: routePath,
+        method: req.method,
       }
     );
+    const baseResponse = new Response(JSON.stringify(errorPayload), {
+      status: 400,
+      headers: createMinimalHeaders('application/json'), // use helper function
+    });
 
     return baseResponse;
   }
@@ -294,10 +385,19 @@ async function proxyToDify(
     if (!difyConfig) {
       console.error(`[App: ${appId}] [${req.method}] Configuration not found.`);
       // return 400 Bad Request, indicating that the provided appId is invalid or not configured
-      const baseResponse = NextResponse.json(
+      const payload = withAgentErrorEnvelope(
         { error: `Configuration for Dify app '${appId}' not found.` },
-        { status: 400 }
+        {
+          source: 'agent-generic',
+          status: 400,
+          locale: requestLocale,
+          requestId,
+          route: routePath,
+          method: req.method,
+          actorUserId: resolvedIdentity.data.userId,
+        }
       );
+      const baseResponse = NextResponse.json(payload, { status: 400 });
 
       return baseResponse;
     }
@@ -312,10 +412,19 @@ async function proxyToDify(
       `[App: ${appId}] [${req.method}] Invalid configuration loaded (missing key or URL).`
     );
     // return 500 Internal Server Error, indicating server-side configuration issues
-    const baseResponse = NextResponse.json(
+    const payload = withAgentErrorEnvelope(
       { error: `Server configuration error for app '${appId}'.` },
-      { status: 500 }
+      {
+        source: 'agent-generic',
+        status: 500,
+        locale: requestLocale,
+        requestId,
+        route: routePath,
+        method: req.method,
+        actorUserId: resolvedIdentity.data.userId,
+      }
     );
+    const baseResponse = NextResponse.json(payload, { status: 500 });
 
     return baseResponse;
   }
@@ -327,7 +436,6 @@ async function proxyToDify(
     // construct target Dify URL
     const slugPath = adjustApiPathByAppType(slug, difyConfig?.appType);
     const agentSource = inferAgentSource(slugPath);
-    const requestLocale = resolveRequestLocale(req);
     const targetUrl = `${difyApiUrl}/${slugPath}${req.nextUrl.search}`;
     console.log(
       `[App: ${appId}] [${req.method}] Proxying request to target URL: ${targetUrl}`
@@ -386,13 +494,22 @@ async function proxyToDify(
           `[App: ${appId}] [${req.method}] Error parsing FormData:`,
           formError
         );
-        return NextResponse.json(
+        const payload = withAgentErrorEnvelope(
           {
             error: 'Failed to parse multipart form data',
             details: (formError as Error).message,
           },
-          { status: 400 }
+          {
+            source: agentSource,
+            status: 400,
+            locale: requestLocale,
+            requestId,
+            route: routePath,
+            method: req.method,
+            actorUserId: resolvedIdentity.data.userId,
+          }
         );
+        return NextResponse.json(payload, { status: 400 });
       }
     }
 
@@ -578,6 +695,10 @@ async function proxyToDify(
             source: agentSource,
             status: response.status,
             locale: requestLocale,
+            requestId,
+            route: routePath,
+            method: req.method,
+            actorUserId: resolvedIdentity.data.userId,
           });
           console.log(
             `[App: ${appId}] [${req.method}] Returning native Response with minimal headers for success JSON.`
@@ -626,6 +747,10 @@ async function proxyToDify(
             source: agentSource,
             status: response.status,
             locale: requestLocale,
+            requestId,
+            route: routePath,
+            method: req.method,
+            actorUserId: resolvedIdentity.data.userId,
           });
           console.log(
             `[App: ${appId}] [${req.method}] Returning native Response with minimal headers for error JSON.`
@@ -647,6 +772,10 @@ async function proxyToDify(
             source: agentSource,
             status: response.status,
             locale: requestLocale,
+            requestId,
+            route: routePath,
+            method: req.method,
+            actorUserId: resolvedIdentity.data.userId,
           });
           console.log(
             `[App: ${appId}] [${req.method}] Error response is not JSON, returning normalized JSON error envelope.`
@@ -680,6 +809,10 @@ async function proxyToDify(
             source: agentSource,
             status: response.status,
             locale: requestLocale,
+            requestId,
+            route: routePath,
+            method: req.method,
+            actorUserId: resolvedIdentity.data.userId,
           }
         );
         const finalErrorHeaders = createMinimalHeaders('application/json');
@@ -706,6 +839,10 @@ async function proxyToDify(
         source: 'agent-generic',
         status: 502,
         locale: resolveRequestLocale(req),
+        requestId,
+        route: routePath,
+        method: req.method,
+        actorUserId: resolvedIdentity.data.userId,
       }
     );
     const baseResponse = NextResponse.json(
@@ -724,35 +861,85 @@ export async function GET(
   req: NextRequest,
   context: { params: Promise<DifyApiParams> }
 ) {
-  return proxyToDify(req, context);
+  const requestId = resolveRequestId(req);
+  return runWithRequestErrorContext(
+    {
+      requestId,
+      source: 'dify-proxy',
+      route: req.nextUrl.pathname,
+      method: req.method,
+    },
+    async () =>
+      withRequestIdHeader(await proxyToDify(req, context, requestId), requestId)
+  );
 }
 
 export async function POST(
   req: NextRequest,
   context: { params: Promise<DifyApiParams> }
 ) {
-  return proxyToDify(req, context);
+  const requestId = resolveRequestId(req);
+  return runWithRequestErrorContext(
+    {
+      requestId,
+      source: 'dify-proxy',
+      route: req.nextUrl.pathname,
+      method: req.method,
+    },
+    async () =>
+      withRequestIdHeader(await proxyToDify(req, context, requestId), requestId)
+  );
 }
 
 export async function PUT(
   req: NextRequest,
   context: { params: Promise<DifyApiParams> }
 ) {
-  return proxyToDify(req, context);
+  const requestId = resolveRequestId(req);
+  return runWithRequestErrorContext(
+    {
+      requestId,
+      source: 'dify-proxy',
+      route: req.nextUrl.pathname,
+      method: req.method,
+    },
+    async () =>
+      withRequestIdHeader(await proxyToDify(req, context, requestId), requestId)
+  );
 }
 
 export async function DELETE(
   req: NextRequest,
   context: { params: Promise<DifyApiParams> }
 ) {
-  return proxyToDify(req, context);
+  const requestId = resolveRequestId(req);
+  return runWithRequestErrorContext(
+    {
+      requestId,
+      source: 'dify-proxy',
+      route: req.nextUrl.pathname,
+      method: req.method,
+    },
+    async () =>
+      withRequestIdHeader(await proxyToDify(req, context, requestId), requestId)
+  );
 }
 
 export async function PATCH(
   req: NextRequest,
   context: { params: Promise<DifyApiParams> }
 ) {
-  return proxyToDify(req, context);
+  const requestId = resolveRequestId(req);
+  return runWithRequestErrorContext(
+    {
+      requestId,
+      source: 'dify-proxy',
+      route: req.nextUrl.pathname,
+      method: req.method,
+    },
+    async () =>
+      withRequestIdHeader(await proxyToDify(req, context, requestId), requestId)
+  );
 }
 
 /**
@@ -761,10 +948,12 @@ export async function PATCH(
  */
 export async function OPTIONS() {
   console.log('[OPTIONS Request] Responding to preflight request.');
+  const requestId = resolveRequestId();
   const baseResponse = new Response(null, {
     status: 204, // no content for preflight
     headers: createMinimalHeaders(),
   });
+  baseResponse.headers.set(REQUEST_ID_HEADER, requestId);
 
   return baseResponse;
 }

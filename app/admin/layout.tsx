@@ -5,6 +5,7 @@ import { LanguageSwitcher } from '@components/ui/language-switcher';
 import { cn } from '@lib/utils';
 import {
   Bell,
+  Bug,
   Building2,
   ChevronRight,
   Key,
@@ -84,6 +85,12 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       icon: ShieldCheck,
       href: '/admin/permissions',
       description: t('menuItems.permissions.description'),
+    },
+    {
+      text: 'Errors',
+      icon: Bug,
+      href: '/admin/errors',
+      description: 'Error observability and diagnostics',
     },
   ];
 
