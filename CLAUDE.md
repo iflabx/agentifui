@@ -44,7 +44,7 @@ AgentifUI is a Next.js 15 App Router application with the following key architec
 ### Tech Stack
 
 - **Framework**: Next.js 15 (App Router), React 19, TypeScript
-- **Database**: Supabase (Auth + Postgres + Storage)
+- **Database**: PostgreSQL 18 + Drizzle ORM + Redis + S3-compatible storage (MinIO)
 - **State Management**: Zustand
 - **UI**: Tailwind CSS 4, Radix UI components
 - **API Integration**: Dify API for LLM services
@@ -76,17 +76,17 @@ lib/                   # Core business logic
 ├── db/                # Database access layer
 └── utils/             # Utility functions
 
-supabase/              # Database migrations and configuration
+database/              # Database schema/migrations and ops scripts
 └── migrations/        # SQL migration files
 ```
 
 ### Core Design Principles
 
-1. **Security-First**: Uses Supabase RLS (Row Level Security) and encrypted API key storage
+1. **Security-First**: Uses PostgreSQL RLS (Row Level Security) and encrypted API key storage
 2. **Layered Architecture**: Clear separation between UI, services, and data layers
 3. **Type Safety**: Full TypeScript coverage with strict typing
 4. **Internationalization**: Multi-language support with next-intl (en-US, zh-CN, es-ES, zh-TW, ja-JP, de-DE, fr-FR, ru-RU, it-IT, pt-PT)
-5. **Real-time Updates**: Supabase realtime subscriptions for live data
+5. **Real-time Updates**: Internal realtime gateway (DB outbox + Redis pub/sub)
 
 ### Dify Integration Architecture
 
@@ -100,13 +100,13 @@ The Dify API integration follows a 3-layer pattern:
 
 - **Zustand stores** in `lib/stores/` for different domains (chat, sidebar, theme, etc.)
 - **Custom hooks** in `lib/hooks/` for complex state logic
-- **Real-time sync** via Supabase subscriptions
+- **Real-time sync** via internal realtime API/events
 
 ### Database Layer
 
 - **Access layer**: `lib/db/*.ts` - Direct database operations
 - **Service layer**: `lib/services/db/*.ts` - Higher-level database services
-- **Migrations**: `supabase/migrations/` - SQL schema and RLS policies
+- **Migrations**: `database/migrations/` - SQL schema and RLS policies
 
 ## Development Guidelines
 
@@ -176,8 +176,8 @@ Example JSDoc:
 
 ## Important Notes
 
-- **Database**: Uses Supabase with comprehensive RLS policies
-- **Authentication**: Supabase Auth with SSO support
+- **Database**: Uses PostgreSQL with comprehensive RLS policies
+- **Authentication**: better-auth with SSO + local password fallback
 - **Styling**: Tailwind CSS 4 with custom theme configuration
 - **File Structure**: Follows Next.js 15 App Router conventions
 - **Error Handling**: Comprehensive error boundaries and user feedback systems
