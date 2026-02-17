@@ -674,30 +674,3 @@ export async function updateConversationMetadata(
   );
   return success(result.success);
 }
-
-// Compatibility functions to maintain compatibility with existing code
-// These functions will gradually migrate to use the Result type
-/**
- * Get all conversations for a user (legacy version)
- * @deprecated Please use the new version and handle the Result type
- */
-export async function getUserConversationsLegacy(
-  userId: string,
-  limit: number = 20,
-  offset: number = 0,
-  appId?: string
-): Promise<{ conversations: Conversation[]; total: number }> {
-  const result = await getUserConversations(userId, limit, offset, appId);
-  return result.success ? result.data : { conversations: [], total: 0 };
-}
-
-/**
- * Get conversation details (legacy version)
- * @deprecated Please use the new version and handle the Result type
- */
-export async function getConversationByIdLegacy(
-  conversationId: string
-): Promise<Conversation | null> {
-  const result = await getConversationById(conversationId);
-  return result.success ? result.data : null;
-}

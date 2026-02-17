@@ -31,7 +31,7 @@ export async function getUserExecutions(
   executionType?: ExecutionType,
   status?: ExecutionStatus
 ): Promise<Result<{ executions: AppExecution[]; total: number }>> {
-  const filters: Record<string, any> = {
+  const filters: Record<string, unknown> = {
     user_id: userId,
     ...(executionType && { execution_type: executionType }),
     ...(status && { status: status }),
@@ -172,13 +172,13 @@ export async function updateCompleteExecutionData(
     status: ExecutionStatus;
     external_execution_id?: string | null;
     task_id?: string | null;
-    outputs?: Record<string, any> | null;
+    outputs?: Record<string, unknown> | null;
     total_steps?: number;
     total_tokens?: number;
     elapsed_time?: number | null;
     error_message?: string | null;
     completed_at?: string | null;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
   }
 ): Promise<Result<AppExecution>> {
   console.log('[DB] Start updating complete execution data, ID:', id);
@@ -498,48 +498,5 @@ export async function getExecutionStats(
     return success(stats);
   } catch (error) {
     return failure(error instanceof Error ? error : new Error(String(error)));
-  }
-}
-
-// Compatibility functions to maintain compatibility with existing code
-// These functions will gradually migrate to using the Result type
-/**
- * Get a list of user execution records (legacy version)
- */
-export async function getUserExecutionsLegacy(
-  userId: string,
-  limit: number = 20,
-  offset: number = 0,
-  executionType?: ExecutionType,
-  status?: ExecutionStatus
-): Promise<{ executions: AppExecution[]; total: number }> {
-  const result = await getUserExecutions(
-    userId,
-    limit,
-    offset,
-    executionType,
-    status
-  );
-  if (result.success) {
-    return result.data;
-  } else {
-    console.error('Failed to get user execution records:', result.error);
-    return { executions: [], total: 0 };
-  }
-}
-
-/**
- * Get execution record details by ID (legacy version)
- */
-export async function getExecutionByIdLegacy(
-  executionId: string,
-  userId: string
-): Promise<AppExecution | null> {
-  const result = await getExecutionById(executionId, userId);
-  if (result.success) {
-    return result.data;
-  } else {
-    console.error('Failed to get execution record details:', result.error);
-    return null;
   }
 }
