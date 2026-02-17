@@ -8,6 +8,7 @@ import {
 } from '@components/chat/markdown-block';
 import { TooltipWrapper } from '@components/ui/tooltip-wrapper';
 import { UnifiedStatusPanel } from '@components/workflow/workflow-tracker/unified-status-panel';
+import type { AppExecution } from '@lib/types/database';
 import { cn } from '@lib/utils';
 import 'katex/dist/katex.min.css';
 import { Check, Copy, Download, FileText, Loader2 } from 'lucide-react';
@@ -25,7 +26,7 @@ interface TextGenerationTrackerProps {
   isExecuting: boolean;
   isStreaming: boolean;
   generatedText: string;
-  currentExecution: any;
+  currentExecution: AppExecution | null;
   onStop?: () => void;
   onRetry?: () => void;
   onReset?: () => void;
@@ -64,81 +65,49 @@ export function TextGenerationTracker({
 
   // --- Reuse the Markdown component configuration of the assistant message ---
   const markdownComponents: Components = {
-    code({ node, className, children, ...props }: any) {
+    code({ className, children }) {
       const match = /language-(\w+)/.exec(className || '');
       const language = match ? match[1] : '';
 
       if (language) {
         return (
-          <CodeBlock language={language} className={className} {...props}>
+          <CodeBlock language={language} className={className}>
             {String(children).replace(/\n$/, '')}
           </CodeBlock>
         );
       }
 
-      return <InlineCode {...props}>{children}</InlineCode>;
+      return <InlineCode className={className}>{children}</InlineCode>;
     },
-    table({ children, ...props }: any) {
+    table({ children }) {
       return <MarkdownTableContainer>{children}</MarkdownTableContainer>;
     },
-    blockquote({ children, ...props }: any) {
+    blockquote({ children }) {
       return <MarkdownBlockquote>{children}</MarkdownBlockquote>;
     },
-    p({ children, ...props }: any) {
-      return (
-        <p className="font-serif" {...props}>
-          {children}
-        </p>
-      );
+    p({ children }) {
+      return <p className="font-serif">{children}</p>;
     },
-    h1({ children, ...props }: any) {
-      return (
-        <h1 className="font-serif" {...props}>
-          {children}
-        </h1>
-      );
+    h1({ children }) {
+      return <h1 className="font-serif">{children}</h1>;
     },
-    h2({ children, ...props }: any) {
-      return (
-        <h2 className="font-serif" {...props}>
-          {children}
-        </h2>
-      );
+    h2({ children }) {
+      return <h2 className="font-serif">{children}</h2>;
     },
-    h3({ children, ...props }: any) {
-      return (
-        <h3 className="font-serif" {...props}>
-          {children}
-        </h3>
-      );
+    h3({ children }) {
+      return <h3 className="font-serif">{children}</h3>;
     },
-    h4({ children, ...props }: any) {
-      return (
-        <h4 className="font-serif" {...props}>
-          {children}
-        </h4>
-      );
+    h4({ children }) {
+      return <h4 className="font-serif">{children}</h4>;
     },
-    ul({ children, ...props }: any) {
-      return (
-        <ul className="font-serif" {...props}>
-          {children}
-        </ul>
-      );
+    ul({ children }) {
+      return <ul className="font-serif">{children}</ul>;
     },
-    ol({ children, ...props }: any) {
-      return (
-        <ol className="font-serif" {...props}>
-          {children}
-        </ol>
-      );
+    ol({ children }) {
+      return <ol className="font-serif">{children}</ol>;
     },
-    li({ children, ...props }: any) {
-      return (
-        <li className="font-serif" {...props}>
-          {children}
-        </li>
-      );
+    li({ children }) {
+      return <li className="font-serif">{children}</li>;
     },
   };
 

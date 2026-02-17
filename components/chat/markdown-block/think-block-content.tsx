@@ -103,9 +103,46 @@ export const ThinkBlockContent: React.FC<ThinkBlockContentProps> = ({
 
   const processedContent = preprocessContent(markdownContent);
 
+  const isImageTag = (value: unknown): value is { tagName: string } => {
+    if (!value || typeof value !== 'object') {
+      return false;
+    }
+
+    const record = value as Record<string, unknown>;
+    return record.tagName === 'img';
+  };
+
+  const getNodeAlt = (value: unknown): string | undefined => {
+    if (!value || typeof value !== 'object') {
+      return undefined;
+    }
+
+    const record = value as Record<string, unknown>;
+    const properties = record.properties;
+    if (!properties || typeof properties !== 'object') {
+      return undefined;
+    }
+
+    const alt = (properties as Record<string, unknown>).alt;
+    return typeof alt === 'string' ? alt : undefined;
+  };
+
+  const hasAnchorParent = (value: unknown): boolean => {
+    if (!value || typeof value !== 'object') {
+      return false;
+    }
+
+    const parent = (value as { parent?: unknown }).parent;
+    if (!parent || typeof parent !== 'object') {
+      return false;
+    }
+
+    return (parent as { tagName?: unknown }).tagName === 'a';
+  };
+
   // --- Markdown renderer component configuration ---
   const markdownComponents: Components = {
-    code({ className, children, ...props }: any) {
+    code({ className, children, ...props }) {
       // If not a code block with language (inline code)
       return !className?.includes('language-') ? (
         <code
@@ -139,7 +176,7 @@ export const ThinkBlockContent: React.FC<ThinkBlockContentProps> = ({
     },
 
     // Table rendering
-    table({ className, children, ...props }: any) {
+    table({ children, ...props }) {
       return (
         <div
           className="my-5 w-full overflow-x-auto rounded-md border"
@@ -162,7 +199,7 @@ export const ThinkBlockContent: React.FC<ThinkBlockContentProps> = ({
     },
 
     // Table header cell style
-    th({ className, children, ...props }: any) {
+    th({ children, ...props }) {
       return (
         <th
           className="px-5 py-3 text-left text-base font-medium"
@@ -178,7 +215,7 @@ export const ThinkBlockContent: React.FC<ThinkBlockContentProps> = ({
     },
 
     // Table data cell style
-    td({ className, children, ...props }: any) {
+    td({ children, ...props }) {
       return (
         <td
           className="border-t px-5 py-3 text-base"
@@ -194,7 +231,7 @@ export const ThinkBlockContent: React.FC<ThinkBlockContentProps> = ({
     },
 
     // Blockquote style
-    blockquote({ className, children, ...props }: any) {
+    blockquote({ children, ...props }) {
       return (
         <blockquote
           className="my-5 border-l-4 py-3 pl-5"
@@ -211,7 +248,7 @@ export const ThinkBlockContent: React.FC<ThinkBlockContentProps> = ({
     },
 
     // Paragraph style - remove all margin so it behaves like a normal line break
-    p({ className, children, ...props }: any) {
+    p({ children, ...props }) {
       return (
         <p
           className="my-0 text-base leading-relaxed" // Remove all vertical margin
@@ -226,7 +263,7 @@ export const ThinkBlockContent: React.FC<ThinkBlockContentProps> = ({
     },
 
     // Heading styles
-    h1({ className, children, ...props }: any) {
+    h1({ children, ...props }) {
       return (
         <h1
           className="my-5 text-2xl font-bold"
@@ -240,7 +277,7 @@ export const ThinkBlockContent: React.FC<ThinkBlockContentProps> = ({
       );
     },
 
-    h2({ className, children, ...props }: any) {
+    h2({ children, ...props }) {
       return (
         <h2
           className="my-4 text-xl font-bold"
@@ -254,7 +291,7 @@ export const ThinkBlockContent: React.FC<ThinkBlockContentProps> = ({
       );
     },
 
-    h3({ className, children, ...props }: any) {
+    h3({ children, ...props }) {
       return (
         <h3
           className="my-3 text-lg font-semibold"
@@ -269,7 +306,7 @@ export const ThinkBlockContent: React.FC<ThinkBlockContentProps> = ({
     },
 
     // List styles
-    ul({ className, children, ...props }: any) {
+    ul({ children, ...props }) {
       return (
         <ul
           className="my-4 list-disc space-y-2 pl-6 text-base"
@@ -283,7 +320,7 @@ export const ThinkBlockContent: React.FC<ThinkBlockContentProps> = ({
       );
     },
 
-    ol({ className, children, ...props }: any) {
+    ol({ children, ...props }) {
       return (
         <ol
           className="my-4 list-decimal space-y-2 pl-6 text-base"
@@ -298,19 +335,15 @@ export const ThinkBlockContent: React.FC<ThinkBlockContentProps> = ({
     },
 
     // Link styles
-    a({ className, children, node, ...props }: any) {
+    a({ children, node, ...props }) {
       // Check if the link contains an image: if so, render as an image link style
       // Avoid nested <a> tags which cause HTML errors
-      const hasImageChild = node?.children?.some(
-        (child: any) => child.tagName === 'img'
-      );
+      const hasImageChild = node?.children?.some(child => isImageTag(child));
 
       if (hasImageChild) {
         // If the link contains an image, use a special image link style
-        const imageChild = node.children.find(
-          (child: any) => child.tagName === 'img'
-        );
-        const alt = imageChild?.properties?.alt || t('imageLink');
+        const imageChild = node?.children?.find(child => isImageTag(child));
+        const alt = getNodeAlt(imageChild) || t('imageLink');
 
         return (
           <a
@@ -361,12 +394,12 @@ export const ThinkBlockContent: React.FC<ThinkBlockContentProps> = ({
 
     // Image handling: render images as links to avoid loading flicker
     // If the image is inside a link, let the parent a component handle it, return null here to avoid duplicate rendering
-    img({ src, alt, node, ...props }: any) {
+    img({ src, alt, node }) {
       // Ensure src is a string
       const imageUrl = typeof src === 'string' ? src : '';
 
       // Check if inside a link (handled by parent a component)
-      const isInsideLink = node?.parent?.tagName === 'a';
+      const isInsideLink = hasAnchorParent(node);
 
       if (isInsideLink) {
         // If inside a link, return null, handled by parent a component
@@ -387,7 +420,6 @@ export const ThinkBlockContent: React.FC<ThinkBlockContentProps> = ({
           target="_blank"
           rel="noopener noreferrer"
           title={alt || t('viewImage')}
-          {...props}
         >
           <svg
             className="h-4 w-4"
@@ -457,8 +489,9 @@ export const ThinkBlockContent: React.FC<ThinkBlockContentProps> = ({
           remarkPlugins={[remarkGfm, remarkMath]}
           rehypePlugins={[rehypeKatex, rehypeRaw]}
           components={markdownComponents}
-          children={processedContent}
-        />
+        >
+          {processedContent}
+        </ReactMarkdown>
       </div>
     </motion.div>
   );

@@ -13,12 +13,18 @@ import React, { useCallback, useEffect, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 
+type ChatflowFormData = Record<string, unknown>;
+type UploadPayloadFile = {
+  file?: unknown;
+  upload_file_id?: unknown;
+} & Record<string, unknown>;
+
 interface ChatflowInputAreaProps {
   instanceId: string;
   onSubmit: (
     query: string,
-    inputs: Record<string, any>,
-    files?: any[]
+    inputs: ChatflowFormData,
+    files?: UploadPayloadFile[]
   ) => Promise<void>;
   isProcessing?: boolean;
   isWaiting?: boolean;
@@ -50,11 +56,9 @@ export function ChatflowInputArea({
 
   // --- State management ---
   const [query, setQuery] = useState('');
-  const [formData, setFormData] = useState<Record<string, any>>({});
+  const [formData, setFormData] = useState<ChatflowFormData>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [initialFormData, setInitialFormData] = useState<Record<string, any>>(
-    {}
-  );
+  const [initialFormData, setInitialFormData] = useState<ChatflowFormData>({});
   const [isLoading, setIsLoading] = useState(true);
   const [userInputForm, setUserInputForm] = useState<DifyUserInputFormItem[]>(
     []
@@ -116,7 +120,7 @@ export function ChatflowInputArea({
           onFormConfigChange?.(true);
 
           // Initialize form default values
-          const initialData: Record<string, any> = {};
+          const initialData: ChatflowFormData = {};
           formItems.forEach((formItem: DifyUserInputFormItem) => {
             const fieldType = Object.keys(formItem)[0];
             const fieldConfig = formItem[fieldType as keyof typeof formItem];
@@ -125,10 +129,11 @@ export function ChatflowInputArea({
               if (fieldType === 'file' || fieldType === 'file-list') {
                 initialData[fieldConfig.variable] = fieldConfig.default || [];
               } else if (fieldType === 'number') {
-                const numberConfig = fieldConfig as any;
+                const numberDefault = fieldConfig.default;
                 initialData[fieldConfig.variable] =
-                  numberConfig.default !== undefined
-                    ? numberConfig.default
+                  typeof numberDefault === 'number' ||
+                  typeof numberDefault === 'string'
+                    ? numberDefault
                     : '';
               } else {
                 initialData[fieldConfig.variable] = fieldConfig.default || '';
@@ -158,7 +163,7 @@ export function ChatflowInputArea({
 
   // --- Form field update ---
   const handleFieldChange = useCallback(
-    (variable: string, value: any) => {
+    (variable: string, value: unknown) => {
       setFormData(prev => ({
         ...prev,
         [variable]: value,
@@ -536,7 +541,13 @@ export function ChatflowInputArea({
                                 | 'select'
                             }
                             config={fieldConfig}
-                            value={formData[fieldConfig.variable]}
+                            value={
+                              formData[fieldConfig.variable] as
+                                | string
+                                | number
+                                | string[]
+                                | File[]
+                            }
                             onChange={value =>
                               handleFieldChange(fieldConfig.variable, value)
                             }
@@ -653,26 +664,29 @@ export function ChatflowInputArea({
 /**
  * Extract files from form data
  */
-function extractFilesFromFormData(formData: Record<string, any>): any[] {
-  const files: any[] = [];
+function isUploadPayloadFile(value: unknown): value is UploadPayloadFile {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  return 'file' in record || 'upload_file_id' in record;
+}
+
+function extractFilesFromFormData(
+  formData: ChatflowFormData
+): UploadPayloadFile[] {
+  const files: UploadPayloadFile[] = [];
 
   Object.values(formData).forEach(value => {
     if (Array.isArray(value)) {
       // Check if it is an array of files
       value.forEach(item => {
-        if (
-          item &&
-          typeof item === 'object' &&
-          (item.file || item.upload_file_id)
-        ) {
+        if (isUploadPayloadFile(item)) {
           files.push(item);
         }
       });
-    } else if (
-      value &&
-      typeof value === 'object' &&
-      (value.file || value.upload_file_id)
-    ) {
+    } else if (isUploadPayloadFile(value)) {
       files.push(value);
     }
   });

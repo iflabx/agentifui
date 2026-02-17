@@ -1,5 +1,6 @@
 'use client';
 
+import type { AppExecution } from '@lib/types/database';
 import { cn } from '@lib/utils';
 import {
   CheckCircle,
@@ -21,7 +22,7 @@ interface UnifiedStatusPanelProps {
   progress: number;
   error: string | null;
   canRetry: boolean;
-  currentExecution: any;
+  currentExecution: AppExecution | null;
   onStop: () => void;
   onRetry: () => void;
   onReset: () => void;
