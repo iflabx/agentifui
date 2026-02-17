@@ -32,4 +32,5 @@ export S3_SECRET_ACCESS_KEY="${S3_SECRET_ACCESS_KEY:-minioadmin}"
 export S3_BUCKET="${S3_BUCKET:-agentifui}"
 export S3_ENABLE_PATH_STYLE="${S3_ENABLE_PATH_STYLE:-1}"
 
+pnpm gate:quality:verify
 pnpm m7:gate:report

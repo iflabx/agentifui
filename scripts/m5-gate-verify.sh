@@ -7,6 +7,7 @@ DEFAULT_MIGRATOR_DATABASE_URL="postgresql://agentif:agentif@172.20.0.1:5432/agen
 export DATABASE_URL="${DATABASE_URL:-${M5_GATE_RUNTIME_DATABASE_URL:-$DEFAULT_RUNTIME_DATABASE_URL}}"
 export MIGRATOR_DATABASE_URL="${MIGRATOR_DATABASE_URL:-${M5_GATE_MIGRATOR_DATABASE_URL:-$DEFAULT_MIGRATOR_DATABASE_URL}}"
 
+pnpm gate:quality:verify
 pnpm m4:runtime-role:setup
 pnpm m4:gate:verify
 pnpm m5:storage:verify
