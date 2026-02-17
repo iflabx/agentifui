@@ -275,6 +275,11 @@ async function main() {
   let executionId = null;
   let serviceInstanceId = null;
   let providerId = null;
+  const createdGroupIds = [];
+  const createdProviderIds = [];
+  const createdServiceInstanceIds = [];
+  const createdApiKeyIds = [];
+  const createdSsoProviderIds = [];
   let userAId = null;
 
   try {
@@ -320,7 +325,7 @@ async function main() {
       await dbClient.query(
         `
           INSERT INTO profiles (id, email, auth_source, role, status, created_at, updated_at)
-          VALUES ($1::uuid, $2, 'native', 'user', 'active', NOW(), NOW())
+          VALUES ($1::uuid, $2, 'native', 'admin', 'active', NOW(), NOW())
           ON CONFLICT (id) DO NOTHING
         `,
         [userAId, userAEmail]
@@ -332,6 +337,16 @@ async function main() {
           ON CONFLICT (id) DO NOTHING
         `,
         [userBId, userBEmail]
+      );
+      await dbClient.query(
+        `
+          UPDATE profiles
+          SET role = 'admin'::user_role,
+              status = 'active'::account_status,
+              updated_at = NOW()
+          WHERE id = $1::uuid
+        `,
+        [userAId]
       );
 
       const providerInsert = await dbClient.query(
@@ -824,6 +839,342 @@ async function main() {
         throw new Error('soft-deleted execution should not appear in list');
       }
 
+      const userStats = await callInternalAction(jarA, 'users.getUserStats', {});
+      assertStatus(userStats.response, 200, 'users.getUserStats');
+      assertInternalDataHandler(
+        userStats.response,
+        'local',
+        'users.getUserStats',
+        useFastifyProxy
+      );
+      if (!userStats.body?.success || !userStats.body?.data?.totalUsers) {
+        throw new Error('users.getUserStats should return populated stats');
+      }
+
+      const createGroup = await callInternalAction(jarA, 'groups.createGroup', {
+        data: {
+          name: `M3 Group ${suffix}`,
+          description: 'm3 admin group',
+        },
+      });
+      assertStatus(createGroup.response, 200, 'groups.createGroup');
+      assertInternalDataHandler(
+        createGroup.response,
+        'local',
+        'groups.createGroup',
+        useFastifyProxy
+      );
+      const groupId = createGroup.body?.data?.id;
+      if (!createGroup.body?.success || !groupId) {
+        throw new Error('groups.createGroup should return group id');
+      }
+      createdGroupIds.push(groupId);
+
+      const addGroupMember = await callInternalAction(
+        jarA,
+        'groups.addGroupMember',
+        {
+          groupId,
+          userId: userBId,
+        }
+      );
+      assertStatus(addGroupMember.response, 200, 'groups.addGroupMember');
+      assertInternalDataHandler(
+        addGroupMember.response,
+        'local',
+        'groups.addGroupMember',
+        useFastifyProxy
+      );
+      if (!addGroupMember.body?.success || !addGroupMember.body?.data?.id) {
+        throw new Error('groups.addGroupMember should return membership row');
+      }
+
+      const createProviderByAdmin = await callInternalAction(
+        jarA,
+        'providers.createProvider',
+        {
+          provider: {
+            name: `M3 Admin Provider ${suffix}`,
+            type: 'dify',
+            base_url: 'https://example.net',
+            auth_type: 'bearer',
+            is_active: true,
+            is_default: false,
+          },
+        }
+      );
+      assertStatus(createProviderByAdmin.response, 200, 'providers.createProvider');
+      assertInternalDataHandler(
+        createProviderByAdmin.response,
+        'local',
+        'providers.createProvider',
+        useFastifyProxy
+      );
+      const adminProviderId = createProviderByAdmin.body?.data?.id;
+      if (!createProviderByAdmin.body?.success || !adminProviderId) {
+        throw new Error('providers.createProvider should return provider id');
+      }
+      createdProviderIds.push(adminProviderId);
+
+      const createServiceInstanceByAdmin = await callInternalAction(
+        jarA,
+        'serviceInstances.create',
+        {
+          serviceInstance: {
+            provider_id: adminProviderId,
+            instance_id: `m3-admin-instance-${suffix}`,
+            api_path: '/v1',
+            display_name: `M3 Admin Instance ${suffix}`,
+            description: 'm3 admin instance',
+            is_default: true,
+            visibility: 'group_only',
+            config: {},
+          },
+        }
+      );
+      if (createServiceInstanceByAdmin.response.status !== 200) {
+        throw new Error(
+          `serviceInstances.create returned ${createServiceInstanceByAdmin.response.status}: ${JSON.stringify(createServiceInstanceByAdmin.body)}`
+        );
+      }
+      assertInternalDataHandler(
+        createServiceInstanceByAdmin.response,
+        'local',
+        'serviceInstances.create',
+        useFastifyProxy
+      );
+      const adminServiceInstanceId = createServiceInstanceByAdmin.body?.data?.id;
+      if (!createServiceInstanceByAdmin.body?.success || !adminServiceInstanceId) {
+        throw new Error('serviceInstances.create should return service instance id');
+      }
+      createdServiceInstanceIds.push(adminServiceInstanceId);
+
+      const setGroupPermission = await callInternalAction(
+        jarA,
+        'groups.setGroupAppPermission',
+        {
+          groupId,
+          serviceInstanceId: adminServiceInstanceId,
+          data: {
+            is_enabled: true,
+            usage_quota: 5,
+          },
+        }
+      );
+      assertStatus(
+        setGroupPermission.response,
+        200,
+        'groups.setGroupAppPermission'
+      );
+      assertInternalDataHandler(
+        setGroupPermission.response,
+        'local',
+        'groups.setGroupAppPermission',
+        useFastifyProxy
+      );
+      if (!setGroupPermission.body?.success) {
+        throw new Error('groups.setGroupAppPermission should succeed');
+      }
+
+      const checkPermissionByUser = await callInternalAction(
+        jarB,
+        'groups.checkUserAppPermission',
+        {
+          userId: userBId,
+          serviceInstanceId: adminServiceInstanceId,
+        }
+      );
+      assertStatus(
+        checkPermissionByUser.response,
+        200,
+        'groups.checkUserAppPermission'
+      );
+      assertInternalDataHandler(
+        checkPermissionByUser.response,
+        'local',
+        'groups.checkUserAppPermission',
+        useFastifyProxy
+      );
+      if (
+        !checkPermissionByUser.body?.success ||
+        checkPermissionByUser.body?.data?.has_access !== true
+      ) {
+        throw new Error('groups.checkUserAppPermission should allow group member');
+      }
+
+      const incrementUsageByUser = await callInternalAction(
+        jarB,
+        'groups.incrementAppUsage',
+        {
+          userId: userBId,
+          serviceInstanceId: adminServiceInstanceId,
+          increment: 1,
+        }
+      );
+      assertStatus(incrementUsageByUser.response, 200, 'groups.incrementAppUsage');
+      assertInternalDataHandler(
+        incrementUsageByUser.response,
+        'local',
+        'groups.incrementAppUsage',
+        useFastifyProxy
+      );
+      if (
+        !incrementUsageByUser.body?.success ||
+        incrementUsageByUser.body?.data?.success !== true
+      ) {
+        throw new Error('groups.incrementAppUsage should succeed');
+      }
+
+      const listAccessibleAppsByUser = await callInternalAction(
+        jarB,
+        'groups.getUserAccessibleApps',
+        {
+          userId: userBId,
+        }
+      );
+      assertStatus(
+        listAccessibleAppsByUser.response,
+        200,
+        'groups.getUserAccessibleApps'
+      );
+      assertInternalDataHandler(
+        listAccessibleAppsByUser.response,
+        'local',
+        'groups.getUserAccessibleApps',
+        useFastifyProxy
+      );
+      const accessibleIds = new Set(
+        (listAccessibleAppsByUser.body?.data || []).map(item => item.service_instance_id)
+      );
+      if (!accessibleIds.has(adminServiceInstanceId)) {
+        throw new Error('groups.getUserAccessibleApps should include group-only app');
+      }
+
+      const createApiKey = await callInternalAction(jarA, 'apiKeys.create', {
+        apiKey: {
+          provider_id: adminProviderId,
+          service_instance_id: adminServiceInstanceId,
+          user_id: null,
+          key_value: 'enc:dummy-key',
+          is_default: true,
+          usage_count: 0,
+          last_used_at: null,
+        },
+        isEncrypted: true,
+      });
+      assertStatus(createApiKey.response, 200, 'apiKeys.create');
+      assertInternalDataHandler(
+        createApiKey.response,
+        'local',
+        'apiKeys.create',
+        useFastifyProxy
+      );
+      const apiKeyId = createApiKey.body?.data?.id;
+      if (!createApiKey.body?.success || !apiKeyId) {
+        throw new Error('apiKeys.create should return key id');
+      }
+      createdApiKeyIds.push(apiKeyId);
+
+      const getApiKeyByService = await callInternalAction(
+        jarA,
+        'apiKeys.getByServiceInstance',
+        {
+          serviceInstanceId: adminServiceInstanceId,
+        }
+      );
+      assertStatus(
+        getApiKeyByService.response,
+        200,
+        'apiKeys.getByServiceInstance'
+      );
+      assertInternalDataHandler(
+        getApiKeyByService.response,
+        'local',
+        'apiKeys.getByServiceInstance',
+        useFastifyProxy
+      );
+      if (!getApiKeyByService.body?.success || getApiKeyByService.body?.data?.id !== apiKeyId) {
+        throw new Error('apiKeys.getByServiceInstance should return created key');
+      }
+
+      const deleteApiKey = await callInternalAction(jarA, 'apiKeys.delete', {
+        id: apiKeyId,
+      });
+      assertStatus(deleteApiKey.response, 200, 'apiKeys.delete');
+      assertInternalDataHandler(
+        deleteApiKey.response,
+        'local',
+        'apiKeys.delete',
+        useFastifyProxy
+      );
+      if (!deleteApiKey.body?.success || deleteApiKey.body?.data !== true) {
+        throw new Error('apiKeys.delete should return true');
+      }
+
+      const createSsoProvider = await callInternalAction(
+        jarA,
+        'sso.createSsoProvider',
+        {
+          data: {
+            name: `M3 SSO ${suffix}`,
+            protocol: 'OIDC',
+            settings: { issuer: 'https://idp.example.com' },
+            enabled: true,
+            display_order: 1,
+            button_text: 'Sign in',
+          },
+        }
+      );
+      assertStatus(createSsoProvider.response, 200, 'sso.createSsoProvider');
+      assertInternalDataHandler(
+        createSsoProvider.response,
+        'local',
+        'sso.createSsoProvider',
+        useFastifyProxy
+      );
+      const ssoProviderId = createSsoProvider.body?.data?.id;
+      if (!createSsoProvider.body?.success || !ssoProviderId) {
+        throw new Error('sso.createSsoProvider should return provider id');
+      }
+      createdSsoProviderIds.push(ssoProviderId);
+
+      const toggleSsoProvider = await callInternalAction(
+        jarA,
+        'sso.toggleSsoProvider',
+        {
+          id: ssoProviderId,
+          enabled: false,
+        }
+      );
+      assertStatus(toggleSsoProvider.response, 200, 'sso.toggleSsoProvider');
+      assertInternalDataHandler(
+        toggleSsoProvider.response,
+        'local',
+        'sso.toggleSsoProvider',
+        useFastifyProxy
+      );
+      if (!toggleSsoProvider.body?.success || toggleSsoProvider.body?.data?.enabled !== false) {
+        throw new Error('sso.toggleSsoProvider should update enabled flag');
+      }
+
+      const updateSsoOrder = await callInternalAction(
+        jarA,
+        'sso.updateSsoProviderOrder',
+        {
+          updates: [{ id: ssoProviderId, display_order: 9 }],
+        }
+      );
+      assertStatus(updateSsoOrder.response, 200, 'sso.updateSsoProviderOrder');
+      assertInternalDataHandler(
+        updateSsoOrder.response,
+        'local',
+        'sso.updateSsoProviderOrder',
+        useFastifyProxy
+      );
+      if (!updateSsoOrder.body?.success) {
+        throw new Error('sso.updateSsoProviderOrder should succeed');
+      }
+
       const deleteByOther = await callInternalAction(
         jarB,
         'conversations.deleteConversation',
@@ -916,6 +1267,21 @@ async function main() {
               ownerCanUpdateExecutionComplete: true,
               ownerCanDeleteExecution: true,
               executionListExcludesDeleted: true,
+              adminCanGetUserStats: true,
+              adminCanCreateGroup: true,
+              adminCanAddGroupMember: true,
+              adminCanCreateProvider: true,
+              adminCanCreateServiceInstance: true,
+              adminCanSetGroupPermission: true,
+              userCanCheckGroupPermission: true,
+              userCanIncrementGroupUsage: true,
+              userCanGetAccessibleApps: true,
+              adminCanCreateApiKey: true,
+              adminCanGetApiKeyByServiceInstance: true,
+              adminCanDeleteApiKey: true,
+              adminCanCreateSsoProvider: true,
+              adminCanToggleSsoProvider: true,
+              adminCanUpdateSsoOrder: true,
               localHandlerAsserted: useFastifyProxy,
             },
             userAId,
@@ -927,6 +1293,33 @@ async function main() {
         )
       );
     } finally {
+      if (createdSsoProviderIds.length > 0) {
+        await dbClient.query(
+          `DELETE FROM sso_providers WHERE id = ANY($1::uuid[])`,
+          [createdSsoProviderIds]
+        );
+      }
+      if (createdApiKeyIds.length > 0) {
+        await dbClient.query(`DELETE FROM api_keys WHERE id = ANY($1::uuid[])`, [
+          createdApiKeyIds,
+        ]);
+      }
+      if (createdServiceInstanceIds.length > 0) {
+        await dbClient.query(
+          `DELETE FROM service_instances WHERE id = ANY($1::uuid[])`,
+          [createdServiceInstanceIds]
+        );
+      }
+      if (createdProviderIds.length > 0) {
+        await dbClient.query(`DELETE FROM providers WHERE id = ANY($1::uuid[])`, [
+          createdProviderIds,
+        ]);
+      }
+      if (createdGroupIds.length > 0) {
+        await dbClient.query(`DELETE FROM groups WHERE id = ANY($1::uuid[])`, [
+          createdGroupIds,
+        ]);
+      }
       if (executionId) {
         await dbClient.query('DELETE FROM app_executions WHERE id = $1::uuid', [
           executionId,

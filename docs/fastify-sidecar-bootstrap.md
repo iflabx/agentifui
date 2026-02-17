@@ -96,9 +96,15 @@ The current migration strategy is:
     - Served by Fastify as a compatibility gateway.
     - Preserves the unified action contract (`{ action, payload }`).
     - Current local extraction scope:
+      - `users.*` (`getUserList`, `getUserStats`, `getUserById`, `updateUserProfile`, `deleteUser`, `createUserProfile`, `batchUpdateUserStatus`, `batchUpdateUserRole`)
+      - `groups.*` (`getGroups`, `createGroup`, `updateGroup`, `deleteGroup`, `getGroupMembers`, `addGroupMember`, `removeGroupMember`, `getGroupAppPermissions`, `setGroupAppPermission`, `removeGroupAppPermission`, `removeAllGroupAppPermissions`, `searchUsersForGroup`, `getUserAccessibleApps`, `checkUserAppPermission`, `incrementAppUsage`)
+      - `providers.*` (`getAllProviders`, `getActiveProviders`, `createProvider`, `updateProvider`, `deleteProvider`)
+      - `serviceInstances.*` (`getByProvider`, `getById`, `create`, `update`, `delete`, `setDefault`)
+      - `apiKeys.*` (`getByServiceInstance`, `create`, `update`, `delete`)
       - `conversations.*` (`getConversationByExternalId`, `createConversation`, `getUserConversations`, `renameConversation`, `deleteConversation`)
       - `messages.*` (`getLatest`, `findDuplicate`, `save`, `createPlaceholder`)
       - `appExecutions.*` (`getByServiceInstance`, `getById`, `create`, `updateStatus`, `updateComplete`, `delete`)
+      - `sso.*` (`getSsoProviders`, `getSsoProviderStats`, `getSsoProviderById`, `createSsoProvider`, `updateSsoProvider`, `deleteSsoProvider`, `toggleSsoProvider`, `updateSsoProviderOrder`)
     - Non-extracted actions still forward to legacy Next `internal/data` handler with fastify-bypass header.
     - Response includes `x-agentifui-internal-data-handler: local|legacy` for phase-level verification.
 18. Other configured API prefixes still use Fastify fallback proxy to Next upstream.
