@@ -10,8 +10,8 @@ export interface WorkflowIteration {
   status: 'running' | 'completed' | 'failed';
   startTime: number;
   endTime?: number;
-  inputs?: any;
-  outputs?: any;
+  inputs?: Record<string, unknown>;
+  outputs?: Record<string, unknown>;
 }
 
 export interface WorkflowLoop {
@@ -20,8 +20,8 @@ export interface WorkflowLoop {
   status: 'running' | 'completed' | 'failed';
   startTime: number;
   endTime?: number;
-  inputs?: any;
-  outputs?: any;
+  inputs?: Record<string, unknown>;
+  outputs?: Record<string, unknown>;
 }
 
 /**
@@ -33,8 +33,38 @@ export interface WorkflowParallelBranch {
   status: 'running' | 'completed' | 'failed';
   startTime: number;
   endTime?: number;
-  inputs?: any;
-  outputs?: any;
+  inputs?: Record<string, unknown>;
+  outputs?: Record<string, unknown>;
+}
+
+interface WorkflowExecutionEventData extends Record<string, unknown> {
+  node_id: string;
+  node_type: string;
+  title: string;
+  status: string;
+  error: string;
+  iteration_id: string;
+  iteration_index: number;
+  total_iterations: number;
+  metadata?: {
+    iterator_length?: number;
+    loop_length?: number;
+  };
+  inputs?: {
+    loop_count?: number;
+  } & Record<string, unknown>;
+  id: string;
+  index: number;
+  outputs?: {
+    loop_round?: number;
+  } & Record<string, unknown>;
+  parallel_id: string | number;
+  parallel_run_id: string;
+}
+
+interface WorkflowExecutionEvent {
+  event: string;
+  data?: unknown;
 }
 
 /**
@@ -88,7 +118,7 @@ interface WorkflowExecutionState {
   currentNodeId: string | null;
 
   // --- Form management ---
-  formData: Record<string, any>;
+  formData: Record<string, unknown>;
   formLocked: boolean;
 
   // --- Error handling ---
@@ -128,7 +158,7 @@ interface WorkflowExecutionState {
   } | null;
 
   // --- Actions ---
-  startExecution: (formData: Record<string, any>) => void;
+  startExecution: (formData: Record<string, unknown>) => void;
   stopExecution: () => void;
   setExecutionProgress: (progress: number) => void;
 
@@ -140,7 +170,7 @@ interface WorkflowExecutionState {
   resetNodes: () => void;
 
   // --- Form management ---
-  setFormData: (data: Record<string, any>) => void;
+  setFormData: (data: Record<string, unknown>) => void;
   lockForm: () => void;
   unlockForm: () => void;
   resetFormData: () => void;
@@ -191,7 +221,7 @@ interface WorkflowExecutionState {
   toggleLoopExpanded: (nodeId: string) => void;
 
   // SSE event handling
-  handleNodeEvent: (event: any) => void;
+  handleNodeEvent: (event: WorkflowExecutionEvent) => void;
 
   // --- Reset state ---
   reset: () => void;
@@ -232,7 +262,7 @@ export const useWorkflowExecutionStore = create<WorkflowExecutionState>(
     currentLoop: null,
 
     // --- Execution control ---
-    startExecution: (formData: Record<string, any>) => {
+    startExecution: (formData: Record<string, unknown>) => {
       console.log('[WorkflowStore] Start execution, form data:', formData);
       set({
         isExecuting: true,
@@ -392,7 +422,7 @@ export const useWorkflowExecutionStore = create<WorkflowExecutionState>(
     },
 
     // --- Form management ---
-    setFormData: (data: Record<string, any>) => {
+    setFormData: (data: Record<string, unknown>) => {
       set({ formData: data });
     },
 
@@ -636,16 +666,13 @@ export const useWorkflowExecutionStore = create<WorkflowExecutionState>(
     },
 
     // SSE event handling - refer to chatflow implementation
-    handleNodeEvent: (event: any) => {
-      console.log(
-        '[WorkflowStore] Handle node event:',
-        event.event,
-        event.data
-      );
+    handleNodeEvent: (event: WorkflowExecutionEvent) => {
+      const eventData = (event.data || {}) as WorkflowExecutionEventData;
+      console.log('[WorkflowStore] Handle node event:', event.event, eventData);
 
       switch (event.event) {
         case 'node_started':
-          const { node_id, node_type, title } = event.data;
+          const { node_id, node_type, title } = eventData;
 
           // Check if in iteration or loop, this is the core logic for child node marking - consistent with chatflow
           const { currentIteration, currentLoop } = get();
@@ -702,7 +729,7 @@ export const useWorkflowExecutionStore = create<WorkflowExecutionState>(
           break;
 
         case 'node_finished':
-          const { node_id: finishedNodeId, status, error } = event.data;
+          const { node_id: finishedNodeId, status, error } = eventData;
           const success = status === 'succeeded';
           get().onNodeFinished(finishedNodeId, success, error);
           break;
@@ -714,17 +741,17 @@ export const useWorkflowExecutionStore = create<WorkflowExecutionState>(
             iteration_index,
             title: iterTitle,
             node_type: iterNodeType,
-          } = event.data;
+          } = eventData;
           // Use fallback logic consistent with chatflow to get total iterations
           const totalIterations =
-            event.data.metadata?.iterator_length ||
-            event.data.total_iterations ||
+            eventData.metadata?.iterator_length ||
+            eventData.total_iterations ||
             1;
 
           console.log('[WorkflowStore] Iteration started debug:', {
             iterNodeId,
-            'event.data.metadata': event.data.metadata,
-            'event.data.total_iterations': event.data.total_iterations,
+            'eventData.metadata': eventData.metadata,
+            'eventData.total_iterations': eventData.total_iterations,
             'resolved totalIterations': totalIterations,
           });
 
@@ -780,7 +807,7 @@ export const useWorkflowExecutionStore = create<WorkflowExecutionState>(
             node_id: nextNodeId,
             iteration_id: nextIterationId,
             iteration_index: nextIndex,
-          } = event.data;
+          } = eventData;
 
           // Update current iteration round
           const { currentIteration: currentIterState } = get();
@@ -835,7 +862,7 @@ export const useWorkflowExecutionStore = create<WorkflowExecutionState>(
           break;
 
         case 'iteration_completed':
-          const { node_id: completedNodeId } = event.data;
+          const { node_id: completedNodeId } = eventData;
           get().updateNode(completedNodeId, {
             status: 'completed',
             endTime: Date.now(),
@@ -855,7 +882,7 @@ export const useWorkflowExecutionStore = create<WorkflowExecutionState>(
             node_type: loopNodeType,
             metadata: loopMetadata,
             inputs: loopInputs,
-          } = event.data;
+          } = eventData;
 
           // Get max loop count from metadata or inputs
           const maxLoops =
@@ -921,7 +948,7 @@ export const useWorkflowExecutionStore = create<WorkflowExecutionState>(
 
         case 'loop_next':
           // Increment logic consistent with chatflow and iteration_next
-          const { node_id: nextLoopNodeId, index: nextLoopIndex } = event.data;
+          const { node_id: nextLoopNodeId, index: nextLoopIndex } = eventData;
           const { currentLoop: currentLoopState } = get();
 
           if (currentLoopState && currentLoopState.nodeId === nextLoopNodeId) {
@@ -984,7 +1011,7 @@ export const useWorkflowExecutionStore = create<WorkflowExecutionState>(
 
         case 'loop_completed':
           const { node_id: completedLoopNodeId, outputs: loopOutputs } =
-            event.data;
+            eventData;
           const { currentLoop: completedLoopState } = get();
 
           if (
@@ -1020,7 +1047,7 @@ export const useWorkflowExecutionStore = create<WorkflowExecutionState>(
             node_id: parallelNodeId,
             parallel_id,
             parallel_run_id,
-          } = event.data;
+          } = eventData;
 
           // Create or update parallel branch node
           const existingParallelNode = get().nodes.find(
@@ -1056,7 +1083,7 @@ export const useWorkflowExecutionStore = create<WorkflowExecutionState>(
             node_id: finishedParallelNodeId,
             parallel_run_id: finishedRunId,
             status: branchStatus,
-          } = event.data;
+          } = eventData;
           const branchSuccess = branchStatus === 'succeeded';
 
           get().completeParallelBranch(

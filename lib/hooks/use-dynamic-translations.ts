@@ -12,7 +12,7 @@ import { useTranslations } from 'next-intl';
  * Contains translation data and timestamp for TTL validation
  */
 interface CacheEntry {
-  data: any; // Translation data object
+  data: Record<string, unknown>; // Translation data object
   timestamp: number; // Cache creation timestamp in milliseconds
 }
 
@@ -55,7 +55,10 @@ export function clearTranslationCache(locale?: string): void {
  */
 export function useDynamicTranslations(config: UseDynamicTranslationsConfig) {
   const { sections, cacheTTL = 5 * 60 * 1000 } = config;
-  const [dynamicData, setDynamicData] = useState<any>(null);
+  const [dynamicData, setDynamicData] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const staticT = useTranslations(); // Fallback to static translations
 
@@ -129,20 +132,24 @@ export function useDynamicTranslations(config: UseDynamicTranslationsConfig) {
    * @returns Translated string
    */
   const t = useCallback(
-    (key: string, section: string, params?: any) => {
+    <T = string>(
+      key: string,
+      section: string,
+      params?: Record<string, string | number | Date>
+    ): T => {
       // Try dynamic translation first
       if (dynamicData) {
         const dynamicValue = getNestedValue(dynamicData, `${section}.${key}`);
-        if (dynamicValue) {
+        if (dynamicValue !== undefined && dynamicValue !== null) {
           // Substitute parameters if needed
           if (params && typeof dynamicValue === 'string') {
-            return interpolateString(dynamicValue, params);
+            return interpolateString(dynamicValue, params) as T;
           }
-          return dynamicValue;
+          return dynamicValue as T;
         }
       }
       // Fallback to static translation
-      return staticT(`${section}.${key}`, params);
+      return staticT(`${section}.${key}`, params) as T;
     },
     [dynamicData, staticT]
   );
@@ -156,8 +163,14 @@ export function useDynamicTranslations(config: UseDynamicTranslationsConfig) {
  * @param path - Dot-separated path (e.g., 'pages.about.title')
  * @returns Value at path or undefined if not found
  */
-function getNestedValue(obj: any, path: string): any {
-  return path.split('.').reduce((current, key) => current?.[key], obj);
+function getNestedValue(obj: unknown, path: string): unknown {
+  return path.split('.').reduce<unknown>((current, key) => {
+    if (!current || typeof current !== 'object') {
+      return undefined;
+    }
+
+    return (current as Record<string, unknown>)[key];
+  }, obj);
 }
 
 /**
@@ -169,7 +182,7 @@ function getNestedValue(obj: any, path: string): any {
  */
 function interpolateString(
   template: string,
-  params: Record<string, any>
+  params: Record<string, string | number | Date>
 ): string {
   return template.replace(/\{(\w+)\}/g, (match, key) => {
     return params[key] !== undefined ? String(params[key]) : match;

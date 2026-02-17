@@ -17,6 +17,23 @@ interface FavoriteApp {
   lastUsedAt: string;
 }
 
+interface AppMetadata {
+  brief_description?: string;
+  icon_url?: string;
+  dify_apptype?: FavoriteApp['dify_apptype'];
+  app_type?: FavoriteApp['appType'];
+}
+
+interface SyncAppInfo {
+  instance_id: string;
+  display_name?: string | null;
+  name?: string;
+  description?: string | null;
+  config?: {
+    app_metadata?: AppMetadata;
+  };
+}
+
 interface FavoriteAppsState {
   favoriteApps: FavoriteApp[];
   isLoading: boolean;
@@ -32,7 +49,7 @@ interface FavoriteAppsState {
   clearFavoriteApps: () => void;
   isFavorite: (instanceId: string) => boolean;
   // Added: simple background sync method, non-blocking update
-  syncWithAppList: (apps: any[]) => void;
+  syncWithAppList: (apps: SyncAppInfo[]) => void;
   // Added: expand/collapse toggle methods
   toggleExpanded: () => void;
   setExpanded: (expanded: boolean) => void;
@@ -133,7 +150,7 @@ export const useFavoriteAppsStore = create<FavoriteAppsState>()(
         return get().favoriteApps.some(app => app.instanceId === instanceId);
       },
 
-      syncWithAppList: (apps: any[]) => {
+      syncWithAppList: (apps: SyncAppInfo[]) => {
         const state = get();
         if (state.favoriteApps.length === 0) return;
 
@@ -242,7 +259,9 @@ export function useAutoAddFavoriteApp() {
           instance_id: string;
           display_name: string | null;
           description: string | null;
-          config?: any;
+          config?: {
+            app_metadata?: AppMetadata;
+          };
           provider_name?: string;
         };
       };

@@ -170,7 +170,7 @@ export async function streamDifyWorkflow(
     let workflowRunId: string | null = null;
     let taskId: string | null = null;
     let completionResolve: (value: DifyWorkflowFinishedData) => void;
-    let completionReject: (reason: any) => void;
+    let completionReject: (reason: unknown) => void;
 
     // Create completion Promise
     const completionPromise = new Promise<DifyWorkflowFinishedData>(
@@ -399,8 +399,7 @@ export async function streamDifyWorkflow(
 
             default:
               console.log(
-                '[Dify Workflow Service] Ignoring unknown event type:',
-                (event as any).event
+                '[Dify Workflow Service] Ignoring unknown event type'
               );
               break;
           }

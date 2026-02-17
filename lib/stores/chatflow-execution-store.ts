@@ -45,8 +45,8 @@ export interface ChatflowIteration {
   status: 'pending' | 'running' | 'completed' | 'failed';
   startTime: number;
   endTime?: number;
-  inputs?: Record<string, any>;
-  outputs?: Record<string, any>;
+  inputs?: Record<string, unknown>;
+  outputs?: Record<string, unknown>;
   error?: string;
   description?: string;
 }
@@ -58,8 +58,8 @@ export interface ChatflowParallelBranch {
   status: 'pending' | 'running' | 'completed' | 'failed';
   startTime: number;
   endTime?: number;
-  inputs?: Record<string, any>;
-  outputs?: Record<string, any>;
+  inputs?: Record<string, unknown>;
+  outputs?: Record<string, unknown>;
   error?: string;
   description?: string;
 }
@@ -71,11 +71,42 @@ export interface ChatflowLoop {
   status: 'pending' | 'running' | 'completed' | 'failed';
   startTime: number;
   endTime?: number;
-  inputs?: Record<string, any>;
-  outputs?: Record<string, any>;
+  inputs?: Record<string, unknown>;
+  outputs?: Record<string, unknown>;
   error?: string;
   description?: string;
   maxLoops?: number; // Maximum loop count limit
+}
+
+interface ChatflowNodeEventData extends Record<string, unknown> {
+  node_id: string;
+  title: string;
+  node_type: string;
+  status: string;
+  error: string;
+  iteration_id: string;
+  iteration_index: number;
+  total_iterations: number;
+  metadata?: {
+    iterator_length?: number;
+    loop_length?: number;
+  };
+  inputs?: {
+    loop_count?: number;
+  } & Record<string, unknown>;
+  id: string;
+  index: number;
+  outputs?: {
+    loop_round?: number;
+  } & Record<string, unknown>;
+  branch_id: string;
+  branch_index: number;
+  total_branches: number;
+}
+
+interface ChatflowNodeEvent {
+  event: string;
+  data?: unknown;
 }
 
 interface ChatflowExecutionState {
@@ -171,7 +202,7 @@ interface ChatflowExecutionState {
   toggleLoopExpanded: (nodeId: string) => void;
 
   // Update state from SSE event
-  handleNodeEvent: (event: any) => void;
+  handleNodeEvent: (event: ChatflowNodeEvent) => void;
 }
 
 export const useChatflowExecutionStore = create<ChatflowExecutionState>(
@@ -436,17 +467,18 @@ export const useChatflowExecutionStore = create<ChatflowExecutionState>(
     },
 
     // Handle SSE events
-    handleNodeEvent: (event: any) => {
+    handleNodeEvent: (event: ChatflowNodeEvent) => {
+      const eventData = (event.data || {}) as ChatflowNodeEventData;
       const { nodes } = get();
 
       console.log('[ChatflowExecution] Node event received:', event.event);
-      console.log('[ChatflowExecution] Node data:', event.data);
+      console.log('[ChatflowExecution] Node data:', eventData);
       console.log('[ChatflowExecution] Current node count:', nodes.length);
 
       switch (event.event) {
         case 'node_started':
           // Add or update node to running state
-          const { node_id, title, node_type } = event.data;
+          const { node_id, title, node_type } = eventData;
           const nodeTitle = title || node_type || `Node ${nodes.length + 1}`;
           const { currentIteration } = get();
 
@@ -513,7 +545,7 @@ export const useChatflowExecutionStore = create<ChatflowExecutionState>(
 
         case 'node_finished':
           // Update node to completed state
-          const { node_id: finishedNodeId, status, error } = event.data;
+          const { node_id: finishedNodeId, status, error } = eventData;
           const nodeStatus = status === 'succeeded' ? 'completed' : 'failed';
 
           get().updateNode(finishedNodeId, {
@@ -528,13 +560,13 @@ export const useChatflowExecutionStore = create<ChatflowExecutionState>(
 
         case 'node_failed':
           // Update node to failed state
-          get().updateNode(event.data.node_id, {
+          get().updateNode(eventData.node_id, {
             status: 'failed',
             endTime: Date.now(),
-            description: event.data.error || 'Execution failed',
+            description: eventData.error || 'Execution failed',
           });
 
-          get().setError(event.data.error || 'Node execution failed');
+          get().setError(eventData.error || 'Node execution failed');
           break;
 
         case 'workflow_started':
@@ -557,10 +589,10 @@ export const useChatflowExecutionStore = create<ChatflowExecutionState>(
             iteration_index,
             title: iterTitle,
             node_type: iterNodeType,
-          } = event.data;
+          } = eventData;
           const totalIterations =
-            event.data.metadata?.iterator_length ||
-            event.data.total_iterations ||
+            eventData.metadata?.iterator_length ||
+            eventData.total_iterations ||
             1;
 
           // Iteration should start from 0, first iteration_next is round 1
@@ -612,8 +644,7 @@ export const useChatflowExecutionStore = create<ChatflowExecutionState>(
           break;
 
         case 'iteration_next':
-          const { node_id: nextNodeId, iteration_index: nextIndex } =
-            event.data;
+          const { node_id: nextNodeId, iteration_index: nextIndex } = eventData;
           const { currentIteration: currentIter } = get();
 
           if (currentIter && currentIter.nodeId === nextNodeId) {
@@ -666,7 +697,7 @@ export const useChatflowExecutionStore = create<ChatflowExecutionState>(
           break;
 
         case 'iteration_completed':
-          const { node_id: completedNodeId } = event.data;
+          const { node_id: completedNodeId } = eventData;
           const { currentIteration: completedIter } = get();
 
           if (completedIter && completedIter.nodeId === completedNodeId) {
@@ -693,7 +724,7 @@ export const useChatflowExecutionStore = create<ChatflowExecutionState>(
             branch_id,
             branch_index,
             total_branches,
-          } = event.data;
+          } = eventData;
 
           // Ensure node exists and mark as parallel node
           const branchNode = nodes.find(n => n.id === branchNodeId);
@@ -710,7 +741,7 @@ export const useChatflowExecutionStore = create<ChatflowExecutionState>(
             index: branch_index,
             status: 'running',
             startTime: Date.now(),
-            inputs: event.data.inputs,
+            inputs: eventData.inputs,
             description: `Branch ${branch_index}`,
           });
           break;
@@ -721,13 +752,13 @@ export const useChatflowExecutionStore = create<ChatflowExecutionState>(
             branch_id: finishedBranchId,
             status: branchStatus,
             error: branchError,
-          } = event.data;
+          } = eventData;
 
           // Update branch state
           get().updateParallelBranch(finishedBranchNodeId, finishedBranchId, {
             status: branchStatus === 'succeeded' ? 'completed' : 'failed',
             endTime: Date.now(),
-            outputs: event.data.outputs,
+            outputs: eventData.outputs,
             error: branchError,
             description:
               branchStatus === 'succeeded'
@@ -775,7 +806,7 @@ export const useChatflowExecutionStore = create<ChatflowExecutionState>(
             node_type: loopNodeType,
             metadata: loopMetadata,
             inputs: loopInputs,
-          } = event.data;
+          } = eventData;
 
           // Get max loop count from metadata or inputs
           const maxLoops =
@@ -841,7 +872,7 @@ export const useChatflowExecutionStore = create<ChatflowExecutionState>(
 
         case 'loop_next':
           // Handle next loop event, increment logic same as iteration_next
-          const { node_id: nextLoopNodeId, index: nextLoopIndex } = event.data;
+          const { node_id: nextLoopNodeId, index: nextLoopIndex } = eventData;
           const { currentLoop: currentLoopState } = get();
 
           if (currentLoopState && currentLoopState.nodeId === nextLoopNodeId) {
@@ -901,7 +932,7 @@ export const useChatflowExecutionStore = create<ChatflowExecutionState>(
 
         case 'loop_completed':
           const { node_id: completedLoopNodeId, outputs: loopOutputs } =
-            event.data;
+            eventData;
           const { currentLoop: completedLoopState } = get();
 
           if (

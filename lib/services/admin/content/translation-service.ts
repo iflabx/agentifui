@@ -4,23 +4,25 @@ import {
   isValidLocale,
 } from '@lib/config/language-config';
 
+type TranslationData = Record<string, unknown>;
+
 // translation service interface
-export interface TranslationResponse {
+export interface TranslationResponse<TData = TranslationData> {
   locale: string;
   section?: string;
-  data: any;
+  data: TData;
 }
 
-export interface UpdateTranslationRequest {
+export interface UpdateTranslationRequest<TData = TranslationData> {
   locale: SupportedLocale;
   section?: string;
-  updates: any;
+  updates: TData;
   mode?: 'merge' | 'replace';
 }
 
-export interface BatchUpdateRequest {
+export interface BatchUpdateRequest<TData = TranslationData> {
   section: string;
-  updates: Record<SupportedLocale, any>;
+  updates: Record<SupportedLocale, TData>;
   mode?: 'merge' | 'replace';
 }
 
@@ -72,10 +74,10 @@ export class TranslationService {
   }
 
   // read translations for a specific language
-  static async getTranslations(
+  static async getTranslations<TData = TranslationData>(
     locale: SupportedLocale,
     section?: string
-  ): Promise<TranslationResponse> {
+  ): Promise<TranslationResponse<TData>> {
     const params = new URLSearchParams({ locale });
     if (section) {
       params.append('section', section);
@@ -91,30 +93,30 @@ export class TranslationService {
   }
 
   // get all translations for a specific section
-  static async getAllTranslationsForSection(
+  static async getAllTranslationsForSection<TData = TranslationData>(
     section: string
-  ): Promise<Record<SupportedLocale, any>> {
+  ): Promise<Record<SupportedLocale, TData>> {
     const locales = this.getSupportedLanguages();
-    const results: Record<string, any> = {};
+    const results = {} as Record<SupportedLocale, TData>;
 
     await Promise.all(
       locales.map(async locale => {
         try {
-          const response = await this.getTranslations(locale, section);
+          const response = await this.getTranslations<TData>(locale, section);
           results[locale] = response.data;
         } catch (error) {
           console.warn(`Failed to load ${section} for ${locale}:`, error);
-          results[locale] = null;
+          results[locale] = {} as TData;
         }
       })
     );
 
-    return results as Record<SupportedLocale, any>;
+    return results;
   }
 
   // update translation for a specific language
-  static async updateTranslation(
-    request: UpdateTranslationRequest
+  static async updateTranslation<TData = TranslationData>(
+    request: UpdateTranslationRequest<TData>
   ): Promise<TranslationUpdateResult> {
     const response = await fetch(this.API_BASE, {
       method: 'PUT',
@@ -135,8 +137,8 @@ export class TranslationService {
   }
 
   // batch update translations for multiple languages
-  static async batchUpdateTranslations(
-    request: BatchUpdateRequest
+  static async batchUpdateTranslations<TData = TranslationData>(
+    request: BatchUpdateRequest<TData>
   ): Promise<BatchUpdateResult> {
     const response = await fetch(this.API_BASE, {
       method: 'POST',
@@ -158,18 +160,18 @@ export class TranslationService {
   }
 
   // get translations for About page
-  static async getAboutPageTranslations(): Promise<
-    Record<SupportedLocale, any>
+  static async getAboutPageTranslations<TData = TranslationData>(): Promise<
+    Record<SupportedLocale, TData>
   > {
-    return this.getAllTranslationsForSection('pages.about');
+    return this.getAllTranslationsForSection<TData>('pages.about');
   }
 
   // update translations for About page
-  static async updateAboutPageTranslations(
-    updates: Record<SupportedLocale, any>,
+  static async updateAboutPageTranslations<TData = TranslationData>(
+    updates: Record<SupportedLocale, TData>,
     mode: 'merge' | 'replace' = 'merge'
   ): Promise<BatchUpdateResult> {
-    return this.batchUpdateTranslations({
+    return this.batchUpdateTranslations<TData>({
       section: 'pages.about',
       updates,
       mode,
@@ -177,18 +179,18 @@ export class TranslationService {
   }
 
   // get translations for Home page
-  static async getHomePageTranslations(): Promise<
-    Record<SupportedLocale, any>
+  static async getHomePageTranslations<TData = TranslationData>(): Promise<
+    Record<SupportedLocale, TData>
   > {
-    return this.getAllTranslationsForSection('pages.home');
+    return this.getAllTranslationsForSection<TData>('pages.home');
   }
 
   // update translations for Home page
-  static async updateHomePageTranslations(
-    updates: Record<SupportedLocale, any>,
+  static async updateHomePageTranslations<TData = TranslationData>(
+    updates: Record<SupportedLocale, TData>,
     mode: 'merge' | 'replace' = 'merge'
   ): Promise<BatchUpdateResult> {
-    return this.batchUpdateTranslations({
+    return this.batchUpdateTranslations<TData>({
       section: 'pages.home',
       updates,
       mode,
@@ -199,7 +201,7 @@ export class TranslationService {
   static async getTranslationTemplate(
     section: string,
     baseLocale: SupportedLocale = 'zh-CN'
-  ): Promise<any> {
+  ): Promise<TranslationData> {
     try {
       const response = await this.getTranslations(baseLocale, section);
       return response.data;
@@ -211,8 +213,8 @@ export class TranslationService {
 
   // validate translation data structure completeness
   static validateTranslationStructure(
-    template: any,
-    data: any,
+    template: unknown,
+    data: unknown,
     path: string = ''
   ): { isValid: boolean; missingKeys: string[]; extraKeys: string[] } {
     const missingKeys: string[] = [];
@@ -220,19 +222,26 @@ export class TranslationService {
 
     // check if all keys in template exist in data
     if (template && typeof template === 'object' && !Array.isArray(template)) {
-      for (const key in template) {
+      const templateRecord = template as Record<string, unknown>;
+      const dataRecord =
+        data && typeof data === 'object' && !Array.isArray(data)
+          ? (data as Record<string, unknown>)
+          : {};
+
+      for (const key in templateRecord) {
         const currentPath = path ? `${path}.${key}` : key;
 
-        if (!(key in data)) {
+        if (!(key in dataRecord)) {
           missingKeys.push(currentPath);
         } else if (
-          typeof template[key] === 'object' &&
-          !Array.isArray(template[key])
+          typeof templateRecord[key] === 'object' &&
+          templateRecord[key] !== null &&
+          !Array.isArray(templateRecord[key])
         ) {
           // recursively check nested objects
           const nested = this.validateTranslationStructure(
-            template[key],
-            data[key],
+            templateRecord[key],
+            dataRecord[key],
             currentPath
           );
           missingKeys.push(...nested.missingKeys);
@@ -243,10 +252,16 @@ export class TranslationService {
 
     // check if there are keys in data that do not exist in template
     if (data && typeof data === 'object' && !Array.isArray(data)) {
-      for (const key in data) {
+      const dataRecord = data as Record<string, unknown>;
+      const templateRecord =
+        template && typeof template === 'object' && !Array.isArray(template)
+          ? (template as Record<string, unknown>)
+          : null;
+
+      for (const key in dataRecord) {
         const currentPath = path ? `${path}.${key}` : key;
 
-        if (template && !(key in template)) {
+        if (!templateRecord || !(key in templateRecord)) {
           extraKeys.push(currentPath);
         }
       }
@@ -260,9 +275,10 @@ export class TranslationService {
   }
 
   // create translation backup (before update)
-  static async createBackup(
-    section: string
-  ): Promise<{ timestamp: string; data: Record<SupportedLocale, any> }> {
+  static async createBackup(section: string): Promise<{
+    timestamp: string;
+    data: Record<SupportedLocale, TranslationData>;
+  }> {
     const timestamp = new Date().toISOString();
     const data = await this.getAllTranslationsForSection(section);
 
