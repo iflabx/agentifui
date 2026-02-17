@@ -84,17 +84,29 @@ The current migration strategy is:
 - Served directly by Fastify.
 - Preserves authenticated local-password state contract (auth mode + user toggle + fallback password presence).
 
-13. `GET/PATCH /api/admin/auth/fallback-policy`
+13. `POST /api/internal/auth/local-password/bootstrap`
+
+- Served directly by Fastify.
+- Preserves authenticated bootstrap contract (`newPassword` required, existing fallback password returns `409`).
+- Uses better-auth `set-password` when available, and falls back to legacy Next bootstrap endpoint when upstream does not expose that route.
+
+14. `POST /api/internal/auth/local-password/change`
+
+- Served directly by Fastify.
+- Preserves authenticated password change contract (`currentPassword` + `newPassword` required, missing fallback password returns `409`).
+- Uses better-auth `change-password` endpoint with legacy Next route fallback if needed.
+
+15. `GET/PATCH /api/admin/auth/fallback-policy`
 
 - Served directly by Fastify.
 - Preserves admin-only auth-mode policy management (`normal` / `degraded`).
 
-14. `GET/PATCH /api/admin/auth/fallback-policy/users/:userId`
+16. `GET/PATCH /api/admin/auth/fallback-policy/users/:userId`
 
 - Served directly by Fastify.
 - Preserves admin-only per-user local-login toggle/state management.
 
-15. Other configured API prefixes still use Fastify fallback proxy to Next upstream.
+17. Other configured API prefixes still use Fastify fallback proxy to Next upstream.
 
 ## Smoke Check
 
