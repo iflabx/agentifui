@@ -80,7 +80,7 @@ const nextConfig: NextConfig = {
     const proxyPrefixes = parseFastifyProxyPrefixes(
       process.env.FASTIFY_PROXY_PREFIXES
     );
-    return proxyPrefixes.flatMap(prefix => [
+    const rules = proxyPrefixes.flatMap(prefix => [
       {
         source: prefix,
         missing: [{ type: 'header', key: FASTIFY_REWRITE_BYPASS_HEADER }],
@@ -92,6 +92,11 @@ const nextConfig: NextConfig = {
         destination: `${normalizedBaseUrl}${prefix}/:path*`,
       },
     ]);
+    return {
+      beforeFiles: rules,
+      afterFiles: [],
+      fallback: [],
+    };
   },
 
   compiler: {

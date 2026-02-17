@@ -3,6 +3,7 @@ import Fastify from 'fastify';
 
 import { type ApiRuntimeConfig, loadApiRuntimeConfig } from './config';
 import { healthRoutes } from './routes/health';
+import { internalAppsRoutes } from './routes/internal-apps';
 import { proxyFallbackRoutes } from './routes/proxy-fallback';
 import { translationsRoutes } from './routes/translations';
 
@@ -30,6 +31,7 @@ export async function createApiServer(config: ApiRuntimeConfig) {
     credentials: true,
   });
   await app.register(healthRoutes, { config });
+  await app.register(internalAppsRoutes, { config });
   await app.register(translationsRoutes);
   await app.register(proxyFallbackRoutes, { config });
 

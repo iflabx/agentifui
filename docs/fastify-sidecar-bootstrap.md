@@ -44,7 +44,11 @@ The current migration strategy is:
 1. `GET /api/translations/:locale`
    - Served directly by Fastify.
    - Keeps section filtering + file mtime cache behavior compatible with existing Next route.
-2. Other configured API prefixes still use Fastify fallback proxy to Next upstream.
+2. `GET /api/internal/apps`
+   - Served directly by Fastify.
+   - Covers `scope=public|all`, `mode=default`, and `instanceId` query branches.
+   - Uses PostgreSQL + RLS GUC context in Fastify, and bridges session identity via upstream `/api/internal/auth/profile-status`.
+3. Other configured API prefixes still use Fastify fallback proxy to Next upstream.
 
 ## Smoke Check
 
@@ -61,4 +65,5 @@ The current migration strategy is:
 ## Notes
 
 1. Rewrites are disabled by default.
-2. When rewrites are enabled, Fastify adds `x-agentifui-fastify-bypass: 1` when proxying to Next to prevent rewrite loops.
+2. Rewrites now use `beforeFiles` so existing Next API route files can still be cut over to Fastify.
+3. Fastify adds `x-agentifui-fastify-bypass: 1` when proxying to Next to prevent rewrite loops.
