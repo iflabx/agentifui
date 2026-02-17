@@ -3,6 +3,10 @@ import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
 import { getDifyAppConfig } from '@lib/config/dify-config';
 import { type DifyAppConfig } from '@lib/config/dify-config';
 import {
+  type AgentErrorSource,
+  toUserFacingAgentError,
+} from '@lib/services/agent-error/user-facing-error';
+import {
   type DifyAppType,
   isTextGenerationApp,
   isWorkflowApp,
@@ -18,6 +22,8 @@ interface DifyApiParams {
   appId: string;
   slug: string[];
 }
+
+type ErrorPayloadObject = Record<string, unknown>;
 
 /**
  * 🎯 New: Function to adjust API path based on Dify app type
@@ -55,6 +61,121 @@ function adjustApiPathByAppType(
   }
 
   return originalPath;
+}
+
+function inferAgentSource(slugPath: string): AgentErrorSource {
+  if (slugPath.startsWith('workflows/')) {
+    return 'dify-workflow';
+  }
+
+  if (slugPath.startsWith('completion-messages')) {
+    return 'dify-completion';
+  }
+
+  if (slugPath.startsWith('chat-messages')) {
+    return 'dify-chat';
+  }
+
+  return 'agent-generic';
+}
+
+function extractErrorCode(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return null;
+  }
+
+  const maybeCode = (payload as ErrorPayloadObject).code;
+  return typeof maybeCode === 'string' ? maybeCode : null;
+}
+
+function extractErrorMessage(payload: unknown): string | null {
+  if (typeof payload === 'string') {
+    const trimmed = payload.trim();
+    return trimmed || null;
+  }
+
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return null;
+  }
+
+  const errorPayload = payload as ErrorPayloadObject;
+
+  const messageCandidates = [
+    errorPayload.message,
+    errorPayload.error,
+    errorPayload.details,
+  ];
+  for (const candidate of messageCandidates) {
+    if (typeof candidate === 'string' && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+
+  const nestedData = errorPayload.data;
+  if (
+    nestedData &&
+    typeof nestedData === 'object' &&
+    !Array.isArray(nestedData)
+  ) {
+    const nestedDataObject = nestedData as ErrorPayloadObject;
+    const status = nestedDataObject.status;
+    if (status === 'failed') {
+      const nestedError = nestedDataObject.error;
+      if (typeof nestedError === 'string' && nestedError.trim().length > 0) {
+        return nestedError.trim();
+      }
+    }
+  }
+
+  return null;
+}
+
+function withAgentErrorEnvelope(
+  payload: unknown,
+  context: {
+    source: AgentErrorSource;
+    status: number;
+    locale?: string;
+  }
+): unknown {
+  const rawMessage = extractErrorMessage(payload);
+  if (!rawMessage) {
+    return payload;
+  }
+
+  const errorEnvelope = toUserFacingAgentError({
+    source: context.source,
+    status: context.status,
+    code: extractErrorCode(payload),
+    message: rawMessage,
+    locale: context.locale,
+  });
+
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return {
+      error: rawMessage,
+      agent_error: errorEnvelope,
+    };
+  }
+
+  return {
+    ...(payload as ErrorPayloadObject),
+    agent_error: errorEnvelope,
+  };
+}
+
+function resolveRequestLocale(req: NextRequest): string | undefined {
+  const languageHeader = req.headers.get('accept-language');
+  if (!languageHeader) {
+    return undefined;
+  }
+
+  const firstItem = languageHeader.split(',')[0]?.trim();
+  if (!firstItem) {
+    return undefined;
+  }
+
+  return firstItem;
 }
 
 // helper function: create minimal response headers with Content-Type
@@ -205,6 +326,8 @@ async function proxyToDify(
   try {
     // construct target Dify URL
     const slugPath = adjustApiPathByAppType(slug, difyConfig?.appType);
+    const agentSource = inferAgentSource(slugPath);
+    const requestLocale = resolveRequestLocale(req);
     const targetUrl = `${difyApiUrl}/${slugPath}${req.nextUrl.search}`;
     console.log(
       `[App: ${appId}] [${req.method}] Proxying request to target URL: ${targetUrl}`
@@ -451,15 +574,23 @@ async function proxyToDify(
         const responseData = await response.text();
         try {
           const jsonData = JSON.parse(responseData);
+          const payloadWithFriendlyError = withAgentErrorEnvelope(jsonData, {
+            source: agentSource,
+            status: response.status,
+            locale: requestLocale,
+          });
           console.log(
             `[App: ${appId}] [${req.method}] Returning native Response with minimal headers for success JSON.`
           );
           // use minimal header helper
-          const baseResponse = new Response(JSON.stringify(jsonData), {
-            status: response.status,
-            statusText: response.statusText,
-            headers: createMinimalHeaders('application/json'), // use helper function
-          });
+          const baseResponse = new Response(
+            JSON.stringify(payloadWithFriendlyError),
+            {
+              status: response.status,
+              statusText: response.statusText,
+              headers: createMinimalHeaders('application/json'), // use helper function
+            }
+          );
 
           return baseResponse;
         } catch {
@@ -491,30 +622,43 @@ async function proxyToDify(
         const errorText = await response.text();
         try {
           const errorJson = JSON.parse(errorText);
+          const payloadWithFriendlyError = withAgentErrorEnvelope(errorJson, {
+            source: agentSource,
+            status: response.status,
+            locale: requestLocale,
+          });
           console.log(
             `[App: ${appId}] [${req.method}] Returning native Response with minimal headers for error JSON.`
           );
           // use minimal header helper
-          const baseResponse = new Response(JSON.stringify(errorJson), {
-            status: response.status,
-            statusText: response.statusText,
-            headers: createMinimalHeaders('application/json'),
-          });
+          const baseResponse = new Response(
+            JSON.stringify(payloadWithFriendlyError),
+            {
+              status: response.status,
+              statusText: response.statusText,
+              headers: createMinimalHeaders('application/json'),
+            }
+          );
 
           return baseResponse;
         } catch {
-          // error response is not JSON, return text
-          console.log(
-            `[App: ${appId}] [${req.method}] Error response is not JSON, returning plain text with minimal headers.`
-          );
-          // use minimal header helper
-          const originalDifyErrorContentType =
-            response.headers.get('content-type') || 'text/plain';
-          const baseResponse = new Response(errorText, {
+          // error response is not JSON, return json envelope for stable client parsing
+          const payloadWithFriendlyError = withAgentErrorEnvelope(errorText, {
+            source: agentSource,
             status: response.status,
-            statusText: response.statusText,
-            headers: createMinimalHeaders(originalDifyErrorContentType),
+            locale: requestLocale,
           });
+          console.log(
+            `[App: ${appId}] [${req.method}] Error response is not JSON, returning normalized JSON error envelope.`
+          );
+          const baseResponse = new Response(
+            JSON.stringify(payloadWithFriendlyError),
+            {
+              status: response.status,
+              statusText: response.statusText,
+              headers: createMinimalHeaders('application/json'),
+            }
+          );
 
           return baseResponse;
         }
@@ -524,16 +668,25 @@ async function proxyToDify(
           `[App: ${appId}] [${req.method}] Failed to read Dify error response body:`,
           readError
         );
-        const finalErrorHeaders = createMinimalHeaders('application/json'); // use helper function
-        const baseResponse = new Response(
-          JSON.stringify({
-            error: `Failed to read Dify error response body. Status: ${response.status}`,
-          }),
+        const fallbackError = withAgentErrorEnvelope(
           {
-            status: 502,
-            headers: finalErrorHeaders,
+            error: `Failed to read Dify error response body. Status: ${response.status}`,
+            details:
+              readError instanceof Error
+                ? readError.message
+                : String(readError),
+          },
+          {
+            source: agentSource,
+            status: response.status,
+            locale: requestLocale,
           }
         );
+        const finalErrorHeaders = createMinimalHeaders('application/json');
+        const baseResponse = new Response(JSON.stringify(fallbackError), {
+          status: 502,
+          headers: finalErrorHeaders,
+        });
 
         return baseResponse;
       }
@@ -544,11 +697,19 @@ async function proxyToDify(
       `[App: ${appId}] [${req.method}] Dify proxy fetch/processing error:`,
       error
     );
-    const baseResponse = NextResponse.json(
+    const fallbackError = withAgentErrorEnvelope(
       {
         error: `Failed to connect or process response from Dify service for app '${appId}' during ${req.method}.`,
         details: error instanceof Error ? error.message : 'Unknown error',
       },
+      {
+        source: 'agent-generic',
+        status: 502,
+        locale: resolveRequestLocale(req),
+      }
+    );
+    const baseResponse = NextResponse.json(
+      fallbackError,
       { status: 502 } // 502 Bad Gateway
     );
 

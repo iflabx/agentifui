@@ -1,4 +1,5 @@
 import { useProfile } from '@lib/hooks/use-profile';
+import { toUserFacingAgentError } from '@lib/services/agent-error/user-facing-error';
 import {
   createExecution,
   getExecutionsByServiceInstance,
@@ -93,6 +94,16 @@ export function useTextGenerationExecution(instanceId: string) {
       );
 
       try {
+        const finalRawError = finalResult?.error || null;
+        const normalizedFinalError = finalRawError
+          ? toUserFacingAgentError({
+              source: 'dify-completion',
+              message: finalRawError,
+              locale:
+                typeof navigator !== 'undefined' ? navigator.language : 'en-US',
+            })
+          : null;
+
         // --- More strict status determination ---
         let finalStatus: ExecutionStatus;
 
@@ -150,10 +161,25 @@ export function useTextGenerationExecution(instanceId: string) {
           },
 
           // Error info (if any)
-          ...(finalResult?.error && {
+          ...(finalRawError && {
             error_details: {
-              message: finalResult.error,
+              message: normalizedFinalError?.userMessage || finalRawError,
+              raw_message: finalRawError,
+              code: normalizedFinalError?.code || null,
+              kind: normalizedFinalError?.kind || null,
+              suggestion: normalizedFinalError?.suggestion || null,
               timestamp: completedAt,
+            },
+          }),
+
+          ...(normalizedFinalError && {
+            agent_error: {
+              code: normalizedFinalError.code,
+              kind: normalizedFinalError.kind,
+              source: normalizedFinalError.source,
+              retryable: normalizedFinalError.retryable,
+              suggestion: normalizedFinalError.suggestion,
+              raw_message: normalizedFinalError.rawMessage,
             },
           }),
         };
@@ -169,7 +195,9 @@ export function useTextGenerationExecution(instanceId: string) {
           elapsed_time: finalResult?.elapsed_time || null,
           error_message:
             finalStatus === 'failed'
-              ? finalResult?.error || 'Text generation failed'
+              ? normalizedFinalError?.userMessage ||
+                finalRawError ||
+                'Text generation failed'
               : null,
           completed_at: completedAt,
           metadata: completeMetadata,
@@ -416,11 +444,18 @@ export function useTextGenerationExecution(instanceId: string) {
         // Clean up streaming state
         setIsStreaming(false);
 
+        const rawErrorMessage =
+          error instanceof Error ? error.message : 'Text generation failed';
+        const normalizedError = toUserFacingAgentError({
+          source: 'dify-completion',
+          message: rawErrorMessage,
+          locale:
+            typeof navigator !== 'undefined' ? navigator.language : 'en-US',
+        });
+        const friendlyErrorMessage = normalizedError.userMessage;
+
         // Set error state
-        getActions().setError(
-          error instanceof Error ? error.message : 'Text generation failed',
-          true // allow retry
-        );
+        getActions().setError(friendlyErrorMessage, true);
 
         // Update database status to failed
         if (currentExecution?.id) {
@@ -428,16 +463,13 @@ export function useTextGenerationExecution(instanceId: string) {
             await updateExecutionStatus(
               currentExecution.id,
               'failed',
-              error instanceof Error ? error.message : 'Text generation failed'
+              friendlyErrorMessage
             );
 
             // Update execution status in store
             getActions().updateCurrentExecution({
               status: 'failed',
-              error_message:
-                error instanceof Error
-                  ? error.message
-                  : 'Text generation failed',
+              error_message: friendlyErrorMessage,
             });
           } catch (updateError) {
             console.error(

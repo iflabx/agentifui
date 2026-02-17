@@ -1,4 +1,5 @@
 import { useProfile } from '@lib/hooks/use-profile';
+import { toUserFacingAgentError } from '@lib/services/agent-error/user-facing-error';
 import {
   createExecution,
   getExecutionsByServiceInstance,
@@ -156,6 +157,16 @@ export function useWorkflowExecution(instanceId: string) {
       console.log('[Workflow Execution] nodeExecutionData:', nodeExecutionData);
 
       try {
+        const finalResultError = finalResult.error || null;
+        const normalizedFinalError = finalResultError
+          ? toUserFacingAgentError({
+              source: 'dify-workflow',
+              message: finalResultError,
+              locale:
+                typeof navigator !== 'undefined' ? navigator.language : 'en-US',
+            })
+          : null;
+
         // Determine final status
         const finalStatus: ExecutionStatus =
           finalResult.status === 'succeeded' ? 'completed' : 'failed';
@@ -216,6 +227,17 @@ export function useWorkflowExecution(instanceId: string) {
               0
             ),
           },
+
+          ...(normalizedFinalError && {
+            agent_error: {
+              code: normalizedFinalError.code,
+              kind: normalizedFinalError.kind,
+              source: normalizedFinalError.source,
+              retryable: normalizedFinalError.retryable,
+              suggestion: normalizedFinalError.suggestion,
+              raw_message: normalizedFinalError.rawMessage,
+            },
+          }),
         };
 
         console.log(
@@ -231,7 +253,7 @@ export function useWorkflowExecution(instanceId: string) {
           total_steps: finalResult.total_steps,
           total_tokens: finalResult.total_tokens ?? undefined,
           elapsed_time: finalResult.elapsed_time ?? undefined,
-          error_message: finalResult.error,
+          error_message: normalizedFinalError?.userMessage || finalResultError,
           completed_at: completedAt,
           metadata: completeMetadata,
         });
@@ -487,8 +509,15 @@ export function useWorkflowExecution(instanceId: string) {
         console.error('[Workflow Execution] ❌ Execution failed:', error);
 
         // Error handling: try to save error status and collected data
-        const errorMessage =
+        const rawErrorMessage =
           error instanceof Error ? error.message : 'Unknown error';
+        const normalizedError = toUserFacingAgentError({
+          source: 'dify-workflow',
+          message: rawErrorMessage,
+          locale:
+            typeof navigator !== 'undefined' ? navigator.language : 'en-US',
+        });
+        const errorMessage = normalizedError.userMessage;
         getActions().setError(errorMessage, true);
 
         // If there is a current execution record, try to save error status and collected data
@@ -520,6 +549,10 @@ export function useWorkflowExecution(instanceId: string) {
             const errorMetadata = {
               error_details: {
                 message: errorMessage,
+                raw_message: rawErrorMessage,
+                code: normalizedError.code,
+                kind: normalizedError.kind,
+                suggestion: normalizedError.suggestion,
                 timestamp: new Date().toISOString(),
                 collected_node_data: nodeExecutionData,
               },
