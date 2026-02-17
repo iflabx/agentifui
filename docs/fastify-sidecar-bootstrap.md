@@ -70,43 +70,33 @@ The current migration strategy is:
    - Served directly by Fastify.
    - Preserves admin-only group-member candidate pagination/search contract.
 10. `GET/PUT /api/admin/translations`
-
-- Served directly by Fastify.
-- Preserves admin-only dynamic translation read/update contract, including section-level merge/replace modes.
-
+    - Served directly by Fastify.
+    - Preserves admin-only dynamic translation read/update contract, including section-level merge/replace modes.
 11. `GET /api/internal/dify-config/:appId`
-
-- Served directly by Fastify.
-- Preserves admin-only Dify app config contract (provider resolution + default-instance fallback + API key decrypt).
-
+    - Served directly by Fastify.
+    - Preserves admin-only Dify app config contract (provider resolution + default-instance fallback + API key decrypt).
 12. `GET /api/internal/auth/local-password`
-
-- Served directly by Fastify.
-- Preserves authenticated local-password state contract (auth mode + user toggle + fallback password presence).
-
+    - Served directly by Fastify.
+    - Preserves authenticated local-password state contract (auth mode + user toggle + fallback password presence).
 13. `POST /api/internal/auth/local-password/bootstrap`
-
-- Served directly by Fastify.
-- Preserves authenticated bootstrap contract (`newPassword` required, existing fallback password returns `409`).
-- Uses better-auth `set-password` when available, and falls back to legacy Next bootstrap endpoint when upstream does not expose that route.
-
+    - Served directly by Fastify.
+    - Preserves authenticated bootstrap contract (`newPassword` required, existing fallback password returns `409`).
+    - Uses better-auth `set-password` when available, and falls back to legacy Next bootstrap endpoint when upstream does not expose that route.
 14. `POST /api/internal/auth/local-password/change`
-
-- Served directly by Fastify.
-- Preserves authenticated password change contract (`currentPassword` + `newPassword` required, missing fallback password returns `409`).
-- Uses better-auth `change-password` endpoint with legacy Next route fallback if needed.
-
+    - Served directly by Fastify.
+    - Preserves authenticated password change contract (`currentPassword` + `newPassword` required, missing fallback password returns `409`).
+    - Uses better-auth `change-password` endpoint with legacy Next route fallback if needed.
 15. `GET/PATCH /api/admin/auth/fallback-policy`
-
-- Served directly by Fastify.
-- Preserves admin-only auth-mode policy management (`normal` / `degraded`).
-
+    - Served directly by Fastify.
+    - Preserves admin-only auth-mode policy management (`normal` / `degraded`).
 16. `GET/PATCH /api/admin/auth/fallback-policy/users/:userId`
-
-- Served directly by Fastify.
-- Preserves admin-only per-user local-login toggle/state management.
-
-17. Other configured API prefixes still use Fastify fallback proxy to Next upstream.
+    - Served directly by Fastify.
+    - Preserves admin-only per-user local-login toggle/state management.
+17. `POST /api/internal/data`
+    - Served by Fastify as a compatibility gateway.
+    - Preserves the unified action contract (`{ action, payload }`) and forwards to legacy Next `internal/data` handler with fastify-bypass header.
+    - Enables ingress cutover first, then action-by-action backend extraction.
+18. Other configured API prefixes still use Fastify fallback proxy to Next upstream.
 
 ## Smoke Check
 
