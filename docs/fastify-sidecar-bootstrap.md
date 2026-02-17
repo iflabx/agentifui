@@ -48,7 +48,12 @@ The current migration strategy is:
    - Served directly by Fastify.
    - Covers `scope=public|all`, `mode=default`, and `instanceId` query branches.
    - Uses PostgreSQL + RLS GUC context in Fastify, and bridges session identity via upstream `/api/internal/auth/profile-status`.
-3. Other configured API prefixes still use Fastify fallback proxy to Next upstream.
+3. `GET /api/internal/profile`
+   - Served directly by Fastify.
+   - Preserves existing auth/authorization semantics (`401` unauthenticated, `403` forbidden cross-user access for non-admin).
+4. `PATCH /api/internal/profile`
+   - Not migrated yet; currently falls back to Next upstream.
+5. Other configured API prefixes still use Fastify fallback proxy to Next upstream.
 
 ## Smoke Check
 
