@@ -15,6 +15,7 @@ import { cn } from '@lib/utils';
 import 'katex/dist/katex.min.css';
 import { Copy, Download, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import type { Components } from 'react-markdown';
 import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -26,8 +27,8 @@ import React, { useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 interface ResultViewerProps {
-  result: any;
-  execution: any;
+  result: unknown;
+  execution: unknown;
   onClose: () => void;
 }
 
@@ -101,7 +102,7 @@ export function ResultViewer({
   const [isThinkOpen, setIsThinkOpen] = useState(false); // Default folded
 
   const formatResult = (
-    data: any
+    data: unknown
   ): {
     content: string;
     isMarkdown: boolean;
@@ -122,14 +123,16 @@ export function ResultViewer({
         };
       }
 
+      const dataRecord = data as Record<string, unknown>;
+
       // Check if there are result1, result2, etc. fields (workflow result mode)
-      const resultKeys = Object.keys(data).filter(key =>
+      const resultKeys = Object.keys(dataRecord).filter(key =>
         key.startsWith('result')
       );
       if (resultKeys.length > 0) {
         // Use the first result field first
         const firstResultKey = resultKeys[0];
-        const resultContent = data[firstResultKey];
+        const resultContent = dataRecord[firstResultKey];
 
         if (typeof resultContent === 'string') {
           // 🎯 Key modification: no longer delete think blocks, but parse them
@@ -153,12 +156,15 @@ export function ResultViewer({
       }
 
       // If there is a text field, display the text content first
-      if (data.text && typeof data.text === 'string') {
-        const parsed = parseThinkContent(data.text);
-        const isMarkdown = data.text.includes('```');
+      if (
+        typeof dataRecord.text === 'string' &&
+        dataRecord.text.trim().length > 0
+      ) {
+        const parsed = parseThinkContent(dataRecord.text);
+        const isMarkdown = dataRecord.text.includes('```');
 
         return {
-          content: data.text,
+          content: dataRecord.text,
           isMarkdown,
           hasThinkBlock: parsed.hasThinkBlock,
           thinkContent: parsed.thinkContent,
@@ -167,8 +173,8 @@ export function ResultViewer({
       }
 
       // If there is an outputs field, display the outputs content first
-      if (data.outputs && typeof data.outputs === 'object') {
-        const content = JSON.stringify(data.outputs, null, 2);
+      if (dataRecord.outputs && typeof dataRecord.outputs === 'object') {
+        const content = JSON.stringify(dataRecord.outputs, null, 2);
         return {
           content,
           isMarkdown: false,
@@ -179,7 +185,7 @@ export function ResultViewer({
       }
 
       // Otherwise, display the complete data
-      const content = JSON.stringify(data, null, 2);
+      const content = JSON.stringify(dataRecord, null, 2);
       return {
         content,
         isMarkdown: false,
@@ -210,8 +216,8 @@ export function ResultViewer({
   } = formatResult(result);
 
   // --- Markdown component configuration ---
-  const markdownComponents: any = {
-    code({ node, className, children, ...props }: any) {
+  const markdownComponents: Components = {
+    code({ className, children }) {
       const match = /language-(\w+)/.exec(className || '');
       const language = match ? match[1] : null;
 
@@ -228,94 +234,74 @@ export function ResultViewer({
         );
       } else {
         // Inline code
-        return (
-          <InlineCode className={className} {...props}>
-            {children}
-          </InlineCode>
-        );
+        return <InlineCode className={className}>{children}</InlineCode>;
       }
     },
-    table({ children, ...props }: any) {
+    table({ children }) {
       return <MarkdownTableContainer>{children}</MarkdownTableContainer>;
     },
-    blockquote({ children, ...props }: any) {
+    blockquote({ children }) {
       return <MarkdownBlockquote>{children}</MarkdownBlockquote>;
     },
-    p({ children, ...props }: any) {
-      return (
-        <p className="my-2 font-serif" {...props}>
-          {children}
-        </p>
-      );
+    p({ children }) {
+      return <p className="my-2 font-serif">{children}</p>;
     },
-    ul({ children, ...props }: any) {
+    ul({ children }) {
       return (
-        <ul className="my-2.5 ml-6 list-disc space-y-1 font-serif" {...props}>
+        <ul className="my-2.5 ml-6 list-disc space-y-1 font-serif">
           {children}
         </ul>
       );
     },
-    ol({ children, ...props }: any) {
+    ol({ children }) {
       return (
-        <ol
-          className="my-2.5 ml-6 list-decimal space-y-1 font-serif"
-          {...props}
-        >
+        <ol className="my-2.5 ml-6 list-decimal space-y-1 font-serif">
           {children}
         </ol>
       );
     },
-    li({ children, ...props }: any) {
-      return (
-        <li className="pb-0.5" {...props}>
-          {children}
-        </li>
-      );
+    li({ children }) {
+      return <li className="pb-0.5">{children}</li>;
     },
-    h1({ children, ...props }: any) {
+    h1({ children }) {
       return (
         <h1
           className={cn(
             'mt-4 mb-2 border-b pb-1 font-serif text-2xl font-semibold',
             'border-gray-300 dark:border-gray-700'
           )}
-          {...props}
         >
           {children}
         </h1>
       );
     },
-    h2({ children, ...props }: any) {
+    h2({ children }) {
       return (
         <h2
           className={cn(
             'mt-3.5 mb-1.5 border-b pb-1 font-serif text-xl font-semibold',
             'border-gray-300 dark:border-gray-700'
           )}
-          {...props}
         >
           {children}
         </h2>
       );
     },
-    h3({ children, ...props }: any) {
+    h3({ children }) {
       return (
-        <h3 className="mt-3 mb-1 font-serif text-lg font-semibold" {...props}>
+        <h3 className="mt-3 mb-1 font-serif text-lg font-semibold">
           {children}
         </h3>
       );
     },
-    h4({ children, ...props }: any) {
+    h4({ children }) {
       return (
-        <h4
-          className="mt-2.5 mb-0.5 font-serif text-base font-semibold"
-          {...props}
-        >
+        <h4 className="mt-2.5 mb-0.5 font-serif text-base font-semibold">
           {children}
         </h4>
       );
     },
-    a({ children, href, ...props }: any) {
+    a({ children, href, ...props }) {
       return (
         <a
           href={href}
@@ -331,14 +317,13 @@ export function ResultViewer({
         </a>
       );
     },
-    hr({ ...props }: any) {
+    hr() {
       return (
         <hr
           className={cn(
             'my-4 border-t',
             'border-gray-300 dark:border-gray-700'
           )}
-          {...props}
         />
       );
     },

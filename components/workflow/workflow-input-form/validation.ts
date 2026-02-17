@@ -1,4 +1,18 @@
-import type { DifyUserInputFormItem } from '@lib/services/dify/types';
+import type {
+  DifyFileInputControl,
+  DifyNumberInputControl,
+  DifySelectControl,
+  DifyTextInputControl,
+  DifyUserInputFormItem,
+} from '@lib/services/dify/types';
+
+function hasUploadFileId(value: unknown): value is { upload_file_id: string } {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  return typeof (value as Record<string, unknown>).upload_file_id === 'string';
+}
 
 /**
  * Validate workflow form data
@@ -9,9 +23,9 @@ import type { DifyUserInputFormItem } from '@lib/services/dify/types';
  * @returns validation error object
  */
 export function validateFormData(
-  formData: Record<string, any>,
+  formData: Record<string, unknown>,
   userInputForm: DifyUserInputFormItem[],
-  t: (key: string, params?: any) => string
+  t: (key: string, params?: Record<string, string | number | Date>) => string
 ): Record<string, string> {
   const errors: Record<string, string> = {};
 
@@ -33,7 +47,7 @@ export function validateFormData(
         (Array.isArray(value) && value.length === 0) ||
         (typeof value === 'object' &&
           !Array.isArray(value) &&
-          !value.upload_file_id)
+          !hasUploadFileId(value))
       : isNumberField
         ? value === '' || value === null || value === undefined
         : !value || (typeof value === 'string' && value.trim() === '');
@@ -51,10 +65,15 @@ export function validateFormData(
 
     // Number type validation
     if (fieldType === 'number') {
-      const numberConfig = fieldConfig as any;
+      const numberConfig = fieldConfig as DifyNumberInputControl;
 
       // Check if it is a valid number
-      const numValue = typeof value === 'number' ? value : parseFloat(value);
+      const numValue =
+        typeof value === 'number'
+          ? value
+          : typeof value === 'string'
+            ? parseFloat(value)
+            : Number.NaN;
       if (isNaN(numValue)) {
         errors[variable] = t('validation.invalidNumber', { label });
         return;
@@ -107,7 +126,10 @@ export function validateFormData(
 
     // Character length validation (only applicable to text fields)
     if (fieldType === 'text-input' || fieldType === 'paragraph') {
-      const maxLength = (fieldConfig as any).max_length;
+      const textConfig = fieldConfig as DifyTextInputControl & {
+        max_length?: number;
+      };
+      const maxLength = textConfig.max_length;
       if (maxLength && typeof value === 'string' && value.length > maxLength) {
         errors[variable] = t('validation.maxLengthExceeded', {
           label,
@@ -118,15 +140,20 @@ export function validateFormData(
 
     // Dropdown selection validation
     if (fieldType === 'select') {
-      const selectConfig = fieldConfig as any;
-      if (selectConfig.options && !selectConfig.options.includes(value)) {
+      const selectConfig = fieldConfig as DifySelectControl;
+      if (
+        selectConfig.options &&
+        (typeof value !== 'string' || !selectConfig.options.includes(value))
+      ) {
         errors[variable] = t('validation.invalidSelection', { label });
       }
     }
 
     // File validation
     if (isFileField) {
-      const fileConfig = fieldConfig as any;
+      const fileConfig = fieldConfig as DifyFileInputControl & {
+        max_length?: number;
+      };
 
       // Convert single file object to array for uniform processing
       const fileArray = Array.isArray(value) ? value : [value];

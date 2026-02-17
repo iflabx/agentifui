@@ -170,7 +170,7 @@ export function FormField({
               enabled: true, // Ensure enabled
             }}
             value={value || []}
-            onChange={onChange}
+            onChange={nextValue => onChange(nextValue as FormFieldValue)}
             error={error}
             instanceId={instanceId}
             isSingleFileMode={true} // Single file mode
@@ -192,7 +192,7 @@ export function FormField({
               enabled: true, // Ensure enabled
             }}
             value={value || []}
-            onChange={onChange}
+            onChange={nextValue => onChange(nextValue as FormFieldValue)}
             error={error}
             instanceId={instanceId}
             isSingleFileMode={false} // Multiple file mode

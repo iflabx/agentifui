@@ -33,14 +33,31 @@ interface UploadFile {
   uploadedId?: string; // File ID returned by Dify after successful upload
 }
 
+type FileUploadFieldConfig = {
+  enabled?: boolean;
+  max_length?: number;
+  number_limits?: number;
+  allowed_file_types?: string[];
+  max_file_size_mb?: number;
+};
+
 interface FileUploadFieldProps {
-  config: any;
-  value: any[] | any; // Support single file object or file array
-  onChange: (files: any[] | any) => void; // Return Dify-formatted file object or array
+  config: FileUploadFieldConfig;
+  value: unknown[] | unknown | null | undefined; // Support single file object or file array
+  onChange: (files: unknown[] | unknown | null) => void; // Return Dify-formatted file object or array
   error?: string;
   label?: string;
   instanceId: string; // Add instanceId for Dify API call
   isSingleFileMode?: boolean; // Whether to use single file mode
+}
+
+function isProcessedFileItem(item: unknown): boolean {
+  if (!item || typeof item !== 'object') {
+    return false;
+  }
+
+  const record = item as Record<string, unknown>;
+  return typeof record.upload_file_id === 'string';
 }
 
 /**
@@ -84,22 +101,26 @@ export function FileUploadField({
 
     if (valueArray.length > 0) {
       // Check if value is already in Dify file format
-      const isProcessedFiles = valueArray.every(
-        (item: any) => typeof item === 'object' && item.upload_file_id
+      const isProcessedFiles = valueArray.every(item =>
+        isProcessedFileItem(item)
       );
 
       if (!isProcessedFiles) {
         // If it is an original File object array, convert to UploadFile format
-        const convertedFiles = valueArray.map((file: File) => ({
-          id: `${file.name}-${file.lastModified}-${file.size}`,
-          file,
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          status: 'pending' as const,
-          progress: 0,
-        }));
-        setUploadFiles(convertedFiles);
+        const convertedFiles = valueArray
+          .filter((file): file is File => file instanceof File)
+          .map(file => ({
+            id: `${file.name}-${file.lastModified}-${file.size}`,
+            file,
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            status: 'pending' as const,
+            progress: 0,
+          }));
+        if (convertedFiles.length > 0) {
+          setUploadFiles(convertedFiles);
+        }
       }
     }
   }, [value]);

@@ -13,10 +13,14 @@ import { FileUploadField } from './file-upload-field';
 import { FormField } from './form-field';
 import { validateFormData } from './validation';
 
+type WorkflowFormData = Record<string, unknown>;
+type WorkflowAppConfig = {
+  dify_parameters?: DifyParametersSimplifiedConfig;
+} | null;
+
 interface WorkflowInputFormProps {
   instanceId: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Dynamic form data structure
-  onExecute: (formData: Record<string, any>) => Promise<void>;
+  onExecute: (formData: WorkflowFormData) => Promise<void>;
   isExecuting: boolean;
 }
 
@@ -41,16 +45,11 @@ export const WorkflowInputForm = React.forwardRef<
   const t = useTranslations('pages.workflow.form');
 
   // --- State management ---
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Dynamic form data structure
-  const [formData, setFormData] = useState<Record<string, any>>({});
+  const [formData, setFormData] = useState<WorkflowFormData>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Dynamic app config from API
-  const [appConfig, setAppConfig] = useState<any>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Dynamic form data structure
-  const [initialFormData, setInitialFormData] = useState<Record<string, any>>(
-    {}
-  );
+  const [appConfig, setAppConfig] = useState<WorkflowAppConfig>(null);
+  const [initialFormData, setInitialFormData] = useState<WorkflowFormData>({});
 
   // --- Initialize application configuration ---
   useEffect(() => {
@@ -79,7 +78,7 @@ export const WorkflowInputForm = React.forwardRef<
           const payload = (await response.json()) as {
             success: boolean;
             app?: {
-              config?: Record<string, any>;
+              config?: WorkflowAppConfig;
             };
           };
 
@@ -88,14 +87,13 @@ export const WorkflowInputForm = React.forwardRef<
             throw new Error(t('errors.instanceNotFound', { instanceId }));
           }
 
-          setAppConfig(serviceInstance.config);
+          setAppConfig(serviceInstance.config ?? null);
 
           // Initialize form default value
           const difyParams = serviceInstance.config
             ?.dify_parameters as DifyParametersSimplifiedConfig;
           const userInputForm = difyParams?.user_input_form || [];
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Dynamic form data structure
-          const initialData: Record<string, any> = {};
+          const initialData: WorkflowFormData = {};
 
           userInputForm.forEach((formItem: DifyUserInputFormItem) => {
             const fieldType = Object.keys(formItem)[0];
@@ -106,12 +104,11 @@ export const WorkflowInputForm = React.forwardRef<
               if (fieldType === 'file' || fieldType === 'file-list') {
                 initialData[fieldConfig.variable] = fieldConfig.default || [];
               } else if (fieldType === 'number') {
-                // Handle default value for number type
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Dynamic field config structure
-                const numberConfig = fieldConfig as any;
+                const numberDefault = fieldConfig.default;
                 initialData[fieldConfig.variable] =
-                  numberConfig.default !== undefined
-                    ? numberConfig.default
+                  typeof numberDefault === 'number' ||
+                  typeof numberDefault === 'string'
+                    ? numberDefault
                     : '';
               } else {
                 initialData[fieldConfig.variable] = fieldConfig.default || '';
@@ -183,8 +180,7 @@ export const WorkflowInputForm = React.forwardRef<
   }, [instanceId, t]);
 
   // --- Form field update ---
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Dynamic form field value
-  const handleFieldChange = (variable: string, value: any) => {
+  const handleFieldChange = (variable: string, value: unknown) => {
     setFormData(prev => ({
       ...prev,
       [variable]: value,
@@ -305,7 +301,15 @@ export const WorkflowInputForm = React.forwardRef<
                 return (
                   <FileUploadField
                     key={`${fieldConfig.variable}-${index}`}
-                    config={fieldConfig}
+                    config={
+                      fieldConfig as {
+                        enabled?: boolean;
+                        max_length?: number;
+                        number_limits?: number;
+                        allowed_file_types?: string[];
+                        max_file_size_mb?: number;
+                      }
+                    }
                     value={formData[fieldConfig.variable]}
                     onChange={value =>
                       handleFieldChange(fieldConfig.variable, value)
@@ -330,7 +334,13 @@ export const WorkflowInputForm = React.forwardRef<
                       | 'select'
                   }
                   config={fieldConfig}
-                  value={formData[fieldConfig.variable]}
+                  value={
+                    formData[fieldConfig.variable] as
+                      | string
+                      | number
+                      | string[]
+                      | File[]
+                  }
                   onChange={value =>
                     handleFieldChange(fieldConfig.variable, value)
                   }

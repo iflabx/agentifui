@@ -521,7 +521,15 @@ export function ChatflowInputArea({
                         {/* File upload field */}
                         {fieldType === 'file' || fieldType === 'file-list' ? (
                           <FileUploadField
-                            config={fieldConfig}
+                            config={
+                              fieldConfig as {
+                                enabled?: boolean;
+                                max_length?: number;
+                                number_limits?: number;
+                                allowed_file_types?: string[];
+                                max_file_size_mb?: number;
+                              }
+                            }
                             value={formData[fieldConfig.variable]}
                             onChange={value =>
                               handleFieldChange(fieldConfig.variable, value)
