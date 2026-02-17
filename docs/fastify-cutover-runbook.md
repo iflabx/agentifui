@@ -19,10 +19,14 @@ This runbook controls Next.js API ingress cutover to Fastify sidecar for `/api/i
 2. Optional target overrides:
    - `NEXT_PM2_APP=AgentifUI-Standalone pnpm fastify:cutover:on`
    - `FASTIFY_API_PORT=3011 FASTIFY_PROXY_BASE_URL=http://127.0.0.1:3011 pnpm fastify:cutover:on`
+   - emergency unknown-action fallback on:
+     `FASTIFY_INTERNAL_DATA_LEGACY_FALLBACK_ENABLED=1 pnpm fastify:cutover:on`
 3. Verify:
    - `curl -fsS http://127.0.0.1:3010/healthz`
    - `curl -i -X POST http://127.0.0.1:3000/api/internal/data -H 'content-type: application/json' --data '{}'`
    - expected status: `400` with `{"success":false,"error":"Missing action"}`
+4. Production-mode gate (recommended before accepting cutover):
+   - `pnpm m3:internal-data:verify:prod`
 
 ## Disable Cutover (Rollback)
 
