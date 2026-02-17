@@ -105,7 +105,9 @@
     "i18n:translate:dry": "node scripts/auto-gen-i18n.js --dry-run",
     "i18n:translate:help": "node scripts/auto-gen-i18n.js --help",
     "deploy": "pnpm build:standalone && pm2 startOrRestart ecosystem.config.js --only AgentifUI-Standalone --update-env || { echo 'Deploy failed'; exit 1; }",
-    "deploy:legacy": "pnpm build && pm2 startOrRestart ecosystem.config.js --only AgentifUI --update-env || { echo 'Deploy failed'; exit 1; }"
+    "deploy:legacy": "pnpm build && pm2 startOrRestart ecosystem.config.js --only AgentifUI --update-env || { echo 'Deploy failed'; exit 1; }",
+    "fastify:cutover:on": "bash scripts/fastify-cutover-on.sh",
+    "fastify:cutover:off": "bash scripts/fastify-cutover-off.sh"
   },
   "pnpm": {
     "ignoredBuiltDependencies": [

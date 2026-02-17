@@ -9,6 +9,9 @@ loadEnv({ path: '.env.test-stack' });
 
 const appPort = Number(process.env.M3_INTERNAL_DATA_APP_PORT || 3316);
 const appBase = `http://127.0.0.1:${appPort}`;
+const useFastifyProxy = process.env.M3_INTERNAL_DATA_USE_FASTIFY_PROXY !== '0';
+const fastifyPort = Number(process.env.M3_INTERNAL_DATA_FASTIFY_PORT || 3317);
+const fastifyBase = `http://127.0.0.1:${fastifyPort}`;
 const appReadyTimeoutMs = Number(
   process.env.M3_INTERNAL_DATA_READY_TIMEOUT_MS || 120000
 );
@@ -100,6 +103,19 @@ async function waitForServer(url, timeoutMs = 120000) {
   }
 
   throw new Error(`Server not ready in ${timeoutMs}ms: ${url}`);
+}
+
+async function stopProcess(proc) {
+  if (!proc) {
+    return;
+  }
+  if (!proc.killed && proc.exitCode === null) {
+    proc.kill('SIGTERM');
+    await sleep(800);
+    if (proc.exitCode === null) {
+      proc.kill('SIGKILL');
+    }
+  }
 }
 
 async function requestWithCookies(jar, url, init = {}) {
@@ -209,18 +225,33 @@ async function main() {
       S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY || 'minioadmin',
       S3_BUCKET: process.env.S3_BUCKET || 'agentifui',
       S3_ENABLE_PATH_STYLE: process.env.S3_ENABLE_PATH_STYLE || '1',
+      FASTIFY_PROXY_ENABLED: useFastifyProxy ? '1' : '0',
+      FASTIFY_PROXY_BASE_URL: fastifyBase,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
+  const apiProc = useFastifyProxy
+    ? startProcess('pnpm', ['--filter', '@agentifui/api', 'dev'], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          NODE_ENV: 'development',
+          DATABASE_URL: databaseUrl,
+          REDIS_URL: redisUrl,
+          FASTIFY_API_HOST: '127.0.0.1',
+          FASTIFY_API_PORT: String(fastifyPort),
+          FASTIFY_LOG_LEVEL: process.env.FASTIFY_LOG_LEVEL || 'error',
+          FASTIFY_INTERNAL_DATA_PROXY_TIMEOUT_MS: '30000',
+          NEXT_UPSTREAM_BASE_URL: appBase,
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+    : null;
+
   const stopAll = async exitCode => {
-    if (!appProc.killed && appProc.exitCode === null) {
-      appProc.kill('SIGTERM');
-      await sleep(800);
-      if (appProc.exitCode === null) {
-        appProc.kill('SIGKILL');
-      }
-    }
+    await stopProcess(apiProc);
+    await stopProcess(appProc);
 
     process.exit(exitCode);
   };
@@ -229,7 +260,21 @@ async function main() {
   let userAId = null;
 
   try {
+    if (useFastifyProxy) {
+      await waitForServer(`${fastifyBase}/healthz`, appReadyTimeoutMs);
+    }
     await waitForServer(`${appBase}/api/auth/better/get-session`, appReadyTimeoutMs);
+
+    if (useFastifyProxy) {
+      const fastifyHealth = await requestWithCookies(
+        new CookieJar(),
+        `${appBase}/api/internal/fastify-health`,
+        {
+          method: 'GET',
+        }
+      );
+      assertStatus(fastifyHealth, 200, 'fastify-health');
+    }
 
     const jarA = new CookieJar();
     const jarB = new CookieJar();

@@ -59,10 +59,13 @@ function normalizeRequestBody(body: unknown): string {
 async function proxyInternalDataRequest(
   request: FastifyRequest,
   config: ApiRuntimeConfig
-): Promise<{ statusCode: number; payload: unknown }> {
+): Promise<{ statusCode: number; payload: unknown; contentType: string }> {
   const targetUrl = new URL('/api/internal/data', config.nextUpstreamBaseUrl);
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
+  const timeout = setTimeout(
+    () => controller.abort(),
+    config.internalDataProxyTimeoutMs
+  );
 
   try {
     const response = await fetch(targetUrl.toString(), {
@@ -73,10 +76,13 @@ async function proxyInternalDataRequest(
     });
 
     const responseText = await response.text();
+    const contentType =
+      response.headers.get('content-type')?.trim() || 'application/json';
 
     if (!responseText.trim()) {
       return {
         statusCode: response.status,
+        contentType: 'application/json',
         payload: {
           success: response.ok,
           error: response.ok ? null : 'Empty upstream response',
@@ -84,23 +90,38 @@ async function proxyInternalDataRequest(
       };
     }
 
-    try {
-      return {
-        statusCode: response.status,
-        payload: JSON.parse(responseText) as unknown,
-      };
-    } catch {
-      return {
-        statusCode: response.status,
-        payload: {
-          success: false,
-          error: responseText,
-        },
-      };
+    if (contentType.toLowerCase().includes('application/json')) {
+      try {
+        return {
+          statusCode: response.status,
+          payload: JSON.parse(responseText) as unknown,
+          contentType,
+        };
+      } catch {
+        return {
+          statusCode: response.status,
+          contentType: 'application/json',
+          payload: {
+            success: false,
+            error: responseText,
+          },
+        };
+      }
     }
-  } catch {
+
+    return {
+      statusCode: response.status,
+      contentType,
+      payload: responseText,
+    };
+  } catch (error) {
+    request.log.error(
+      { err: error },
+      '[FastifyAPI][internal-data] proxy request failed'
+    );
     return {
       statusCode: 502,
+      contentType: 'application/json',
       payload: {
         success: false,
         error: 'Failed to proxy internal data action',
@@ -116,6 +137,9 @@ export const internalDataRoutes: FastifyPluginAsync<
 > = async (app, options) => {
   app.post('/api/internal/data', async (request, reply) => {
     const result = await proxyInternalDataRequest(request, options.config);
-    return reply.status(result.statusCode).send(result.payload);
+    return reply
+      .status(result.statusCode)
+      .header('content-type', result.contentType)
+      .send(result.payload);
   });
 };

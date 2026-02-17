@@ -13,6 +13,7 @@ export interface ApiRuntimeConfig {
   logLevel: string;
   nextUpstreamBaseUrl: string;
   proxyPrefixes: string[];
+  internalDataProxyTimeoutMs: number;
 }
 
 function parsePort(rawValue: string | undefined, fallback: number): number {
@@ -24,6 +25,22 @@ function parsePort(rawValue: string | undefined, fallback: number): number {
     return fallback;
   }
   return parsed;
+}
+
+function parseTimeoutMs(
+  rawValue: string | undefined,
+  fallback: number
+): number {
+  if (!rawValue) {
+    return fallback;
+  }
+
+  const parsed = Number(rawValue.trim());
+  if (!Number.isFinite(parsed) || parsed < 1000) {
+    return fallback;
+  }
+
+  return Math.floor(parsed);
 }
 
 function parseProxyPrefixes(rawValue: string | undefined): string[] {
@@ -55,5 +72,9 @@ export function loadApiRuntimeConfig(): ApiRuntimeConfig {
     nextUpstreamBaseUrl:
       process.env.NEXT_UPSTREAM_BASE_URL?.trim() || 'http://127.0.0.1:3000',
     proxyPrefixes: parseProxyPrefixes(process.env.FASTIFY_PROXY_PREFIXES),
+    internalDataProxyTimeoutMs: parseTimeoutMs(
+      process.env.FASTIFY_INTERNAL_DATA_PROXY_TIMEOUT_MS,
+      30000
+    ),
   };
 }

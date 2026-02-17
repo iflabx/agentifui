@@ -115,3 +115,4 @@ The current migration strategy is:
 1. Rewrites are disabled by default.
 2. Rewrites now use `beforeFiles` so existing Next API route files can still be cut over to Fastify.
 3. Fastify adds `x-agentifui-fastify-bypass: 1` when proxying to Next to prevent rewrite loops.
+4. Browser internal-data client now includes fail-open retry: if rewrite path returns 5xx/network error, it retries with `x-agentifui-fastify-bypass: 1` and falls back to legacy Next handler.
