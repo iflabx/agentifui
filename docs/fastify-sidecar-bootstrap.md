@@ -60,7 +60,13 @@ The current migration strategy is:
 6. `POST /api/admin/encrypt`
    - Served directly by Fastify.
    - Preserves admin-only behavior and AES-256-GCM key encryption output format (`iv:authTag:encryptedHex`).
-7. Other configured API prefixes still use Fastify fallback proxy to Next upstream.
+7. `GET /api/admin/status`
+   - Served directly by Fastify.
+   - Preserves admin-only status summary contract (`hasActiveProviders`, `hasActiveInstances`, `providersCount`, `timestamp`).
+8. `GET /api/admin/users`
+   - Served directly by Fastify.
+   - Preserves admin-only active-user list contract used by management UIs.
+9. Other configured API prefixes still use Fastify fallback proxy to Next upstream.
 
 ## Smoke Check
 
