@@ -380,4 +380,79 @@ export const internalAppsRoutes: FastifyPluginAsync<
         .send({ success: false, error: 'Internal server error' });
     }
   });
+
+  app.patch<{
+    Body: {
+      id?: string;
+      visibility?: 'public' | 'group_only' | 'private';
+    };
+  }>('/api/internal/apps', async (request, reply) => {
+    try {
+      const admin = await requireAdminActor(request, options.config);
+      if (!admin.ok) {
+        return reply.status(admin.statusCode).send(admin.payload);
+      }
+
+      const id = readQueryValue(request.body?.id);
+      const visibility = request.body?.visibility;
+      if (
+        !id ||
+        (visibility !== 'public' &&
+          visibility !== 'group_only' &&
+          visibility !== 'private')
+      ) {
+        return reply
+          .status(400)
+          .send({ success: false, error: 'Invalid update payload' });
+      }
+
+      const rows = await queryRowsWithPgUserContext<AppRow>(
+        admin.actor.userId,
+        admin.actor.role,
+        `
+          UPDATE service_instances si
+          SET visibility = $1,
+              updated_at = NOW()
+          FROM providers p
+          WHERE si.id = $2::uuid
+            AND p.id = si.provider_id
+          RETURNING
+            si.id::text,
+            si.provider_id::text,
+            si.display_name,
+            si.description,
+            si.instance_id,
+            si.api_path,
+            si.is_default,
+            si.visibility,
+            si.config,
+            si.created_at::text,
+            si.updated_at::text,
+            p.name AS provider_name,
+            p.is_active AS provider_is_active,
+            p.is_default AS provider_is_default
+        `,
+        [visibility, id]
+      );
+
+      if (!rows[0]) {
+        return reply
+          .status(404)
+          .send({ success: false, error: 'App instance not found' });
+      }
+
+      return reply.send({
+        success: true,
+        app: toAppDetail(rows[0]),
+      });
+    } catch (error) {
+      request.log.error(
+        { err: error },
+        '[FastifyAPI][internal-apps] PATCH failed'
+      );
+      return reply
+        .status(500)
+        .send({ success: false, error: 'Internal server error' });
+    }
+  });
 };

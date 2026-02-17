@@ -142,4 +142,88 @@ export const internalProfileRoutes: FastifyPluginAsync<
         .send({ success: false, error: 'Internal server error' });
     }
   });
+
+  app.patch<{
+    Body: {
+      userId?: string;
+      updates?: Record<string, unknown>;
+    };
+  }>('/api/internal/profile', async (request, reply) => {
+    try {
+      const auth = await requireActor(request, options.config);
+      if (!auth.ok) {
+        return reply.status(auth.statusCode).send(auth.payload);
+      }
+
+      const targetUserId = resolveTargetUserId(
+        request.body?.userId,
+        auth.actor.userId
+      );
+
+      if (
+        !canAccessTargetUser(targetUserId, auth.actor.userId, auth.actor.role)
+      ) {
+        return reply.status(403).send({ success: false, error: 'Forbidden' });
+      }
+
+      const updates = request.body?.updates || {};
+      const allowedColumns = new Set(['full_name', 'username', 'avatar_url']);
+      const entries = Object.entries(updates).filter(
+        ([key, value]) => allowedColumns.has(key) && value !== undefined
+      );
+
+      if (entries.length === 0) {
+        return reply
+          .status(400)
+          .send({ success: false, error: 'No valid fields to update' });
+      }
+
+      const setClauses = entries.map(
+        ([column], index) => `${column} = $${index + 1}`
+      );
+      const values = entries.map(([, value]) => value);
+      values.push(new Date().toISOString());
+      setClauses.push(`updated_at = $${values.length}`);
+      values.push(targetUserId);
+
+      const oldProfileRows = await queryRowsWithPgSystemContext<ProfileRow>(
+        `${PROFILE_SELECT_SQL} WHERE p.id = $1::uuid LIMIT 1`,
+        [targetUserId]
+      );
+
+      const updateRows = await queryRowsWithPgSystemContext<{ id: string }>(
+        `
+          UPDATE profiles
+          SET ${setClauses.join(', ')}
+          WHERE id = $${values.length}::uuid
+          RETURNING id::text
+        `,
+        values
+      );
+
+      if (!updateRows[0]) {
+        return reply
+          .status(404)
+          .send({ success: false, error: 'Profile not found' });
+      }
+
+      const profileRows = await queryRowsWithPgSystemContext<ProfileRow>(
+        `${PROFILE_SELECT_SQL} WHERE p.id = $1::uuid LIMIT 1`,
+        [targetUserId]
+      );
+
+      return reply.send({
+        success: true,
+        profile: profileRows[0] || oldProfileRows[0] || null,
+      });
+    } catch (error) {
+      request.log.error(
+        { err: error },
+        '[FastifyAPI][internal-profile] PATCH failed'
+      );
+      return reply
+        .status(500)
+        .send({ success: false, error: 'Internal server error' });
+    }
+  });
 };

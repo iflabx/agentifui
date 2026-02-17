@@ -48,15 +48,19 @@ The current migration strategy is:
    - Served directly by Fastify.
    - Covers `scope=public|all`, `mode=default`, and `instanceId` query branches.
    - Uses PostgreSQL + RLS GUC context in Fastify, and bridges session identity via upstream `/api/internal/auth/profile-status`.
-3. `GET /api/internal/profile`
+3. `PATCH /api/internal/apps`
+   - Served directly by Fastify.
+   - Preserves admin-only update contract for app visibility (`public|group_only|private`).
+4. `GET /api/internal/profile`
    - Served directly by Fastify.
    - Preserves existing auth/authorization semantics (`401` unauthenticated, `403` forbidden cross-user access for non-admin).
-4. `POST /api/admin/encrypt`
+5. `PATCH /api/internal/profile`
+   - Served directly by Fastify.
+   - Preserves field allow-list update semantics (`full_name`, `username`, `avatar_url`).
+6. `POST /api/admin/encrypt`
    - Served directly by Fastify.
    - Preserves admin-only behavior and AES-256-GCM key encryption output format (`iv:authTag:encryptedHex`).
-5. `PATCH /api/internal/profile`
-   - Not migrated yet; currently falls back to Next upstream.
-6. Other configured API prefixes still use Fastify fallback proxy to Next upstream.
+7. Other configured API prefixes still use Fastify fallback proxy to Next upstream.
 
 ## Smoke Check
 
