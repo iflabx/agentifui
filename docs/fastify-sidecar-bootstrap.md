@@ -51,9 +51,12 @@ The current migration strategy is:
 3. `GET /api/internal/profile`
    - Served directly by Fastify.
    - Preserves existing auth/authorization semantics (`401` unauthenticated, `403` forbidden cross-user access for non-admin).
-4. `PATCH /api/internal/profile`
+4. `POST /api/admin/encrypt`
+   - Served directly by Fastify.
+   - Preserves admin-only behavior and AES-256-GCM key encryption output format (`iv:authTag:encryptedHex`).
+5. `PATCH /api/internal/profile`
    - Not migrated yet; currently falls back to Next upstream.
-5. Other configured API prefixes still use Fastify fallback proxy to Next upstream.
+6. Other configured API prefixes still use Fastify fallback proxy to Next upstream.
 
 ## Smoke Check
 

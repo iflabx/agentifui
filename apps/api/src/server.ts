@@ -2,6 +2,7 @@ import cors from '@fastify/cors';
 import Fastify from 'fastify';
 
 import { type ApiRuntimeConfig, loadApiRuntimeConfig } from './config';
+import { adminEncryptRoutes } from './routes/admin-encrypt';
 import { healthRoutes } from './routes/health';
 import { internalAppsRoutes } from './routes/internal-apps';
 import { internalProfileRoutes } from './routes/internal-profile';
@@ -31,6 +32,7 @@ export async function createApiServer(config: ApiRuntimeConfig) {
     origin: true,
     credentials: true,
   });
+  await app.register(adminEncryptRoutes, { config });
   await app.register(healthRoutes, { config });
   await app.register(internalAppsRoutes, { config });
   await app.register(internalProfileRoutes, { config });
