@@ -272,6 +272,9 @@ async function main() {
   };
 
   let conversationId = null;
+  let executionId = null;
+  let serviceInstanceId = null;
+  let providerId = null;
   let userAId = null;
 
   try {
@@ -330,6 +333,63 @@ async function main() {
         `,
         [userBId, userBEmail]
       );
+
+      const providerInsert = await dbClient.query(
+        `
+          INSERT INTO providers (
+            name,
+            type,
+            base_url,
+            auth_type,
+            is_active,
+            is_default,
+            created_at,
+            updated_at
+          )
+          VALUES ($1, 'dify', 'https://example.com', 'bearer', TRUE, FALSE, NOW(), NOW())
+          RETURNING id::text
+        `,
+        [`m3-provider-${suffix}`]
+      );
+      providerId = providerInsert.rows[0]?.id || null;
+      if (!providerId) {
+        throw new Error('failed to seed provider for app execution test');
+      }
+
+      const serviceInstanceInsert = await dbClient.query(
+        `
+          INSERT INTO service_instances (
+            provider_id,
+            instance_id,
+            api_path,
+            display_name,
+            description,
+            is_default,
+            visibility,
+            config,
+            created_at,
+            updated_at
+          )
+          VALUES (
+            $1::uuid,
+            $2,
+            '/v1',
+            $3,
+            NULL,
+            TRUE,
+            'private',
+            '{}'::jsonb,
+            NOW(),
+            NOW()
+          )
+          RETURNING id::text
+        `,
+        [providerId, `m3-instance-${suffix}`, `M3 Instance ${suffix}`]
+      );
+      serviceInstanceId = serviceInstanceInsert.rows[0]?.id || null;
+      if (!serviceInstanceId) {
+        throw new Error('failed to seed service instance for app execution test');
+      }
 
       const conversationExternalId = `m3-external-${suffix}`;
       const createConversation = await callInternalAction(
@@ -551,6 +611,219 @@ async function main() {
         throw new Error('messages.createPlaceholder should return saved record');
       }
 
+      const createExecution = await callInternalAction(
+        jarA,
+        'appExecutions.create',
+        {
+          execution: {
+            service_instance_id: serviceInstanceId,
+            execution_type: 'workflow',
+            title: `M3 Execution ${suffix}`,
+            inputs: { prompt: 'hello' },
+            metadata: { source: 'm3-p3' },
+          },
+        }
+      );
+      assertStatus(createExecution.response, 200, 'appExecutions.create');
+      assertInternalDataHandler(
+        createExecution.response,
+        'local',
+        'appExecutions.create',
+        useFastifyProxy
+      );
+      if (!createExecution.body?.success || !createExecution.body?.data?.id) {
+        throw new Error('appExecutions.create should return saved row');
+      }
+      executionId = createExecution.body.data.id;
+
+      const getExecutionById = await callInternalAction(jarA, 'appExecutions.getById', {
+        userId: userAId,
+        executionId,
+      });
+      assertStatus(getExecutionById.response, 200, 'appExecutions.getById(owner)');
+      assertInternalDataHandler(
+        getExecutionById.response,
+        'local',
+        'appExecutions.getById(owner)',
+        useFastifyProxy
+      );
+      if (!getExecutionById.body?.success || getExecutionById.body?.data?.id !== executionId) {
+        throw new Error('appExecutions.getById(owner) mismatch');
+      }
+
+      const getExecutionByOther = await callInternalAction(
+        jarB,
+        'appExecutions.getById',
+        {
+          userId: userBId,
+          executionId,
+        }
+      );
+      assertStatus(getExecutionByOther.response, 200, 'appExecutions.getById(other)');
+      assertInternalDataHandler(
+        getExecutionByOther.response,
+        'local',
+        'appExecutions.getById(other)',
+        useFastifyProxy
+      );
+      if (!getExecutionByOther.body?.success || getExecutionByOther.body?.data !== null) {
+        throw new Error('appExecutions.getById(other) should return null');
+      }
+
+      const listExecutions = await callInternalAction(
+        jarA,
+        'appExecutions.getByServiceInstance',
+        {
+          userId: userAId,
+          serviceInstanceId,
+          limit: 20,
+        }
+      );
+      assertStatus(
+        listExecutions.response,
+        200,
+        'appExecutions.getByServiceInstance'
+      );
+      assertInternalDataHandler(
+        listExecutions.response,
+        'local',
+        'appExecutions.getByServiceInstance',
+        useFastifyProxy
+      );
+      const executionIds = new Set((listExecutions.body?.data || []).map(item => item.id));
+      if (!listExecutions.body?.success || !executionIds.has(executionId)) {
+        throw new Error('appExecutions.getByServiceInstance should include created record');
+      }
+
+      const updateStatusByOther = await callInternalAction(
+        jarB,
+        'appExecutions.updateStatus',
+        {
+          userId: userBId,
+          executionId,
+          status: 'failed',
+        }
+      );
+      assertStatus(
+        updateStatusByOther.response,
+        404,
+        'appExecutions.updateStatus(other)'
+      );
+      assertInternalDataHandler(
+        updateStatusByOther.response,
+        'local',
+        'appExecutions.updateStatus(other)',
+        useFastifyProxy
+      );
+
+      const updateStatusByOwner = await callInternalAction(
+        jarA,
+        'appExecutions.updateStatus',
+        {
+          userId: userAId,
+          executionId,
+          status: 'running',
+        }
+      );
+      assertStatus(
+        updateStatusByOwner.response,
+        200,
+        'appExecutions.updateStatus(owner)'
+      );
+      assertInternalDataHandler(
+        updateStatusByOwner.response,
+        'local',
+        'appExecutions.updateStatus(owner)',
+        useFastifyProxy
+      );
+      if (!updateStatusByOwner.body?.success || updateStatusByOwner.body?.data !== true) {
+        throw new Error('appExecutions.updateStatus(owner) should return true');
+      }
+
+      const updateCompleteByOwner = await callInternalAction(
+        jarA,
+        'appExecutions.updateComplete',
+        {
+          userId: userAId,
+          executionId,
+          completeData: {
+            status: 'completed',
+            outputs: { answer: 'ok' },
+            total_steps: 1,
+            total_tokens: 10,
+            elapsed_time: 0.123,
+            metadata: { source: 'm3-p3-complete' },
+          },
+        }
+      );
+      assertStatus(
+        updateCompleteByOwner.response,
+        200,
+        'appExecutions.updateComplete(owner)'
+      );
+      assertInternalDataHandler(
+        updateCompleteByOwner.response,
+        'local',
+        'appExecutions.updateComplete(owner)',
+        useFastifyProxy
+      );
+      if (
+        !updateCompleteByOwner.body?.success ||
+        updateCompleteByOwner.body?.data?.status !== 'completed'
+      ) {
+        throw new Error('appExecutions.updateComplete(owner) should return completed row');
+      }
+
+      const deleteExecutionByOwner = await callInternalAction(
+        jarA,
+        'appExecutions.delete',
+        {
+          userId: userAId,
+          executionId,
+        }
+      );
+      assertStatus(
+        deleteExecutionByOwner.response,
+        200,
+        'appExecutions.delete(owner)'
+      );
+      assertInternalDataHandler(
+        deleteExecutionByOwner.response,
+        'local',
+        'appExecutions.delete(owner)',
+        useFastifyProxy
+      );
+      if (!deleteExecutionByOwner.body?.success || deleteExecutionByOwner.body?.data !== true) {
+        throw new Error('appExecutions.delete(owner) should return true');
+      }
+
+      const listExecutionsAfterDelete = await callInternalAction(
+        jarA,
+        'appExecutions.getByServiceInstance',
+        {
+          userId: userAId,
+          serviceInstanceId,
+          limit: 20,
+        }
+      );
+      assertStatus(
+        listExecutionsAfterDelete.response,
+        200,
+        'appExecutions.getByServiceInstance(after delete)'
+      );
+      assertInternalDataHandler(
+        listExecutionsAfterDelete.response,
+        'local',
+        'appExecutions.getByServiceInstance(after delete)',
+        useFastifyProxy
+      );
+      const executionIdsAfterDelete = new Set(
+        (listExecutionsAfterDelete.body?.data || []).map(item => item.id)
+      );
+      if (executionIdsAfterDelete.has(executionId)) {
+        throw new Error('soft-deleted execution should not appear in list');
+      }
+
       const deleteByOther = await callInternalAction(
         jarB,
         'conversations.deleteConversation',
@@ -634,6 +907,15 @@ async function main() {
               ownerCanFindDuplicate: true,
               ownerCanListMessages: true,
               ownerCanCreatePlaceholder: true,
+              ownerCanCreateExecution: true,
+              ownerCanListExecutions: true,
+              ownerCanGetExecutionById: true,
+              nonOwnerExecutionGetIsNull: true,
+              nonOwnerExecutionStatusBlocked: true,
+              ownerCanUpdateExecutionStatus: true,
+              ownerCanUpdateExecutionComplete: true,
+              ownerCanDeleteExecution: true,
+              executionListExcludesDeleted: true,
               localHandlerAsserted: useFastifyProxy,
             },
             userAId,
@@ -645,9 +927,24 @@ async function main() {
         )
       );
     } finally {
+      if (executionId) {
+        await dbClient.query('DELETE FROM app_executions WHERE id = $1::uuid', [
+          executionId,
+        ]);
+      }
       if (conversationId) {
         await dbClient.query('DELETE FROM conversations WHERE id = $1::uuid', [
           conversationId,
+        ]);
+      }
+      if (serviceInstanceId) {
+        await dbClient.query('DELETE FROM service_instances WHERE id = $1::uuid', [
+          serviceInstanceId,
+        ]);
+      }
+      if (providerId) {
+        await dbClient.query('DELETE FROM providers WHERE id = $1::uuid', [
+          providerId,
         ]);
       }
       await dbClient.end();

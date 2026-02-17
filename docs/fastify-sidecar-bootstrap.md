@@ -98,6 +98,7 @@ The current migration strategy is:
     - Current local extraction scope:
       - `conversations.*` (`getConversationByExternalId`, `createConversation`, `getUserConversations`, `renameConversation`, `deleteConversation`)
       - `messages.*` (`getLatest`, `findDuplicate`, `save`, `createPlaceholder`)
+      - `appExecutions.*` (`getByServiceInstance`, `getById`, `create`, `updateStatus`, `updateComplete`, `delete`)
     - Non-extracted actions still forward to legacy Next `internal/data` handler with fastify-bypass header.
     - Response includes `x-agentifui-internal-data-handler: local|legacy` for phase-level verification.
 18. Other configured API prefixes still use Fastify fallback proxy to Next upstream.
