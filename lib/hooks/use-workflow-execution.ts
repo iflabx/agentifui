@@ -44,6 +44,29 @@ type WorkflowNodeSnapshot = {
   event_type: WorkflowNodeEvent['event'];
 };
 
+function buildNormalizedWorkflowInputs(
+  formData: Record<string, unknown>
+): Record<string, unknown> {
+  const normalized: Record<string, unknown> = {};
+
+  Object.entries(formData).forEach(([rawKey, value]) => {
+    const key = rawKey.trim();
+    if (!key || typeof value === 'undefined') {
+      return;
+    }
+
+    normalized[key] = value;
+
+    // Compatibility alias: many third-party workflow tools expect lowercase keys.
+    const lowerKey = key.toLowerCase();
+    if (lowerKey !== key && !(lowerKey in normalized)) {
+      normalized[lowerKey] = value;
+    }
+  });
+
+  return normalized;
+}
+
 function isWorkflowNodeEvent(
   event: DifyWorkflowSseEvent
 ): event is WorkflowNodeEvent {
@@ -262,6 +285,7 @@ export function useWorkflowExecution(instanceId: string) {
 
       // Used to collect node execution data
       const nodeExecutionData: WorkflowNodeSnapshot[] = [];
+      const normalizedInputs = buildNormalizedWorkflowInputs(formData);
 
       // Declare streamResponse variable for use in catch block
       let streamResponse: DifyWorkflowStreamResponse | null = null;
@@ -311,7 +335,7 @@ export function useWorkflowExecution(instanceId: string) {
           external_execution_id: null,
           task_id: null,
           title: createTitle(),
-          inputs: formData,
+          inputs: normalizedInputs,
           outputs: null,
           status: 'pending',
           error_message: null,
@@ -321,7 +345,7 @@ export function useWorkflowExecution(instanceId: string) {
           completed_at: null,
           metadata: {
             execution_started_at: new Date().toISOString(),
-            initial_form_data: formData,
+            initial_form_data: normalizedInputs,
           },
         };
 
@@ -351,7 +375,7 @@ export function useWorkflowExecution(instanceId: string) {
 
         // --- Step 4: Prepare Dify API call payload ---
         const difyPayload: DifyWorkflowRequestPayload = {
-          inputs: formData,
+          inputs: normalizedInputs,
           response_mode: 'streaming' as const,
           user: userId,
         };
