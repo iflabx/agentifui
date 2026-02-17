@@ -4,6 +4,7 @@ import Fastify from 'fastify';
 import { type ApiRuntimeConfig, loadApiRuntimeConfig } from './config';
 import { healthRoutes } from './routes/health';
 import { proxyFallbackRoutes } from './routes/proxy-fallback';
+import { translationsRoutes } from './routes/translations';
 
 function resolveHttpStatusCode(error: unknown): number {
   if (typeof error !== 'object' || error === null) {
@@ -29,6 +30,7 @@ export async function createApiServer(config: ApiRuntimeConfig) {
     credentials: true,
   });
   await app.register(healthRoutes, { config });
+  await app.register(translationsRoutes);
   await app.register(proxyFallbackRoutes, { config });
 
   app.setErrorHandler((error, request, reply) => {

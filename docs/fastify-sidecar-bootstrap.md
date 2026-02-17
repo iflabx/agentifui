@@ -39,6 +39,25 @@ The current migration strategy is:
 1. `GET /healthz` (Fastify runtime health).
 2. `GET /api/internal/fastify-health` (Fastify migration health payload).
 
+## Migrated Routes (Current)
+
+1. `GET /api/translations/:locale`
+   - Served directly by Fastify.
+   - Keeps section filtering + file mtime cache behavior compatible with existing Next route.
+2. Other configured API prefixes still use Fastify fallback proxy to Next upstream.
+
+## Smoke Check
+
+1. Start Fastify:
+   - `FASTIFY_API_PORT=3010 pnpm --filter @agentifui/api dev`
+2. Direct Fastify route check:
+   - `curl -i "http://127.0.0.1:3010/api/translations/en-US?sections=pages.home"`
+3. Rewrite check from Next to Fastify:
+   - `FASTIFY_PROXY_ENABLED=1 FASTIFY_PROXY_BASE_URL=http://127.0.0.1:3010 PORT=3320 pnpm dev`
+   - `curl -i "http://127.0.0.1:3320/api/translations/en-US?sections=pages.home"`
+4. Fallback check (not yet migrated route):
+   - `curl -i "http://127.0.0.1:3320/api/internal/auth/profile-status"`
+
 ## Notes
 
 1. Rewrites are disabled by default.
