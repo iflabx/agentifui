@@ -21,8 +21,10 @@ interface ExecutionHistoryProps {
   instanceId: string;
   onClose: () => void;
   isMobile: boolean;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  onViewResult: (result: any, execution: AppExecution) => void;
+  onViewResult: (
+    result: Record<string, unknown>,
+    execution: AppExecution
+  ) => void;
 }
 
 /**
@@ -108,10 +110,7 @@ export function ExecutionHistory({
           return;
         }
 
-        const result = await getExecutionsByServiceInstance(
-          targetApp.id,
-          50
-        );
+        const result = await getExecutionsByServiceInstance(targetApp.id, 50);
 
         if (result.success) {
           console.log(
@@ -136,7 +135,7 @@ export function ExecutionHistory({
     };
 
     loadHistory();
-  }, [instanceId]);
+  }, [instanceId, userId]);
 
   // Directly use all execution records, no filtering
   const displayExecutions = executionHistory;
@@ -217,10 +216,7 @@ export function ExecutionHistory({
         return;
       }
 
-      const result = await getExecutionsByServiceInstance(
-        targetApp.id,
-        50
-      );
+      const result = await getExecutionsByServiceInstance(targetApp.id, 50);
 
       if (result.success) {
         console.log(

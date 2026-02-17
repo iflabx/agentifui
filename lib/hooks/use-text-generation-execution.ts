@@ -5,7 +5,10 @@ import {
   updateCompleteExecutionData,
   updateExecutionStatus,
 } from '@lib/services/client/app-executions-api';
-import type { DifyCompletionRequestPayload } from '@lib/services/dify/types';
+import type {
+  DifyCompletionRequestPayload,
+  DifyCompletionStreamResponse,
+} from '@lib/services/dify/types';
 import { useAutoAddFavoriteApp } from '@lib/stores/favorite-apps-store';
 import { useWorkflowExecutionStore } from '@lib/stores/workflow-execution-store';
 import type { AppExecution, ExecutionStatus } from '@lib/types/database';
@@ -13,6 +16,15 @@ import type { AppExecution, ExecutionStatus } from '@lib/types/database';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useDateFormatter } from './use-date-formatter';
+
+type CompletionFinalResult = Awaited<
+  DifyCompletionStreamResponse['completionPromise']
+> & {
+  error?: string;
+  created_at?: number | null;
+  conversation_id?: string | null;
+  elapsed_time?: number | null;
+};
 
 /**
  * Text generation execution hook - reuses workflow architecture
@@ -58,13 +70,19 @@ export function useTextGenerationExecution(instanceId: string) {
   // --- Streaming response ref ---
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  const createTitle = useCallback(
+    () =>
+      `Text Generation - ${formatDate(new Date(), { includeTime: true, style: 'medium' })}`,
+    [formatDate]
+  );
+
   /**
    * Save complete text generation data
    */
   const saveCompleteGenerationData = useCallback(
     async (
       executionId: string,
-      finalResult: any,
+      finalResult: CompletionFinalResult,
       taskId: string | null,
       messageId: string | null,
       generatedText: string
@@ -194,7 +212,7 @@ export function useTextGenerationExecution(instanceId: string) {
    * Core execution process: text generation
    */
   const executeTextGeneration = useCallback(
-    async (formData: Record<string, any>) => {
+    async (formData: Record<string, unknown>) => {
       if (!userId) {
         getActions().setError('User not logged in, please log in first');
         return;
@@ -205,7 +223,7 @@ export function useTextGenerationExecution(instanceId: string) {
         instanceId
       );
 
-      let streamResponse: any = null;
+      let streamResponse: DifyCompletionStreamResponse | null = null;
 
       try {
         // --- Step 1: Set initial execution state ---
@@ -292,7 +310,7 @@ export function useTextGenerationExecution(instanceId: string) {
         let accumulatedText = '';
         let messageId: string | null = null;
         let taskId: string | null = null;
-        let completionResult: any = null;
+        let completionResult: CompletionFinalResult = {};
 
         // --- Step 7: Handle streaming response ---
         for await (const textChunk of streamResponse.answerStream) {
@@ -346,7 +364,7 @@ export function useTextGenerationExecution(instanceId: string) {
             console.log(
               '[Text Generation] Error on completion, but generated content exists, continue saving'
             );
-            completionResult = { usage: null, metadata: {} };
+            completionResult = { usage: undefined, metadata: {} };
           } else {
             throw completionError;
           }
@@ -440,7 +458,7 @@ export function useTextGenerationExecution(instanceId: string) {
       saveCompleteGenerationData,
       addToFavorites,
       currentExecution,
-      formatDate,
+      createTitle,
     ]
   );
 
@@ -667,10 +685,7 @@ export function useTextGenerationExecution(instanceId: string) {
 
       console.log('[Text Generation] History query using UUID:', targetApp.id);
 
-      const result = await getExecutionsByServiceInstance(
-        targetApp.id,
-        20
-      ); // Use UUID as primary key, add userId filter
+      const result = await getExecutionsByServiceInstance(targetApp.id, 20); // Use UUID as primary key, add userId filter
 
       if (result.success) {
         console.log(
@@ -693,9 +708,6 @@ export function useTextGenerationExecution(instanceId: string) {
   useEffect(() => {
     loadTextGenerationHistory();
   }, [loadTextGenerationHistory]);
-
-  const createTitle = () =>
-    `Text Generation - ${formatDate(new Date(), { includeTime: true, style: 'medium' })}`;
 
   return {
     // State

@@ -5,7 +5,12 @@ import {
   updateCompleteExecutionData,
   updateExecutionStatus,
 } from '@lib/services/client/app-executions-api';
-import type { DifyWorkflowRequestPayload } from '@lib/services/dify/types';
+import type {
+  DifyWorkflowFinishedData,
+  DifyWorkflowRequestPayload,
+  DifyWorkflowSseEvent,
+  DifyWorkflowStreamResponse,
+} from '@lib/services/dify/types';
 import { useAutoAddFavoriteApp } from '@lib/stores/favorite-apps-store';
 import { useWorkflowExecutionStore } from '@lib/stores/workflow-execution-store';
 import type { AppExecution, ExecutionStatus } from '@lib/types/database';
@@ -13,6 +18,46 @@ import type { AppExecution, ExecutionStatus } from '@lib/types/database';
 import { useCallback, useEffect, useRef } from 'react';
 
 import { useDateFormatter } from './use-date-formatter';
+
+type WorkflowNodeEvent = Extract<
+  DifyWorkflowSseEvent,
+  { data: { node_id: string } }
+>;
+
+type WorkflowNodeSnapshot = {
+  node_id: string;
+  node_type?: string;
+  title?: string;
+  status?: 'running' | 'succeeded' | 'failed' | 'stopped';
+  inputs?: Record<string, unknown>;
+  outputs?: unknown;
+  process_data?: unknown;
+  execution_metadata?: unknown;
+  elapsed_time?: number;
+  total_tokens?: number;
+  total_price?: string;
+  currency?: string;
+  error?: string | null;
+  created_at?: number;
+  index?: number;
+  predecessor_node_id?: string;
+  event_type: WorkflowNodeEvent['event'];
+};
+
+function isWorkflowNodeEvent(
+  event: DifyWorkflowSseEvent
+): event is WorkflowNodeEvent {
+  if (!('data' in event)) {
+    return false;
+  }
+  const data = event.data;
+  return (
+    typeof data === 'object' &&
+    data !== null &&
+    'node_id' in data &&
+    typeof data.node_id === 'string'
+  );
+}
 
 /**
  * Workflow execution hook - robust data saving version
@@ -57,6 +102,12 @@ export function useWorkflowExecution(instanceId: string) {
   const sseConnectionRef = useRef<EventSource | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  const createTitle = useCallback(
+    () =>
+      `Workflow Execution - ${formatDate(new Date(), { includeTime: true, style: 'medium' })}`,
+    [formatDate]
+  );
+
   /**
    * Robust data saving function
    * Ensures all fields returned from Dify are fully saved to the database
@@ -64,10 +115,10 @@ export function useWorkflowExecution(instanceId: string) {
   const saveCompleteExecutionData = useCallback(
     async (
       executionId: string,
-      finalResult: any,
+      finalResult: DifyWorkflowFinishedData,
       taskId: string | null,
       workflowRunId: string | null,
-      nodeExecutionData: any[] = []
+      nodeExecutionData: WorkflowNodeSnapshot[] = []
     ) => {
       console.log(
         '[Workflow Execution] Start robust data saving, executionId:',
@@ -94,7 +145,6 @@ export function useWorkflowExecution(instanceId: string) {
             workflow_id: finalResult.workflow_id || null,
             created_at: finalResult.created_at || null,
             finished_at: finalResult.finished_at || null,
-            sequence_number: finalResult.sequence_number || null,
           },
 
           // Node execution details
@@ -156,8 +206,8 @@ export function useWorkflowExecution(instanceId: string) {
           task_id: taskId,
           outputs: finalResult.outputs,
           total_steps: finalResult.total_steps,
-          total_tokens: finalResult.total_tokens,
-          elapsed_time: finalResult.elapsed_time,
+          total_tokens: finalResult.total_tokens ?? undefined,
+          elapsed_time: finalResult.elapsed_time ?? undefined,
           error_message: finalResult.error,
           completed_at: completedAt,
           metadata: completeMetadata,
@@ -199,7 +249,7 @@ export function useWorkflowExecution(instanceId: string) {
    * Core execution process: complete workflow execution
    */
   const executeWorkflow = useCallback(
-    async (formData: Record<string, any>) => {
+    async (formData: Record<string, unknown>) => {
       if (!userId) {
         getActions().setError('User not logged in, please log in first');
         return;
@@ -211,10 +261,10 @@ export function useWorkflowExecution(instanceId: string) {
       );
 
       // Used to collect node execution data
-      const nodeExecutionData: any[] = [];
+      const nodeExecutionData: WorkflowNodeSnapshot[] = [];
 
       // Declare streamResponse variable for use in catch block
-      let streamResponse: any = null;
+      let streamResponse: DifyWorkflowStreamResponse | null = null;
 
       try {
         // --- Step 1: Set initial execution state ---
@@ -338,23 +388,28 @@ export function useWorkflowExecution(instanceId: string) {
           // Use new unified event handler, supports iteration and parallel branches
           getActions().handleNodeEvent(event);
 
+          if (!isWorkflowNodeEvent(event)) {
+            continue;
+          }
+          const nodeData: WorkflowNodeSnapshot = {
+            ...(event.data as Partial<WorkflowNodeSnapshot>),
+            node_id: event.data.node_id,
+            event_type: event.event,
+          };
+
           // Collect node data for database saving
           const existingNodeIndex = nodeExecutionData.findIndex(
-            n => n.node_id === event.data.node_id
+            n => n.node_id === nodeData.node_id
           );
           if (existingNodeIndex >= 0) {
             // Update existing node data
             nodeExecutionData[existingNodeIndex] = {
               ...nodeExecutionData[existingNodeIndex],
-              ...event.data,
-              event_type: event.event,
+              ...nodeData,
             };
           } else {
             // Add new node data
-            nodeExecutionData.push({
-              ...event.data,
-              event_type: event.event,
-            });
+            nodeExecutionData.push(nodeData);
           }
         }
 
@@ -426,7 +481,7 @@ export function useWorkflowExecution(instanceId: string) {
 
             try {
               // Try to get identifiers from streamResponse if it exists
-              if (typeof streamResponse !== 'undefined' && streamResponse) {
+              if (streamResponse) {
                 taskId = streamResponse.getTaskId() || null;
                 workflowRunId = streamResponse.getWorkflowRunId() || null;
               }
@@ -497,7 +552,7 @@ export function useWorkflowExecution(instanceId: string) {
       getActions,
       saveCompleteExecutionData,
       addToFavorites,
-      formatDate,
+      createTitle,
     ]
   );
 
@@ -611,10 +666,7 @@ export function useWorkflowExecution(instanceId: string) {
         targetApp.id
       );
 
-      const result = await getExecutionsByServiceInstance(
-        targetApp.id,
-        20
-      ); // Use UUID as primary key, add user ID filter
+      const result = await getExecutionsByServiceInstance(targetApp.id, 20); // Use UUID as primary key, add user ID filter
 
       if (result.success) {
         console.log(
@@ -736,9 +788,6 @@ export function useWorkflowExecution(instanceId: string) {
       loadWorkflowHistory();
     }
   }, [userId, instanceId, loadWorkflowHistory]);
-
-  const createTitle = () =>
-    `Workflow Execution - ${formatDate(new Date(), { includeTime: true, style: 'medium' })}`;
 
   return {
     // --- State ---

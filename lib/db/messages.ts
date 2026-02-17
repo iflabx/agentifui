@@ -19,7 +19,7 @@ export async function saveMessage(message: {
   user_id?: string | null;
   role: 'user' | 'assistant' | 'system';
   content: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   status?: MessageStatus;
   external_id?: string | null;
   token_count?: number | null;
@@ -51,7 +51,7 @@ export async function saveMessages(
     user_id?: string | null;
     role: 'user' | 'assistant' | 'system';
     content: string;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
     status?: MessageStatus;
     external_id?: string | null;
     token_count?: number | null;
@@ -225,7 +225,7 @@ export async function saveMessageLegacy(message: {
   user_id?: string | null;
   role: 'user' | 'assistant' | 'system';
   content: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   status?: MessageStatus;
   external_id?: string | null;
   token_count?: number | null;
@@ -244,7 +244,7 @@ export async function saveMessagesLegacy(
     user_id?: string | null;
     role: 'user' | 'assistant' | 'system';
     content: string;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
     status?: MessageStatus;
     external_id?: string | null;
     token_count?: number | null;
