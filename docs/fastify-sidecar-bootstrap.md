@@ -74,7 +74,12 @@ The current migration strategy is:
 - Served directly by Fastify.
 - Preserves admin-only dynamic translation read/update contract, including section-level merge/replace modes.
 
-11. Other configured API prefixes still use Fastify fallback proxy to Next upstream.
+11. `GET /api/internal/dify-config/:appId`
+
+- Served directly by Fastify.
+- Preserves admin-only Dify app config contract (provider resolution + default-instance fallback + API key decrypt).
+
+12. Other configured API prefixes still use Fastify fallback proxy to Next upstream.
 
 ## Smoke Check
 

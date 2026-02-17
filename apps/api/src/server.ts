@@ -9,6 +9,7 @@ import { adminUsersRoutes } from './routes/admin-users';
 import { adminUsersForGroupRoutes } from './routes/admin-users-for-group';
 import { healthRoutes } from './routes/health';
 import { internalAppsRoutes } from './routes/internal-apps';
+import { internalDifyConfigRoutes } from './routes/internal-dify-config';
 import { internalProfileRoutes } from './routes/internal-profile';
 import { proxyFallbackRoutes } from './routes/proxy-fallback';
 import { translationsRoutes } from './routes/translations';
@@ -43,6 +44,7 @@ export async function createApiServer(config: ApiRuntimeConfig) {
   await app.register(adminUsersForGroupRoutes, { config });
   await app.register(healthRoutes, { config });
   await app.register(internalAppsRoutes, { config });
+  await app.register(internalDifyConfigRoutes, { config });
   await app.register(internalProfileRoutes, { config });
   await app.register(translationsRoutes);
   await app.register(proxyFallbackRoutes, { config });
