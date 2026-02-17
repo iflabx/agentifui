@@ -23,6 +23,7 @@ The current migration strategy is:
 3. `pnpm dev:all`: run both together.
 4. `pnpm build:all`: build web + shared + api packages.
 5. `pnpm start:api`: start built Fastify server.
+6. `pnpm m3:internal-data:verify:prod`: run full internal-data regression in production runtime (`next build/start` + `api build/start`).
 
 ## Key Environment Variables
 

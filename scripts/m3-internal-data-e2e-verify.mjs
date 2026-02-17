@@ -10,6 +10,7 @@ loadEnv({ path: '.env.test-stack' });
 const appPort = Number(process.env.M3_INTERNAL_DATA_APP_PORT || 3316);
 const appBase = `http://127.0.0.1:${appPort}`;
 const useFastifyProxy = process.env.M3_INTERNAL_DATA_USE_FASTIFY_PROXY !== '0';
+const useProdRuntime = process.env.M3_INTERNAL_DATA_USE_PROD === '1';
 const fastifyPort = Number(process.env.M3_INTERNAL_DATA_FASTIFY_PORT || 3317);
 const fastifyBase = `http://127.0.0.1:${fastifyPort}`;
 const appReadyTimeoutMs = Number(
@@ -84,6 +85,20 @@ function startProcess(command, args, options) {
     process.stderr.write(chunk);
   });
   return proc;
+}
+
+async function runCommand(command, args, options, label) {
+  return new Promise((resolve, reject) => {
+    const proc = startProcess(command, args, options);
+    proc.on('error', reject);
+    proc.on('exit', code => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(new Error(`${label} failed with exit code ${code ?? 'unknown'}`));
+    });
+  });
 }
 
 async function waitForServer(url, timeoutMs = 120000) {
@@ -223,35 +238,84 @@ async function main() {
     process.env.M3_INTERNAL_DATA_S3_ENDPOINT?.trim() ||
     fallbackS3Endpoint;
 
-  const appProc = startProcess('pnpm', ['next', 'dev', '-p', String(appPort)], {
-    cwd: process.cwd(),
-    env: {
-      ...process.env,
-      NODE_ENV: 'development',
-      NEXT_PUBLIC_APP_URL: appBase,
-      BETTER_AUTH_URL: appBase,
-      BETTER_AUTH_SECRET:
-        process.env.BETTER_AUTH_SECRET ||
-        'm3-internal-data-e2e-secret-not-for-production',
-      DATABASE_URL: databaseUrl,
-      REDIS_URL: redisUrl,
-      S3_ENDPOINT: s3Endpoint,
-      S3_ACCESS_KEY_ID: process.env.S3_ACCESS_KEY_ID || 'minioadmin',
-      S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY || 'minioadmin',
-      S3_BUCKET: process.env.S3_BUCKET || 'agentifui',
-      S3_ENABLE_PATH_STYLE: process.env.S3_ENABLE_PATH_STYLE || '1',
-      FASTIFY_PROXY_ENABLED: useFastifyProxy ? '1' : '0',
-      FASTIFY_PROXY_BASE_URL: fastifyBase,
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  const commonRuntimeEnv = {
+    ...process.env,
+    NEXT_PUBLIC_APP_URL: appBase,
+    BETTER_AUTH_URL: appBase,
+    BETTER_AUTH_SECRET:
+      process.env.BETTER_AUTH_SECRET ||
+      'm3-internal-data-e2e-secret-not-for-production',
+    DATABASE_URL: databaseUrl,
+    REDIS_URL: redisUrl,
+    S3_ENDPOINT: s3Endpoint,
+    S3_ACCESS_KEY_ID: process.env.S3_ACCESS_KEY_ID || 'minioadmin',
+    S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY || 'minioadmin',
+    S3_BUCKET: process.env.S3_BUCKET || 'agentifui',
+    S3_ENABLE_PATH_STYLE: process.env.S3_ENABLE_PATH_STYLE || '1',
+    FASTIFY_PROXY_ENABLED: useFastifyProxy ? '1' : '0',
+    FASTIFY_PROXY_BASE_URL: fastifyBase,
+  };
+
+  if (useProdRuntime) {
+    await runCommand(
+      'pnpm',
+      ['next', 'build'],
+      {
+        cwd: process.cwd(),
+        env: {
+          ...commonRuntimeEnv,
+          NODE_ENV: 'production',
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+      'next build'
+    );
+
+    if (useFastifyProxy) {
+      await runCommand(
+        'pnpm',
+        ['--filter', '@agentifui/api', 'build'],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            NODE_ENV: 'production',
+            DATABASE_URL: databaseUrl,
+            REDIS_URL: redisUrl,
+          },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        },
+        'api build'
+      );
+    }
+  }
+
+  const appProc = startProcess(
+    'pnpm',
+    useProdRuntime
+      ? ['next', 'start', '-p', String(appPort)]
+      : ['next', 'dev', '-p', String(appPort)],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...commonRuntimeEnv,
+        NODE_ENV: useProdRuntime ? 'production' : 'development',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }
+  );
 
   const apiProc = useFastifyProxy
-    ? startProcess('pnpm', ['--filter', '@agentifui/api', 'dev'], {
+    ? startProcess(
+        'pnpm',
+        useProdRuntime
+          ? ['--filter', '@agentifui/api', 'start']
+          : ['--filter', '@agentifui/api', 'dev'],
+        {
         cwd: process.cwd(),
         env: {
           ...process.env,
-          NODE_ENV: 'development',
+          NODE_ENV: useProdRuntime ? 'production' : 'development',
           DATABASE_URL: databaseUrl,
           REDIS_URL: redisUrl,
           FASTIFY_API_HOST: '127.0.0.1',
@@ -263,7 +327,8 @@ async function main() {
           NEXT_UPSTREAM_BASE_URL: appBase,
         },
         stdio: ['ignore', 'pipe', 'pipe'],
-      })
+      }
+      )
     : null;
 
   const stopAll = async exitCode => {

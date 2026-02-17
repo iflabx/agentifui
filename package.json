@@ -56,6 +56,7 @@
     "m2:gate:verify": "pnpm m2:auth:e2e:verify && pnpm m2:sso:mock:verify && pnpm m2:slo:verify",
     "m3:oauth:mock:verify": "node scripts/m3-mock-oauth-e2e.mjs",
     "m3:internal-data:verify": "node scripts/m3-internal-data-e2e-verify.mjs",
+    "m3:internal-data:verify:prod": "M3_INTERNAL_DATA_USE_PROD=1 node scripts/m3-internal-data-e2e-verify.mjs",
     "m3:sql-audit:verify": "node scripts/m3-managed-sql-audit.mjs",
     "m3:crud:verify": "jest --runInBand __tests__/db/m3-managed-crud-repository.test.ts",
     "m3:gate:verify": "pnpm m3:crud:verify && pnpm m3:internal-data:verify && pnpm m3:sql-audit:verify && pnpm m3:oauth:mock:verify",
