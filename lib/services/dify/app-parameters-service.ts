@@ -1,4 +1,3 @@
-import { getAppParametersFromDb } from '@lib/db/service-instances';
 import type { DifyAppParametersResponse } from '@lib/services/dify/types';
 import type { Result } from '@lib/types/result';
 import { failure, success } from '@lib/types/result';
@@ -147,24 +146,50 @@ class AppParametersService {
         return success(cached);
       }
 
-      // 2. Fetch from database only
+      // 2. Fetch from internal API only
       console.log(
-        '[AppParametersService] Fetching app parameters from database:',
+        '[AppParametersService] Fetching app parameters from internal API:',
         instanceId
       );
-      const dbResult = await getAppParametersFromDb(instanceId);
+      if (typeof window === 'undefined') {
+        return success(null);
+      }
 
-      if (dbResult.success && dbResult.data) {
-        const difyParameters = convertDatabaseConfigToDifyParameters(
-          dbResult.data
-        );
-        if (difyParameters) {
-          console.log(
-            '[AppParametersService] Successfully got parameters from database:',
-            instanceId
-          );
-          setCachedParameters(instanceId, difyParameters, 'database');
-          return success(difyParameters);
+      const response = await fetch(
+        `/api/internal/apps?instanceId=${encodeURIComponent(instanceId)}`,
+        {
+          method: 'GET',
+          credentials: 'include',
+        }
+      );
+
+      if (response.ok) {
+        const payload = (await response.json()) as {
+          success: boolean;
+          app?: {
+            config?: Record<string, unknown> | null;
+          };
+        };
+
+        const rawParameters =
+          payload.success &&
+          payload.app?.config &&
+          typeof payload.app.config === 'object'
+            ? ((payload.app.config as Record<string, unknown>).dify_parameters ??
+              null)
+            : null;
+
+        if (rawParameters) {
+          const difyParameters =
+            convertDatabaseConfigToDifyParameters(rawParameters);
+          if (difyParameters) {
+            console.log(
+              '[AppParametersService] Successfully got parameters from internal API:',
+              instanceId
+            );
+            setCachedParameters(instanceId, difyParameters, 'database');
+            return success(difyParameters);
+          }
         }
       }
 

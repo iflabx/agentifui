@@ -1,4 +1,10 @@
 import { useProfile } from '@lib/hooks/use-profile';
+import {
+  createExecution,
+  getExecutionsByServiceInstance,
+  updateCompleteExecutionData,
+  updateExecutionStatus,
+} from '@lib/services/client/app-executions-api';
 import type { DifyWorkflowRequestPayload } from '@lib/services/dify/types';
 import { useAutoAddFavoriteApp } from '@lib/stores/favorite-apps-store';
 import { useWorkflowExecutionStore } from '@lib/stores/workflow-execution-store';
@@ -76,10 +82,6 @@ export function useWorkflowExecution(instanceId: string) {
       console.log('[Workflow Execution] nodeExecutionData:', nodeExecutionData);
 
       try {
-        const { updateCompleteExecutionData } = await import(
-          '@lib/db/app-executions'
-        );
-
         // Determine final status
         const finalStatus: ExecutionStatus =
           finalResult.status === 'succeeded' ? 'completed' : 'failed';
@@ -249,8 +251,6 @@ export function useWorkflowExecution(instanceId: string) {
         );
 
         // --- Step 2: Create a pending status database record ---
-        const { createExecution } = await import('@lib/db/app-executions');
-
         const executionData: Omit<
           AppExecution,
           'id' | 'created_at' | 'updated_at'
@@ -290,9 +290,6 @@ export function useWorkflowExecution(instanceId: string) {
         getActions().setCurrentExecution(dbExecution);
 
         // --- Step 3: Update status to running ---
-        const { updateExecutionStatus } = await import(
-          '@lib/db/app-executions'
-        );
         const updateRunningResult = await updateExecutionStatus(
           dbExecution.id,
           'running'
@@ -457,9 +454,6 @@ export function useWorkflowExecution(instanceId: string) {
               },
             };
 
-            const { updateCompleteExecutionData } = await import(
-              '@lib/db/app-executions'
-            );
             await updateCompleteExecutionData(current.id, {
               status: 'failed',
               error_message: errorMessage,
@@ -550,9 +544,6 @@ export function useWorkflowExecution(instanceId: string) {
       // Update database record status
       if (state.currentExecution?.id) {
         try {
-          const { updateExecutionStatus } = await import(
-            '@lib/db/app-executions'
-          );
           await updateExecutionStatus(
             state.currentExecution.id,
             'stopped',
@@ -620,12 +611,8 @@ export function useWorkflowExecution(instanceId: string) {
         targetApp.id
       );
 
-      const { getExecutionsByServiceInstance } = await import(
-        '@lib/db/app-executions'
-      );
       const result = await getExecutionsByServiceInstance(
         targetApp.id,
-        userId,
         20
       ); // Use UUID as primary key, add user ID filter
 

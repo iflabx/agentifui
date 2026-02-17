@@ -6,10 +6,11 @@
  * Adapts to the new Result type system and unified data service.
  */
 import {
-  createPlaceholderAssistantMessage,
-  getMessageByContentAndRole,
-} from '@lib/db/messages';
-import { messageService } from '@lib/services/db/message-service';
+  createPlaceholderAssistantMessageRecord,
+  findDuplicateMessage,
+  saveMessageRecord,
+  type MessageSavePayload,
+} from '@lib/services/client/messages-api';
 import { ChatMessage, useChatStore } from '@lib/stores/chat-store';
 
 import { useCallback, useRef, useState } from 'react';
@@ -28,6 +29,46 @@ const RETRY_CONFIG = {
   maxRetries: 3,
   baseDelayMs: 1000, // 1 second, used for exponential backoff
 };
+
+function chatMessageToSavePayload(
+  chatMessage: ChatMessage,
+  conversationId: string,
+  userId?: string
+): MessageSavePayload {
+  const baseMetadata: Record<string, unknown> = {
+    ...(chatMessage.metadata || {}),
+  };
+
+  if (chatMessage.wasManuallyStopped && !baseMetadata.stopped_manually) {
+    baseMetadata.stopped_manually = true;
+    baseMetadata.stopped_at =
+      (baseMetadata.stopped_at as string | undefined) ||
+      new Date().toISOString();
+  }
+
+  if (chatMessage.attachments && chatMessage.attachments.length > 0) {
+    baseMetadata.attachments = chatMessage.attachments;
+  }
+
+  const sequenceIndex =
+    chatMessage.sequence_index !== undefined
+      ? chatMessage.sequence_index
+      : chatMessage.isUser
+        ? 0
+        : 1;
+
+  return {
+    conversation_id: conversationId,
+    user_id: chatMessage.isUser ? userId || null : null,
+    role: chatMessage.role || (chatMessage.isUser ? 'user' : 'assistant'),
+    content: chatMessage.text,
+    metadata: baseMetadata,
+    status: chatMessage.error ? 'error' : 'sent',
+    external_id: chatMessage.dify_message_id || null,
+    token_count: chatMessage.token_count || null,
+    sequence_index: sequenceIndex,
+  };
+}
 
 /**
  * Chat message persistence hook (refactored version)
@@ -130,7 +171,7 @@ export function useChatMessages(userId?: string) {
       try {
         // Check if a duplicate message exists in the database to avoid duplicate saves
         // Uses the new Result type interface
-        const duplicateResult = await getMessageByContentAndRole(
+        const duplicateResult = await findDuplicateMessage(
           message.text,
           message.isUser ? 'user' : 'assistant',
           conversationId
@@ -159,13 +200,13 @@ export function useChatMessages(userId?: string) {
         );
 
         // Convert to database format and save
-        // Uses new messageService and Result type
-        const dbMessageData = messageService.chatMessageToDbMessage(
+        // Uses internal API + Result type
+        const dbMessageData = chatMessageToSavePayload(
           message,
           conversationId,
           userId
         );
-        const saveResult = await messageService.saveMessage(dbMessageData);
+        const saveResult = await saveMessageRecord(dbMessageData);
 
         if (!saveResult.success) {
           throw new Error(
@@ -343,7 +384,7 @@ export function useChatMessages(userId?: string) {
         );
 
         // Use new Result type interface to create placeholder message
-        const result = await createPlaceholderAssistantMessage(
+        const result = await createPlaceholderAssistantMessageRecord(
           conversationId,
           status,
           errorMessage ||

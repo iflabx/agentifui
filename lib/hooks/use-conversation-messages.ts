@@ -11,7 +11,7 @@
  * Updated to use new unified data service and messageService
  */
 import { getConversationByExternalId } from '@lib/services/client/conversations-api';
-import { messageService } from '@lib/services/db/message-service';
+import { getLatestMessages } from '@lib/services/client/messages-api';
 import { useChatScrollStore } from '@lib/stores/chat-scroll-store';
 import { ChatMessage, useChatStore } from '@lib/stores/chat-store';
 import { Message } from '@lib/types/database';
@@ -269,11 +269,7 @@ export function useConversationMessages() {
         setDbConversationId(dbConvId);
 
         // Use the new messageService to get the latest messages
-        const result = await messageService.getLatestMessages(
-          dbConvId,
-          MESSAGES_PER_PAGE,
-          { cache: true }
-        );
+        const result = await getLatestMessages(dbConvId, MESSAGES_PER_PAGE);
 
         // If the request has been cancelled or the conversation ID has changed, discard the result
         if (signal.aborted || loaderState.current.currentId !== dbConvId) {
@@ -424,11 +420,7 @@ export function useConversationMessages() {
 
       // Use the new messageService to get all messages, then manually paginate
       // This is a temporary solution, and the real cursor pagination can be optimized later
-      const result = await messageService.getLatestMessages(
-        dbConversationId,
-        1000,
-        { cache: true }
-      ); // Get a large number of messages for pagination
+      const result = await getLatestMessages(dbConversationId, 1000);
 
       // If the request has been cancelled or the conversation ID has changed, discard the result
       if (
@@ -706,12 +698,13 @@ export function useConversationMessages() {
     }
 
     // Clean up function
+    const loaderStateForCleanup = loaderState.current;
     return () => {
       // Clean up loading state
       // If the component is unmounted or the route changes, mark the current loaded ID as null
       // This can be used to know that the context has changed after the asynchronous operation is completed
-      if (loaderState.current.currentId === externalId) {
-        loaderState.current.currentId = null;
+      if (loaderStateForCleanup.currentId === externalId) {
+        loaderStateForCleanup.currentId = null;
       }
 
       // Cancel any ongoing requests

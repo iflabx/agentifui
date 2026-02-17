@@ -1,6 +1,11 @@
 'use client';
 
 import { useProfile } from '@lib/hooks/use-profile';
+import {
+  deleteExecution,
+  getExecutionById,
+  getExecutionsByServiceInstance,
+} from '@lib/services/client/app-executions-api';
 import { useWorkflowExecutionStore } from '@lib/stores/workflow-execution-store';
 import type { AppExecution } from '@lib/types/database';
 import { cn } from '@lib/utils';
@@ -95,10 +100,6 @@ export function ExecutionHistory({
           return;
         }
 
-        const { getExecutionsByServiceInstance } = await import(
-          '@lib/db/app-executions'
-        );
-
         if (!userId) {
           console.warn(
             '[Execution history] User not logged in, cannot load history'
@@ -109,9 +110,8 @@ export function ExecutionHistory({
 
         const result = await getExecutionsByServiceInstance(
           targetApp.id,
-          userId,
           50
-        ); // 🔒 Add user ID filtering
+        );
 
         if (result.success) {
           console.log(
@@ -149,9 +149,6 @@ export function ExecutionHistory({
     try {
       console.log('Batch delete execution record:', Array.from(selectedIds));
 
-      // Import delete function
-      const { deleteExecution } = await import('@lib/db/app-executions');
-
       // Check user login status
       if (!userId) {
         console.warn(
@@ -162,7 +159,7 @@ export function ExecutionHistory({
 
       // Delete all selected records in parallel
       const deletePromises = Array.from(selectedIds).map(async id => {
-        const result = await deleteExecution(id, userId); // 🔒 Add user ID filtering
+        const result = await deleteExecution(id);
         if (!result.success) {
           console.error(
             `Failed to delete execution record ${id}:`,
@@ -213,10 +210,6 @@ export function ExecutionHistory({
         return;
       }
 
-      const { getExecutionsByServiceInstance } = await import(
-        '@lib/db/app-executions'
-      );
-
       if (!userId) {
         console.warn(
           '[Execution history] User not logged in, cannot refresh history'
@@ -226,9 +219,8 @@ export function ExecutionHistory({
 
       const result = await getExecutionsByServiceInstance(
         targetApp.id,
-        userId,
         50
-      ); // 🔒 Add user ID filtering
+      );
 
       if (result.success) {
         console.log(
@@ -270,8 +262,6 @@ export function ExecutionHistory({
         // Get complete execution details from database
         console.log('Getting execution details:', execution.id);
 
-        const { getExecutionById } = await import('@lib/db/app-executions');
-
         if (!userId) {
           console.warn(
             '[Execution history] User not logged in, cannot get execution details'
@@ -286,7 +276,7 @@ export function ExecutionHistory({
           return;
         }
 
-        const result = await getExecutionById(execution.id, userId); // 🔒 Add user ID filtering
+        const result = await getExecutionById(execution.id);
 
         if (result.success && result.data) {
           const fullExecution = result.data;

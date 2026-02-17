@@ -108,15 +108,16 @@ export async function updateMessageStatus(
  * @returns Result with array of messages
  */
 export async function getMessagesByConversationId(
-  conversationId: string
+  conversationId: string,
+  limit: number = 1000
 ): Promise<Result<Message[]>> {
   console.log(
-    `[getMessagesByConversationId] Get messages for conversation, conversationId=${conversationId}`
+    `[getMessagesByConversationId] Get messages for conversation, conversationId=${conversationId}, limit=${limit}`
   );
 
-  const result = await messageService.getLatestMessages(conversationId, 1000, {
+  const result = await messageService.getLatestMessages(conversationId, limit, {
     cache: true,
-  }); // Get a large number of messages
+  });
 
   if (result.success) {
     console.log(

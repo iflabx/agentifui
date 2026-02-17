@@ -6,12 +6,27 @@ import {
   updateApiKey,
 } from '@lib/db/api-keys';
 import {
+  createExecution,
+  deleteExecution,
+  getExecutionById,
+  getExecutionsByServiceInstance,
+  updateCompleteExecutionData,
+  updateExecutionStatus,
+} from '@lib/db/app-executions';
+import {
   createConversationForUser,
   deleteConversationForUser,
+  getConversationById,
   getConversationByExternalIdForUser,
   getUserConversations,
   renameConversationForUser,
 } from '@lib/db/conversations';
+import {
+  createPlaceholderAssistantMessage,
+  getMessageByContentAndRole,
+  getMessagesByConversationId,
+  saveMessage as saveDbMessage,
+} from '@lib/db/messages';
 import {
   addGroupMember,
   checkUserAppPermission,
@@ -65,6 +80,11 @@ import {
   updateUserProfile,
 } from '@lib/db/users';
 import { requireAdmin } from '@lib/services/admin/require-admin';
+import type {
+  AppExecution,
+  ExecutionStatus,
+  MessageStatus,
+} from '@lib/types/database';
 import type { Result } from '@lib/types/result';
 
 import { NextResponse } from 'next/server';
@@ -131,6 +151,27 @@ const AUTH_ACTIONS = new Set([
   'conversations.getUserConversations',
   'conversations.renameConversation',
   'conversations.deleteConversation',
+  'messages.getLatest',
+  'messages.findDuplicate',
+  'messages.save',
+  'messages.createPlaceholder',
+  'appExecutions.getByServiceInstance',
+  'appExecutions.getById',
+  'appExecutions.create',
+  'appExecutions.updateStatus',
+  'appExecutions.updateComplete',
+  'appExecutions.delete',
+]);
+
+const MESSAGE_STATUSES = new Set<MessageStatus>(['sent', 'delivered', 'error']);
+
+const EXECUTION_STATUSES = new Set<ExecutionStatus>([
+  'pending',
+  'running',
+  'completed',
+  'failed',
+  'stopped',
+  'deleted',
 ]);
 
 function toErrorResponse(message: string, status: number) {
@@ -175,6 +216,89 @@ function parsePositiveInt(input: unknown, fallback: number) {
   }
 
   return Math.max(0, Math.floor(parsed));
+}
+
+function parseExecutionStatus(value: unknown): ExecutionStatus | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim() as ExecutionStatus;
+  if (!EXECUTION_STATUSES.has(normalized)) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function parseMessageStatus(value: unknown): MessageStatus | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim() as MessageStatus;
+  if (!MESSAGE_STATUSES.has(normalized)) {
+    return null;
+  }
+
+  return normalized;
+}
+
+async function ensureConversationOwnedByActor(
+  conversationId: string,
+  actorUserId: string | undefined
+): Promise<{
+  error: NextResponse | null;
+}> {
+  if (!actorUserId) {
+    return { error: toErrorResponse('Unauthorized', 401) };
+  }
+
+  const conversationResult = await getConversationById(conversationId);
+  if (!conversationResult.success) {
+    return {
+      error: toErrorResponse(
+        conversationResult.error?.message ||
+          'Failed to load conversation record',
+        500
+      ),
+    };
+  }
+
+  const conversation = conversationResult.data;
+  if (!conversation || conversation.user_id !== actorUserId) {
+    return { error: toErrorResponse('Conversation not found', 404) };
+  }
+
+  return { error: null };
+}
+
+async function ensureExecutionOwnedByActor(
+  executionId: string,
+  actorUserId: string | undefined
+): Promise<{
+  error: NextResponse | null;
+  execution?: AppExecution;
+}> {
+  if (!actorUserId) {
+    return { error: toErrorResponse('Unauthorized', 401) };
+  }
+
+  const executionResult = await getExecutionById(executionId, actorUserId);
+  if (!executionResult.success) {
+    return {
+      error: toErrorResponse(
+        executionResult.error?.message || 'Failed to load execution record',
+        500
+      ),
+    };
+  }
+
+  if (!executionResult.data) {
+    return { error: toErrorResponse('Execution record not found', 404) };
+  }
+
+  return { error: null, execution: executionResult.data };
 }
 
 async function ensureActionPermission(
@@ -509,6 +633,265 @@ export async function POST(request: Request) {
         return toResultResponse(
           await deleteConversationForUser(userId, conversationId)
         );
+      }
+      case 'messages.getLatest': {
+        const conversationId = requireString(payload, 'conversationId');
+        const limit = Math.min(parsePositiveInt(payload?.limit, 1000), 5000);
+
+        if (!conversationId) {
+          return toErrorResponse('Missing conversationId', 400);
+        }
+
+        const owned = await ensureConversationOwnedByActor(
+          conversationId,
+          actorUserId
+        );
+        if (owned.error) {
+          return owned.error;
+        }
+
+        return toResultResponse(
+          await getMessagesByConversationId(conversationId, limit)
+        );
+      }
+      case 'messages.findDuplicate': {
+        const conversationId = requireString(payload, 'conversationId');
+        const content = requireString(payload, 'content');
+        const roleRaw = requireString(payload, 'role');
+        const role =
+          roleRaw === 'user' || roleRaw === 'assistant' || roleRaw === 'system'
+            ? roleRaw
+            : null;
+
+        if (!conversationId || !content || !role) {
+          return toErrorResponse('Missing required fields', 400);
+        }
+
+        const owned = await ensureConversationOwnedByActor(
+          conversationId,
+          actorUserId
+        );
+        if (owned.error) {
+          return owned.error;
+        }
+
+        return toResultResponse(
+          await getMessageByContentAndRole(content, role, conversationId)
+        );
+      }
+      case 'messages.save': {
+        const message = (payload?.message || {}) as Partial<{
+          conversation_id: string;
+          user_id?: string | null;
+          role: 'user' | 'assistant' | 'system';
+          content: string;
+          metadata?: Record<string, unknown>;
+          status?: MessageStatus;
+          external_id?: string | null;
+          token_count?: number | null;
+          sequence_index?: number;
+        }>;
+
+        if (
+          !message.conversation_id ||
+          !message.role ||
+          !message.content ||
+          !['user', 'assistant', 'system'].includes(message.role)
+        ) {
+          return toErrorResponse('Missing required fields', 400);
+        }
+
+        const owned = await ensureConversationOwnedByActor(
+          message.conversation_id,
+          actorUserId
+        );
+        if (owned.error) {
+          return owned.error;
+        }
+
+        const status =
+          message.status === undefined
+            ? undefined
+            : parseMessageStatus(message.status);
+        if (message.status !== undefined && !status) {
+          return toErrorResponse('Invalid status', 400);
+        }
+
+        const sanitizedMessage: {
+          conversation_id: string;
+          user_id?: string | null;
+          role: 'user' | 'assistant' | 'system';
+          content: string;
+          metadata?: Record<string, unknown>;
+          status?: MessageStatus;
+          external_id?: string | null;
+          token_count?: number | null;
+          sequence_index?: number;
+        } = {
+          conversation_id: message.conversation_id,
+          user_id: message.role === 'user' ? actorUserId || null : null,
+          role: message.role,
+          content: message.content,
+          ...(message.metadata ? { metadata: message.metadata } : {}),
+          ...(status ? { status } : {}),
+          ...(message.external_id !== undefined
+            ? { external_id: message.external_id }
+            : {}),
+          ...(message.token_count !== undefined
+            ? { token_count: message.token_count }
+            : {}),
+          ...(message.sequence_index !== undefined
+            ? { sequence_index: message.sequence_index }
+            : {}),
+        };
+
+        return toResultResponse(await saveDbMessage(sanitizedMessage));
+      }
+      case 'messages.createPlaceholder': {
+        const conversationId = requireString(payload, 'conversationId');
+        const statusRaw = payload?.status;
+        const status = statusRaw ? parseMessageStatus(statusRaw) : null;
+        const errorMessage =
+          typeof payload?.errorMessage === 'string'
+            ? payload.errorMessage
+            : null;
+
+        if (!conversationId) {
+          return toErrorResponse('Missing conversationId', 400);
+        }
+
+        const owned = await ensureConversationOwnedByActor(
+          conversationId,
+          actorUserId
+        );
+        if (owned.error) {
+          return owned.error;
+        }
+
+        if (statusRaw !== undefined && !status) {
+          return toErrorResponse('Invalid status', 400);
+        }
+
+        return toResultResponse(
+          await createPlaceholderAssistantMessage(
+            conversationId,
+            status || 'error',
+            errorMessage
+          )
+        );
+      }
+      case 'appExecutions.getByServiceInstance': {
+        const userId = (actorUserId || requireString(payload, 'userId')).trim();
+        const serviceInstanceId = requireString(payload, 'serviceInstanceId');
+        const limit = Math.min(parsePositiveInt(payload?.limit, 10), 100);
+
+        if (!userId || !serviceInstanceId) {
+          return toErrorResponse('Missing required fields', 400);
+        }
+
+        return toResultResponse(
+          await getExecutionsByServiceInstance(serviceInstanceId, userId, limit)
+        );
+      }
+      case 'appExecutions.getById': {
+        const userId = (actorUserId || requireString(payload, 'userId')).trim();
+        const executionId = requireString(payload, 'executionId');
+
+        if (!userId || !executionId) {
+          return toErrorResponse('Missing required fields', 400);
+        }
+
+        return toResultResponse(await getExecutionById(executionId, userId));
+      }
+      case 'appExecutions.create': {
+        if (!actorUserId) {
+          return toErrorResponse('Unauthorized', 401);
+        }
+
+        const executionInput = (payload?.execution || {}) as Partial<
+          Omit<AppExecution, 'id' | 'created_at' | 'updated_at'>
+        >;
+
+        if (
+          !executionInput.service_instance_id ||
+          !executionInput.execution_type ||
+          !executionInput.title
+        ) {
+          return toErrorResponse('Missing required fields', 400);
+        }
+
+        const execution: Omit<AppExecution, 'id' | 'created_at' | 'updated_at'> =
+          {
+            ...executionInput,
+            user_id: actorUserId,
+          } as Omit<AppExecution, 'id' | 'created_at' | 'updated_at'>;
+
+        return toResultResponse(await createExecution(execution));
+      }
+      case 'appExecutions.updateStatus': {
+        const executionId = requireString(payload, 'executionId');
+        const status = parseExecutionStatus(payload?.status);
+        const errorMessage =
+          typeof payload?.errorMessage === 'string'
+            ? payload.errorMessage
+            : undefined;
+        const completedAt =
+          typeof payload?.completedAt === 'string'
+            ? payload.completedAt
+            : undefined;
+
+        if (!executionId || !status) {
+          return toErrorResponse('Missing required fields', 400);
+        }
+
+        const owned = await ensureExecutionOwnedByActor(executionId, actorUserId);
+        if (owned.error) {
+          return owned.error;
+        }
+
+        return toResultResponse(
+          await updateExecutionStatus(
+            executionId,
+            status,
+            errorMessage,
+            completedAt
+          )
+        );
+      }
+      case 'appExecutions.updateComplete': {
+        const executionId = requireString(payload, 'executionId');
+        if (!executionId) {
+          return toErrorResponse('Missing executionId', 400);
+        }
+
+        const completeData = (payload?.completeData || {}) as Parameters<
+          typeof updateCompleteExecutionData
+        >[1];
+        const status = parseExecutionStatus(completeData?.status);
+        if (!status) {
+          return toErrorResponse('Invalid status', 400);
+        }
+
+        const owned = await ensureExecutionOwnedByActor(executionId, actorUserId);
+        if (owned.error) {
+          return owned.error;
+        }
+
+        return toResultResponse(
+          await updateCompleteExecutionData(executionId, {
+            ...completeData,
+            status,
+          })
+        );
+      }
+      case 'appExecutions.delete': {
+        const userId = (actorUserId || requireString(payload, 'userId')).trim();
+        const executionId = requireString(payload, 'executionId');
+        if (!userId || !executionId) {
+          return toErrorResponse('Missing required fields', 400);
+        }
+
+        return toResultResponse(await deleteExecution(executionId, userId));
       }
       case 'sso.getSsoProviders':
         return toResultResponse(

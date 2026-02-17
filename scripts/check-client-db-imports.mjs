@@ -5,9 +5,15 @@ import path from 'node:path';
 
 const ROOT = process.cwd();
 const TARGET_DIRS = ['app', 'components', 'lib'];
-const ALLOWED_RUNTIME_IMPORT = '@lib/db/internal-data-api';
+const CLIENT_RUNTIME_PREFIXES = ['components/', 'lib/hooks/', 'lib/stores/'];
+const ALLOWED_RUNTIME_IMPORTS = new Set(['@lib/db/internal-data-api']);
+const FORBIDDEN_RUNTIME_EXACT_IMPORTS = new Set([
+  '@lib/services/db/data-service',
+  '@lib/services/db/message-service',
+]);
 const IMPORT_STATEMENT_RE = /import[\s\S]*?\sfrom\s+['"][^'"]+['"]/g;
-const IMPORT_PATH_RE = /from\s+['"](@lib\/db\/[^'"]+)['"]/;
+const IMPORT_PATH_RE = /from\s+['"]([^'"]+)['"]/;
+const DYNAMIC_IMPORT_RE = /import\(\s*['"]([^'"]+)['"]\s*\)/g;
 
 function isTsFile(filePath) {
   return filePath.endsWith('.ts') || filePath.endsWith('.tsx');
@@ -15,6 +21,10 @@ function isTsFile(filePath) {
 
 function countNewlines(input) {
   return (input.match(/\n/g) || []).length;
+}
+
+function toPosixPath(filePath) {
+  return filePath.split(path.sep).join('/');
 }
 
 async function walk(dir, results) {
@@ -49,6 +59,33 @@ function isClientModule(source) {
   return false;
 }
 
+function shouldCheckFile(relativePath, source) {
+  if (isClientModule(source)) {
+    return true;
+  }
+
+  const normalizedPath = toPosixPath(relativePath);
+  return CLIENT_RUNTIME_PREFIXES.some(prefix =>
+    normalizedPath.startsWith(prefix)
+  );
+}
+
+function isForbiddenRuntimeImport(importPath) {
+  if (ALLOWED_RUNTIME_IMPORTS.has(importPath)) {
+    return false;
+  }
+
+  if (FORBIDDEN_RUNTIME_EXACT_IMPORTS.has(importPath)) {
+    return true;
+  }
+
+  if (importPath.startsWith('@lib/db/')) {
+    return true;
+  }
+
+  return false;
+}
+
 async function main() {
   const files = [];
   for (const dir of TARGET_DIRS) {
@@ -66,7 +103,8 @@ async function main() {
 
   for (const filePath of files) {
     const source = await fs.readFile(filePath, 'utf8');
-    if (!isClientModule(source)) {
+    const relativePath = path.relative(ROOT, filePath);
+    if (!shouldCheckFile(relativePath, source)) {
       continue;
     }
 
@@ -84,14 +122,30 @@ async function main() {
       if (isTypeImport) {
         continue;
       }
-      if (importPath === ALLOWED_RUNTIME_IMPORT) {
+      if (!isForbiddenRuntimeImport(importPath)) {
         continue;
       }
 
       const offset = match.index;
       const line = countNewlines(source.slice(0, offset)) + 1;
       violations.push({
-        file: path.relative(ROOT, filePath),
+        file: relativePath,
+        line,
+        importPath,
+      });
+    }
+
+    DYNAMIC_IMPORT_RE.lastIndex = 0;
+    while ((match = DYNAMIC_IMPORT_RE.exec(source)) !== null) {
+      const importPath = match[1];
+      if (!isForbiddenRuntimeImport(importPath)) {
+        continue;
+      }
+
+      const offset = match.index;
+      const line = countNewlines(source.slice(0, offset)) + 1;
+      violations.push({
+        file: relativePath,
         line,
         importPath,
       });

@@ -9,6 +9,10 @@ import {
   conversationEvents,
   useCombinedConversations,
 } from '@lib/hooks/use-combined-conversations';
+import {
+  deleteConversation,
+  renameConversation,
+} from '@lib/services/client/conversations-api';
 import { usePendingConversationStore } from '@lib/stores/pending-conversation-store';
 import { cn } from '@lib/utils';
 import { Pen, Trash } from 'lucide-react';
@@ -130,7 +134,6 @@ export function SidebarChatList({
 
       setIsOperating(true);
       try {
-        const { renameConversation } = await import('@lib/db/conversations');
         const result = await renameConversation(dbPK, newTitle.trim());
 
         if (result.success) {
@@ -180,7 +183,6 @@ export function SidebarChatList({
 
     setIsOperating(true);
     try {
-      const { deleteConversation } = await import('@lib/db/conversations');
       const result = await deleteConversation(dbPK);
 
       if (result.success) {

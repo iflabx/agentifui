@@ -25,6 +25,128 @@ const SERVICE_INSTANCE_UPDATE_COLUMNS = new Set([
 ]);
 
 type RealtimeRow = Record<string, unknown>;
+type QueryClient = {
+  query: <T extends object = Record<string, unknown>>(
+    sql: string,
+    params?: unknown[]
+  ) => Promise<{
+    rows: T[];
+    rowCount?: number | null;
+  }>;
+};
+
+async function lockProviderRow(
+  client: QueryClient,
+  providerId: string
+): Promise<void> {
+  await client.query(
+    `
+      SELECT id::text AS id
+      FROM providers
+      WHERE id = $1::uuid
+      FOR UPDATE
+    `,
+    [providerId]
+  );
+}
+
+async function ensureProviderDefaultInstance(
+  client: QueryClient,
+  providerId: string,
+  options: {
+    preferredId?: string | null;
+    excludeId?: string | null;
+  } = {}
+): Promise<string | null> {
+  const existingDefaultResult = await client.query<{ id: string }>(
+    `
+      SELECT id::text AS id
+      FROM service_instances
+      WHERE provider_id = $1::uuid
+        AND is_default = TRUE
+      LIMIT 1
+    `,
+    [providerId]
+  );
+  const existingDefaultId = existingDefaultResult.rows[0]?.id || null;
+  if (existingDefaultId) {
+    return existingDefaultId;
+  }
+
+  const preferredId = options.preferredId?.trim() || '';
+  const excludeId = options.excludeId?.trim() || '';
+
+  let targetId: string | null = null;
+  if (preferredId && preferredId !== excludeId) {
+    const preferredResult = await client.query<{ id: string }>(
+      `
+        SELECT id::text AS id
+        FROM service_instances
+        WHERE provider_id = $1::uuid
+          AND id = $2::uuid
+        LIMIT 1
+      `,
+      [providerId, preferredId]
+    );
+    targetId = preferredResult.rows[0]?.id || null;
+  }
+
+  if (!targetId) {
+    const fallbackResult = excludeId
+      ? await client.query<{ id: string }>(
+          `
+            SELECT id::text AS id
+            FROM service_instances
+            WHERE provider_id = $1::uuid
+              AND id <> $2::uuid
+            ORDER BY created_at ASC, id ASC
+            LIMIT 1
+          `,
+          [providerId, excludeId]
+        )
+      : await client.query<{ id: string }>(
+          `
+            SELECT id::text AS id
+            FROM service_instances
+            WHERE provider_id = $1::uuid
+            ORDER BY created_at ASC, id ASC
+            LIMIT 1
+          `,
+          [providerId]
+        );
+    targetId = fallbackResult.rows[0]?.id || null;
+  }
+
+  if (!targetId && excludeId) {
+    const forceFallbackResult = await client.query<{ id: string }>(
+      `
+        SELECT id::text AS id
+        FROM service_instances
+        WHERE provider_id = $1::uuid
+        ORDER BY created_at ASC, id ASC
+        LIMIT 1
+      `,
+      [providerId]
+    );
+    targetId = forceFallbackResult.rows[0]?.id || null;
+  }
+
+  if (!targetId) {
+    return null;
+  }
+
+  await client.query(
+    `
+      UPDATE service_instances
+      SET is_default = TRUE,
+          updated_at = NOW()
+      WHERE id = $1::uuid
+    `,
+    [targetId]
+  );
+
+  return targetId;
+}
 
 async function publishServiceInstanceChangeBestEffort(input: {
   eventType: 'INSERT' | 'UPDATE' | 'DELETE';
@@ -188,6 +310,11 @@ export async function createServiceInstance(
 ): Promise<Result<ServiceInstance>> {
   const transactionResult = await dataService.runInTransaction<ServiceInstance>(
     async client => {
+      await lockProviderRow(
+        client as unknown as QueryClient,
+        serviceInstance.provider_id
+      );
+
       if (serviceInstance.is_default) {
         await client.query(
           `
@@ -232,7 +359,29 @@ export async function createServiceInstance(
         throw new Error('Failed to create service instance');
       }
 
-      return normalizeServiceInstanceRow(created);
+      await ensureProviderDefaultInstance(
+        client as unknown as QueryClient,
+        serviceInstance.provider_id,
+        {
+          preferredId: String(created.id),
+        }
+      );
+
+      const refreshedResult = await client.query<Record<string, unknown>>(
+        `
+          SELECT *
+          FROM service_instances
+          WHERE id = $1::uuid
+          LIMIT 1
+        `,
+        [String(created.id)]
+      );
+      const refreshed = refreshedResult.rows[0];
+      if (!refreshed) {
+        throw new Error('Failed to load created service instance');
+      }
+
+      return normalizeServiceInstanceRow(refreshed);
     }
   );
 
@@ -305,6 +454,11 @@ export async function updateServiceInstance(
         throw new Error(`Service instance not found: ${id}`);
       }
 
+      await lockProviderRow(
+        client as unknown as QueryClient,
+        currentInstance.provider_id
+      );
+
       if (updates.is_default) {
         await client.query(
           `
@@ -349,7 +503,30 @@ export async function updateServiceInstance(
         throw new Error(`Service instance not found: ${id}`);
       }
 
-      return normalizeServiceInstanceRow(updated);
+      await ensureProviderDefaultInstance(
+        client as unknown as QueryClient,
+        currentInstance.provider_id,
+        {
+          preferredId: updates.is_default === true ? String(updated.id) : null,
+          excludeId: updates.is_default === false ? String(updated.id) : null,
+        }
+      );
+
+      const refreshedResult = await client.query<Record<string, unknown>>(
+        `
+          SELECT *
+          FROM service_instances
+          WHERE id = $1::uuid
+          LIMIT 1
+        `,
+        [String(updated.id)]
+      );
+      const refreshed = refreshedResult.rows[0];
+      if (!refreshed) {
+        throw new Error(`Service instance not found after update: ${id}`);
+      }
+
+      return normalizeServiceInstanceRow(refreshed);
     }
   );
 
@@ -374,15 +551,78 @@ export async function updateServiceInstance(
 export async function deleteServiceInstance(
   id: string
 ): Promise<Result<boolean>> {
-  const result = await dataService.delete('service_instances', id);
+  const oldInstanceResult = await getServiceInstanceById(id);
+  const oldInstance =
+    oldInstanceResult.success && oldInstanceResult.data
+      ? oldInstanceResult.data
+      : null;
 
-  if (result.success) {
-    // Clear related cache
-    cacheService.deletePattern('service_instances:*');
-    return success(true);
-  } else {
+  const transactionResult = await dataService.runInTransaction<boolean>(
+    async client => {
+      const targetResult = await client.query<{
+        id: string;
+        provider_id: string;
+        is_default: boolean;
+      }>(
+        `
+          SELECT
+            id::text AS id,
+            provider_id::text AS provider_id,
+            is_default
+          FROM service_instances
+          WHERE id = $1::uuid
+          LIMIT 1
+          FOR UPDATE
+        `,
+        [id]
+      );
+      const target = targetResult.rows[0];
+      if (!target?.id || !target.provider_id) {
+        return false;
+      }
+
+      await lockProviderRow(
+        client as unknown as QueryClient,
+        target.provider_id
+      );
+
+      const deleteResult = await client.query<{ id: string }>(
+        `
+          DELETE FROM service_instances
+          WHERE id = $1::uuid
+          RETURNING id::text AS id
+        `,
+        [id]
+      );
+      if (!deleteResult.rows[0]?.id) {
+        return false;
+      }
+
+      await ensureProviderDefaultInstance(
+        client as unknown as QueryClient,
+        target.provider_id
+      );
+
+      return true;
+    }
+  );
+
+  if (!transactionResult.success) {
+    return transactionResult;
+  }
+
+  if (!transactionResult.data) {
     return success(false);
   }
+
+  cacheService.deletePattern('service_instances:*');
+  await publishServiceInstanceChangeBestEffort({
+    eventType: 'DELETE',
+    oldRow: oldInstance as unknown as RealtimeRow | null,
+    newRow: null,
+  });
+
+  return success(true);
 }
 
 // Compatibility functions to maintain compatibility with existing code

@@ -10,6 +10,10 @@ import {
   conversationEvents,
   useCombinedConversations,
 } from '@lib/hooks/use-combined-conversations';
+import {
+  deleteConversation,
+  renameConversation,
+} from '@lib/services/client/conversations-api';
 import { useAppListStore } from '@lib/stores/app-list-store';
 import { useChatStore } from '@lib/stores/chat-store';
 import { useFavoriteAppsStore } from '@lib/stores/favorite-apps-store';
@@ -197,7 +201,6 @@ export function ConversationTitleButton({
 
     setIsOperating(true);
     try {
-      const { renameConversation } = await import('@lib/db/conversations');
       const result = await renameConversation(dbPK, newTitle.trim());
 
       if (result.success) {
@@ -242,7 +245,6 @@ export function ConversationTitleButton({
 
     setIsOperating(true);
     try {
-      const { deleteConversation } = await import('@lib/db/conversations');
       const result = await deleteConversation(dbPK);
 
       if (result.success) {

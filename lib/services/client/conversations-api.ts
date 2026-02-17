@@ -64,3 +64,23 @@ export async function updateConversation(
     title: normalizedTitle,
   });
 }
+
+export async function renameConversation(
+  conversationId: string,
+  newTitle: string
+): Promise<Result<boolean>> {
+  return updateConversation(conversationId, { title: newTitle });
+}
+
+export async function deleteConversation(
+  conversationId: string
+): Promise<Result<boolean>> {
+  const normalizedConversationId = conversationId.trim();
+  if (!normalizedConversationId) {
+    return failure('Conversation ID is required');
+  }
+
+  return callInternalDataAction<boolean>('conversations.deleteConversation', {
+    conversationId: normalizedConversationId,
+  });
+}

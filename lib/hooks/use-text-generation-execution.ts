@@ -1,4 +1,10 @@
 import { useProfile } from '@lib/hooks/use-profile';
+import {
+  createExecution,
+  getExecutionsByServiceInstance,
+  updateCompleteExecutionData,
+  updateExecutionStatus,
+} from '@lib/services/client/app-executions-api';
 import type { DifyCompletionRequestPayload } from '@lib/services/dify/types';
 import { useAutoAddFavoriteApp } from '@lib/stores/favorite-apps-store';
 import { useWorkflowExecutionStore } from '@lib/stores/workflow-execution-store';
@@ -69,10 +75,6 @@ export function useTextGenerationExecution(instanceId: string) {
       );
 
       try {
-        const { updateCompleteExecutionData } = await import(
-          '@lib/db/app-executions'
-        );
-
         // --- More strict status determination ---
         let finalStatus: ExecutionStatus;
 
@@ -230,8 +232,6 @@ export function useTextGenerationExecution(instanceId: string) {
         }
 
         // --- Step 3: Create database record ---
-        const { createExecution } = await import('@lib/db/app-executions');
-
         const executionData: Omit<
           AppExecution,
           'id' | 'created_at' | 'updated_at'
@@ -267,9 +267,6 @@ export function useTextGenerationExecution(instanceId: string) {
         getActions().setCurrentExecution(dbExecution);
 
         // --- Step 4: Update status to running ---
-        const { updateExecutionStatus } = await import(
-          '@lib/db/app-executions'
-        );
         await updateExecutionStatus(dbExecution.id, 'running');
         getActions().updateCurrentExecution({ status: 'running' });
 
@@ -410,9 +407,6 @@ export function useTextGenerationExecution(instanceId: string) {
         // Update database status to failed
         if (currentExecution?.id) {
           try {
-            const { updateExecutionStatus } = await import(
-              '@lib/db/app-executions'
-            );
             await updateExecutionStatus(
               currentExecution.id,
               'failed',
@@ -544,9 +538,6 @@ export function useTextGenerationExecution(instanceId: string) {
           };
 
           // Update database record
-          const { updateCompleteExecutionData } = await import(
-            '@lib/db/app-executions'
-          );
           const updateResult = await updateCompleteExecutionData(
             currentExecution.id,
             {
@@ -585,9 +576,6 @@ export function useTextGenerationExecution(instanceId: string) {
         // No generated content, just update status
         if (currentExecution?.id) {
           try {
-            const { updateExecutionStatus } = await import(
-              '@lib/db/app-executions'
-            );
             await updateExecutionStatus(
               currentExecution.id,
               'stopped',
@@ -679,12 +667,8 @@ export function useTextGenerationExecution(instanceId: string) {
 
       console.log('[Text Generation] History query using UUID:', targetApp.id);
 
-      const { getExecutionsByServiceInstance } = await import(
-        '@lib/db/app-executions'
-      );
       const result = await getExecutionsByServiceInstance(
         targetApp.id,
-        userId,
         20
       ); // Use UUID as primary key, add userId filter
 
