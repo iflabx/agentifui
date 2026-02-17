@@ -217,7 +217,9 @@ export const UserFiltersComponent: React.FC<UserFiltersProps> = ({
                   value={filters.role || ''}
                   onChange={e =>
                     onFiltersChange({
-                      role: (e.target.value as any) || undefined,
+                      role: e.target.value
+                        ? (e.target.value as NonNullable<UserFilters['role']>)
+                        : undefined,
                     })
                   }
                   className={cn(
@@ -259,7 +261,9 @@ export const UserFiltersComponent: React.FC<UserFiltersProps> = ({
                   value={filters.status || ''}
                   onChange={e =>
                     onFiltersChange({
-                      status: (e.target.value as any) || undefined,
+                      status: e.target.value
+                        ? (e.target.value as NonNullable<UserFilters['status']>)
+                        : undefined,
                     })
                   }
                   className={cn(
@@ -343,7 +347,11 @@ export const UserFiltersComponent: React.FC<UserFiltersProps> = ({
                   <select
                     value={filters.sortBy || 'created_at'}
                     onChange={e =>
-                      onFiltersChange({ sortBy: e.target.value as any })
+                      onFiltersChange({
+                        sortBy: e.target.value as NonNullable<
+                          UserFilters['sortBy']
+                        >,
+                      })
                     }
                     className={cn(
                       'w-full cursor-pointer appearance-none rounded-lg border px-3 py-1.5 font-serif text-sm',
@@ -371,7 +379,11 @@ export const UserFiltersComponent: React.FC<UserFiltersProps> = ({
                   <select
                     value={filters.sortOrder || 'desc'}
                     onChange={e =>
-                      onFiltersChange({ sortOrder: e.target.value as any })
+                      onFiltersChange({
+                        sortOrder: e.target.value as NonNullable<
+                          UserFilters['sortOrder']
+                        >,
+                      })
                     }
                     className={cn(
                       'w-full cursor-pointer appearance-none rounded-lg border px-3 py-1.5 font-serif text-sm',

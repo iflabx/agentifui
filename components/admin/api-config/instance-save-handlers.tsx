@@ -1,12 +1,30 @@
 'use client';
 
 import { useApiConfigStore } from '@lib/stores/api-config-store';
+import type { Provider, ServiceInstance } from '@lib/types/database';
 import { toast } from 'sonner';
 
+type InstanceSaveData = Partial<ServiceInstance> & {
+  apiKey?: string;
+  setAsDefault?: boolean;
+  selectedProviderId?: string;
+};
+
+type CreateAppInstanceFn = (
+  instance: Partial<ServiceInstance>,
+  apiKey?: string
+) => Promise<ServiceInstance>;
+
+type UpdateAppInstanceFn = (
+  id: string,
+  instance: Partial<ServiceInstance>,
+  apiKey?: string
+) => Promise<ServiceInstance>;
+
 export const handleCreateInstance = async (
-  data: any,
-  providers: any[],
-  addInstance: Function,
+  data: InstanceSaveData,
+  providers: Provider[],
+  addInstance: CreateAppInstanceFn,
   setIsProcessing: (value: boolean) => void,
   handleClearSelection: () => void,
   t: (key: string) => string
@@ -71,9 +89,9 @@ export const handleCreateInstance = async (
 
 // Update instance save processing logic
 export const handleUpdateInstance = async (
-  selectedInstance: any,
-  data: any,
-  updateInstance: Function,
+  selectedInstance: Partial<ServiceInstance>,
+  data: InstanceSaveData,
+  updateInstance: UpdateAppInstanceFn,
   setIsProcessing: (value: boolean) => void,
   handleClearSelection: () => void,
   t: (key: string) => string
@@ -81,6 +99,10 @@ export const handleUpdateInstance = async (
   setIsProcessing(true);
 
   try {
+    if (!selectedInstance.id) {
+      toast.error(t('errors.updateFailed'));
+      return;
+    }
     await updateInstance(selectedInstance.id, data, data.apiKey);
     toast.success(t('success.instanceUpdated'));
     handleClearSelection();

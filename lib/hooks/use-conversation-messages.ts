@@ -13,7 +13,11 @@
 import { getConversationByExternalId } from '@lib/services/client/conversations-api';
 import { getLatestMessages } from '@lib/services/client/messages-api';
 import { useChatScrollStore } from '@lib/stores/chat-scroll-store';
-import { ChatMessage, useChatStore } from '@lib/stores/chat-store';
+import {
+  ChatMessage,
+  MessageAttachment,
+  useChatStore,
+} from '@lib/stores/chat-store';
 import { Message } from '@lib/types/database';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -22,6 +26,27 @@ import { usePathname } from 'next/navigation';
 
 // Number of messages to load per page
 const MESSAGES_PER_PAGE = 20;
+
+function isMessageAttachmentArray(
+  value: unknown
+): value is MessageAttachment[] {
+  return (
+    Array.isArray(value) &&
+    value.every(item => {
+      if (!item || typeof item !== 'object') {
+        return false;
+      }
+      const record = item as Record<string, unknown>;
+      return (
+        typeof record.id === 'string' &&
+        typeof record.name === 'string' &&
+        typeof record.size === 'number' &&
+        typeof record.type === 'string' &&
+        typeof record.upload_file_id === 'string'
+      );
+    })
+  );
+}
 
 // Unified loading state type
 // Contains state, type and lock flag
@@ -44,7 +69,10 @@ type LoadingStatus = {
  */
 function dbMessageToChatMessage(dbMessage: Message): ChatMessage {
   // Extract attachment information from metadata
-  const attachments = dbMessage.metadata?.attachments || [];
+  const rawAttachments = dbMessage.metadata?.attachments;
+  const attachments = isMessageAttachmentArray(rawAttachments)
+    ? rawAttachments
+    : [];
   return {
     id: `db-${dbMessage.id}`,
     text: dbMessage.content,

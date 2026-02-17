@@ -51,8 +51,8 @@ export interface UserPreference {
   user_id: string;
   theme: string;
   language: string;
-  notification_settings: Record<string, any>;
-  ai_preferences: Record<string, any>;
+  notification_settings: Record<string, unknown>;
+  ai_preferences: Record<string, unknown>;
   updated_at: string;
 }
 
@@ -92,7 +92,7 @@ export interface Conversation {
   ai_config_id: string | null;
   title: string;
   summary: string | null;
-  settings: Record<string, any>;
+  settings: Record<string, unknown>;
   created_at: string;
   updated_at: string;
   status: string;
@@ -104,7 +104,7 @@ export interface Conversation {
   external_id: string | null;
   app_id: string | null;
   last_message_preview: string | null;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface Message {
@@ -113,7 +113,7 @@ export interface Message {
   user_id: string | null;
   role: MessageRole;
   content: string;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
   created_at: string;
   status: MessageStatus;
   // The following fields are for Dify integration:
@@ -146,6 +146,9 @@ export interface Provider {
 // ServiceInstanceConfig type definition
 // Used to standardize the structure of ServiceInstance.config
 export interface ServiceInstanceConfig {
+  // Dify API base URL
+  api_url?: string;
+
   // Application metadata configuration
   app_metadata?: {
     // Application type: model switch | marketplace
@@ -179,7 +182,7 @@ export interface ServiceInstanceConfig {
     brief_description?: string;
 
     // Other custom metadata
-    [key: string]: any;
+    [key: string]: unknown;
   };
 
   // Dify app parameter configuration (replaces API calls)
@@ -218,7 +221,7 @@ export interface ServiceInstanceConfig {
   };
 
   // Other configuration
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 // ServiceInstance interface, with visibility field
@@ -295,7 +298,7 @@ export interface SsoProviderSettings {
   };
 
   // Other extended configuration
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 // SSO provider interface, with display_order and button_text fields
@@ -324,7 +327,7 @@ export interface PublicSsoProvider {
   enabled: boolean;
   display_order: number;
   button_text: string | null;
-  settings: any; // Full settings with sensitive info filtered
+  settings: unknown; // Full settings with sensitive info filtered
   created_at: string;
 }
 
@@ -356,7 +359,7 @@ export interface AuthSettings {
   allow_phone_registration: boolean;
   allow_password_login: boolean;
   require_email_verification: boolean;
-  password_policy: Record<string, any>;
+  password_policy: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 }
@@ -369,7 +372,7 @@ export interface AiConfig {
   app_id: string | null;
   api_key: string;
   api_url: string;
-  settings: Record<string, any>;
+  settings: Record<string, unknown>;
   enabled: boolean;
   created_at: string;
   updated_at: string;
@@ -381,8 +384,8 @@ export interface ApiLog {
   conversation_id: string | null;
   provider: string;
   endpoint: string;
-  request: Record<string, any>;
-  response: Record<string, any>;
+  request: Record<string, unknown>;
+  response: Record<string, unknown>;
   status_code: number | null;
   latency_ms: number | null;
   created_at: string;
@@ -399,14 +402,14 @@ export interface AppExecution {
   external_execution_id: string | null; // workflow_run_id or message_id
   task_id: string | null; // Dify returned task_id (mainly for workflow)
   title: string;
-  inputs: Record<string, any>; // Input parameters
-  outputs: Record<string, any> | null; // Output results
+  inputs: Record<string, unknown>; // Input parameters
+  outputs: Record<string, unknown> | null; // Output results
   status: ExecutionStatus;
   error_message: string | null;
   total_steps: number; // Number of steps for workflow, 0 for text-generation
   total_tokens: number;
   elapsed_time: number | null; // Execution time (seconds)
-  metadata: Record<string, any>; // Extended fields, such as tags, remarks, etc.
+  metadata: Record<string, unknown>; // Extended fields, such as tags, remarks, etc.
   created_at: string;
   updated_at: string;
   completed_at: string | null;
@@ -435,26 +438,27 @@ export interface AppPermissionCheck {
   error_message: string | null;
 }
 
-// Database type namespace
-export namespace Database {
-  export interface Tables {
-    profiles: Profile;
-    user_preferences: UserPreference;
-    groups: Group;
-    group_members: GroupMember;
-    conversations: Conversation;
-    messages: Message;
-    providers: Provider;
-    service_instances: ServiceInstance;
-    api_keys: ApiKey;
-    sso_providers: SsoProvider;
-    domain_sso_mappings: DomainSsoMapping;
-    auth_settings: AuthSettings;
-    ai_configs: AiConfig;
-    api_logs: ApiLog;
-    app_executions: AppExecution;
-    group_app_permissions: GroupAppPermission;
-    user_accessible_apps: UserAccessibleApp;
-    app_permission_checks: AppPermissionCheck;
-  }
+export interface DatabaseTables {
+  profiles: Profile;
+  user_preferences: UserPreference;
+  groups: Group;
+  group_members: GroupMember;
+  conversations: Conversation;
+  messages: Message;
+  providers: Provider;
+  service_instances: ServiceInstance;
+  api_keys: ApiKey;
+  sso_providers: SsoProvider;
+  domain_sso_mappings: DomainSsoMapping;
+  auth_settings: AuthSettings;
+  ai_configs: AiConfig;
+  api_logs: ApiLog;
+  app_executions: AppExecution;
+  group_app_permissions: GroupAppPermission;
+  user_accessible_apps: UserAccessibleApp;
+  app_permission_checks: AppPermissionCheck;
+}
+
+export interface Database {
+  Tables: DatabaseTables;
 }

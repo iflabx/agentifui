@@ -1,6 +1,7 @@
 'use client';
 
 import { useSmartShortcuts } from '@lib/hooks/use-smart-shortcuts';
+import { useSidebarStore } from '@lib/stores/sidebar-store';
 import { cn } from '@lib/utils';
 
 import React, { useEffect, useState } from 'react';
@@ -34,8 +35,7 @@ export function ClientLayout({ children, fontClasses }: ClientLayoutProps) {
     document.body.classList.add('render-ready');
 
     // 🎯 Global setting sidebar mount state to avoid flickering caused by repeated calls to each layout
-    const { setMounted: setSidebarMounted } =
-      require('@lib/stores/sidebar-store').useSidebarStore.getState();
+    const { setMounted: setSidebarMounted } = useSidebarStore.getState();
     setSidebarMounted();
 
     // Cleanup function: only remove render-ready when ClientLayout itself is unmounted

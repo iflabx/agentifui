@@ -36,6 +36,23 @@ interface CodeBlockProps {
   isStreaming?: boolean; // Indicates if the code is being streamed
 }
 
+function extractStringFromNode(node: React.ReactNode): string {
+  if (typeof node === 'string') {
+    return node;
+  }
+
+  if (Array.isArray(node)) {
+    return node.map(child => extractStringFromNode(child)).join('');
+  }
+
+  if (React.isValidElement(node)) {
+    const element = node as React.ReactElement<{ children?: React.ReactNode }>;
+    return extractStringFromNode(element.props.children);
+  }
+
+  return '';
+}
+
 // Use React.memo to prevent unnecessary re-renders
 export const CodeBlock: React.FC<CodeBlockProps> = React.memo(
   ({
@@ -47,36 +64,7 @@ export const CodeBlock: React.FC<CodeBlockProps> = React.memo(
   }) => {
     // Extract code content for copy and highlight
     const codeContent = React.useMemo(() => {
-      // If children is a string, return directly
-      if (typeof children === 'string') {
-        return children;
-      }
-
-      // If children is a React element, try to extract text content
-      if (React.isValidElement(children)) {
-        const props = children.props as any;
-        if (props?.children && typeof props.children === 'string') {
-          return props.children;
-        }
-      }
-
-      // If children is an array, try to join all child elements as string
-      if (Array.isArray(children)) {
-        return children
-          .map(child => {
-            if (typeof child === 'string') return child;
-            if (React.isValidElement(child)) {
-              const props = child.props as any;
-              if (props?.children && typeof props.children === 'string') {
-                return props.children;
-              }
-            }
-            return '';
-          })
-          .join('');
-      }
-
-      return '';
+      return extractStringFromNode(children);
     }, [children]);
 
     // Parse language name, e.g., "language-python" to "python"

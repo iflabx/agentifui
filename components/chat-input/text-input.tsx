@@ -133,3 +133,5 @@ export const ChatTextInput = forwardRef<
     );
   }
 );
+
+ChatTextInput.displayName = 'ChatTextInput';

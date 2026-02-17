@@ -4,7 +4,7 @@
  * Handles message-related data operations, optimized for pagination and sorting.
  * Uses database-level sorting to avoid complex client-side logic.
  */
-import { ChatMessage } from '@lib/stores/chat-store';
+import { ChatMessage, MessageAttachment } from '@lib/stores/chat-store';
 import { Message, MessageStatus } from '@lib/types/database';
 import { Result, success } from '@lib/types/result';
 
@@ -69,6 +69,27 @@ export class MessageService {
   private static instance: MessageService;
 
   private constructor() {}
+
+  private isMessageAttachmentArray(
+    value: unknown
+  ): value is MessageAttachment[] {
+    return (
+      Array.isArray(value) &&
+      value.every(item => {
+        if (!item || typeof item !== 'object') {
+          return false;
+        }
+        const record = item as Record<string, unknown>;
+        return (
+          typeof record.id === 'string' &&
+          typeof record.name === 'string' &&
+          typeof record.size === 'number' &&
+          typeof record.type === 'string' &&
+          typeof record.upload_file_id === 'string'
+        );
+      })
+    );
+  }
 
   /**
    * Get the singleton instance of the message service
@@ -491,7 +512,10 @@ export class MessageService {
    */
   dbMessageToChatMessage(dbMessage: Message): ChatMessage {
     // Extract attachments from metadata
-    const attachments = dbMessage.metadata?.attachments || [];
+    const rawAttachments = dbMessage.metadata?.attachments;
+    const attachments = this.isMessageAttachmentArray(rawAttachments)
+      ? rawAttachments
+      : [];
 
     return {
       id: `db-${dbMessage.id}`,

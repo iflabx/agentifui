@@ -8,9 +8,11 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
+type SettingsTranslator = (key: string) => string;
+
 // Define settings options, including icons, titles, and paths
 // Titles will be dynamically obtained through translation
-export const getSettingsNavItems = (t: any) => [
+export const getSettingsNavItems = (t: SettingsTranslator) => [
   {
     title: t('navigation.overview'),
     href: '/settings',

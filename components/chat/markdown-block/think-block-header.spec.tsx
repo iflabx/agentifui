@@ -1,10 +1,17 @@
+import { useMobile } from '@lib/hooks/use-mobile';
 import { fireEvent, render, screen } from '@testing-library/react';
 
 import { ThinkBlockHeader, ThinkBlockStatus } from './think-block-header';
 
+interface SpinnerMockProps {
+  size?: string;
+  className?: string;
+  'aria-label'?: string;
+}
+
 // Mock dependencies
 jest.mock('@components/ui/spinner', () => ({
-  Spinner: ({ size, className, 'aria-label': ariaLabel }: any) => (
+  Spinner: ({ size, className, 'aria-label': ariaLabel }: SpinnerMockProps) => (
     <div
       data-testid="spinner"
       data-size={size}
@@ -20,7 +27,7 @@ jest.mock('@lib/hooks/use-mobile', () => ({
   useMobile: jest.fn(),
 }));
 
-const mockUseMobile = require('@lib/hooks/use-mobile').useMobile;
+const mockUseMobile = jest.mocked(useMobile);
 
 describe('ThinkBlockHeader', () => {
   const defaultProps = {

@@ -2,9 +2,20 @@ import { render, screen } from '@testing-library/react';
 
 import { CodeBlockHeader } from './code-block-header';
 
+interface ActionButtonMockProps {
+  content?: string;
+  language?: string;
+  tooltipPlacement?: 'top' | 'bottom' | 'left' | 'right';
+  'aria-label'?: string;
+}
+
 // Mock the child components
 jest.mock('./copy-button', () => ({
-  CopyButton: ({ content, tooltipPlacement, 'aria-label': ariaLabel }: any) => (
+  CopyButton: ({
+    content,
+    tooltipPlacement,
+    'aria-label': ariaLabel,
+  }: ActionButtonMockProps) => (
     <button
       data-testid="copy-button"
       data-content={content}
@@ -22,7 +33,7 @@ jest.mock('./export-button', () => ({
     language,
     tooltipPlacement,
     'aria-label': ariaLabel,
-  }: any) => (
+  }: ActionButtonMockProps) => (
     <button
       data-testid="export-button"
       data-content={content}

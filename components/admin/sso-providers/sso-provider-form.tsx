@@ -183,18 +183,21 @@ export function SsoProviderForm({
   };
 
   // Handle settings update from visual form
-  const handleSettingsChange = (path: string, value: any) => {
+  const handleSettingsChange = (path: string, value: unknown) => {
     setFormData((prev: CreateSsoProviderData) => {
-      const newSettings = { ...prev.settings };
+      const newSettings = {
+        ...prev.settings,
+      } as Record<string, unknown>;
       const keys = path.split('.');
-      let current: any = newSettings;
+      let current: Record<string, unknown> = newSettings;
 
       // Navigate to the parent object
       for (let i = 0; i < keys.length - 1; i++) {
-        if (!current[keys[i]]) {
+        const next = current[keys[i]];
+        if (!next || typeof next !== 'object' || Array.isArray(next)) {
           current[keys[i]] = {};
         }
-        current = current[keys[i]];
+        current = current[keys[i]] as Record<string, unknown>;
       }
 
       // Set the final value
@@ -203,7 +206,7 @@ export function SsoProviderForm({
 
       return {
         ...prev,
-        settings: newSettings,
+        settings: newSettings as SsoProviderSettings,
       };
     });
 
@@ -670,7 +673,11 @@ export function SsoProviderForm({
                           </label>
                           <input
                             type="text"
-                            value={formData.settings.email_domain || ''}
+                            value={
+                              typeof formData.settings.email_domain === 'string'
+                                ? formData.settings.email_domain
+                                : ''
+                            }
                             onChange={e =>
                               handleSettingsChange(
                                 'email_domain',

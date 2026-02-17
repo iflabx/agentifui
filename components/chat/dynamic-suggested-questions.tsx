@@ -14,7 +14,7 @@ import { useTranslations } from 'next-intl';
 
 interface DynamicSuggestedQuestionsProps {
   className?: string;
-  onQuestionClick?: (messageText: string, files?: any[]) => Promise<void>;
+  onQuestionClick?: (messageText: string, files?: unknown[]) => Promise<void>;
 }
 
 /**
