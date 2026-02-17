@@ -60,4 +60,9 @@ docs/security
 # pm2
 pm2-logs/
 
+# local tooling artifacts
+.dev-env.local
+.playwright-cli/
+output/
+
 .serena

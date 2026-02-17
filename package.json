@@ -124,6 +124,24 @@
       "mdast-util-to-hast": ">=13.2.1"
     }
   },
+  "knip": {
+    "ignore": [
+      "output/**",
+      "ecosystem.config.js",
+      "scripts/mock-oauth-provider.mjs"
+    ],
+    "ignoreDependencies": [
+      "bufferutil",
+      "utf-8-validate",
+      "eslint-config-next"
+    ],
+    "ignoreBinaries": [
+      "claude",
+      "only-allow",
+      "python3",
+      "pm2"
+    ]
+  },
   "dependencies": {
     "@better-auth/sso": "^1.4.18",
     "@dnd-kit/core": "^6.3.1",
