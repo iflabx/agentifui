@@ -105,7 +105,8 @@ The current migration strategy is:
       - `messages.*` (`getLatest`, `findDuplicate`, `save`, `createPlaceholder`)
       - `appExecutions.*` (`getByServiceInstance`, `getById`, `create`, `updateStatus`, `updateComplete`, `delete`)
       - `sso.*` (`getSsoProviders`, `getSsoProviderStats`, `getSsoProviderById`, `createSsoProvider`, `updateSsoProvider`, `deleteSsoProvider`, `toggleSsoProvider`, `updateSsoProviderOrder`)
-    - Non-extracted actions still forward to legacy Next `internal/data` handler with fastify-bypass header.
+    - 默认不再透传 legacy：未识别 action 直接返回本地 `400 Unsupported action`。
+    - 如需应急回退，可设置 `FASTIFY_INTERNAL_DATA_LEGACY_FALLBACK_ENABLED=1`，将未识别 action 透传到 legacy Next `internal/data`。
     - Response includes `x-agentifui-internal-data-handler: local|legacy` for phase-level verification.
 18. Other configured API prefixes still use Fastify fallback proxy to Next upstream.
 

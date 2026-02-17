@@ -4449,6 +4449,18 @@ export const internalDataRoutes: FastifyPluginAsync<
           .send(localHandled.payload);
       }
 
+      if (!options.config.internalDataLegacyFallbackEnabled) {
+        const unsupported = toErrorResponse(
+          `Unsupported action: ${action}`,
+          400
+        );
+        return reply
+          .status(unsupported.statusCode)
+          .header('content-type', unsupported.contentType)
+          .header(INTERNAL_DATA_HANDLER_HEADER, unsupported.handler)
+          .send(unsupported.payload);
+      }
+
       const legacyHandled = await proxyLegacyInternalDataRequest(
         request,
         body,

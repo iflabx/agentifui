@@ -14,6 +14,7 @@ export interface ApiRuntimeConfig {
   nextUpstreamBaseUrl: string;
   proxyPrefixes: string[];
   internalDataProxyTimeoutMs: number;
+  internalDataLegacyFallbackEnabled: boolean;
 }
 
 function parsePort(rawValue: string | undefined, fallback: number): number {
@@ -41,6 +42,23 @@ function parseTimeoutMs(
   }
 
   return Math.floor(parsed);
+}
+
+function parseBoolean(
+  rawValue: string | undefined,
+  fallback: boolean
+): boolean {
+  if (!rawValue) {
+    return fallback;
+  }
+  const normalized = rawValue.trim().toLowerCase();
+  if (normalized === '1' || normalized === 'true' || normalized === 'yes') {
+    return true;
+  }
+  if (normalized === '0' || normalized === 'false' || normalized === 'no') {
+    return false;
+  }
+  return fallback;
 }
 
 function parseProxyPrefixes(rawValue: string | undefined): string[] {
@@ -75,6 +93,10 @@ export function loadApiRuntimeConfig(): ApiRuntimeConfig {
     internalDataProxyTimeoutMs: parseTimeoutMs(
       process.env.FASTIFY_INTERNAL_DATA_PROXY_TIMEOUT_MS,
       30000
+    ),
+    internalDataLegacyFallbackEnabled: parseBoolean(
+      process.env.FASTIFY_INTERNAL_DATA_LEGACY_FALLBACK_ENABLED,
+      false
     ),
   };
 }

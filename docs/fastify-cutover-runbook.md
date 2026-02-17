@@ -41,5 +41,8 @@ This runbook controls Next.js API ingress cutover to Fastify sidecar for `/api/i
    - fallback call: sends `x-agentifui-fastify-bypass: 1` to bypass rewrite and hit Next legacy route directly
 2. Fastify `internal-data` gateway timeout is configurable:
    - `FASTIFY_INTERNAL_DATA_PROXY_TIMEOUT_MS`
-3. M3 internal-data gate defaults to verify Fastify path unless disabled:
+3. Legacy fallback for unknown `internal-data` actions is disabled by default:
+   - default: `FASTIFY_INTERNAL_DATA_LEGACY_FALLBACK_ENABLED=0`
+   - emergency fallback on: `FASTIFY_INTERNAL_DATA_LEGACY_FALLBACK_ENABLED=1`
+4. M3 internal-data gate defaults to verify Fastify path unless disabled:
    - `M3_INTERNAL_DATA_USE_FASTIFY_PROXY=0` to run legacy-only path
