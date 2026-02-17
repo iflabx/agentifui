@@ -66,7 +66,10 @@ The current migration strategy is:
 8. `GET /api/admin/users`
    - Served directly by Fastify.
    - Preserves admin-only active-user list contract used by management UIs.
-9. Other configured API prefixes still use Fastify fallback proxy to Next upstream.
+9. `POST /api/admin/users/for-group`
+   - Served directly by Fastify.
+   - Preserves admin-only group-member candidate pagination/search contract.
+10. Other configured API prefixes still use Fastify fallback proxy to Next upstream.
 
 ## Smoke Check
 
