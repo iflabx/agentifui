@@ -4,6 +4,7 @@ import Fastify from 'fastify';
 import { type ApiRuntimeConfig, loadApiRuntimeConfig } from './config';
 import { adminEncryptRoutes } from './routes/admin-encrypt';
 import { adminStatusRoutes } from './routes/admin-status';
+import { adminTranslationsRoutes } from './routes/admin-translations';
 import { adminUsersRoutes } from './routes/admin-users';
 import { adminUsersForGroupRoutes } from './routes/admin-users-for-group';
 import { healthRoutes } from './routes/health';
@@ -37,6 +38,7 @@ export async function createApiServer(config: ApiRuntimeConfig) {
   });
   await app.register(adminEncryptRoutes, { config });
   await app.register(adminStatusRoutes, { config });
+  await app.register(adminTranslationsRoutes, { config });
   await app.register(adminUsersRoutes, { config });
   await app.register(adminUsersForGroupRoutes, { config });
   await app.register(healthRoutes, { config });
