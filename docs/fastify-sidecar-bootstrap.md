@@ -94,8 +94,12 @@ The current migration strategy is:
     - Preserves admin-only per-user local-login toggle/state management.
 17. `POST /api/internal/data`
     - Served by Fastify as a compatibility gateway.
-    - Preserves the unified action contract (`{ action, payload }`) and forwards to legacy Next `internal/data` handler with fastify-bypass header.
-    - Enables ingress cutover first, then action-by-action backend extraction.
+    - Preserves the unified action contract (`{ action, payload }`).
+    - Current local extraction scope:
+      - `conversations.*` (`getConversationByExternalId`, `createConversation`, `getUserConversations`, `renameConversation`, `deleteConversation`)
+      - `messages.*` (`getLatest`, `findDuplicate`, `save`, `createPlaceholder`)
+    - Non-extracted actions still forward to legacy Next `internal/data` handler with fastify-bypass header.
+    - Response includes `x-agentifui-internal-data-handler: local|legacy` for phase-level verification.
 18. Other configured API prefixes still use Fastify fallback proxy to Next upstream.
 
 ## Smoke Check
