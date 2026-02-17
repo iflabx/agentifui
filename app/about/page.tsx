@@ -6,7 +6,10 @@ import { LanguageSwitcher } from '@components/ui/language-switcher';
 import { PageLoader } from '@components/ui/page-loader';
 import { getCurrentUser } from '@lib/auth/better-auth/http-client';
 import { useDynamicTranslations } from '@lib/hooks/use-dynamic-translations';
-import type { AboutTranslationData } from '@lib/types/about-page-components';
+import type {
+  AboutTranslationData,
+  PageSection,
+} from '@lib/types/about-page-components';
 
 import { useEffect, useState } from 'react';
 
@@ -65,7 +68,7 @@ export default function AboutPage() {
   // Create translation data object for the dynamic renderer
   const translationData: AboutTranslationData = {
     // Try to get dynamic sections first
-    sections: dynamicT('sections', 'pages.about') || undefined,
+    sections: dynamicT<PageSection[]>('sections', 'pages.about') || undefined,
 
     // Fallback to legacy format for backward compatibility
     title: t('title'),
