@@ -1,7 +1,10 @@
 'use client';
 
-import { useCombinedConversations } from '@lib/hooks/use-combined-conversations';
-import { useAppListStore } from '@lib/stores/app-list-store';
+import {
+  type CombinedConversation,
+  useCombinedConversations,
+} from '@lib/hooks/use-combined-conversations';
+import { type AppInfo, useAppListStore } from '@lib/stores/app-list-store';
 import { useChatStore } from '@lib/stores/chat-store';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -102,7 +105,7 @@ export function DynamicTitle() {
   const getAppTitle = useCallback(
     (
       path: string,
-      appsList: any[],
+      appsList: AppInfo[],
       isLoading: boolean
     ): { title: string; isStable: boolean } => {
       const pathSegments = path.split('/');
@@ -136,7 +139,7 @@ export function DynamicTitle() {
   const getChatTitle = useCallback(
     (
       conversationId: string,
-      conversationsList: any[],
+      conversationsList: CombinedConversation[],
       isLoading: boolean
     ): { title: string; isStable: boolean } => {
       const currentChat = conversationsList.find(
@@ -168,8 +171,8 @@ export function DynamicTitle() {
     (
       currentPath: string | null,
       conversationId: string | null,
-      conversationsList: any[],
-      appsList: any[],
+      conversationsList: CombinedConversation[],
+      appsList: AppInfo[],
       isConvLoading: boolean,
       isAppsDataLoading: boolean
     ): { title: string; priority: number; isStable: boolean } => {

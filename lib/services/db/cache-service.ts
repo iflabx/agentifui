@@ -13,7 +13,7 @@ interface CacheItem<T> {
 
 export class CacheService {
   private static instance: CacheService;
-  private cache = new Map<string, CacheItem<any>>();
+  private cache = new Map<string, CacheItem<unknown>>();
   private cleanupTimer: NodeJS.Timeout | null = null;
 
   private constructor() {
@@ -49,7 +49,7 @@ export class CacheService {
     // Check if cache exists and is not expired
     if (cached && Date.now() - cached.timestamp < cached.ttl) {
       console.log(`[Cache hit] Key: ${key}`);
-      return cached.data;
+      return cached.data as T;
     }
 
     // Cache not found or expired, fetch new data

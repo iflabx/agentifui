@@ -4,6 +4,7 @@ import {
   DateFormatPresets,
   useDateFormatter,
 } from '@lib/hooks/use-date-formatter';
+import type { AppExecution } from '@lib/types/database';
 import { cn } from '@lib/utils';
 import {
   Check,
@@ -19,7 +20,7 @@ import React from 'react';
 import { useTranslations } from 'next-intl';
 
 interface ExecutionItemProps {
-  execution: any;
+  execution: AppExecution;
   onClick: () => void;
   isMultiSelectMode?: boolean;
   isSelected?: boolean;

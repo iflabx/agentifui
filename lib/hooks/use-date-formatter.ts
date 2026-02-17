@@ -20,6 +20,19 @@ export interface TimeGreetingOptions {
   username?: string | null;
 }
 
+type SupportedDateTimeOptions = {
+  year?: 'numeric' | '2-digit';
+  month?: 'numeric' | '2-digit' | 'long' | 'short' | 'narrow';
+  day?: 'numeric' | '2-digit';
+  weekday?: 'long' | 'short' | 'narrow';
+  hour?: 'numeric' | '2-digit';
+  minute?: 'numeric' | '2-digit';
+  second?: 'numeric' | '2-digit';
+  timeZoneName?: 'short' | 'long';
+  dateStyle?: 'full' | 'long' | 'medium' | 'short';
+  timeZone?: string;
+};
+
 // Unified date formatter hook
 // Provides standardized date/time display, supports timezone and i18n
 // Uses the 'common.time' translation path as a global utility
@@ -52,7 +65,7 @@ export function useDateFormatter(defaultTimezone?: string) {
         const timezone = options.timezone || defaultTimezone || userTimezone;
 
         // Build formatting options compatible with next-intl
-        const formatOptions: any = {
+        const formatOptions: SupportedDateTimeOptions = {
           timeZone: timezone,
         };
 

@@ -11,6 +11,17 @@ export interface DifyConfigValidationResult {
   warnings: string[];
 }
 
+interface DifyFormData {
+  instance_id?: string;
+  display_name?: string;
+  config?: {
+    app_metadata?: {
+      dify_apptype?: string;
+      app_type?: string;
+    };
+  };
+}
+
 /**
  * Validate Dify app config
  * @param config Service instance config
@@ -69,7 +80,7 @@ export function validateDifyAppConfig(
  * @param formData Form data
  * @returns Array of error messages
  */
-export function validateDifyFormData(formData: any): string[] {
+export function validateDifyFormData(formData: DifyFormData): string[] {
   const errors: string[] = [];
 
   // --- Validate basic fields ---

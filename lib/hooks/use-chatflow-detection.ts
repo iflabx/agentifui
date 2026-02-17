@@ -40,10 +40,20 @@ export function useChatflowDetection() {
   const isChatflowApp = React.useMemo(() => {
     if (!currentConversationApp) return false;
 
+    const appRecord = currentConversationApp as unknown as Record<
+      string,
+      unknown
+    >;
+    const legacyDifyAppType =
+      typeof appRecord.difyAppType === 'string'
+        ? appRecord.difyAppType
+        : typeof appRecord.dify_apptype === 'string'
+          ? appRecord.dify_apptype
+          : undefined;
+
     const difyAppType =
       currentConversationApp.config?.app_metadata?.dify_apptype ||
-      (currentConversationApp as any).difyAppType ||
-      (currentConversationApp as any).dify_apptype;
+      legacyDifyAppType;
 
     return difyAppType === 'chatflow';
   }, [currentConversationApp]);
