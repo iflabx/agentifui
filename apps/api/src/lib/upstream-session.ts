@@ -16,8 +16,18 @@ export interface ActorIdentity {
   role: string;
 }
 
+export interface ProfileStatusIdentity extends ActorIdentity {
+  authUserId: string;
+  status: string | null;
+}
+
 type ResolveIdentityResult =
   | { kind: 'ok'; identity: ActorIdentity }
+  | { kind: 'unauthorized' }
+  | { kind: 'error'; reason: string };
+
+type ResolveProfileStatusResult =
+  | { kind: 'ok'; identity: ProfileStatusIdentity }
   | { kind: 'unauthorized' }
   | { kind: 'error'; reason: string };
 
@@ -33,10 +43,10 @@ function buildUpstreamHeaders(request: FastifyRequest): Headers {
   return headers;
 }
 
-export async function resolveIdentityFromUpstream(
+export async function resolveProfileStatusFromUpstream(
   request: FastifyRequest,
   config: ApiRuntimeConfig
-): Promise<ResolveIdentityResult> {
+): Promise<ResolveProfileStatusResult> {
   const url = new URL(
     '/api/internal/auth/profile-status',
     config.nextUpstreamBaseUrl
@@ -63,7 +73,9 @@ export async function resolveIdentityFromUpstream(
 
     const payload = (await response.json()) as {
       userId?: unknown;
+      authUserId?: unknown;
       role?: unknown;
+      status?: unknown;
     };
     if (
       typeof payload.userId !== 'string' ||
@@ -75,15 +87,26 @@ export async function resolveIdentityFromUpstream(
       };
     }
 
+    const authUserId =
+      typeof payload.authUserId === 'string' &&
+      payload.authUserId.trim().length > 0
+        ? payload.authUserId
+        : payload.userId;
     const role =
       typeof payload.role === 'string' && payload.role.trim().length > 0
         ? payload.role
         : 'user';
+    const status =
+      typeof payload.status === 'string' && payload.status.trim().length > 0
+        ? payload.status
+        : null;
     return {
       kind: 'ok',
       identity: {
         userId: payload.userId,
+        authUserId,
         role,
+        status,
       },
     };
   } catch (error) {
@@ -97,4 +120,22 @@ export async function resolveIdentityFromUpstream(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export async function resolveIdentityFromUpstream(
+  request: FastifyRequest,
+  config: ApiRuntimeConfig
+): Promise<ResolveIdentityResult> {
+  const resolved = await resolveProfileStatusFromUpstream(request, config);
+  if (resolved.kind !== 'ok') {
+    return resolved;
+  }
+
+  return {
+    kind: 'ok',
+    identity: {
+      userId: resolved.identity.userId,
+      role: resolved.identity.role,
+    },
+  };
 }
