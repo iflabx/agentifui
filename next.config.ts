@@ -19,6 +19,42 @@ const bundleAnalyzer = withBundleAnalyzer({
   enabled: process.env.ANALYZE === 'true',
 });
 
+const FASTIFY_REWRITE_BYPASS_HEADER = 'x-agentifui-fastify-bypass';
+const DEFAULT_FASTIFY_PROXY_PREFIXES = [
+  '/api/internal',
+  '/api/internal/storage',
+  '/api/internal/realtime',
+  '/api/dify',
+  '/api/admin',
+  '/api/translations',
+];
+
+function parseFastifyProxyPrefixes(raw: string | undefined): string[] {
+  const source = raw?.trim() ? raw : DEFAULT_FASTIFY_PROXY_PREFIXES.join(',');
+  const seen = new Set<string>();
+  return source
+    .split(',')
+    .map(value => value.trim())
+    .filter(Boolean)
+    .map(value => (value.startsWith('/') ? value : `/${value}`))
+    .map(value => (value.length > 1 ? value.replace(/\/+$/, '') : value))
+    .filter(value => {
+      if (seen.has(value)) {
+        return false;
+      }
+      seen.add(value);
+      return true;
+    });
+}
+
+function isFastifyProxyEnabled(value: string | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+  const normalized = value.trim().toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'yes';
+}
+
 const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_APP_VERSION: pkg.version,
@@ -30,6 +66,33 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: process.env.DEV_ALLOWED_ORIGINS
     ? process.env.DEV_ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
     : [],
+
+  async rewrites() {
+    if (!isFastifyProxyEnabled(process.env.FASTIFY_PROXY_ENABLED)) {
+      return [];
+    }
+
+    const proxyBaseUrl = process.env.FASTIFY_PROXY_BASE_URL?.trim();
+    if (!proxyBaseUrl) {
+      return [];
+    }
+    const normalizedBaseUrl = proxyBaseUrl.replace(/\/+$/, '');
+    const proxyPrefixes = parseFastifyProxyPrefixes(
+      process.env.FASTIFY_PROXY_PREFIXES
+    );
+    return proxyPrefixes.flatMap(prefix => [
+      {
+        source: prefix,
+        missing: [{ type: 'header', key: FASTIFY_REWRITE_BYPASS_HEADER }],
+        destination: `${normalizedBaseUrl}${prefix}`,
+      },
+      {
+        source: `${prefix}/:path*`,
+        missing: [{ type: 'header', key: FASTIFY_REWRITE_BYPASS_HEADER }],
+        destination: `${normalizedBaseUrl}${prefix}/:path*`,
+      },
+    ]);
+  },
 
   compiler: {
     removeConsole:

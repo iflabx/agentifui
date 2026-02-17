@@ -1,0 +1,76 @@
+import cors from '@fastify/cors';
+import Fastify from 'fastify';
+
+import { type ApiRuntimeConfig, loadApiRuntimeConfig } from './config';
+import { healthRoutes } from './routes/health';
+import { proxyFallbackRoutes } from './routes/proxy-fallback';
+
+function resolveHttpStatusCode(error: unknown): number {
+  if (typeof error !== 'object' || error === null) {
+    return 500;
+  }
+  const errorLike = error as { statusCode?: unknown };
+  if (typeof errorLike.statusCode === 'number' && errorLike.statusCode >= 400) {
+    return errorLike.statusCode;
+  }
+  return 500;
+}
+
+export async function createApiServer(config: ApiRuntimeConfig) {
+  const app = Fastify({
+    logger: {
+      level: config.logLevel,
+    },
+    trustProxy: true,
+  });
+
+  await app.register(cors, {
+    origin: true,
+    credentials: true,
+  });
+  await app.register(healthRoutes, { config });
+  await app.register(proxyFallbackRoutes, { config });
+
+  app.setErrorHandler((error, request, reply) => {
+    request.log.error(
+      { err: error, url: request.url, method: request.method },
+      '[FastifyAPI] request failed'
+    );
+    if (reply.sent) {
+      return;
+    }
+    const statusCode = resolveHttpStatusCode(error);
+    reply.status(statusCode).send({
+      success: false,
+      error: 'Fastify API internal error',
+    });
+  });
+
+  return app;
+}
+
+async function startServer() {
+  const config = loadApiRuntimeConfig();
+  const app = await createApiServer(config);
+  try {
+    await app.listen({
+      host: config.host,
+      port: config.port,
+    });
+    app.log.info(
+      {
+        host: config.host,
+        port: config.port,
+        proxyPrefixes: config.proxyPrefixes,
+      },
+      '[FastifyAPI] server started'
+    );
+  } catch (error) {
+    app.log.error({ err: error }, '[FastifyAPI] failed to start');
+    process.exit(1);
+  }
+}
+
+if (require.main === module) {
+  void startServer();
+}
