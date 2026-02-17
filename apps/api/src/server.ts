@@ -2,6 +2,8 @@ import cors from '@fastify/cors';
 import Fastify from 'fastify';
 
 import { type ApiRuntimeConfig, loadApiRuntimeConfig } from './config';
+import { adminAuthFallbackPolicyRoutes } from './routes/admin-auth-fallback-policy';
+import { adminAuthFallbackPolicyUserRoutes } from './routes/admin-auth-fallback-policy-user';
 import { adminEncryptRoutes } from './routes/admin-encrypt';
 import { adminStatusRoutes } from './routes/admin-status';
 import { adminTranslationsRoutes } from './routes/admin-translations';
@@ -37,6 +39,8 @@ export async function createApiServer(config: ApiRuntimeConfig) {
     origin: true,
     credentials: true,
   });
+  await app.register(adminAuthFallbackPolicyRoutes, { config });
+  await app.register(adminAuthFallbackPolicyUserRoutes, { config });
   await app.register(adminEncryptRoutes, { config });
   await app.register(adminStatusRoutes, { config });
   await app.register(adminTranslationsRoutes, { config });

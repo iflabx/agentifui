@@ -79,7 +79,17 @@ The current migration strategy is:
 - Served directly by Fastify.
 - Preserves admin-only Dify app config contract (provider resolution + default-instance fallback + API key decrypt).
 
-12. Other configured API prefixes still use Fastify fallback proxy to Next upstream.
+12. `GET/PATCH /api/admin/auth/fallback-policy`
+
+- Served directly by Fastify.
+- Preserves admin-only auth-mode policy management (`normal` / `degraded`).
+
+13. `GET/PATCH /api/admin/auth/fallback-policy/users/:userId`
+
+- Served directly by Fastify.
+- Preserves admin-only per-user local-login toggle/state management.
+
+14. Other configured API prefixes still use Fastify fallback proxy to Next upstream.
 
 ## Smoke Check
 
