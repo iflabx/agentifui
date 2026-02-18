@@ -1022,6 +1022,10 @@
           "permissions": {
             "text": "Gestão de Permissões de Aplicações",
             "description": "Gerir a visibilidade de aplicações e permissões de grupo"
+          },
+          "errors": {
+            "text": "Monitorização de erros",
+            "description": "Ver e diagnosticar erros de runtime e de API"
           }
         },
         "actions": {
@@ -2030,6 +2034,42 @@
           "updateVisibilityError": "Falha ao atualizar a visibilidade da aplicação",
           "updateGroupPermissionError": "Falha ao atualizar as permissões de grupo"
         }
+      },
+      "errors": {
+        "title": "Monitorização de erros",
+        "subtitle": "Erros recentes de runtime e API para diagnóstico",
+        "actions": {
+          "refresh": "Atualizar"
+        },
+        "errors": {
+          "loadFailed": "Falha ao carregar dados de erros",
+          "refreshFailed": "Falha ao atualizar dados de erros"
+        },
+        "stats": {
+          "unique24h": "Erros únicos (24 h)",
+          "occurrences24h": "Ocorrências (24 h)",
+          "critical": "Críticos",
+          "latest": "Última ocorrência"
+        },
+        "list": {
+          "title": "Eventos de erro recentes",
+          "loading": "A carregar erros mais recentes...",
+          "empty": "Não existem eventos de erro na janela selecionada"
+        },
+        "table": {
+          "when": "Quando",
+          "severity": "Severidade",
+          "code": "Código",
+          "message": "Mensagem",
+          "requestId": "ID do pedido",
+          "count": "Contagem"
+        },
+        "severity": {
+          "critical": "Crítico",
+          "error": "Erro",
+          "warn": "Aviso",
+          "info": "Informação"
+        }
       }
     },
     "about": {
@@ -2390,7 +2430,8 @@
       "apiConfig": "Configuração da API",
       "security": "Definições de Segurança",
       "analytics": "Análise de Dados",
-      "content": "Gestão de Conteúdo"
+      "content": "Gestão de Conteúdo",
+      "errors": "Monitorização de erros"
     },
     "auth": {
       "login": "Iniciar sessão",

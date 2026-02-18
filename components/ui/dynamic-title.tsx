@@ -92,6 +92,8 @@ export function DynamicTitle() {
         return `${t('admin.analytics')} | ${baseTitle}`;
       if (path === '/admin/content')
         return `${t('admin.content')} | ${baseTitle}`;
+      if (path === '/admin/errors')
+        return `${t('admin.errors')} | ${baseTitle}`;
 
       const adminSection = path.split('/').pop() || '';
       const formattedName =

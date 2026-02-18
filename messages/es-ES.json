@@ -1022,6 +1022,10 @@
           "permissions": {
             "text": "Gestión de Permisos de Aplicaciones",
             "description": "Gestionar visibilidad de aplicaciones y permisos de grupo"
+          },
+          "errors": {
+            "text": "Monitoreo de errores",
+            "description": "Ver y diagnosticar errores de ejecución y de API"
           }
         },
         "actions": {
@@ -2030,6 +2034,42 @@
           "updateVisibilityError": "Error al actualizar visibilidad de aplicación",
           "updateGroupPermissionError": "Error al actualizar permisos de grupo"
         }
+      },
+      "errors": {
+        "title": "Monitoreo de errores",
+        "subtitle": "Errores recientes de ejecución y API para diagnóstico",
+        "actions": {
+          "refresh": "Actualizar"
+        },
+        "errors": {
+          "loadFailed": "No se pudieron cargar los datos de errores",
+          "refreshFailed": "No se pudieron actualizar los datos de errores"
+        },
+        "stats": {
+          "unique24h": "Errores únicos (24 h)",
+          "occurrences24h": "Ocurrencias (24 h)",
+          "critical": "Críticos",
+          "latest": "Última detección"
+        },
+        "list": {
+          "title": "Eventos de error recientes",
+          "loading": "Cargando errores recientes...",
+          "empty": "No hay eventos de error en la ventana seleccionada"
+        },
+        "table": {
+          "when": "Cuándo",
+          "severity": "Severidad",
+          "code": "Código",
+          "message": "Mensaje",
+          "requestId": "ID de solicitud",
+          "count": "Cantidad"
+        },
+        "severity": {
+          "critical": "Crítico",
+          "error": "Error",
+          "warn": "Advertencia",
+          "info": "Información"
+        }
       }
     },
     "about": {
@@ -2390,7 +2430,8 @@
       "apiConfig": "Configuración de API",
       "security": "Configuración de Seguridad",
       "analytics": "Análisis de Datos",
-      "content": "Gestión de Contenido"
+      "content": "Gestión de Contenido",
+      "errors": "Monitoreo de errores"
     },
     "auth": {
       "login": "Iniciar Sesión",

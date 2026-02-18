@@ -1022,6 +1022,10 @@
           "permissions": {
             "text": "App-Berechtigungsverwaltung",
             "description": "Anwendungssichtbarkeit und Gruppenberechtigungen verwalten"
+          },
+          "errors": {
+            "text": "Fehlerüberwachung",
+            "description": "Laufzeit- und API-Fehler anzeigen und analysieren"
           }
         },
         "actions": {
@@ -2030,6 +2034,42 @@
           "updateVisibilityError": "Aktualisierung der Anwendungssichtbarkeit fehlgeschlagen",
           "updateGroupPermissionError": "Aktualisierung der Gruppenberechtigungen fehlgeschlagen"
         }
+      },
+      "errors": {
+        "title": "Fehlerüberwachung",
+        "subtitle": "Aktuelle Laufzeit- und API-Fehler zur Diagnose",
+        "actions": {
+          "refresh": "Aktualisieren"
+        },
+        "errors": {
+          "loadFailed": "Fehlerdaten konnten nicht geladen werden",
+          "refreshFailed": "Fehlerdaten konnten nicht aktualisiert werden"
+        },
+        "stats": {
+          "unique24h": "Eindeutige Fehler (24 Std.)",
+          "occurrences24h": "Vorkommen (24 Std.)",
+          "critical": "Kritisch",
+          "latest": "Zuletzt aufgetreten"
+        },
+        "list": {
+          "title": "Letzte Fehlerereignisse",
+          "loading": "Neueste Fehler werden geladen...",
+          "empty": "Im ausgewählten Zeitraum wurden keine Fehlerereignisse gefunden"
+        },
+        "table": {
+          "when": "Zeitpunkt",
+          "severity": "Schweregrad",
+          "code": "Code",
+          "message": "Meldung",
+          "requestId": "Anfrage-ID",
+          "count": "Anzahl"
+        },
+        "severity": {
+          "critical": "Kritisch",
+          "error": "Fehler",
+          "warn": "Warnung",
+          "info": "Info"
+        }
       }
     },
     "about": {
@@ -2390,7 +2430,8 @@
       "apiConfig": "API-Konfiguration",
       "security": "Sicherheitseinstellungen",
       "analytics": "Datenanalyse",
-      "content": "Content-Management"
+      "content": "Content-Management",
+      "errors": "Fehlerüberwachung"
     },
     "auth": {
       "login": "Anmelden",

@@ -1022,6 +1022,10 @@
           "permissions": {
             "text": "Gestion des autorisations d'application",
             "description": "Gérer la visibilité des applications et les autorisations de groupe"
+          },
+          "errors": {
+            "text": "Supervision des erreurs",
+            "description": "Afficher et diagnostiquer les erreurs d'exécution et d'API"
           }
         },
         "actions": {
@@ -2030,6 +2034,42 @@
           "updateVisibilityError": "Échec de la mise à jour de la visibilité de l'application",
           "updateGroupPermissionError": "Échec de la mise à jour des autorisations de groupe"
         }
+      },
+      "errors": {
+        "title": "Supervision des erreurs",
+        "subtitle": "Erreurs récentes d'exécution et d'API pour le diagnostic",
+        "actions": {
+          "refresh": "Actualiser"
+        },
+        "errors": {
+          "loadFailed": "Échec du chargement des données d'erreur",
+          "refreshFailed": "Échec de l'actualisation des données d'erreur"
+        },
+        "stats": {
+          "unique24h": "Erreurs uniques (24 h)",
+          "occurrences24h": "Occurrences (24 h)",
+          "critical": "Critiques",
+          "latest": "Dernière occurrence"
+        },
+        "list": {
+          "title": "Événements d'erreur récents",
+          "loading": "Chargement des dernières erreurs...",
+          "empty": "Aucun événement d'erreur dans la période sélectionnée"
+        },
+        "table": {
+          "when": "Date/heure",
+          "severity": "Sévérité",
+          "code": "Code",
+          "message": "Message",
+          "requestId": "ID de requête",
+          "count": "Nombre"
+        },
+        "severity": {
+          "critical": "Critique",
+          "error": "Erreur",
+          "warn": "Avertissement",
+          "info": "Info"
+        }
       }
     },
     "about": {
@@ -2390,7 +2430,8 @@
       "apiConfig": "Configuration de l'API",
       "security": "Paramètres de sécurité",
       "analytics": "Analyse de données",
-      "content": "Gestion du contenu"
+      "content": "Gestion du contenu",
+      "errors": "Supervision des erreurs"
     },
     "auth": {
       "login": "Connexion",

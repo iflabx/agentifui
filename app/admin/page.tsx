@@ -116,8 +116,8 @@ export default function AdminPage() {
       href: '/admin/permissions',
     },
     {
-      title: 'Errors',
-      description: 'Unified error observability and diagnostics',
+      title: tLayout('menuItems.errors.text'),
+      description: tLayout('menuItems.errors.description'),
       icon: Bug,
       href: '/admin/errors',
     },

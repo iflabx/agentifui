@@ -1022,6 +1022,10 @@
           "permissions": {
             "text": "App Permission Management",
             "description": "Manage application visibility and group permissions"
+          },
+          "errors": {
+            "text": "Error Monitoring",
+            "description": "View and troubleshoot runtime and API errors"
           }
         },
         "actions": {
@@ -2030,6 +2034,42 @@
           "updateVisibilityError": "Failed to update application visibility",
           "updateGroupPermissionError": "Failed to update group permissions"
         }
+      },
+      "errors": {
+        "title": "Error Monitoring",
+        "subtitle": "Recent runtime and API errors for troubleshooting",
+        "actions": {
+          "refresh": "Refresh"
+        },
+        "errors": {
+          "loadFailed": "Failed to load error data",
+          "refreshFailed": "Failed to refresh error data"
+        },
+        "stats": {
+          "unique24h": "Unique Errors (24h)",
+          "occurrences24h": "Occurrences (24h)",
+          "critical": "Critical",
+          "latest": "Latest Seen"
+        },
+        "list": {
+          "title": "Recent Error Events",
+          "loading": "Loading latest errors...",
+          "empty": "No error events in the selected window"
+        },
+        "table": {
+          "when": "When",
+          "severity": "Severity",
+          "code": "Code",
+          "message": "Message",
+          "requestId": "Request ID",
+          "count": "Count"
+        },
+        "severity": {
+          "critical": "Critical",
+          "error": "Error",
+          "warn": "Warn",
+          "info": "Info"
+        }
       }
     },
     "about": {
@@ -2390,7 +2430,8 @@
       "apiConfig": "API Configuration",
       "security": "Security Settings",
       "analytics": "Data Analytics",
-      "content": "Content Management"
+      "content": "Content Management",
+      "errors": "Error Monitoring"
     },
     "auth": {
       "login": "Login",

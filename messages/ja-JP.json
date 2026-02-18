@@ -1022,6 +1022,10 @@
           "permissions": {
             "text": "アプリケーション権限管理",
             "description": "アプリケーションの可視性とグループ権限を管理"
+          },
+          "errors": {
+            "text": "エラー監視",
+            "description": "実行時および API エラーを確認・調査します"
           }
         },
         "actions": {
@@ -2030,6 +2034,42 @@
           "updateVisibilityError": "アプリケーションの可視性の更新に失敗しました",
           "updateGroupPermissionError": "グループ権限の更新に失敗しました"
         }
+      },
+      "errors": {
+        "title": "エラー監視",
+        "subtitle": "調査用の最近の実行時 / API エラー",
+        "actions": {
+          "refresh": "更新"
+        },
+        "errors": {
+          "loadFailed": "エラーデータの読み込みに失敗しました",
+          "refreshFailed": "エラーデータの更新に失敗しました"
+        },
+        "stats": {
+          "unique24h": "ユニークエラー（24時間）",
+          "occurrences24h": "発生回数（24時間）",
+          "critical": "クリティカル",
+          "latest": "最終発生時刻"
+        },
+        "list": {
+          "title": "最近のエラーイベント",
+          "loading": "最新のエラーを読み込み中...",
+          "empty": "選択した時間範囲にエラーイベントはありません"
+        },
+        "table": {
+          "when": "時刻",
+          "severity": "重要度",
+          "code": "コード",
+          "message": "メッセージ",
+          "requestId": "リクエストID",
+          "count": "回数"
+        },
+        "severity": {
+          "critical": "クリティカル",
+          "error": "エラー",
+          "warn": "警告",
+          "info": "情報"
+        }
       }
     },
     "about": {
@@ -2390,7 +2430,8 @@
       "apiConfig": "API設定",
       "security": "セキュリティ設定",
       "analytics": "データ分析",
-      "content": "コンテンツ管理"
+      "content": "コンテンツ管理",
+      "errors": "エラー監視"
     },
     "auth": {
       "login": "ログイン",

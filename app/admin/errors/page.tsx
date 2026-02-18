@@ -11,6 +11,8 @@ import { AlertTriangle, Bug, Clock3, RefreshCw } from 'lucide-react';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { useTranslations } from 'next-intl';
+
 function formatDateTime(input: string | null): string {
   if (!input) {
     return '-';
@@ -24,7 +26,13 @@ function formatDateTime(input: string | null): string {
   return date.toLocaleString();
 }
 
-function SeverityPill({ severity }: { severity: string }) {
+function SeverityPill({
+  severity,
+  label,
+}: {
+  severity: string;
+  label: string;
+}) {
   const normalized = severity.toLowerCase();
   const className = cn(
     'inline-flex rounded-full px-2 py-0.5 text-xs font-medium',
@@ -34,10 +42,11 @@ function SeverityPill({ severity }: { severity: string }) {
     normalized === 'info' && 'bg-slate-100 text-slate-700'
   );
 
-  return <span className={className}>{severity}</span>;
+  return <span className={className}>{label}</span>;
 }
 
 export default function AdminErrorsPage() {
+  const t = useTranslations('pages.admin.errors');
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +82,7 @@ export default function AdminErrorsPage() {
           setError(
             loadError instanceof Error
               ? loadError.message
-              : 'Failed to load data'
+              : t('errors.loadFailed')
           );
         }
       } finally {
@@ -87,25 +96,28 @@ export default function AdminErrorsPage() {
     return () => {
       cancelled = true;
     };
-  }, [load]);
+  }, [load, t]);
 
   const stats = useMemo(() => {
     if (!summary) {
       return [
-        { label: 'Unique Errors (24h)', value: '-' },
-        { label: 'Occurrences (24h)', value: '-' },
-        { label: 'Critical', value: '-' },
-        { label: 'Latest', value: '-' },
+        { label: t('stats.unique24h'), value: '-' },
+        { label: t('stats.occurrences24h'), value: '-' },
+        { label: t('stats.critical'), value: '-' },
+        { label: t('stats.latest'), value: '-' },
       ];
     }
 
     return [
-      { label: 'Unique Errors (24h)', value: String(summary.totalUnique) },
-      { label: 'Occurrences (24h)', value: String(summary.totalOccurrences) },
-      { label: 'Critical', value: String(summary.criticalCount) },
-      { label: 'Latest', value: formatDateTime(summary.latestAt) },
+      { label: t('stats.unique24h'), value: String(summary.totalUnique) },
+      {
+        label: t('stats.occurrences24h'),
+        value: String(summary.totalOccurrences),
+      },
+      { label: t('stats.critical'), value: String(summary.criticalCount) },
+      { label: t('stats.latest'), value: formatDateTime(summary.latestAt) },
     ];
-  }, [summary]);
+  }, [summary, t]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -115,12 +127,12 @@ export default function AdminErrorsPage() {
       setError(
         refreshError instanceof Error
           ? refreshError.message
-          : 'Failed to refresh data'
+          : t('errors.refreshFailed')
       );
     } finally {
       setRefreshing(false);
     }
-  }, [load]);
+  }, [load, t]);
 
   return (
     <div className="min-h-full">
@@ -128,10 +140,10 @@ export default function AdminErrorsPage() {
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-semibold text-stone-900 dark:text-stone-100">
-              Error Observability
+              {t('title')}
             </h1>
             <p className="mt-1 text-sm text-stone-600 dark:text-stone-400">
-              Unified error events collected from Next/Fastify and proxy paths.
+              {t('subtitle')}
             </p>
           </div>
           <button
@@ -147,7 +159,7 @@ export default function AdminErrorsPage() {
             <RefreshCw
               className={cn('h-4 w-4', refreshing && 'animate-spin')}
             />
-            Refresh
+            {t('actions.refresh')}
           </button>
         </div>
 
@@ -176,26 +188,28 @@ export default function AdminErrorsPage() {
 
         <div className="overflow-hidden rounded-lg border border-stone-200 bg-white dark:border-stone-700 dark:bg-stone-900">
           <div className="border-b border-stone-200 px-4 py-3 text-sm font-medium text-stone-700 dark:border-stone-700 dark:text-stone-200">
-            Recent Errors
+            {t('list.title')}
           </div>
           {isLoading ? (
-            <div className="px-4 py-8 text-sm text-stone-500">Loading...</div>
+            <div className="px-4 py-8 text-sm text-stone-500">
+              {t('list.loading')}
+            </div>
           ) : events.length === 0 ? (
             <div className="flex items-center gap-2 px-4 py-8 text-sm text-stone-500">
               <Clock3 className="h-4 w-4" />
-              No error events found.
+              {t('list.empty')}
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full text-left text-sm">
                 <thead className="bg-stone-50 text-xs text-stone-500 uppercase dark:bg-stone-800 dark:text-stone-400">
                   <tr>
-                    <th className="px-4 py-3">When</th>
-                    <th className="px-4 py-3">Severity</th>
-                    <th className="px-4 py-3">Code</th>
-                    <th className="px-4 py-3">Message</th>
-                    <th className="px-4 py-3">Request ID</th>
-                    <th className="px-4 py-3">Count</th>
+                    <th className="px-4 py-3">{t('table.when')}</th>
+                    <th className="px-4 py-3">{t('table.severity')}</th>
+                    <th className="px-4 py-3">{t('table.code')}</th>
+                    <th className="px-4 py-3">{t('table.message')}</th>
+                    <th className="px-4 py-3">{t('table.requestId')}</th>
+                    <th className="px-4 py-3">{t('table.count')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -208,7 +222,20 @@ export default function AdminErrorsPage() {
                         {formatDateTime(item.last_seen_at)}
                       </td>
                       <td className="px-4 py-3">
-                        <SeverityPill severity={item.severity} />
+                        <SeverityPill
+                          severity={item.severity}
+                          label={
+                            item.severity.toLowerCase() === 'critical'
+                              ? t('severity.critical')
+                              : item.severity.toLowerCase() === 'error'
+                                ? t('severity.error')
+                                : item.severity.toLowerCase() === 'warn'
+                                  ? t('severity.warn')
+                                  : item.severity.toLowerCase() === 'info'
+                                    ? t('severity.info')
+                                    : item.severity
+                          }
+                        />
                       </td>
                       <td className="px-4 py-3 font-mono text-xs text-stone-700 dark:text-stone-200">
                         {item.code}

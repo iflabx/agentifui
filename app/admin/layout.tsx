@@ -87,10 +87,10 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       description: t('menuItems.permissions.description'),
     },
     {
-      text: 'Errors',
+      text: t('menuItems.errors.text'),
       icon: Bug,
       href: '/admin/errors',
-      description: 'Error observability and diagnostics',
+      description: t('menuItems.errors.description'),
     },
   ];
 

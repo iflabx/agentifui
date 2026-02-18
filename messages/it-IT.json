@@ -1022,6 +1022,10 @@
           "permissions": {
             "text": "Gestione Permessi App",
             "description": "Gestisci la visibilità delle applicazioni e i permessi di gruppo"
+          },
+          "errors": {
+            "text": "Monitoraggio errori",
+            "description": "Visualizza e analizza errori di runtime e API"
           }
         },
         "actions": {
@@ -2030,6 +2034,42 @@
           "updateVisibilityError": "Impossibile aggiornare la visibilità dell'applicazione",
           "updateGroupPermissionError": "Impossibile aggiornare i permessi di gruppo"
         }
+      },
+      "errors": {
+        "title": "Monitoraggio errori",
+        "subtitle": "Errori recenti di runtime e API per la diagnosi",
+        "actions": {
+          "refresh": "Aggiorna"
+        },
+        "errors": {
+          "loadFailed": "Impossibile caricare i dati degli errori",
+          "refreshFailed": "Impossibile aggiornare i dati degli errori"
+        },
+        "stats": {
+          "unique24h": "Errori unici (24 h)",
+          "occurrences24h": "Occorrenze (24 h)",
+          "critical": "Critici",
+          "latest": "Ultima occorrenza"
+        },
+        "list": {
+          "title": "Eventi di errore recenti",
+          "loading": "Caricamento degli errori più recenti...",
+          "empty": "Nessun evento di errore nella finestra selezionata"
+        },
+        "table": {
+          "when": "Quando",
+          "severity": "Severità",
+          "code": "Codice",
+          "message": "Messaggio",
+          "requestId": "ID richiesta",
+          "count": "Conteggio"
+        },
+        "severity": {
+          "critical": "Critico",
+          "error": "Errore",
+          "warn": "Avviso",
+          "info": "Info"
+        }
       }
     },
     "about": {
@@ -2390,7 +2430,8 @@
       "apiConfig": "Configurazione API",
       "security": "Impostazioni di Sicurezza",
       "analytics": "Analisi Dati",
-      "content": "Gestione Contenuti"
+      "content": "Gestione Contenuti",
+      "errors": "Monitoraggio errori"
     },
     "auth": {
       "login": "Login",

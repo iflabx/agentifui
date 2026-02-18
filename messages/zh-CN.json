@@ -1022,6 +1022,10 @@
           "permissions": {
             "text": "应用权限管理",
             "description": "管理应用可见性和群组权限"
+          },
+          "errors": {
+            "text": "错误监控",
+            "description": "查看并排查运行时与 API 错误"
           }
         },
         "actions": {
@@ -2030,6 +2034,42 @@
           "updateVisibilityError": "更新应用可见性失败",
           "updateGroupPermissionError": "更新群组权限失败"
         }
+      },
+      "errors": {
+        "title": "错误监控",
+        "subtitle": "用于排查的近期运行时与 API 错误",
+        "actions": {
+          "refresh": "刷新"
+        },
+        "errors": {
+          "loadFailed": "加载错误数据失败",
+          "refreshFailed": "刷新错误数据失败"
+        },
+        "stats": {
+          "unique24h": "24小时唯一错误",
+          "occurrences24h": "24小时出现次数",
+          "critical": "严重错误",
+          "latest": "最近出现时间"
+        },
+        "list": {
+          "title": "近期错误事件",
+          "loading": "正在加载最新错误...",
+          "empty": "当前时间窗口内没有错误事件"
+        },
+        "table": {
+          "when": "时间",
+          "severity": "级别",
+          "code": "错误码",
+          "message": "错误信息",
+          "requestId": "请求 ID",
+          "count": "次数"
+        },
+        "severity": {
+          "critical": "严重",
+          "error": "错误",
+          "warn": "警告",
+          "info": "信息"
+        }
       }
     },
     "about": {
@@ -2390,7 +2430,8 @@
       "apiConfig": "API配置",
       "security": "安全设置",
       "analytics": "数据分析",
-      "content": "页面内容管理"
+      "content": "页面内容管理",
+      "errors": "错误监控"
     },
     "auth": {
       "login": "登录",

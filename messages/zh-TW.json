@@ -1022,6 +1022,10 @@
           "permissions": {
             "text": "應用程式權限管理",
             "description": "管理應用程式可見性和群組權限"
+          },
+          "errors": {
+            "text": "錯誤監控",
+            "description": "檢視並排查執行期與 API 錯誤"
           }
         },
         "actions": {
@@ -2030,6 +2034,42 @@
           "updateVisibilityError": "更新應用程式可見性失敗",
           "updateGroupPermissionError": "更新群組權限失敗"
         }
+      },
+      "errors": {
+        "title": "錯誤監控",
+        "subtitle": "用於排查的近期執行期與 API 錯誤",
+        "actions": {
+          "refresh": "重新整理"
+        },
+        "errors": {
+          "loadFailed": "載入錯誤資料失敗",
+          "refreshFailed": "重新整理錯誤資料失敗"
+        },
+        "stats": {
+          "unique24h": "24 小時唯一錯誤",
+          "occurrences24h": "24 小時出現次數",
+          "critical": "嚴重錯誤",
+          "latest": "最近出現時間"
+        },
+        "list": {
+          "title": "近期錯誤事件",
+          "loading": "正在載入最新錯誤...",
+          "empty": "目前時間視窗內沒有錯誤事件"
+        },
+        "table": {
+          "when": "時間",
+          "severity": "等級",
+          "code": "錯誤碼",
+          "message": "錯誤訊息",
+          "requestId": "請求 ID",
+          "count": "次數"
+        },
+        "severity": {
+          "critical": "嚴重",
+          "error": "錯誤",
+          "warn": "警告",
+          "info": "資訊"
+        }
       }
     },
     "about": {
@@ -2390,7 +2430,8 @@
       "apiConfig": "API設定",
       "security": "安全設定",
       "analytics": "資料分析",
-      "content": "頁面內容管理"
+      "content": "頁面內容管理",
+      "errors": "錯誤監控"
     },
     "auth": {
       "login": "登入",
