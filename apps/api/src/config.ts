@@ -15,6 +15,7 @@ export interface ApiRuntimeConfig {
   proxyPrefixes: string[];
   internalDataProxyTimeoutMs: number;
   internalDataLegacyFallbackEnabled: boolean;
+  upstreamProfileStatusFallbackEnabled: boolean;
 }
 
 function parsePort(rawValue: string | undefined, fallback: number): number {
@@ -96,6 +97,10 @@ export function loadApiRuntimeConfig(): ApiRuntimeConfig {
     ),
     internalDataLegacyFallbackEnabled: parseBoolean(
       process.env.FASTIFY_INTERNAL_DATA_LEGACY_FALLBACK_ENABLED,
+      false
+    ),
+    upstreamProfileStatusFallbackEnabled: parseBoolean(
+      process.env.FASTIFY_UPSTREAM_PROFILE_STATUS_FALLBACK_ENABLED,
       false
     ),
   };

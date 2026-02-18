@@ -1,8 +1,11 @@
 import type { FastifyRequest } from 'fastify';
 
 import type { ApiRuntimeConfig } from '../config';
+import { queryRowsWithPgSystemContext } from './pg-context';
 
 const FASTIFY_BYPASS_HEADER = 'x-agentifui-fastify-bypass';
+const INTERNAL_AUTH_ISSUER = 'urn:agentifui:better-auth';
+const UPSTREAM_PROFILE_STATUS_TIMEOUT_MS = 15000;
 const FORWARDED_HEADERS = [
   'accept',
   'accept-language',
@@ -31,6 +34,179 @@ type ResolveProfileStatusResult =
   | { kind: 'unauthorized' }
   | { kind: 'error'; reason: string };
 
+interface SessionIdentityRow {
+  auth_user_id: string | null;
+  user_id: string | null;
+  role: string | null;
+  status: string | null;
+}
+
+function readHeaderValue(value: string | string[] | undefined): string | null {
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  if (Array.isArray(value)) {
+    const joined = value
+      .map(item => (typeof item === 'string' ? item.trim() : ''))
+      .filter(Boolean)
+      .join('; ');
+    return joined.length > 0 ? joined : null;
+  }
+
+  return null;
+}
+
+function extractCookieTokens(cookieHeader: string | null): string[] {
+  if (!cookieHeader) {
+    return [];
+  }
+
+  const tokens = new Set<string>();
+  const addTokenCandidate = (value: string) => {
+    const normalized = value.trim();
+    if (!normalized) {
+      return;
+    }
+    tokens.add(normalized);
+
+    // better-auth cookie stores "<token>.<signature>" in session_token.
+    const dotIndex = normalized.indexOf('.');
+    if (dotIndex > 0) {
+      const tokenPart = normalized.slice(0, dotIndex).trim();
+      if (tokenPart) {
+        tokens.add(tokenPart);
+      }
+    }
+  };
+  for (const entry of cookieHeader.split(';')) {
+    const part = entry.trim();
+    if (!part) {
+      continue;
+    }
+
+    const eqIndex = part.indexOf('=');
+    if (eqIndex <= 0) {
+      continue;
+    }
+
+    const value = part.slice(eqIndex + 1).trim();
+    if (!value) {
+      continue;
+    }
+    addTokenCandidate(value);
+    try {
+      const decoded = decodeURIComponent(value);
+      if (decoded) {
+        addTokenCandidate(decoded);
+      }
+    } catch {
+      // Ignore malformed url-encoded cookie fragments.
+    }
+  }
+
+  return Array.from(tokens);
+}
+
+function extractBearerToken(authorizationHeader: string | null): string | null {
+  if (!authorizationHeader) {
+    return null;
+  }
+
+  const match = authorizationHeader.match(/^Bearer\s+(.+)$/i);
+  if (!match) {
+    return null;
+  }
+  const token = match[1]?.trim();
+  return token ? token : null;
+}
+
+function extractCandidateSessionTokens(request: FastifyRequest): string[] {
+  const cookieHeader = readHeaderValue(request.headers.cookie);
+  const authorizationHeader = readHeaderValue(request.headers.authorization);
+  const tokens = new Set<string>(extractCookieTokens(cookieHeader));
+  const bearerToken = extractBearerToken(authorizationHeader);
+  if (bearerToken) {
+    tokens.add(bearerToken);
+  }
+  return Array.from(tokens);
+}
+
+function normalizeRole(role: string | null): string {
+  const normalized = (role || '').trim().toLowerCase();
+  return normalized.length > 0 ? normalized : 'user';
+}
+
+function normalizeStatus(status: string | null): string | null {
+  const normalized = (status || '').trim().toLowerCase();
+  return normalized.length > 0 ? normalized : null;
+}
+
+async function resolveProfileStatusLocally(
+  request: FastifyRequest
+): Promise<ResolveProfileStatusResult> {
+  const tokens = extractCandidateSessionTokens(request);
+  if (tokens.length === 0) {
+    return { kind: 'unauthorized' };
+  }
+
+  try {
+    const rows = await queryRowsWithPgSystemContext<SessionIdentityRow>(
+      `
+        SELECT
+          s.user_id::text AS auth_user_id,
+          COALESCE(ui.user_id, s.user_id)::text AS user_id,
+          p.role::text AS role,
+          p.status::text AS status
+        FROM auth_sessions s
+        LEFT JOIN user_identities ui
+          ON ui.issuer = $2::text
+          AND ui.subject = s.user_id::text
+        LEFT JOIN profiles p
+          ON p.id = COALESCE(ui.user_id, s.user_id)
+        WHERE s.expires_at > NOW()
+          AND s.token = ANY($1::text[])
+        ORDER BY s.updated_at DESC NULLS LAST, s.created_at DESC NULLS LAST
+        LIMIT 1
+      `,
+      [tokens, INTERNAL_AUTH_ISSUER]
+    );
+
+    const row = rows[0];
+    if (!row) {
+      return { kind: 'unauthorized' };
+    }
+
+    if (!row.auth_user_id || !row.user_id) {
+      return { kind: 'unauthorized' };
+    }
+
+    const status = normalizeStatus(row.status);
+    if (status !== 'active') {
+      return { kind: 'unauthorized' };
+    }
+
+    return {
+      kind: 'ok',
+      identity: {
+        userId: row.user_id,
+        authUserId: row.auth_user_id,
+        role: normalizeRole(row.role),
+        status,
+      },
+    };
+  } catch (error) {
+    return {
+      kind: 'error',
+      reason:
+        error instanceof Error
+          ? error.message
+          : 'Unknown local profile-status resolve error',
+    };
+  }
+}
+
 function buildUpstreamHeaders(request: FastifyRequest): Headers {
   const headers = new Headers();
   for (const key of FORWARDED_HEADERS) {
@@ -43,7 +219,7 @@ function buildUpstreamHeaders(request: FastifyRequest): Headers {
   return headers;
 }
 
-export async function resolveProfileStatusFromUpstream(
+async function resolveProfileStatusViaUpstream(
   request: FastifyRequest,
   config: ApiRuntimeConfig
 ): Promise<ResolveProfileStatusResult> {
@@ -52,7 +228,10 @@ export async function resolveProfileStatusFromUpstream(
     config.nextUpstreamBaseUrl
   ).toString();
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
+  const timeout = setTimeout(
+    () => controller.abort(),
+    UPSTREAM_PROFILE_STATUS_TIMEOUT_MS
+  );
 
   try {
     const response = await fetch(url, {
@@ -98,8 +277,11 @@ export async function resolveProfileStatusFromUpstream(
         : 'user';
     const status =
       typeof payload.status === 'string' && payload.status.trim().length > 0
-        ? payload.status
+        ? payload.status.trim().toLowerCase()
         : null;
+    if (status !== 'active') {
+      return { kind: 'unauthorized' };
+    }
     return {
       kind: 'ok',
       identity: {
@@ -120,6 +302,22 @@ export async function resolveProfileStatusFromUpstream(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export async function resolveProfileStatusFromUpstream(
+  request: FastifyRequest,
+  config: ApiRuntimeConfig
+): Promise<ResolveProfileStatusResult> {
+  const local = await resolveProfileStatusLocally(request);
+  if (local.kind !== 'error') {
+    return local;
+  }
+
+  if (!config.upstreamProfileStatusFallbackEnabled) {
+    return local;
+  }
+
+  return resolveProfileStatusViaUpstream(request, config);
 }
 
 export async function resolveIdentityFromUpstream(
