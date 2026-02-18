@@ -17,6 +17,13 @@ import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 
+function isLegacyRelayEnabled(): boolean {
+  const normalized = (process.env.STORAGE_LEGACY_RELAY_ENABLED || '')
+    .trim()
+    .toLowerCase();
+  return ['1', 'true', 'yes', 'on'].includes(normalized);
+}
+
 function canManageTargetUser(
   currentUserId: string,
   currentRole: string,
@@ -248,6 +255,19 @@ export async function POST(request: Request) {
     if (contentType.includes('application/json')) {
       return handleCommitUpload(request, auth.identity);
     }
+
+    if (!isLegacyRelayEnabled()) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            'Legacy relay upload is disabled. Use the presign + commit upload flow.',
+        },
+        { status: 410 }
+      );
+    }
+
+    console.warn('[ContentImageStorageAPI] Using legacy relay upload path');
 
     return handleLegacyUpload(request, auth.identity);
   } catch (error) {

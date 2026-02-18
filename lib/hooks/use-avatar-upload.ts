@@ -25,6 +25,12 @@ export interface AvatarUploadResult {
   path: string;
 }
 
+const STORAGE_LEGACY_RELAY_ENABLED = ['1', 'true', 'yes', 'on'].includes(
+  (process.env.NEXT_PUBLIC_STORAGE_LEGACY_RELAY_ENABLED || '')
+    .trim()
+    .toLowerCase()
+);
+
 /**
  * Hook for avatar upload, delete, and URL generation.
  */
@@ -211,6 +217,12 @@ export function useAvatarUpload() {
             path: commitPayload.path,
           };
         } catch (presignError) {
+          if (!STORAGE_LEGACY_RELAY_ENABLED) {
+            throw presignError instanceof Error
+              ? presignError
+              : new Error(t('errors.uploadFailedGeneric'));
+          }
+
           console.warn(
             '[AvatarUpload] presign flow failed, fallback to legacy relay upload:',
             presignError

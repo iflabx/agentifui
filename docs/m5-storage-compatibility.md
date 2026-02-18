@@ -19,10 +19,13 @@ M5 目标：在不改动前端业务语义的前提下，用 MinIO 替换 Supaba
 - 内容图下载预签名：`GET /api/internal/storage/content-images/presign?path=...&userId=...`
 - 内容图上传 commit：`POST /api/internal/storage/content-images`（`application/json`，`{ userId, path }`）
 
-### 2.2 兼容回退链路
+### 2.2 兼容回退链路（默认关闭）
 
-- 头像仍保留 legacy 中转上传：`POST /api/internal/storage/avatar` (`formData`)
-- 内容图仍保留 legacy 中转上传：`POST /api/internal/storage/content-images` (`formData`)
+- legacy 中转上传入口仍保留：
+  - `POST /api/internal/storage/avatar` (`formData`)
+  - `POST /api/internal/storage/content-images` (`formData`)
+- 默认关闭：`STORAGE_LEGACY_RELAY_ENABLED=0`
+- 仅应急启用：`STORAGE_LEGACY_RELAY_ENABLED=1` 且 `NEXT_PUBLIC_STORAGE_LEGACY_RELAY_ENABLED=1`
 
 ### 2.3 统一对象策略
 
@@ -75,14 +78,14 @@ M5 目标：在不改动前端业务语义的前提下，用 MinIO 替换 Supaba
 - Hook：`lib/hooks/use-avatar-upload.ts`
 - 策略：
   1. 优先预签名直传（POST presign -> PUT 对象 -> POST commit）
-  2. 失败自动回退 legacy 中转上传
+  2. 默认不回退 legacy；仅在 `NEXT_PUBLIC_STORAGE_LEGACY_RELAY_ENABLED=1` 时启用应急回退
 
 ### 4.2 Content Images
 
 - Service：`lib/services/content-image-upload-service.ts`
 - 策略：
   1. 优先预签名直传（POST presign -> PUT 对象 -> POST commit）
-  2. 失败自动回退 legacy 中转上传
+  2. 默认不回退 legacy；仅在 `NEXT_PUBLIC_STORAGE_LEGACY_RELAY_ENABLED=1` 时启用应急回退
 
 ### 4.3 Backend Client
 

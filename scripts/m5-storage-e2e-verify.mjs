@@ -16,6 +16,10 @@ const appStartRetryCount = Math.max(
   1,
   Number(process.env.M5_STORAGE_APP_START_RETRIES || 2)
 );
+const expectLegacyRelay = parseBooleanEnv(
+  process.env.M5_STORAGE_EXPECT_LEGACY_RELAY,
+  false
+);
 
 const fallbackDatabaseUrl =
   'postgresql://agentif:agentif@172.20.0.1:5432/agentifui';
@@ -326,6 +330,12 @@ async function main() {
     S3_BUCKET: process.env.S3_BUCKET || 'agentifui',
     S3_ENABLE_PATH_STYLE: process.env.S3_ENABLE_PATH_STYLE || '1',
     S3_PUBLIC_READ_ENABLED: process.env.S3_PUBLIC_READ_ENABLED || '1',
+    STORAGE_LEGACY_RELAY_ENABLED:
+      process.env.STORAGE_LEGACY_RELAY_ENABLED ||
+      (expectLegacyRelay ? '1' : '0'),
+    NEXT_PUBLIC_STORAGE_LEGACY_RELAY_ENABLED:
+      process.env.NEXT_PUBLIC_STORAGE_LEGACY_RELAY_ENABLED ||
+      (expectLegacyRelay ? '1' : '0'),
     NEXT_TELEMETRY_DISABLED: '1',
     NEXT_DISABLE_SWC_WORKER: process.env.NEXT_DISABLE_SWC_WORKER || '1',
   };
@@ -745,61 +755,100 @@ async function main() {
     );
     assertStatus(contentDelete.response, 200, 'content-images delete owner');
 
-    const legacyAvatarForm = new FormData();
-    legacyAvatarForm.append('file', createImageBlob(), 'legacy-avatar.png');
-    legacyAvatarForm.append('userId', userAId);
-    const legacyAvatar = await requestForm(
-      jarA,
-      '/api/internal/storage/avatar',
-      'POST',
-      legacyAvatarForm
-    );
-    assertStatus(legacyAvatar.response, 200, 'avatar legacy upload');
-    const legacyAvatarPath = legacyAvatar.payload?.path;
-    if (!legacyAvatarPath) {
-      throw new Error('avatar legacy upload missing path');
-    }
+    let legacyAvatarFallback = false;
+    let legacyContentFallback = false;
+    let legacyAvatarRelayDisabled = false;
+    let legacyContentRelayDisabled = false;
 
-    const legacyAvatarDelete = await requestJson(
-      jarA,
-      '/api/internal/storage/avatar',
-      'DELETE',
-      {
-        userId: userAId,
-        filePath: legacyAvatarPath,
+    if (expectLegacyRelay) {
+      const legacyAvatarForm = new FormData();
+      legacyAvatarForm.append('file', createImageBlob(), 'legacy-avatar.png');
+      legacyAvatarForm.append('userId', userAId);
+      const legacyAvatar = await requestForm(
+        jarA,
+        '/api/internal/storage/avatar',
+        'POST',
+        legacyAvatarForm
+      );
+      assertStatus(legacyAvatar.response, 200, 'avatar legacy upload');
+      const legacyAvatarPath = legacyAvatar.payload?.path;
+      if (!legacyAvatarPath) {
+        throw new Error('avatar legacy upload missing path');
       }
-    );
-    assertStatus(legacyAvatarDelete.response, 200, 'avatar legacy delete');
 
-    const legacyContentForm = new FormData();
-    legacyContentForm.append('file', createImageBlob(), 'legacy-content.png');
-    legacyContentForm.append('userId', userAId);
-    const legacyContent = await requestForm(
-      jarA,
-      '/api/internal/storage/content-images',
-      'POST',
-      legacyContentForm
-    );
-    assertStatus(legacyContent.response, 200, 'content-images legacy upload');
-    const legacyContentPath = legacyContent.payload?.path;
-    if (!legacyContentPath) {
-      throw new Error('content-images legacy upload missing path');
-    }
+      const legacyAvatarDelete = await requestJson(
+        jarA,
+        '/api/internal/storage/avatar',
+        'DELETE',
+        {
+          userId: userAId,
+          filePath: legacyAvatarPath,
+        }
+      );
+      assertStatus(legacyAvatarDelete.response, 200, 'avatar legacy delete');
 
-    const legacyContentDelete = await requestJson(
-      jarA,
-      '/api/internal/storage/content-images',
-      'DELETE',
-      {
-        userId: userAId,
-        filePath: legacyContentPath,
+      const legacyContentForm = new FormData();
+      legacyContentForm.append('file', createImageBlob(), 'legacy-content.png');
+      legacyContentForm.append('userId', userAId);
+      const legacyContent = await requestForm(
+        jarA,
+        '/api/internal/storage/content-images',
+        'POST',
+        legacyContentForm
+      );
+      assertStatus(legacyContent.response, 200, 'content-images legacy upload');
+      const legacyContentPath = legacyContent.payload?.path;
+      if (!legacyContentPath) {
+        throw new Error('content-images legacy upload missing path');
       }
-    );
-    assertStatus(
-      legacyContentDelete.response,
-      200,
-      'content-images legacy delete'
-    );
+
+      const legacyContentDelete = await requestJson(
+        jarA,
+        '/api/internal/storage/content-images',
+        'DELETE',
+        {
+          userId: userAId,
+          filePath: legacyContentPath,
+        }
+      );
+      assertStatus(
+        legacyContentDelete.response,
+        200,
+        'content-images legacy delete'
+      );
+
+      legacyAvatarFallback = true;
+      legacyContentFallback = true;
+    } else {
+      const legacyAvatarForm = new FormData();
+      legacyAvatarForm.append('file', createImageBlob(), 'legacy-avatar.png');
+      legacyAvatarForm.append('userId', userAId);
+      const legacyAvatar = await requestForm(
+        jarA,
+        '/api/internal/storage/avatar',
+        'POST',
+        legacyAvatarForm
+      );
+      assertStatus(legacyAvatar.response, 410, 'avatar legacy relay disabled');
+
+      const legacyContentForm = new FormData();
+      legacyContentForm.append('file', createImageBlob(), 'legacy-content.png');
+      legacyContentForm.append('userId', userAId);
+      const legacyContent = await requestForm(
+        jarA,
+        '/api/internal/storage/content-images',
+        'POST',
+        legacyContentForm
+      );
+      assertStatus(
+        legacyContent.response,
+        410,
+        'content-images legacy relay disabled'
+      );
+
+      legacyAvatarRelayDisabled = true;
+      legacyContentRelayDisabled = true;
+    }
 
     console.log(
       JSON.stringify(
@@ -812,8 +861,10 @@ async function main() {
             contentPresignUploadListDelete: true,
             contentPresignDownload: true,
             contentOwnershipGuards: true,
-            legacyAvatarFallback: true,
-            legacyContentFallback: true,
+            legacyAvatarFallback,
+            legacyContentFallback,
+            legacyAvatarRelayDisabled,
+            legacyContentRelayDisabled,
           },
           artifacts: {
             avatarPath: userAAvatarPath,

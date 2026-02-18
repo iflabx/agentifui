@@ -33,6 +33,11 @@ const MAX_FILE_SIZE = STORAGE_UPLOAD_POLICIES['content-images'].maxBytes;
  * Storage bucket name for content images
  */
 const BUCKET_NAME = 'content-images';
+const STORAGE_LEGACY_RELAY_ENABLED = ['1', 'true', 'yes', 'on'].includes(
+  (process.env.NEXT_PUBLIC_STORAGE_LEGACY_RELAY_ENABLED || '')
+    .trim()
+    .toLowerCase()
+);
 
 /**
  * Validate image file type and size.
@@ -199,6 +204,12 @@ export async function uploadContentImage(
 
     return runCommitUpload(userId, presignPayload.path);
   } catch (presignError) {
+    if (!STORAGE_LEGACY_RELAY_ENABLED) {
+      throw presignError instanceof Error
+        ? presignError
+        : new Error('Upload failed');
+    }
+
     console.warn(
       '[ContentImageUpload] presign flow failed, fallback to legacy relay upload:',
       presignError
