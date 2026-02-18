@@ -1,4 +1,4 @@
-import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
+import { resolveSessionIdentityReadOnly } from '@lib/auth/better-auth/session-identity';
 import '@lib/server/realtime/runtime-registry';
 
 import { NextResponse } from 'next/server';
@@ -7,7 +7,9 @@ export const runtime = 'nodejs';
 
 export async function GET(request: Request) {
   try {
-    const resolvedIdentity = await resolveSessionIdentity(request.headers);
+    const resolvedIdentity = await resolveSessionIdentityReadOnly(
+      request.headers
+    );
     if (!resolvedIdentity.success) {
       console.error(
         '[InternalAuthProfileStatus] failed to resolve session identity:',

@@ -1,16 +1,16 @@
 /** @jest-environment node */
-import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
+import { resolveSessionIdentityReadOnly } from '@lib/auth/better-auth/session-identity';
 
 import { GET } from './route';
 
 jest.mock('@lib/auth/better-auth/session-identity', () => ({
-  resolveSessionIdentity: jest.fn(),
+  resolveSessionIdentityReadOnly: jest.fn(),
 }));
 
 describe('Internal Auth Profile Status Route', () => {
-  const mockedResolveSessionIdentity =
-    resolveSessionIdentity as jest.MockedFunction<
-      typeof resolveSessionIdentity
+  const mockedResolveSessionIdentityReadOnly =
+    resolveSessionIdentityReadOnly as jest.MockedFunction<
+      typeof resolveSessionIdentityReadOnly
     >;
 
   function createRequest(): Request {
@@ -28,7 +28,7 @@ describe('Internal Auth Profile Status Route', () => {
   });
 
   it('returns 401 when session is not authenticated', async () => {
-    mockedResolveSessionIdentity.mockResolvedValueOnce({
+    mockedResolveSessionIdentityReadOnly.mockResolvedValueOnce({
       success: true,
       data: null,
     });
@@ -41,7 +41,7 @@ describe('Internal Auth Profile Status Route', () => {
   });
 
   it('returns 500 when session identity resolve fails', async () => {
-    mockedResolveSessionIdentity.mockResolvedValueOnce({
+    mockedResolveSessionIdentityReadOnly.mockResolvedValueOnce({
       success: false,
       error: new Error('resolve failed'),
     });
@@ -54,7 +54,7 @@ describe('Internal Auth Profile Status Route', () => {
   });
 
   it('returns profile status payload for authenticated identity', async () => {
-    mockedResolveSessionIdentity.mockResolvedValueOnce({
+    mockedResolveSessionIdentityReadOnly.mockResolvedValueOnce({
       success: true,
       data: {
         session: {
