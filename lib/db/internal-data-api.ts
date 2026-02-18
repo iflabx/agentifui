@@ -21,8 +21,6 @@ type InternalDataApiResponse<T> =
   | InternalDataApiSuccess<T>
   | InternalDataApiFailure;
 
-const FASTIFY_BYPASS_HEADER = 'x-agentifui-fastify-bypass';
-
 interface InternalDataApiRequestResult<T> {
   response: Response | null;
   json: InternalDataApiResponse<T> | null;
@@ -52,20 +50,14 @@ function toErrorMessage<T>(
 
 async function requestInternalData<T>(
   action: string,
-  payload: unknown,
-  useRewriteBypass: boolean
+  payload: unknown
 ): Promise<InternalDataApiRequestResult<T>> {
   try {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    if (useRewriteBypass) {
-      headers[FASTIFY_BYPASS_HEADER] = '1';
-    }
-
     const response = await fetch('/api/internal/data', {
       method: 'POST',
-      headers,
+      headers: {
+        'Content-Type': 'application/json',
+      },
       credentials: 'include',
       body: JSON.stringify({ action, payload }),
     });
@@ -90,20 +82,6 @@ async function requestInternalData<T>(
   }
 }
 
-function shouldRetryViaLegacy<T>(
-  firstAttempt: InternalDataApiRequestResult<T>
-): boolean {
-  if (firstAttempt.networkError) {
-    return true;
-  }
-
-  if (!firstAttempt.response) {
-    return true;
-  }
-
-  return firstAttempt.response.status >= 500;
-}
-
 /**
  * Browser-side bridge for calling internal data actions.
  * Server-side callers should not use this helper.
@@ -121,12 +99,10 @@ export async function callInternalDataAction<T>(
   }
 
   try {
-    const firstAttempt = await requestInternalData<T>(action, payload, false);
-    const finalAttempt = shouldRetryViaLegacy(firstAttempt)
-      ? await requestInternalData<T>(action, payload, true)
-      : firstAttempt;
-
-    const { response, json, networkError } = finalAttempt;
+    const { response, json, networkError } = await requestInternalData<T>(
+      action,
+      payload
+    );
 
     if (networkError) {
       return failure(networkError);
