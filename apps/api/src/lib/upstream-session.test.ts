@@ -23,7 +23,6 @@ function createConfig(
     proxyPrefixes: ['/api/internal'],
     sessionCookieNames: ['session_token', 'better-auth.session_token'],
     internalDataProxyTimeoutMs: 30000,
-    upstreamProfileStatusFallbackEnabled: false,
     ...overrides,
   };
 }
@@ -39,16 +38,10 @@ describe('upstream-session resolver', () => {
     queryRowsWithPgSystemContext as jest.MockedFunction<
       typeof queryRowsWithPgSystemContext
     >;
-  const originalFetch = global.fetch;
 
   beforeEach(() => {
     jest.clearAllMocks();
     resetSessionResolverMetrics();
-    global.fetch = jest.fn() as unknown as typeof fetch;
-  });
-
-  afterAll(() => {
-    global.fetch = originalFetch;
   });
 
   it('resolves active identity locally from session cookie', async () => {
@@ -83,10 +76,8 @@ describe('upstream-session resolver', () => {
       .calls[0]?.[1] as unknown[] | undefined;
     expect(queryParams?.[0]).toContain('token-123');
     expect(queryParams?.[0]).not.toContain('dark');
-    expect(global.fetch).not.toHaveBeenCalled();
     expect(getSessionResolverMetricsSnapshot()).toMatchObject({
       local_ok: 1,
-      fallback_used: 0,
     });
   });
 
@@ -121,43 +112,28 @@ describe('upstream-session resolver', () => {
     );
 
     expect(result).toEqual({ kind: 'unauthorized' });
-    expect(global.fetch).not.toHaveBeenCalled();
     expect(getSessionResolverMetricsSnapshot()).toMatchObject({
       local_unauthorized: 1,
     });
   });
 
-  it('falls back to upstream profile-status when local resolve errors and fallback is enabled', async () => {
+  it('returns local error when local resolver fails', async () => {
     mockedQueryRowsWithPgSystemContext.mockRejectedValueOnce(
       new Error('db unavailable')
-    );
-    (global.fetch as jest.Mock).mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          userId: '00000000-0000-4000-8000-000000000012',
-          authUserId: '00000000-0000-4000-8000-000000000012',
-          role: 'user',
-          status: 'active',
-        }),
-        { status: 200 }
-      )
     );
 
     const result = await resolveProfileStatusFromUpstream(
       createRequest({ cookie: 'session_token=token-456' }),
-      createConfig({ upstreamProfileStatusFallbackEnabled: true })
+      createConfig()
     );
 
-    expect(result.kind).toBe('ok');
-    if (result.kind !== 'ok') {
-      throw new Error('Expected resolved identity');
+    expect(result.kind).toBe('error');
+    if (result.kind !== 'error') {
+      throw new Error('Expected local resolver error');
     }
-    expect(result.identity.userId).toBe('00000000-0000-4000-8000-000000000012');
-    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(result.reason).toContain('db unavailable');
     expect(getSessionResolverMetricsSnapshot()).toMatchObject({
       local_error: 1,
-      fallback_used: 1,
-      upstream_ok: 1,
     });
   });
 

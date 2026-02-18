@@ -3,16 +3,7 @@ import type { FastifyRequest } from 'fastify';
 import type { ApiRuntimeConfig } from '../config';
 import { queryRowsWithPgSystemContext } from './pg-context';
 
-const FASTIFY_BYPASS_HEADER = 'x-agentifui-fastify-bypass';
 const INTERNAL_AUTH_ISSUER = 'urn:agentifui:better-auth';
-const UPSTREAM_PROFILE_STATUS_TIMEOUT_MS = 15000;
-const FORWARDED_HEADERS = [
-  'accept',
-  'accept-language',
-  'authorization',
-  'cookie',
-  'user-agent',
-] as const;
 const SESSION_RESOLVER_METRICS_KEY =
   '__agentifui_fastify_session_resolver_metrics__';
 const DEFAULT_MAX_SESSION_TOKEN_CANDIDATES = 8;
@@ -47,11 +38,7 @@ interface SessionIdentityRow {
 type SessionResolverMetricKey =
   | 'local_ok'
   | 'local_unauthorized'
-  | 'local_error'
-  | 'upstream_ok'
-  | 'upstream_unauthorized'
-  | 'upstream_error'
-  | 'fallback_used';
+  | 'local_error';
 
 type SessionResolverMetrics = Record<SessionResolverMetricKey, number>;
 
@@ -68,10 +55,6 @@ function getSessionResolverMetrics(): SessionResolverMetrics {
     local_ok: 0,
     local_unauthorized: 0,
     local_error: 0,
-    upstream_ok: 0,
-    upstream_unauthorized: 0,
-    upstream_error: 0,
-    fallback_used: 0,
   };
   globalState[SESSION_RESOLVER_METRICS_KEY] = created;
   return created;
@@ -281,107 +264,11 @@ async function resolveProfileStatusLocally(
   }
 }
 
-function buildUpstreamHeaders(request: FastifyRequest): Headers {
-  const headers = new Headers();
-  for (const key of FORWARDED_HEADERS) {
-    const value = request.headers[key];
-    if (typeof value === 'string' && value.length > 0) {
-      headers.set(key, value);
-    }
-  }
-  headers.set(FASTIFY_BYPASS_HEADER, '1');
-  return headers;
-}
-
-async function resolveProfileStatusViaUpstream(
-  request: FastifyRequest,
-  config: ApiRuntimeConfig
-): Promise<ResolveProfileStatusResult> {
-  const url = new URL(
-    '/api/internal/auth/profile-status',
-    config.nextUpstreamBaseUrl
-  ).toString();
-  const controller = new AbortController();
-  const timeout = setTimeout(
-    () => controller.abort(),
-    UPSTREAM_PROFILE_STATUS_TIMEOUT_MS
-  );
-
-  try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: buildUpstreamHeaders(request),
-      signal: controller.signal,
-    });
-
-    if (response.status === 401) {
-      return { kind: 'unauthorized' };
-    }
-    if (!response.ok) {
-      return {
-        kind: 'error',
-        reason: `Upstream profile-status failed with ${response.status}`,
-      };
-    }
-
-    const payload = (await response.json()) as {
-      userId?: unknown;
-      authUserId?: unknown;
-      role?: unknown;
-      status?: unknown;
-    };
-    if (
-      typeof payload.userId !== 'string' ||
-      payload.userId.trim().length === 0
-    ) {
-      return {
-        kind: 'error',
-        reason: 'Upstream profile-status payload missing userId',
-      };
-    }
-
-    const authUserId =
-      typeof payload.authUserId === 'string' &&
-      payload.authUserId.trim().length > 0
-        ? payload.authUserId
-        : payload.userId;
-    const role =
-      typeof payload.role === 'string' && payload.role.trim().length > 0
-        ? payload.role
-        : 'user';
-    const status =
-      typeof payload.status === 'string' && payload.status.trim().length > 0
-        ? payload.status.trim().toLowerCase()
-        : null;
-    if (status !== 'active') {
-      return { kind: 'unauthorized' };
-    }
-    return {
-      kind: 'ok',
-      identity: {
-        userId: payload.userId,
-        authUserId,
-        role,
-        status,
-      },
-    };
-  } catch (error) {
-    return {
-      kind: 'error',
-      reason:
-        error instanceof Error
-          ? error.message
-          : 'Unknown upstream profile-status error',
-    };
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 export async function resolveProfileStatusFromUpstream(
   request: FastifyRequest,
   config: ApiRuntimeConfig
 ): Promise<ResolveProfileStatusResult> {
+  // Keep exported name stable for route compatibility; resolution is now local-only.
   const local = await resolveProfileStatusLocally(request, config);
   if (local.kind === 'ok') {
     bumpResolverMetric('local_ok');
@@ -392,23 +279,7 @@ export async function resolveProfileStatusFromUpstream(
     return local;
   }
   bumpResolverMetric('local_error');
-
-  if (!config.upstreamProfileStatusFallbackEnabled) {
-    return local;
-  }
-
-  bumpResolverMetric('fallback_used');
-  const upstream = await resolveProfileStatusViaUpstream(request, config);
-  if (upstream.kind === 'ok') {
-    bumpResolverMetric('upstream_ok');
-    return upstream;
-  }
-  if (upstream.kind === 'unauthorized') {
-    bumpResolverMetric('upstream_unauthorized');
-    return upstream;
-  }
-  bumpResolverMetric('upstream_error');
-  return upstream;
+  return local;
 }
 
 export async function resolveIdentityFromUpstream(
