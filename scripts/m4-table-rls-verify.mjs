@@ -144,7 +144,7 @@ async function seedFixtures(pool, ids) {
   await pool.query(
     `
       INSERT INTO providers (id, name, type, base_url, auth_type, is_active, is_default)
-      VALUES ($1::uuid, $2, 'llm', 'https://rls.example.local', 'api_key', TRUE, TRUE)
+      VALUES ($1::uuid, $2, 'llm', 'https://rls.example.local', 'api_key', TRUE, FALSE)
     `,
     [ids.provider, `m4-rls-provider-${ids.suffix}`]
   );
