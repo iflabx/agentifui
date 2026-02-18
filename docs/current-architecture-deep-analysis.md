@@ -12,12 +12,11 @@
 3. 当前 `app/api/internal`、`app/api/admin`、`app/api/auth` 生产路由已清零 `{ success:false,error }` 旧返回结构（测试文件除外）。
 4. 门禁验证通过：`pnpm gate:quality:verify`、`pnpm m9:gate:verify`。
 5. Fastify 侧 `normalizeLegacyErrorEnvelope` 已扩展支持 `{ error: '...' }` payload 自动标准化，避免遗漏 `success/app_error/request_id`。
-6. Fastify 关键业务路由已切换为显式标准错误输出（`internal-apps`、`internal-profile`、`internal-dify-config`）；`internal-data` 保持动作层兼容写法并由统一后处理规范化。
+6. Fastify 关键业务路由与 `internal-data` 动作层均已收口，`apps/api/src/routes` 生产代码已清零 `{ success:false,error }` 直写格式。
 
 当前仍建议保持关注的剩余点：
 
-1. Fastify 路由内部仍存在 legacy 错误 payload 写法，当前依赖 `preSerialization` 统一兜底；可在后续统一改为显式 `app_error` 构造以降低隐式耦合。
-2. `internal-apps/internal-profile` 的实时副作用一致性在 `REALTIME_SOURCE_MODE=app-direct` 场景仍建议补专门契约验证（默认 `db-outbox` 路径已可用）。
+1. `internal-apps/internal-profile` 的实时副作用一致性在 `REALTIME_SOURCE_MODE=app-direct` 场景仍建议补专门契约验证（默认 `db-outbox` 路径已可用）。
 
 ## 1. 执行摘要
 
@@ -360,8 +359,8 @@
 
 ### 问题
 
-1. 并非所有路由都输出统一 envelope，存在 `{success:false,error}` 与 `app_error` 混用。
-2. 不同路由对 request-id 透传与记录深度不一致。
+1. 历史上存在 `{success:false,error}` 与 `app_error` 混用，当前 Next/Fastify 主路径已统一；后续重点是保持新增路由不回弹。
+2. 不同路由对 request-id 透传与记录深度仍有细粒度差异（观测字段完整度）。
 
 ### 优化方案
 

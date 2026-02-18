@@ -453,7 +453,6 @@ function toErrorResponse(
     statusCode,
     contentType: 'application/json',
     payload: {
-      success: false,
       error: message,
     },
     handler: 'local',
@@ -481,7 +480,6 @@ function toFailureResponse(error: unknown): ApiActionResponse {
     statusCode: 500,
     contentType: 'application/json',
     payload: {
-      success: false,
       error: message,
     },
     handler: 'local',
@@ -521,19 +519,31 @@ function enrichResponsePayload(
 
   const payloadObject = payload as Record<string, unknown>;
   const success = payloadObject.success;
-  if (success === false) {
+  const legacyMessage = maybeReadLegacyError(payloadObject);
+  const hasLegacyErrorMessage = legacyMessage.length > 0;
+  const shouldTreatAsError =
+    success === false || (statusCode >= 400 && hasLegacyErrorMessage);
+
+  if (shouldTreatAsError) {
+    if (success !== false) {
+      payloadObject.success = false;
+    }
+
+    if (!payloadObject.error && hasLegacyErrorMessage) {
+      payloadObject.error = legacyMessage;
+    }
+
     if (!payloadObject.request_id) {
       payloadObject.request_id = request.id;
     }
 
     if (!payloadObject.app_error) {
-      const legacyMessage =
-        maybeReadLegacyError(payloadObject) || 'Request failed';
+      const resolvedMessage = legacyMessage || 'Request failed';
       const detail = buildApiErrorDetail({
         status: statusCode,
         source: 'internal-data',
         requestId: request.id,
-        userMessage: legacyMessage,
+        userMessage: resolvedMessage,
       });
       payloadObject.app_error = detail;
       void recordApiErrorEvent({
@@ -2271,14 +2281,12 @@ async function handleGroupAuthAction(
       [targetUserId, serviceInstanceId, increment]
     );
 
-    return toSuccessResponse(
-      rows[0] || {
-        success: false,
-        new_used_count: 0,
-        quota_remaining: null,
-        error_message: 'Failed to update usage count',
-      }
-    );
+    const usageResult = rows[0];
+    if (!usageResult) {
+      return toErrorResponse('Failed to update usage count', 500);
+    }
+
+    return toSuccessResponse(usageResult);
   }
 
   return null;
