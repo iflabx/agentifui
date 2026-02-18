@@ -4,8 +4,8 @@ import { queryRowsWithPgSystemContext } from './pg-context';
 import {
   getSessionResolverMetricsSnapshot,
   resetSessionResolverMetrics,
-  resolveIdentityFromUpstream,
-  resolveProfileStatusFromUpstream,
+  resolveIdentityFromSession,
+  resolveProfileStatusFromSession,
 } from './upstream-session';
 
 jest.mock('./pg-context', () => ({
@@ -54,7 +54,7 @@ describe('upstream-session resolver', () => {
       } as never,
     ]);
 
-    const result = await resolveProfileStatusFromUpstream(
+    const result = await resolveProfileStatusFromSession(
       createRequest({
         cookie: 'session_token=token-123.sig%2Babc; theme=dark',
       }),
@@ -82,7 +82,7 @@ describe('upstream-session resolver', () => {
   });
 
   it('ignores non-session cookies when extracting token candidates', async () => {
-    const result = await resolveProfileStatusFromUpstream(
+    const result = await resolveProfileStatusFromSession(
       createRequest({
         cookie: 'theme=dark; locale=zh-CN',
       }),
@@ -106,7 +106,7 @@ describe('upstream-session resolver', () => {
       } as never,
     ]);
 
-    const result = await resolveProfileStatusFromUpstream(
+    const result = await resolveProfileStatusFromSession(
       createRequest({ cookie: 'session_token=token-123' }),
       createConfig()
     );
@@ -122,7 +122,7 @@ describe('upstream-session resolver', () => {
       new Error('db unavailable')
     );
 
-    const result = await resolveProfileStatusFromUpstream(
+    const result = await resolveProfileStatusFromSession(
       createRequest({ cookie: 'session_token=token-456' }),
       createConfig()
     );
@@ -147,7 +147,7 @@ describe('upstream-session resolver', () => {
       } as never,
     ]);
 
-    const result = await resolveIdentityFromUpstream(
+    const result = await resolveIdentityFromSession(
       createRequest({ cookie: 'session_token=token-789' }),
       createConfig()
     );

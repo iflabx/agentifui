@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 import type { ApiRuntimeConfig } from '../config';
-import { resolveIdentityFromUpstream } from '../lib/upstream-session';
+import { resolveIdentityFromSession } from '../lib/upstream-session';
 
 interface AdminTranslationsRoutesOptions {
   config: ApiRuntimeConfig;
@@ -185,7 +185,7 @@ async function requireAdmin(
   | { ok: true }
   | { ok: false; statusCode: number; payload: Record<string, string> }
 > {
-  const resolved = await resolveIdentityFromUpstream(request, config);
+  const resolved = await resolveIdentityFromSession(request, config);
   if (resolved.kind === 'unauthorized') {
     return {
       ok: false,

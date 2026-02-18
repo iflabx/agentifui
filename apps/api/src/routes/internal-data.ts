@@ -15,7 +15,7 @@ import {
 } from '../lib/pg-context';
 import {
   type ProfileStatusIdentity,
-  resolveProfileStatusFromUpstream,
+  resolveProfileStatusFromSession,
 } from '../lib/upstream-session';
 
 interface InternalDataRoutesOptions {
@@ -1041,7 +1041,7 @@ async function resolveActorIdentity(
   | { ok: true; identity: ProfileStatusIdentity }
   | { ok: false; error: ApiActionResponse }
 > {
-  const resolved = await resolveProfileStatusFromUpstream(request, config);
+  const resolved = await resolveProfileStatusFromSession(request, config);
   if (resolved.kind === 'unauthorized') {
     return {
       ok: false,

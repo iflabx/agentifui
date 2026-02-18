@@ -3,7 +3,7 @@ import { createDecipheriv, createHash } from 'node:crypto';
 
 import type { ApiRuntimeConfig } from '../config';
 import { queryRowsWithPgSystemContext } from '../lib/pg-context';
-import { resolveIdentityFromUpstream } from '../lib/upstream-session';
+import { resolveIdentityFromSession } from '../lib/upstream-session';
 
 interface InternalDifyConfigRoutesOptions {
   config: ApiRuntimeConfig;
@@ -72,7 +72,7 @@ async function requireAdmin(
   | { ok: true }
   | { ok: false; statusCode: number; payload: Record<string, string> }
 > {
-  const resolved = await resolveIdentityFromUpstream(request, config);
+  const resolved = await resolveIdentityFromSession(request, config);
   if (resolved.kind === 'unauthorized') {
     return {
       ok: false,

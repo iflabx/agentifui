@@ -7,7 +7,7 @@ import {
 } from '../lib/pg-context';
 import {
   type ActorIdentity,
-  resolveIdentityFromUpstream,
+  resolveIdentityFromSession,
 } from '../lib/upstream-session';
 
 interface InternalAppsRoutesOptions {
@@ -169,7 +169,7 @@ async function requireAdminActor(
   | { ok: true; actor: ActorIdentity }
   | { ok: false; statusCode: number; payload: Record<string, string> }
 > {
-  const resolved = await resolveIdentityFromUpstream(request, config);
+  const resolved = await resolveIdentityFromSession(request, config);
   if (resolved.kind === 'unauthorized') {
     return {
       ok: false,
@@ -204,7 +204,7 @@ async function requireActor(
   | { ok: true; actor: ActorIdentity }
   | { ok: false; statusCode: number; payload: Record<string, string | boolean> }
 > {
-  const resolved = await resolveIdentityFromUpstream(request, config);
+  const resolved = await resolveIdentityFromSession(request, config);
   if (resolved.kind === 'unauthorized') {
     return {
       ok: false,

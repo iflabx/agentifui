@@ -4,7 +4,7 @@ import type { ApiRuntimeConfig } from '../config';
 import { queryRowsWithPgSystemContext } from '../lib/pg-context';
 import {
   type ProfileStatusIdentity,
-  resolveProfileStatusFromUpstream,
+  resolveProfileStatusFromSession,
 } from '../lib/upstream-session';
 
 type AuthMode = 'normal' | 'degraded';
@@ -331,7 +331,7 @@ async function resolveIdentity(
   | { ok: true; identity: ProfileStatusIdentity }
   | { ok: false; statusCode: number; payload: Record<string, string> }
 > {
-  const resolved = await resolveProfileStatusFromUpstream(request, config);
+  const resolved = await resolveProfileStatusFromSession(request, config);
   if (resolved.kind === 'unauthorized') {
     return {
       ok: false,

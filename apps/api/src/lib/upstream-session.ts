@@ -264,11 +264,10 @@ async function resolveProfileStatusLocally(
   }
 }
 
-export async function resolveProfileStatusFromUpstream(
+export async function resolveProfileStatusFromSession(
   request: FastifyRequest,
   config: ApiRuntimeConfig
 ): Promise<ResolveProfileStatusResult> {
-  // Keep exported name stable for route compatibility; resolution is now local-only.
   const local = await resolveProfileStatusLocally(request, config);
   if (local.kind === 'ok') {
     bumpResolverMetric('local_ok');
@@ -282,11 +281,11 @@ export async function resolveProfileStatusFromUpstream(
   return local;
 }
 
-export async function resolveIdentityFromUpstream(
+export async function resolveIdentityFromSession(
   request: FastifyRequest,
   config: ApiRuntimeConfig
 ): Promise<ResolveIdentityResult> {
-  const resolved = await resolveProfileStatusFromUpstream(request, config);
+  const resolved = await resolveProfileStatusFromSession(request, config);
   if (resolved.kind !== 'ok') {
     return resolved;
   }
@@ -298,4 +297,20 @@ export async function resolveIdentityFromUpstream(
       role: resolved.identity.role,
     },
   };
+}
+
+// Backward-compatible aliases kept for existing route imports.
+export async function resolveProfileStatusFromUpstream(
+  request: FastifyRequest,
+  config: ApiRuntimeConfig
+): Promise<ResolveProfileStatusResult> {
+  return resolveProfileStatusFromSession(request, config);
+}
+
+// Backward-compatible aliases kept for existing route imports.
+export async function resolveIdentityFromUpstream(
+  request: FastifyRequest,
+  config: ApiRuntimeConfig
+): Promise<ResolveIdentityResult> {
+  return resolveIdentityFromSession(request, config);
 }
