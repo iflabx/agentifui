@@ -18,6 +18,8 @@ function resolveConfigOverride(
     openDurationMs: 200,
     halfOpenMaxInFlight: 1,
     failureStatuses: [503, 504],
+    sharedStateEnabled: false,
+    sharedMetricsEnabled: false,
     ...override,
   };
 }

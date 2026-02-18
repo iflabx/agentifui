@@ -1,3 +1,6 @@
+import { redisManager } from '@lib/infra/redis';
+import { createHash } from 'node:crypto';
+
 type CircuitStatus = 'closed' | 'open' | 'half-open';
 
 interface CircuitState {
@@ -21,6 +24,21 @@ interface DifyProxyResilienceMetrics {
   upstreamSuccessStatusCount: number;
 }
 
+type DifyProxyResilienceMetricKey = keyof DifyProxyResilienceMetrics;
+
+interface DifyProxySharedCircuitSnapshot {
+  redisEnabled: boolean;
+  openUntilMs: number | null;
+  isOpen: boolean;
+  retryAfterSeconds: number;
+}
+
+export interface DifyProxyResilienceMetricsReport {
+  local: DifyProxyResilienceMetrics;
+  shared: Partial<DifyProxyResilienceMetrics> | null;
+  sharedEnabled: boolean;
+}
+
 export interface DifyProxyResilienceConfig {
   timeoutMs: number;
   circuitEnabled: boolean;
@@ -29,6 +47,8 @@ export interface DifyProxyResilienceConfig {
   openDurationMs: number;
   halfOpenMaxInFlight: number;
   failureStatuses: number[];
+  sharedStateEnabled: boolean;
+  sharedMetricsEnabled: boolean;
 }
 
 export interface DifyProxyResilienceRequest {
@@ -64,6 +84,19 @@ export type DifyProxyResilienceResult =
 const RESILIENCE_STATE_GLOBAL_KEY = '__agentifui_dify_proxy_resilience_state__';
 const RESILIENCE_METRICS_GLOBAL_KEY =
   '__agentifui_dify_proxy_resilience_metrics__';
+const DIFY_PROXY_CIRCUIT_KEY_PREFIX = 'dify:proxy:circuit';
+const DIFY_PROXY_METRICS_KEY = 'dify:proxy:metrics';
+const SHARED_METRIC_KEYS: DifyProxyResilienceMetricKey[] = [
+  'requestsTotal',
+  'circuitOpenRejects',
+  'timeoutRejects',
+  'networkRejects',
+  'clientAbortRejects',
+  'upstreamFailureStatusCount',
+  'upstreamSuccessStatusCount',
+];
+
+let sharedRedisWarned = false;
 
 function parseBoolean(
   rawValue: string | undefined,
@@ -118,6 +151,31 @@ function parseFailureStatuses(rawValue: string | undefined): number[] {
   return Array.from(unique.values()).sort((a, b) => a - b);
 }
 
+function hasRedisConfigured(): boolean {
+  return Boolean(
+    process.env.REDIS_URL?.trim() || process.env.REDIS_HOST?.trim()
+  );
+}
+
+function hashCircuitKey(circuitKey: string): string {
+  return createHash('sha1').update(circuitKey).digest('hex');
+}
+
+function toSharedCircuitRedisKey(circuitKey: string): string {
+  return `${DIFY_PROXY_CIRCUIT_KEY_PREFIX}:${hashCircuitKey(circuitKey)}`;
+}
+
+function warnSharedRedisOnce(operation: string, error: unknown): void {
+  if (sharedRedisWarned) {
+    return;
+  }
+  sharedRedisWarned = true;
+  console.warn(
+    `[DifyProxyResilience] shared redis disabled for ${operation}:`,
+    error instanceof Error ? error.message : String(error)
+  );
+}
+
 function getStateStore(): DifyProxyResilienceStateStore {
   const globalState = globalThis as unknown as Record<string, unknown>;
   const existing = globalState[
@@ -159,6 +217,7 @@ function getMetricsStore(): DifyProxyResilienceMetrics {
 function resolveConfig(
   override: Partial<DifyProxyResilienceConfig> = {}
 ): DifyProxyResilienceConfig {
+  const redisConfigured = hasRedisConfigured();
   return {
     timeoutMs: parsePositiveInt(process.env.DIFY_PROXY_TIMEOUT_MS, 30000, 1000),
     circuitEnabled: parseBoolean(process.env.DIFY_PROXY_CIRCUIT_ENABLED, true),
@@ -184,6 +243,14 @@ function resolveConfig(
     ),
     failureStatuses: parseFailureStatuses(
       process.env.DIFY_PROXY_CIRCUIT_FAILURE_STATUSES
+    ),
+    sharedStateEnabled: parseBoolean(
+      process.env.DIFY_PROXY_CIRCUIT_SHARED_STATE_ENABLED,
+      redisConfigured
+    ),
+    sharedMetricsEnabled: parseBoolean(
+      process.env.DIFY_PROXY_CIRCUIT_SHARED_METRICS_ENABLED,
+      redisConfigured
     ),
     ...override,
   };
@@ -279,8 +346,154 @@ function shouldCountFailureStatus(
   return status >= 500;
 }
 
+function bumpMetric(
+  metrics: DifyProxyResilienceMetrics,
+  key: DifyProxyResilienceMetricKey,
+  config: DifyProxyResilienceConfig
+): void {
+  metrics[key] += 1;
+  if (config.sharedMetricsEnabled) {
+    void incrementSharedMetric(key);
+  }
+}
+
+async function incrementSharedMetric(
+  key: DifyProxyResilienceMetricKey
+): Promise<void> {
+  try {
+    const client = await redisManager.getClient();
+    const metricsKey = redisManager.buildKey(DIFY_PROXY_METRICS_KEY);
+    await client.hIncrBy(metricsKey, key, 1);
+    await client.hSet(metricsKey, {
+      updatedAt: String(Date.now()),
+    });
+  } catch (error) {
+    warnSharedRedisOnce('metrics increment', error);
+  }
+}
+
+function parseSharedMetricValue(value: string | undefined): number {
+  if (!value) {
+    return 0;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return 0;
+  }
+  return Math.floor(parsed);
+}
+
+async function readSharedMetrics(): Promise<Partial<DifyProxyResilienceMetrics> | null> {
+  try {
+    const client = await redisManager.getClient();
+    const metricsKey = redisManager.buildKey(DIFY_PROXY_METRICS_KEY);
+    const entries = await client.hGetAll(metricsKey);
+    if (!entries || Object.keys(entries).length === 0) {
+      return null;
+    }
+    const snapshot: Partial<DifyProxyResilienceMetrics> = {};
+    for (const key of SHARED_METRIC_KEYS) {
+      const parsed = parseSharedMetricValue(entries[key]);
+      if (parsed > 0) {
+        snapshot[key] = parsed;
+      }
+    }
+    return snapshot;
+  } catch (error) {
+    warnSharedRedisOnce('metrics read', error);
+    return null;
+  }
+}
+
+async function readSharedCircuitOpenUntilMs(
+  circuitKey: string,
+  config: DifyProxyResilienceConfig
+): Promise<number | null> {
+  if (!config.sharedStateEnabled) {
+    return null;
+  }
+  try {
+    const raw = await redisManager.get(toSharedCircuitRedisKey(circuitKey));
+    if (!raw) {
+      return null;
+    }
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return null;
+    }
+    return Math.floor(parsed);
+  } catch (error) {
+    warnSharedRedisOnce('circuit read', error);
+    return null;
+  }
+}
+
+async function setSharedCircuitOpen(
+  circuitKey: string,
+  openedAt: number,
+  config: DifyProxyResilienceConfig
+): Promise<void> {
+  if (!config.sharedStateEnabled) {
+    return;
+  }
+  const openUntil = openedAt + config.openDurationMs;
+  try {
+    await redisManager.set(
+      toSharedCircuitRedisKey(circuitKey),
+      String(openUntil),
+      {
+        ttlSeconds: Math.max(1, Math.ceil(config.openDurationMs / 1000)),
+      }
+    );
+  } catch (error) {
+    warnSharedRedisOnce('circuit write', error);
+  }
+}
+
+async function clearSharedCircuitOpen(
+  circuitKey: string,
+  config: DifyProxyResilienceConfig
+): Promise<void> {
+  if (!config.sharedStateEnabled) {
+    return;
+  }
+  try {
+    await redisManager.del(toSharedCircuitRedisKey(circuitKey));
+  } catch (error) {
+    warnSharedRedisOnce('circuit clear', error);
+  }
+}
+
+export async function getDifyProxySharedCircuitSnapshot(
+  circuitKey: string
+): Promise<DifyProxySharedCircuitSnapshot> {
+  const config = resolveConfig();
+  const openUntilMs = await readSharedCircuitOpenUntilMs(circuitKey, config);
+  const now = Date.now();
+  return {
+    redisEnabled: config.sharedStateEnabled,
+    openUntilMs,
+    isOpen: openUntilMs !== null && openUntilMs > now,
+    retryAfterSeconds:
+      openUntilMs !== null && openUntilMs > now
+        ? Math.max(1, Math.ceil((openUntilMs - now) / 1000))
+        : 0,
+  };
+}
+
 export function getDifyProxyResilienceMetricsSnapshot(): DifyProxyResilienceMetrics {
   return { ...getMetricsStore() };
+}
+
+export async function getDifyProxyResilienceMetricsReport(): Promise<DifyProxyResilienceMetricsReport> {
+  const config = resolveConfig();
+  const local = getDifyProxyResilienceMetricsSnapshot();
+  const shared = config.sharedMetricsEnabled ? await readSharedMetrics() : null;
+  return {
+    local,
+    shared,
+    sharedEnabled: config.sharedMetricsEnabled,
+  };
 }
 
 export function getDifyProxyCircuitSnapshot(circuitKey: string): {
@@ -310,6 +523,18 @@ export function resetDifyProxyResilienceState(): void {
   metrics.clientAbortRejects = 0;
   metrics.upstreamFailureStatusCount = 0;
   metrics.upstreamSuccessStatusCount = 0;
+
+  void (async () => {
+    const config = resolveConfig();
+    if (!config.sharedMetricsEnabled) {
+      return;
+    }
+    try {
+      await redisManager.del(DIFY_PROXY_METRICS_KEY);
+    } catch {
+      // best-effort reset for shared metrics
+    }
+  })();
 }
 
 export async function fetchWithDifyProxyResilience(
@@ -320,15 +545,34 @@ export async function fetchWithDifyProxyResilience(
   const state = getCircuitState(request.circuitKey);
   const metrics = getMetricsStore();
 
-  metrics.requestsTotal += 1;
+  bumpMetric(metrics, 'requestsTotal', config);
 
   if (config.circuitEnabled) {
-    pruneFailures(state, now(), config.failureWindowMs);
+    const checkTs = now();
+    pruneFailures(state, checkTs, config.failureWindowMs);
+
+    const sharedOpenUntil = await readSharedCircuitOpenUntilMs(
+      request.circuitKey,
+      config
+    );
+    if (sharedOpenUntil && sharedOpenUntil > checkTs) {
+      bumpMetric(metrics, 'circuitOpenRejects', config);
+      return {
+        ok: false,
+        reason: 'circuit-open',
+        elapsedMs: 0,
+        circuitStatus: 'open',
+        retryAfterSeconds: Math.max(
+          1,
+          Math.ceil((sharedOpenUntil - checkTs) / 1000)
+        ),
+      };
+    }
 
     if (state.status === 'open') {
-      const openedAt = state.openedAt || now();
-      if (now() - openedAt < config.openDurationMs) {
-        metrics.circuitOpenRejects += 1;
+      const openedAt = state.openedAt || checkTs;
+      if (checkTs - openedAt < config.openDurationMs) {
+        bumpMetric(metrics, 'circuitOpenRejects', config);
         return {
           ok: false,
           reason: 'circuit-open',
@@ -336,7 +580,7 @@ export async function fetchWithDifyProxyResilience(
           circuitStatus: state.status,
           retryAfterSeconds: toRetryAfterSeconds(
             state.openedAt,
-            now(),
+            checkTs,
             config.openDurationMs
           ),
         };
@@ -350,7 +594,7 @@ export async function fetchWithDifyProxyResilience(
       state.status === 'half-open' &&
       state.halfOpenInFlight >= config.halfOpenMaxInFlight
     ) {
-      metrics.circuitOpenRejects += 1;
+      bumpMetric(metrics, 'circuitOpenRejects', config);
       return {
         ok: false,
         reason: 'circuit-open',
@@ -392,12 +636,21 @@ export async function fetchWithDifyProxyResilience(
       config.circuitEnabled &&
       shouldCountFailureStatus(response.status, config.failureStatuses)
     ) {
-      metrics.upstreamFailureStatusCount += 1;
-      markFailure(state, now(), config);
+      bumpMetric(metrics, 'upstreamFailureStatusCount', config);
+      const beforeStatus = state.status;
+      const failureTs = now();
+      markFailure(state, failureTs, config);
+      if (state.status === 'open' && beforeStatus !== 'open') {
+        await setSharedCircuitOpen(request.circuitKey, failureTs, config);
+      }
     } else {
-      metrics.upstreamSuccessStatusCount += 1;
+      bumpMetric(metrics, 'upstreamSuccessStatusCount', config);
       if (config.circuitEnabled) {
+        const wasHalfOpen = state.status === 'half-open';
         markSuccess(state);
+        if (wasHalfOpen && state.status === 'closed') {
+          await clearSharedCircuitOpen(request.circuitKey, config);
+        }
       }
     }
 
@@ -421,11 +674,11 @@ export async function fetchWithDifyProxyResilience(
         : 'network-error';
 
     if (reason === 'timeout') {
-      metrics.timeoutRejects += 1;
+      bumpMetric(metrics, 'timeoutRejects', config);
     } else if (reason === 'network-error') {
-      metrics.networkRejects += 1;
+      bumpMetric(metrics, 'networkRejects', config);
     } else if (reason === 'client-abort') {
-      metrics.clientAbortRejects += 1;
+      bumpMetric(metrics, 'clientAbortRejects', config);
     }
 
     if (config.circuitEnabled) {
@@ -434,7 +687,12 @@ export async function fetchWithDifyProxyResilience(
           state.halfOpenInFlight = Math.max(0, state.halfOpenInFlight - 1);
         }
       } else {
-        markFailure(state, now(), config);
+        const beforeStatus = state.status;
+        const failureTs = now();
+        markFailure(state, failureTs, config);
+        if (state.status === 'open' && beforeStatus !== 'open') {
+          await setSharedCircuitOpen(request.circuitKey, failureTs, config);
+        }
       }
     }
 

@@ -27,6 +27,7 @@ interface RedisSetCommandOptions {
 interface RedisClientLike {
   isOpen: boolean;
   connect: () => Promise<void>;
+  duplicate?: () => RedisClientLike;
   get: (key: string) => Promise<string | null>;
   set: (
     key: string,
@@ -34,6 +35,12 @@ interface RedisClientLike {
     options?: RedisSetCommandOptions
   ) => Promise<unknown>;
   del: (keys: string | string[]) => Promise<number>;
+  publish?: (channel: string, message: string) => Promise<number>;
+  subscribe?: (
+    channel: string,
+    listener: (message: string) => void
+  ) => Promise<void>;
+  quit?: () => Promise<void>;
   scanIterator: (options: {
     MATCH: string;
     COUNT?: number;
@@ -88,17 +95,48 @@ function escapeRegexPattern(value: string): string {
   return value.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
 }
 
+type CacheInvalidationOperation = 'set' | 'delete' | 'delete-pattern' | 'clear';
+
+interface CacheInvalidationMessage {
+  origin: string;
+  operation: CacheInvalidationOperation;
+  key?: string;
+  pattern?: string;
+}
+
+const CACHE_INVALIDATION_ORIGIN_GLOBAL_KEY =
+  '__agentifui_cache_invalidation_origin__';
+
+function resolveInvalidationOrigin(): string {
+  const globalState = globalThis as unknown as Record<string, unknown>;
+  const existing = globalState[CACHE_INVALIDATION_ORIGIN_GLOBAL_KEY];
+  if (typeof existing === 'string' && existing.length > 0) {
+    return existing;
+  }
+  const created = `${Date.now().toString(36)}${Math.random()
+    .toString(36)
+    .slice(2, 10)}`;
+  globalState[CACHE_INVALIDATION_ORIGIN_GLOBAL_KEY] = created;
+  return created;
+}
+
 export class CacheService {
   private static instance: CacheService;
   private cache = new Map<string, CacheItem<unknown>>();
   private cleanupTimer: NodeJS.Timeout | null = null;
   private inflight = new Map<string, Promise<unknown>>();
   private redisClient: RedisClientLike | null | undefined;
+  private redisSubscriber: RedisClientLike | null | undefined;
+  private redisSubscriberInitPromise: Promise<void> | null = null;
   private redisLoadWarned = false;
   private redisRuntimeWarned = false;
+  private redisInvalidationWarned = false;
 
   private readonly redisL2Enabled: boolean;
   private readonly redisKeyPrefix: string;
+  private readonly redisInvalidationEnabled: boolean;
+  private readonly redisInvalidationChannel: string;
+  private readonly invalidationOrigin: string;
   private readonly debugLogs: boolean;
 
   private metrics: CacheMetricsSnapshot = {
@@ -119,6 +157,13 @@ export class CacheService {
       process.env.CACHE_L2_KEY_PREFIX?.trim() || 'cache:l2'
     ).replace(/:+$/g, '');
     this.debugLogs = parseBooleanEnv(process.env.CACHE_DEBUG_LOGS, false);
+    this.redisInvalidationEnabled =
+      this.redisL2Enabled &&
+      parseBooleanEnv(process.env.CACHE_L2_REDIS_INVALIDATION_ENABLED, true);
+    this.redisInvalidationChannel =
+      process.env.CACHE_L2_INVALIDATION_CHANNEL?.trim() ||
+      `${this.redisKeyPrefix}:invalidate`;
+    this.invalidationOrigin = resolveInvalidationOrigin();
 
     this.cleanupTimer = setInterval(() => {
       this.cleanupExpired();
@@ -169,6 +214,145 @@ export class CacheService {
       );
     }
     this.redisClient = null;
+  }
+
+  private warnRedisInvalidationOnce(operation: string, error: unknown): void {
+    if (this.redisInvalidationWarned) {
+      return;
+    }
+    this.redisInvalidationWarned = true;
+    console.warn(
+      `[CacheService] Redis invalidation disabled after ${operation} failure:`,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+
+  private deletePatternLocal(pattern: string): number {
+    let deletedCount = 0;
+    const regex = new RegExp(
+      `^${escapeRegexPattern(pattern).replace(/\*/g, '.*')}$`
+    );
+
+    for (const key of this.cache.keys()) {
+      if (!regex.test(key)) {
+        continue;
+      }
+      this.cache.delete(key);
+      this.inflight.delete(key);
+      deletedCount += 1;
+    }
+
+    return deletedCount;
+  }
+
+  private clearLocal(): void {
+    this.cache.clear();
+    this.inflight.clear();
+  }
+
+  private applyRemoteInvalidation(message: CacheInvalidationMessage): void {
+    if (!message || message.origin === this.invalidationOrigin) {
+      return;
+    }
+
+    if (message.operation === 'clear') {
+      this.clearLocal();
+      return;
+    }
+
+    if (message.operation === 'set' || message.operation === 'delete') {
+      if (!message.key) {
+        return;
+      }
+      this.cache.delete(message.key);
+      this.inflight.delete(message.key);
+      return;
+    }
+
+    if (message.operation === 'delete-pattern' && message.pattern) {
+      this.deletePatternLocal(message.pattern);
+    }
+  }
+
+  private async ensureInvalidationSubscriber(
+    redis: RedisClientLike
+  ): Promise<void> {
+    if (!this.redisInvalidationEnabled || !this.isServerRuntime()) {
+      return;
+    }
+
+    if (this.redisSubscriber) {
+      return;
+    }
+    if (this.redisSubscriberInitPromise) {
+      await this.redisSubscriberInitPromise;
+      return;
+    }
+
+    if (typeof redis.duplicate !== 'function') {
+      return;
+    }
+
+    this.redisSubscriberInitPromise = (async () => {
+      try {
+        const subscriber = redis.duplicate!();
+        if (!subscriber.isOpen) {
+          await subscriber.connect();
+        }
+        if (typeof subscriber.subscribe !== 'function') {
+          return;
+        }
+
+        await subscriber.subscribe(
+          this.redisInvalidationChannel,
+          rawMessage => {
+            try {
+              const parsed = JSON.parse(rawMessage) as CacheInvalidationMessage;
+              this.applyRemoteInvalidation(parsed);
+            } catch (error) {
+              this.warnRedisInvalidationOnce(
+                'invalidation payload parse',
+                error
+              );
+            }
+          }
+        );
+        this.redisSubscriber = subscriber;
+      } catch (error) {
+        this.warnRedisInvalidationOnce('invalidation subscribe', error);
+      }
+    })();
+
+    try {
+      await this.redisSubscriberInitPromise;
+    } finally {
+      this.redisSubscriberInitPromise = null;
+    }
+  }
+
+  private async publishInvalidation(
+    operation: CacheInvalidationOperation,
+    input: { key?: string; pattern?: string } = {}
+  ): Promise<void> {
+    if (!this.redisInvalidationEnabled || !this.isServerRuntime()) {
+      return;
+    }
+    const redis = await this.getRedisClient();
+    if (!redis || typeof redis.publish !== 'function') {
+      return;
+    }
+    try {
+      await redis.publish(
+        this.redisInvalidationChannel,
+        JSON.stringify({
+          origin: this.invalidationOrigin,
+          operation,
+          ...input,
+        } satisfies CacheInvalidationMessage)
+      );
+    } catch (error) {
+      this.warnRedisInvalidationOnce('invalidation publish', error);
+    }
   }
 
   private resolveRedisUrl(): string | null {
@@ -234,6 +418,9 @@ export class CacheService {
           return null;
         }
       }
+      if (this.redisClient) {
+        void this.ensureInvalidationSubscriber(this.redisClient);
+      }
       return this.redisClient;
     }
 
@@ -244,6 +431,7 @@ export class CacheService {
       }
 
       this.redisClient = client;
+      void this.ensureInvalidationSubscriber(client);
       return client;
     } catch (error) {
       this.warnRedisLoadFailureOnce(error);
@@ -418,6 +606,7 @@ export class CacheService {
   set<T>(key: string, data: T, ttl: number = 5 * 60 * 1000): void {
     this.setL1(key, data, ttl);
     void this.writeL2(key, data, ttl);
+    void this.publishInvalidation('set', { key });
   }
 
   /**
@@ -442,7 +631,9 @@ export class CacheService {
    */
   delete(key: string): boolean {
     const deleted = this.cache.delete(key);
+    this.inflight.delete(key);
     void this.deleteL2Key(key);
+    void this.publishInvalidation('delete', { key });
     return deleted;
   }
 
@@ -450,20 +641,10 @@ export class CacheService {
    * Delete all cache entries matching a pattern
    */
   deletePattern(pattern: string): number {
-    let deletedCount = 0;
-    const regex = new RegExp(
-      `^${escapeRegexPattern(pattern).replace(/\*/g, '.*')}$`
-    );
-
-    for (const key of this.cache.keys()) {
-      if (!regex.test(key)) {
-        continue;
-      }
-      this.cache.delete(key);
-      deletedCount += 1;
-    }
+    const deletedCount = this.deletePatternLocal(pattern);
 
     void this.deleteL2Pattern(pattern);
+    void this.publishInvalidation('delete-pattern', { pattern });
     return deletedCount;
   }
 
@@ -471,9 +652,9 @@ export class CacheService {
    * Clear all cache entries
    */
   clear(): void {
-    this.cache.clear();
-    this.inflight.clear();
+    this.clearLocal();
     void this.deleteL2Pattern('*');
+    void this.publishInvalidation('clear');
   }
 
   /**
@@ -537,8 +718,13 @@ export class CacheService {
       clearInterval(this.cleanupTimer);
       this.cleanupTimer = null;
     }
-    this.cache.clear();
-    this.inflight.clear();
+    this.clearLocal();
+    if (this.redisSubscriber && this.redisSubscriber.isOpen) {
+      void this.redisSubscriber.quit?.().catch(() => {
+        // best effort shutdown
+      });
+    }
+    this.redisSubscriber = null;
   }
 }
 
