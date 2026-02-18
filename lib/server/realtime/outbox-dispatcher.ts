@@ -11,6 +11,8 @@ import { Client, type ClientConfig } from 'pg';
 import { publishRealtimeEvent } from './redis-broker';
 
 const OUTBOX_DISPATCHER_STATE_KEY = '__agentifui_realtime_outbox_dispatcher__';
+const OUTBOX_DISPATCHER_DISABLED_WARN_KEY =
+  '__agentifui_realtime_outbox_dispatcher_disabled_warn__';
 const DEFAULT_NOTIFY_CHANNEL = 'agentifui_realtime_outbox';
 const OUTBOX_TABLE = 'realtime_outbox_events';
 const CHANNEL_IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
@@ -37,8 +39,57 @@ type DispatcherState = {
   tableMissingWarned: boolean;
 };
 
+function parseBooleanEnv(
+  value: string | undefined,
+  fallbackValue: boolean
+): boolean {
+  if (!value) {
+    return fallbackValue;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+    return true;
+  }
+  if (['0', 'false', 'no', 'off'].includes(normalized)) {
+    return false;
+  }
+  return fallbackValue;
+}
+
 function isServerRuntime(): boolean {
   return typeof window === 'undefined';
+}
+
+function hasRedisConfig(): boolean {
+  return Boolean(
+    process.env.REDIS_URL?.trim() || process.env.REDIS_HOST?.trim()
+  );
+}
+
+function warnDispatcherDisabledOnce(reason: string): void {
+  const globalState = globalThis as unknown as Record<string, unknown>;
+  if (globalState[OUTBOX_DISPATCHER_DISABLED_WARN_KEY] === reason) {
+    return;
+  }
+  globalState[OUTBOX_DISPATCHER_DISABLED_WARN_KEY] = reason;
+  console.warn(`[RealtimeOutbox] dispatcher disabled: ${reason}`);
+}
+
+function isOutboxDispatcherEnabled(): boolean {
+  if (!isServerRuntime()) {
+    return false;
+  }
+  if (!parseBooleanEnv(process.env.REALTIME_OUTBOX_ENABLED, true)) {
+    return false;
+  }
+  if ((process.env.NODE_ENV || '').trim().toLowerCase() === 'test') {
+    return false;
+  }
+  if (!hasRedisConfig()) {
+    warnDispatcherDisabledOnce('REDIS_URL/REDIS_HOST is not configured');
+    return false;
+  }
+  return true;
 }
 
 function resolveDatabaseUrl(): string {
@@ -482,7 +533,7 @@ async function startRealtimeOutboxDispatcher(): Promise<void> {
 }
 
 export function ensureRealtimeOutboxDispatcher(): void {
-  if (!isServerRuntime()) {
+  if (!isOutboxDispatcherEnabled()) {
     return;
   }
 

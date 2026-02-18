@@ -31,10 +31,11 @@ export async function publishTableChangeEvent(input: {
   schema?: string;
   commitTimestamp?: string;
 }): Promise<void> {
-  // Keep dispatcher alive so DB outbox events can be forwarded to Redis/SSE.
-  ensureRealtimeOutboxDispatcher();
-
   const sourceMode = resolveRealtimeSourceMode();
+  if (sourceMode === 'db-outbox' || sourceMode === 'hybrid') {
+    // Keep dispatcher alive so DB outbox events can be forwarded to Redis/SSE.
+    ensureRealtimeOutboxDispatcher();
+  }
   if (sourceMode === 'db-outbox') {
     // In DB outbox mode, publish is emitted by PG trigger + outbox dispatcher.
     return;
