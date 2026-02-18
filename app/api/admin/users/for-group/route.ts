@@ -1,4 +1,4 @@
-import { getPgPool } from '@lib/server/pg/pool';
+import { queryRowsWithPgSystemContext } from '@lib/server/pg/user-context';
 import { requireAdmin } from '@lib/services/admin/require-admin';
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -22,7 +22,6 @@ export async function POST(request: NextRequest) {
     const offset = (safePage - 1) * safePageSize;
     const trimmedSearch = typeof search === 'string' ? search.trim() : '';
 
-    const pool = getPgPool();
     const whereClauses: string[] = ["status = 'active'"];
     const params: Array<string | string[] | number> = [];
 
@@ -47,18 +46,18 @@ export async function POST(request: NextRequest) {
 
     const whereSql = whereClauses.join(' AND ');
 
-    const countResult = await pool.query<{ total: string }>(
+    const countRows = await queryRowsWithPgSystemContext<{ total: string }>(
       `SELECT COUNT(*)::text AS total FROM profiles WHERE ${whereSql}`,
       params
     );
-    const total = Number(countResult.rows[0]?.total || 0);
+    const total = Number(countRows[0]?.total || 0);
 
     params.push(safePageSize);
     const limitParamIndex = params.length;
     params.push(offset);
     const offsetParamIndex = params.length;
 
-    const usersResult = await pool.query<{
+    const users = await queryRowsWithPgSystemContext<{
       id: string;
       username: string | null;
       full_name: string | null;
@@ -76,7 +75,6 @@ export async function POST(request: NextRequest) {
       `,
       params
     );
-    const users = usersResult.rows;
 
     // calculate pagination information
     const totalPages = Math.ceil(total / safePageSize);

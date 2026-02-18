@@ -1,5 +1,5 @@
 import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
-import { getPgPool } from '@lib/server/pg/pool';
+import { queryRowsWithPgSystemContext } from '@lib/server/pg/user-context';
 import { publishTableChangeEvent } from '@lib/server/realtime/publisher';
 
 import { NextResponse } from 'next/server';
@@ -88,8 +88,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const pool = getPgPool();
-    const { rows } = await pool.query(
+    const rows = await queryRowsWithPgSystemContext(
       `${PROFILE_SELECT_SQL} WHERE p.id = $1::uuid LIMIT 1`,
       [targetUserId]
     );
@@ -154,14 +153,13 @@ export async function PATCH(request: Request) {
     setClauses.push(`updated_at = $${values.length}`);
     values.push(targetUserId);
 
-    const pool = getPgPool();
-    const oldProfileResult = await pool.query(
+    const oldProfileRows = await queryRowsWithPgSystemContext(
       `${PROFILE_SELECT_SQL} WHERE p.id = $1::uuid LIMIT 1`,
       [targetUserId]
     );
-    const oldProfileRow = oldProfileResult.rows[0] || null;
+    const oldProfileRow = oldProfileRows[0] || null;
 
-    const updateResult = await pool.query<{ id: string }>(
+    const updateRows = await queryRowsWithPgSystemContext<{ id: string }>(
       `
         UPDATE profiles
         SET ${setClauses.join(', ')}
@@ -171,18 +169,18 @@ export async function PATCH(request: Request) {
       values
     );
 
-    if (!updateResult.rows[0]) {
+    if (!updateRows[0]) {
       return NextResponse.json(
         { success: false, error: 'Profile not found' },
         { status: 404 }
       );
     }
 
-    const profileResult = await pool.query(
+    const profileRows = await queryRowsWithPgSystemContext(
       `${PROFILE_SELECT_SQL} WHERE p.id = $1::uuid LIMIT 1`,
       [targetUserId]
     );
-    const newProfileRow = profileResult.rows[0] || null;
+    const newProfileRow = profileRows[0] || null;
 
     await publishTableChangeEvent({
       table: 'profiles',

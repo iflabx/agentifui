@@ -7,13 +7,6 @@ const ROOT = process.cwd();
 const API_DIR = path.join(ROOT, 'app', 'api');
 const GET_PG_POOL_CALL_RE = /\bgetPgPool\s*\(/g;
 
-// Temporary baseline allowlist. New raw-PG usage in app/api must not expand.
-const ALLOWED_GET_PG_POOL_CALLS = new Map([
-  ['app/api/admin/users/route.ts', 1],
-  ['app/api/admin/users/for-group/route.ts', 1],
-  ['app/api/internal/profile/route.ts', 2],
-]);
-
 function isTsFile(filePath) {
   return filePath.endsWith('.ts') || filePath.endsWith('.tsx');
 }
@@ -70,23 +63,12 @@ async function main() {
       continue;
     }
 
-    const allowedMax = ALLOWED_GET_PG_POOL_CALLS.get(relativePath);
-    if (typeof allowedMax !== 'number') {
-      violations.push({
-        file: relativePath,
-        reason: 'new raw getPgPool() call in app/api is not allowed',
-        lines: matches,
-      });
-      continue;
-    }
-
-    if (matches.length > allowedMax) {
-      violations.push({
-        file: relativePath,
-        reason: `getPgPool() call count expanded (${matches.length} > baseline ${allowedMax})`,
-        lines: matches,
-      });
-    }
+    violations.push({
+      file: relativePath,
+      reason:
+        'raw getPgPool() call in app/api is not allowed; use @lib/server/pg/user-context helpers',
+      lines: matches,
+    });
   }
 
   if (violations.length === 0) {

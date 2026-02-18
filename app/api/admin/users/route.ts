@@ -1,4 +1,4 @@
-import { getPgPool } from '@lib/server/pg/pool';
+import { queryRowsWithPgSystemContext } from '@lib/server/pg/user-context';
 import { requireAdmin } from '@lib/services/admin/require-admin';
 
 import { NextResponse } from 'next/server';
@@ -14,8 +14,7 @@ export async function GET(request: Request) {
     const authResult = await requireAdmin(request.headers);
     if (!authResult.ok) return authResult.response;
 
-    const pool = getPgPool();
-    const { rows: users } = await pool.query<{
+    const users = await queryRowsWithPgSystemContext<{
       id: string;
       full_name: string | null;
       username: string | null;
