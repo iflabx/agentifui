@@ -83,6 +83,10 @@ function isForbiddenRuntimeImport(importPath) {
     return true;
   }
 
+  if (importPath.startsWith('@lib/services/db/')) {
+    return true;
+  }
+
   return false;
 }
 

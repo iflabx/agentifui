@@ -8,7 +8,6 @@ import {
   subscribeAuthStateChange,
 } from '@lib/auth/better-auth/http-client';
 import { callInternalDataAction } from '@lib/db/internal-data-api';
-import { CacheKeys, cacheService } from '@lib/services/db/cache-service';
 import { Conversation } from '@lib/types/database';
 
 import { useCallback, useEffect, useState } from 'react';
@@ -148,8 +147,6 @@ export function useSidebarConversations(limit: number = 20) {
   // Refresh conversation list
   const refresh = useCallback(() => {
     if (userId) {
-      // Clear cache
-      cacheService.deletePattern(`conversations:*`);
       loadConversations(true);
     }
   }, [userId, loadConversations]);
@@ -178,10 +175,6 @@ export function useSidebarConversations(limit: number = 20) {
             prev.filter(conv => conv.id !== conversationId)
           );
           setTotal(prev => prev - 1);
-
-          // Clear related cache
-          cacheService.deletePattern(`conversations:*`);
-          cacheService.delete(CacheKeys.conversation(conversationId));
 
           return true;
         } else {
@@ -228,10 +221,6 @@ export function useSidebarConversations(limit: number = 20) {
             )
           );
 
-          // Clear related cache
-          cacheService.deletePattern(`conversations:*`);
-          cacheService.delete(CacheKeys.conversation(conversationId));
-
           return true;
         } else {
           console.error('Failed to rename conversation:', result.error);
@@ -261,9 +250,7 @@ export function useSidebarConversations(limit: number = 20) {
     renameConversation,
     // Cache control
     clearCache: () => {
-      if (userId) {
-        cacheService.deletePattern(`conversations:*`);
-      }
+      // no-op: browser runtime no longer imports server-side db cache service
     },
   };
 }

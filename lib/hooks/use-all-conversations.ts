@@ -9,7 +9,6 @@ import {
   subscribeAuthStateChange,
 } from '@lib/auth/better-auth/http-client';
 import { callInternalDataAction } from '@lib/db/internal-data-api';
-import { cacheService } from '@lib/services/db/cache-service';
 import { Conversation } from '@lib/types/database';
 
 import { useCallback, useEffect, useState } from 'react';
@@ -128,8 +127,6 @@ export function useAllConversations() {
   // Refresh conversation list
   const refresh = useCallback(() => {
     if (userId) {
-      // Clear cache
-      cacheService.deletePattern(`conversations:*`);
       loadAllConversations(true);
     }
   }, [userId, loadAllConversations]);
@@ -158,9 +155,6 @@ export function useAllConversations() {
             prev.filter(conv => conv.id !== conversationId)
           );
           setTotal(prev => prev - 1);
-
-          // Clear related cache
-          cacheService.deletePattern(`conversations:*`);
 
           return true;
         } else {
@@ -206,9 +200,6 @@ export function useAllConversations() {
                 : conv
             )
           );
-
-          // Clear related cache
-          cacheService.deletePattern(`conversations:*`);
 
           return true;
         } else {
