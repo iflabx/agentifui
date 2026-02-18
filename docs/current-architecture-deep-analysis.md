@@ -3,6 +3,20 @@
 更新时间：2026-02-18  
 分析基线分支：`refactor/p0-arch-convergence`
 
+## 0. 增量复核（2026-02-18，H 阶段）
+
+本轮已完成以下收口：
+
+1. 新增 Next 侧统一错误响应 helper：`lib/errors/next-api-error-response.ts`。
+2. 已将高频内部路由切换到统一 `app_error + request_id` 返回（含 `/api/internal/apps`、`/api/internal/profile`、`/api/internal/realtime/*`、`/api/internal/storage/*`、`/api/internal/dify-config/[appId]`、`/api/auth/sso/providers`）。
+3. 当前 `app/api/internal`、`app/api/admin`、`app/api/auth` 生产路由已清零 `{ success:false,error }` 旧返回结构（测试文件除外）。
+4. 门禁验证通过：`pnpm gate:quality:verify`、`pnpm m9:gate:verify`。
+
+当前仍建议保持关注的剩余点：
+
+1. Fastify 路由内部仍存在 legacy 错误 payload 写法，当前依赖 `preSerialization` 统一兜底；可在后续统一改为显式 `app_error` 构造以降低隐式耦合。
+2. `internal-apps/internal-profile` 的实时副作用一致性在 `REALTIME_SOURCE_MODE=app-direct` 场景仍建议补专门契约验证（默认 `db-outbox` 路径已可用）。
+
 ## 1. 执行摘要
 
 当前项目已经具备完整替代 Supabase 的能力底座（`PostgreSQL + Redis + MinIO + better-auth + Fastify`），但仍处于迁移中间态。核心问题不是“功能缺失”，而是“同能力多路径并存”，导致：
