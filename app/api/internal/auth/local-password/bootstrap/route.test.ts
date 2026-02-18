@@ -72,7 +72,10 @@ describe('internal auth local-password bootstrap route', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(400);
-    expect(payload).toEqual({ error: 'newPassword is required' });
+    expect(payload.success).toBe(false);
+    expect(payload.error).toBe('newPassword is required');
+    expect(payload.app_error?.code).toBe('LOCAL_PASSWORD_NEW_MISSING');
+    expect(typeof payload.request_id).toBe('string');
   });
 
   it('returns 409 when fallback password already exists', async () => {
@@ -96,7 +99,10 @@ describe('internal auth local-password bootstrap route', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(409);
-    expect(payload).toEqual({ error: 'Fallback password already set' });
+    expect(payload.success).toBe(false);
+    expect(payload.error).toBe('Fallback password already set');
+    expect(payload.app_error?.code).toBe('LOCAL_PASSWORD_ALREADY_SET');
+    expect(typeof payload.request_id).toBe('string');
     expect(setPasswordMock).not.toHaveBeenCalled();
   });
 
@@ -123,7 +129,8 @@ describe('internal auth local-password bootstrap route', () => {
     });
     expect(markFallbackPasswordUpdated).toHaveBeenCalledWith(
       '00000000-0000-4000-8000-000000000001',
-      '00000000-0000-4000-8000-000000000001'
+      '00000000-0000-4000-8000-000000000001',
+      { actorUserId: '00000000-0000-4000-8000-000000000001' }
     );
   });
 
@@ -148,6 +155,9 @@ describe('internal auth local-password bootstrap route', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(400);
-    expect(payload).toEqual({ error: 'Password is too short' });
+    expect(payload.success).toBe(false);
+    expect(payload.error).toBe('Password is too short');
+    expect(payload.app_error?.code).toBe('LOCAL_PASSWORD_SET_FAILED');
+    expect(typeof payload.request_id).toBe('string');
   });
 });

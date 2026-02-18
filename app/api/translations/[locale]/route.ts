@@ -4,6 +4,7 @@
  * @module app/api/translations/dynamic/[locale]
  */
 import { isValidLocale } from '@lib/config/language-config';
+import { nextApiErrorResponse } from '@lib/errors/next-api-error-response';
 import { promises as fs } from 'fs';
 import path from 'path';
 
@@ -43,7 +44,12 @@ export async function GET(
   ];
 
   if (!isValidLocale(locale)) {
-    return NextResponse.json({ error: 'Invalid locale' }, { status: 400 });
+    return nextApiErrorResponse({
+      request,
+      status: 400,
+      code: 'I18N_LOCALE_INVALID',
+      userMessage: 'Invalid locale',
+    });
   }
 
   try {
@@ -84,7 +90,17 @@ export async function GET(
     });
   } catch (error) {
     console.error('Dynamic translation API error:', error);
-    return NextResponse.json({}, { status: 500 });
+    return nextApiErrorResponse({
+      request,
+      status: 500,
+      code: 'I18N_TRANSLATIONS_LOAD_FAILED',
+      userMessage: 'Failed to load dynamic translations',
+      developerMessage:
+        error instanceof Error
+          ? error.message
+          : 'Unknown translations API error',
+      extra: {},
+    });
   }
 }
 

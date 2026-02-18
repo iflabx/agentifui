@@ -40,7 +40,10 @@ describe('internal auth local-password route', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(401);
-    expect(payload).toEqual({ error: 'Unauthorized' });
+    expect(payload.success).toBe(false);
+    expect(payload.error).toBe('Unauthorized');
+    expect(payload.app_error?.code).toBe('AUTH_UNAUTHORIZED');
+    expect(typeof payload.request_id).toBe('string');
   });
 
   it('returns merged local-password state for authenticated user', async () => {
@@ -124,6 +127,9 @@ describe('internal auth local-password route', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(500);
-    expect(payload).toEqual({ error: 'Failed to read local password state' });
+    expect(payload.success).toBe(false);
+    expect(payload.error).toBe('Failed to read local password state');
+    expect(payload.app_error?.code).toBe('LOCAL_PASSWORD_STATE_READ_FAILED');
+    expect(typeof payload.request_id).toBe('string');
   });
 });

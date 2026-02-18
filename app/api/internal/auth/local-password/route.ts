@@ -4,6 +4,7 @@ import {
   hasCredentialPasswordByAuthUserId,
 } from '@lib/auth/better-auth/local-login-policy';
 import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
+import { nextApiErrorResponse } from '@lib/errors/next-api-error-response';
 
 import { NextResponse } from 'next/server';
 
@@ -18,17 +19,29 @@ async function resolveIdentity(request: Request) {
     );
     return {
       ok: false as const,
-      response: NextResponse.json(
-        { error: 'Failed to verify session' },
-        { status: 500 }
-      ),
+      response: nextApiErrorResponse({
+        request,
+        status: 500,
+        source: 'auth',
+        code: 'AUTH_VERIFY_FAILED',
+        userMessage: 'Failed to verify session',
+        developerMessage:
+          identity.error?.message ||
+          'resolveSessionIdentity returned unsuccessful result',
+      }),
     };
   }
 
   if (!identity.data) {
     return {
       ok: false as const,
-      response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }),
+      response: nextApiErrorResponse({
+        request,
+        status: 401,
+        source: 'auth',
+        code: 'AUTH_UNAUTHORIZED',
+        userMessage: 'Unauthorized',
+      }),
     };
   }
 
@@ -60,10 +73,15 @@ export async function GET(request: Request) {
       '[InternalAuthLocalPassword] failed to read auth mode:',
       authModeResult.error
     );
-    return NextResponse.json(
-      { error: 'Failed to read auth mode' },
-      { status: 500 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 500,
+      source: 'auth',
+      code: 'AUTH_MODE_READ_FAILED',
+      userMessage: 'Failed to read auth mode',
+      developerMessage:
+        authModeResult.error?.message || 'Unknown auth mode read error',
+    });
   }
 
   if (!localStateResult.success) {
@@ -71,14 +89,25 @@ export async function GET(request: Request) {
       '[InternalAuthLocalPassword] failed to read local password state:',
       localStateResult.error
     );
-    return NextResponse.json(
-      { error: 'Failed to read local password state' },
-      { status: 500 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 500,
+      source: 'auth',
+      code: 'LOCAL_PASSWORD_STATE_READ_FAILED',
+      userMessage: 'Failed to read local password state',
+      developerMessage:
+        localStateResult.error?.message ||
+        'Unknown local password state read error',
+    });
   }
 
   if (!localStateResult.data) {
-    return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
+    return nextApiErrorResponse({
+      request,
+      status: 404,
+      code: 'PROFILE_NOT_FOUND',
+      userMessage: 'Profile not found',
+    });
   }
 
   if (!hasPasswordResult.success) {
@@ -86,10 +115,16 @@ export async function GET(request: Request) {
       '[InternalAuthLocalPassword] failed to detect fallback password:',
       hasPasswordResult.error
     );
-    return NextResponse.json(
-      { error: 'Failed to detect fallback password state' },
-      { status: 500 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 500,
+      source: 'auth',
+      code: 'LOCAL_PASSWORD_STATE_DETECT_FAILED',
+      userMessage: 'Failed to detect fallback password state',
+      developerMessage:
+        hasPasswordResult.error?.message ||
+        'Unknown fallback password state detection error',
+    });
   }
 
   const state = localStateResult.data;

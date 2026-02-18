@@ -4,6 +4,7 @@ import {
 } from '@lib/auth/better-auth/local-login-policy';
 import { auth } from '@lib/auth/better-auth/server';
 import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
+import { nextApiErrorResponse } from '@lib/errors/next-api-error-response';
 
 import { NextResponse } from 'next/server';
 
@@ -47,17 +48,29 @@ async function resolveIdentity(request: Request) {
     );
     return {
       ok: false as const,
-      response: NextResponse.json(
-        { error: 'Failed to verify session' },
-        { status: 500 }
-      ),
+      response: nextApiErrorResponse({
+        request,
+        status: 500,
+        source: 'auth',
+        code: 'AUTH_VERIFY_FAILED',
+        userMessage: 'Failed to verify session',
+        developerMessage:
+          identity.error?.message ||
+          'resolveSessionIdentity returned unsuccessful result',
+      }),
     };
   }
 
   if (!identity.data) {
     return {
       ok: false as const,
-      response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }),
+      response: nextApiErrorResponse({
+        request,
+        status: 401,
+        source: 'auth',
+        code: 'AUTH_UNAUTHORIZED',
+        userMessage: 'Unauthorized',
+      }),
     };
   }
 
@@ -77,15 +90,22 @@ export async function POST(request: Request) {
   try {
     payload = (await request.json()) as { newPassword?: unknown };
   } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    return nextApiErrorResponse({
+      request,
+      status: 400,
+      code: 'REQUEST_JSON_INVALID',
+      userMessage: 'Invalid JSON body',
+    });
   }
 
   const newPassword = parseNonEmptyString(payload.newPassword);
   if (!newPassword) {
-    return NextResponse.json(
-      { error: 'newPassword is required' },
-      { status: 400 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 400,
+      code: 'LOCAL_PASSWORD_NEW_MISSING',
+      userMessage: 'newPassword is required',
+    });
   }
 
   const hasPassword = await hasCredentialPasswordByAuthUserId(
@@ -99,17 +119,26 @@ export async function POST(request: Request) {
       '[InternalAuthLocalPasswordBootstrap] failed to detect credential password:',
       hasPassword.error
     );
-    return NextResponse.json(
-      { error: 'Failed to detect fallback password state' },
-      { status: 500 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 500,
+      source: 'auth',
+      code: 'LOCAL_PASSWORD_STATE_DETECT_FAILED',
+      userMessage: 'Failed to detect fallback password state',
+      developerMessage:
+        hasPassword.error?.message ||
+        'Unknown fallback password state detection error',
+    });
   }
 
   if (hasPassword.data) {
-    return NextResponse.json(
-      { error: 'Fallback password already set' },
-      { status: 409 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 409,
+      source: 'auth',
+      code: 'LOCAL_PASSWORD_ALREADY_SET',
+      userMessage: 'Fallback password already set',
+    });
   }
 
   try {
@@ -123,10 +152,14 @@ export async function POST(request: Request) {
       '[InternalAuthLocalPasswordBootstrap] failed to set fallback password:',
       error
     );
-    return NextResponse.json(
-      { error: parsed.message },
-      { status: parsed.status }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: parsed.status,
+      source: 'auth',
+      code: 'LOCAL_PASSWORD_SET_FAILED',
+      userMessage: parsed.message,
+      developerMessage: parsed.message,
+    });
   }
 
   const markResult = await markFallbackPasswordUpdated(
@@ -141,10 +174,16 @@ export async function POST(request: Request) {
       '[InternalAuthLocalPasswordBootstrap] failed to write fallback password metadata:',
       markResult.error
     );
-    return NextResponse.json(
-      { error: 'Fallback password set but metadata update failed' },
-      { status: 500 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 500,
+      source: 'auth',
+      code: 'LOCAL_PASSWORD_METADATA_UPDATE_FAILED',
+      userMessage: 'Fallback password set but metadata update failed',
+      developerMessage:
+        markResult.error?.message ||
+        'Unknown fallback password metadata update error',
+    });
   }
 
   return NextResponse.json({

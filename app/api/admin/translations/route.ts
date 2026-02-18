@@ -2,6 +2,7 @@ import {
   getSupportedLocales,
   isValidLocale,
 } from '@lib/config/language-config';
+import { nextApiErrorResponse } from '@lib/errors/next-api-error-response';
 import { requireAdmin } from '@lib/services/admin/require-admin';
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -173,10 +174,12 @@ export async function GET(request: NextRequest) {
 
     // validate language code
     if (locale && !isValidLocale(locale)) {
-      return NextResponse.json(
-        { error: `Unsupported locale: ${locale}` },
-        { status: 400 }
-      );
+      return nextApiErrorResponse({
+        request,
+        status: 400,
+        code: 'I18N_LOCALE_UNSUPPORTED',
+        userMessage: `Unsupported locale: ${locale}`,
+      });
     }
 
     // if specified language, return the translation
@@ -186,10 +189,12 @@ export async function GET(request: NextRequest) {
       if (section) {
         const sectionData = getNestedValue(translations, section);
         if (sectionData === undefined) {
-          return NextResponse.json(
-            { error: `Section '${section}' not found in locale '${locale}'` },
-            { status: 404 }
-          );
+          return nextApiErrorResponse({
+            request,
+            status: 404,
+            code: 'I18N_SECTION_NOT_FOUND',
+            userMessage: `Section '${section}' not found in locale '${locale}'`,
+          });
         }
         return NextResponse.json({ locale, section, data: sectionData });
       }
@@ -208,10 +213,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(result);
   } catch (error) {
     console.error('Failed to read translations:', error);
-    return NextResponse.json(
-      { error: 'Failed to read translations' },
-      { status: 500 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 500,
+      code: 'I18N_TRANSLATIONS_READ_FAILED',
+      userMessage: 'Failed to read translations',
+      developerMessage:
+        error instanceof Error
+          ? error.message
+          : 'Unknown translations read error',
+    });
   }
 }
 
@@ -226,18 +237,22 @@ export async function PUT(request: NextRequest) {
 
     // validate required parameters
     if (!locale || !updates) {
-      return NextResponse.json(
-        { error: 'Missing required parameters: locale, updates' },
-        { status: 400 }
-      );
+      return nextApiErrorResponse({
+        request,
+        status: 400,
+        code: 'I18N_UPDATE_PARAMS_MISSING',
+        userMessage: 'Missing required parameters: locale, updates',
+      });
     }
 
     // validate language code
     if (!isValidLocale(locale)) {
-      return NextResponse.json(
-        { error: `Unsupported locale: ${locale}` },
-        { status: 400 }
-      );
+      return nextApiErrorResponse({
+        request,
+        status: 400,
+        code: 'I18N_LOCALE_UNSUPPORTED',
+        userMessage: `Unsupported locale: ${locale}`,
+      });
     }
 
     // read existing translation file
@@ -287,15 +302,15 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json(result);
   } catch (error) {
     console.error('Failed to update translations:', error);
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : 'Failed to update translations',
-      },
-      { status: 500 }
-    );
+    const errorMessage =
+      error instanceof Error ? error.message : 'Failed to update translations';
+    return nextApiErrorResponse({
+      request,
+      status: 500,
+      code: 'I18N_TRANSLATIONS_UPDATE_FAILED',
+      userMessage: errorMessage,
+      developerMessage: errorMessage,
+    });
   }
 }
 
@@ -310,13 +325,13 @@ export async function POST(request: NextRequest) {
 
     // validate required parameters
     if (!section || !updates || typeof updates !== 'object') {
-      return NextResponse.json(
-        {
-          error:
-            'Missing required parameters: section, updates (object with locale keys)',
-        },
-        { status: 400 }
-      );
+      return nextApiErrorResponse({
+        request,
+        status: 400,
+        code: 'I18N_BATCH_PARAMS_MISSING',
+        userMessage:
+          'Missing required parameters: section, updates (object with locale keys)',
+      });
     }
 
     const supportedLocales = getSupportedLocales();
@@ -376,9 +391,15 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Failed to batch update translations:', error);
-    return NextResponse.json(
-      { error: 'Failed to batch update translations' },
-      { status: 500 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 500,
+      code: 'I18N_TRANSLATIONS_BATCH_UPDATE_FAILED',
+      userMessage: 'Failed to batch update translations',
+      developerMessage:
+        error instanceof Error
+          ? error.message
+          : 'Unknown translations batch update error',
+    });
   }
 }

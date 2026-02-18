@@ -3,6 +3,7 @@ import {
   getAuthModeSetting,
   setAuthModeSetting,
 } from '@lib/auth/better-auth/local-login-policy';
+import { nextApiErrorResponse } from '@lib/errors/next-api-error-response';
 import { requireAdmin } from '@lib/services/admin/require-admin';
 
 import { NextResponse } from 'next/server';
@@ -36,10 +37,15 @@ export async function GET(request: Request) {
       '[AdminAuthFallbackPolicy] failed to read auth mode:',
       modeResult.error
     );
-    return NextResponse.json(
-      { error: 'Failed to read auth mode' },
-      { status: 500 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 500,
+      source: 'auth',
+      code: 'AUTH_MODE_READ_FAILED',
+      userMessage: 'Failed to read auth mode',
+      developerMessage:
+        modeResult.error?.message || 'Unknown auth mode read error',
+    });
   }
 
   return NextResponse.json({
@@ -58,15 +64,23 @@ export async function PATCH(request: Request) {
   try {
     payload = (await request.json()) as { authMode?: unknown };
   } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    return nextApiErrorResponse({
+      request,
+      status: 400,
+      code: 'REQUEST_JSON_INVALID',
+      userMessage: 'Invalid JSON body',
+    });
   }
 
   const authMode = parseAuthMode(payload.authMode);
   if (!authMode) {
-    return NextResponse.json(
-      { error: 'authMode must be "normal" or "degraded"' },
-      { status: 400 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 400,
+      source: 'auth',
+      code: 'AUTH_MODE_INVALID',
+      userMessage: 'authMode must be "normal" or "degraded"',
+    });
   }
 
   const updateResult = await setAuthModeSetting(authMode, {
@@ -77,10 +91,15 @@ export async function PATCH(request: Request) {
       '[AdminAuthFallbackPolicy] failed to update auth mode:',
       updateResult.error
     );
-    return NextResponse.json(
-      { error: 'Failed to update auth mode' },
-      { status: 500 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 500,
+      source: 'auth',
+      code: 'AUTH_MODE_UPDATE_FAILED',
+      userMessage: 'Failed to update auth mode',
+      developerMessage:
+        updateResult.error?.message || 'Unknown auth mode update error',
+    });
   }
 
   return NextResponse.json({

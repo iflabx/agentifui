@@ -1,5 +1,6 @@
 import { getActiveProviders } from '@lib/db/providers';
 import { getServiceInstancesByProvider } from '@lib/db/service-instances';
+import { nextApiErrorResponse } from '@lib/errors/next-api-error-response';
 import { requireAdmin } from '@lib/services/admin/require-admin';
 
 import { NextResponse } from 'next/server';
@@ -16,10 +17,18 @@ export async function GET(request: Request) {
     const providersResult = await getActiveProviders();
 
     if (!providersResult.success) {
-      return NextResponse.json({
-        hasActiveProviders: false,
-        hasActiveInstances: false,
-        error: 'Cannot get provider information',
+      return nextApiErrorResponse({
+        request,
+        status: 500,
+        code: 'ADMIN_STATUS_PROVIDERS_READ_FAILED',
+        userMessage: 'Cannot get provider information',
+        developerMessage:
+          providersResult.error?.message ||
+          'Unknown provider information retrieval error',
+        extra: {
+          hasActiveProviders: false,
+          hasActiveInstances: false,
+        },
       });
     }
 
@@ -47,13 +56,17 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error('Failed to get admin status:', error);
-    return NextResponse.json(
-      {
-        error: 'Failed to get status information',
+    return nextApiErrorResponse({
+      request,
+      status: 500,
+      code: 'ADMIN_STATUS_READ_FAILED',
+      userMessage: 'Failed to get status information',
+      developerMessage:
+        error instanceof Error ? error.message : 'Unknown admin status error',
+      extra: {
         hasActiveProviders: false,
         hasActiveInstances: false,
       },
-      { status: 500 }
-    );
+    });
   }
 }

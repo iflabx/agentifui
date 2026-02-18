@@ -2,6 +2,7 @@ import {
   getUserLocalLoginStateByUserId,
   setUserLocalLoginEnabledByUserId,
 } from '@lib/auth/better-auth/local-login-policy';
+import { nextApiErrorResponse } from '@lib/errors/next-api-error-response';
 import { requireAdmin } from '@lib/services/admin/require-admin';
 
 import { NextResponse } from 'next/server';
@@ -26,14 +27,25 @@ export async function GET(
       '[AdminAuthFallbackPolicyUser] failed to read user fallback state:',
       result.error
     );
-    return NextResponse.json(
-      { error: 'Failed to read user fallback state' },
-      { status: 500 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 500,
+      source: 'auth',
+      code: 'LOCAL_LOGIN_USER_STATE_READ_FAILED',
+      userMessage: 'Failed to read user fallback state',
+      developerMessage:
+        result.error?.message || 'Unknown user fallback state read error',
+    });
   }
 
   if (!result.data) {
-    return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    return nextApiErrorResponse({
+      request,
+      status: 404,
+      source: 'auth',
+      code: 'USER_NOT_FOUND',
+      userMessage: 'User not found',
+    });
   }
 
   return NextResponse.json({
@@ -57,14 +69,22 @@ export async function PATCH(
   try {
     payload = (await request.json()) as { localLoginEnabled?: unknown };
   } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    return nextApiErrorResponse({
+      request,
+      status: 400,
+      code: 'REQUEST_JSON_INVALID',
+      userMessage: 'Invalid JSON body',
+    });
   }
 
   if (typeof payload.localLoginEnabled !== 'boolean') {
-    return NextResponse.json(
-      { error: 'localLoginEnabled must be a boolean' },
-      { status: 400 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 400,
+      source: 'auth',
+      code: 'LOCAL_LOGIN_ENABLED_INVALID',
+      userMessage: 'localLoginEnabled must be a boolean',
+    });
   }
 
   const updateResult = await setUserLocalLoginEnabledByUserId(
@@ -79,14 +99,26 @@ export async function PATCH(
       '[AdminAuthFallbackPolicyUser] failed to update user fallback state:',
       updateResult.error
     );
-    return NextResponse.json(
-      { error: 'Failed to update user fallback state' },
-      { status: 500 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 500,
+      source: 'auth',
+      code: 'LOCAL_LOGIN_USER_STATE_UPDATE_FAILED',
+      userMessage: 'Failed to update user fallback state',
+      developerMessage:
+        updateResult.error?.message ||
+        'Unknown user fallback state update error',
+    });
   }
 
   if (!updateResult.data) {
-    return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    return nextApiErrorResponse({
+      request,
+      status: 404,
+      source: 'auth',
+      code: 'USER_NOT_FOUND',
+      userMessage: 'User not found',
+    });
   }
 
   return NextResponse.json({

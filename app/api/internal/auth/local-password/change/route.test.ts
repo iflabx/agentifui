@@ -69,9 +69,12 @@ describe('internal auth local-password change route', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(400);
-    expect(payload).toEqual({
-      error: 'currentPassword and newPassword are required',
-    });
+    expect(payload.success).toBe(false);
+    expect(payload.error).toBe('currentPassword and newPassword are required');
+    expect(payload.app_error?.code).toBe(
+      'LOCAL_PASSWORD_CHANGE_FIELDS_MISSING'
+    );
+    expect(typeof payload.request_id).toBe('string');
   });
 
   it('returns 409 when fallback password is missing', async () => {
@@ -95,7 +98,10 @@ describe('internal auth local-password change route', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(409);
-    expect(payload).toEqual({ error: 'Fallback password is not set' });
+    expect(payload.success).toBe(false);
+    expect(payload.error).toBe('Fallback password is not set');
+    expect(payload.app_error?.code).toBe('LOCAL_PASSWORD_NOT_SET');
+    expect(typeof payload.request_id).toBe('string');
     expect(changePasswordMock).not.toHaveBeenCalled();
   });
 
@@ -133,7 +139,8 @@ describe('internal auth local-password change route', () => {
     });
     expect(markFallbackPasswordUpdated).toHaveBeenCalledWith(
       '00000000-0000-4000-8000-000000000001',
-      '00000000-0000-4000-8000-000000000001'
+      '00000000-0000-4000-8000-000000000001',
+      { actorUserId: '00000000-0000-4000-8000-000000000001' }
     );
   });
 
@@ -158,6 +165,9 @@ describe('internal auth local-password change route', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(400);
-    expect(payload).toEqual({ error: 'Invalid password' });
+    expect(payload.success).toBe(false);
+    expect(payload.error).toBe('Invalid password');
+    expect(payload.app_error?.code).toBe('LOCAL_PASSWORD_CHANGE_FAILED');
+    expect(typeof payload.request_id).toBe('string');
   });
 });

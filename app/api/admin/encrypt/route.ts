@@ -1,3 +1,4 @@
+import { nextApiErrorResponse } from '@lib/errors/next-api-error-response';
 import { requireAdmin } from '@lib/services/admin/require-admin';
 import { encryptApiKey } from '@lib/utils/encryption';
 
@@ -18,7 +19,12 @@ export async function POST(request: NextRequest) {
     const { apiKey } = await request.json();
 
     if (!apiKey) {
-      return NextResponse.json({ error: 'Missing API key' }, { status: 400 });
+      return nextApiErrorResponse({
+        request,
+        status: 400,
+        code: 'API_KEY_MISSING',
+        userMessage: 'Missing API key',
+      });
     }
 
     // get encryption key from environment variables
@@ -26,10 +32,12 @@ export async function POST(request: NextRequest) {
 
     if (!masterKey) {
       console.error('API_ENCRYPTION_KEY environment variable not set');
-      return NextResponse.json(
-        { error: 'Server configuration error: encryption key not set' },
-        { status: 500 }
-      );
+      return nextApiErrorResponse({
+        request,
+        status: 500,
+        code: 'API_ENCRYPTION_KEY_MISSING',
+        userMessage: 'Server configuration error: encryption key not set',
+      });
     }
 
     // encrypt the API key
@@ -39,9 +47,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ encryptedKey });
   } catch (error) {
     console.error('Error encrypting API key:', error);
-    return NextResponse.json(
-      { error: 'Error encrypting API key' },
-      { status: 500 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 500,
+      code: 'API_KEY_ENCRYPT_FAILED',
+      userMessage: 'Error encrypting API key',
+      developerMessage:
+        error instanceof Error
+          ? error.message
+          : 'Unknown API key encrypt error',
+    });
   }
 }

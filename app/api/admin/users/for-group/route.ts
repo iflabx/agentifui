@@ -1,3 +1,4 @@
+import { nextApiErrorResponse } from '@lib/errors/next-api-error-response';
 import { queryRowsWithPgSystemContext } from '@lib/server/pg/user-context';
 import { requireAdmin } from '@lib/services/admin/require-admin';
 
@@ -102,9 +103,15 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('User list API error:', error);
-    return NextResponse.json(
-      { error: 'Server internal error' },
-      { status: 500 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 500,
+      code: 'ADMIN_USERS_FOR_GROUP_LIST_FAILED',
+      userMessage: 'Server internal error',
+      developerMessage:
+        error instanceof Error
+          ? error.message
+          : 'Unknown admin users-for-group error',
+    });
   }
 }
