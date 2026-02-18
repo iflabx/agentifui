@@ -23,7 +23,6 @@ function createConfig(
     proxyPrefixes: ['/api/internal'],
     sessionCookieNames: ['session_token', 'better-auth.session_token'],
     internalDataProxyTimeoutMs: 30000,
-    internalDataLegacyFallbackEnabled: false,
     upstreamProfileStatusFallbackEnabled: false,
     ...overrides,
   };

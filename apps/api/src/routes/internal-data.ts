@@ -46,7 +46,7 @@ type ApiActionResponse = {
   statusCode: number;
   payload: unknown;
   contentType: string;
-  handler: 'local' | 'legacy';
+  handler: 'local';
 };
 
 interface ConversationRow {
@@ -215,17 +215,6 @@ interface SsoProviderRow {
 }
 
 const INTERNAL_DATA_HANDLER_HEADER = 'x-agentifui-internal-data-handler';
-const FASTIFY_BYPASS_HEADER = 'x-agentifui-fastify-bypass';
-const FORWARDED_HEADERS = [
-  'accept',
-  'accept-language',
-  'authorization',
-  'cookie',
-  'origin',
-  'referer',
-  'user-agent',
-  'x-requested-with',
-] as const;
 
 const LOCAL_MESSAGE_STATUSES = new Set<MessageStatus>([
   'sent',
@@ -751,28 +740,6 @@ function normalizePayload(
     return undefined;
   }
   return payload;
-}
-
-function buildUpstreamHeaders(request: FastifyRequest): Headers {
-  const headers = new Headers();
-
-  for (const key of FORWARDED_HEADERS) {
-    const value = request.headers[key];
-    if (typeof value === 'string' && value.length > 0) {
-      headers.set(key, value);
-      continue;
-    }
-    if (Array.isArray(value) && value.length > 0) {
-      headers.set(key, value.join(', '));
-    }
-  }
-
-  headers.set(FASTIFY_BYPASS_HEADER, '1');
-  if (!headers.has('content-type')) {
-    headers.set('content-type', 'application/json');
-  }
-
-  return headers;
 }
 
 function sanitizeConversation(row: ConversationRow): ConversationRow {
@@ -4516,88 +4483,6 @@ async function handleLocalInternalDataAction(
   return null;
 }
 
-async function proxyLegacyInternalDataRequest(
-  request: FastifyRequest,
-  body: InternalActionRequest,
-  config: ApiRuntimeConfig
-): Promise<ApiActionResponse> {
-  const targetUrl = new URL('/api/internal/data', config.nextUpstreamBaseUrl);
-  const controller = new AbortController();
-  const timeout = setTimeout(
-    () => controller.abort(),
-    config.internalDataProxyTimeoutMs
-  );
-
-  try {
-    const response = await fetch(targetUrl.toString(), {
-      method: 'POST',
-      headers: buildUpstreamHeaders(request),
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-
-    const responseText = await response.text();
-    const contentType =
-      response.headers.get('content-type')?.trim() || 'application/json';
-
-    if (!responseText.trim()) {
-      return {
-        statusCode: response.status,
-        contentType: 'application/json',
-        payload: {
-          success: response.ok,
-          error: response.ok ? null : 'Empty upstream response',
-        },
-        handler: 'legacy',
-      };
-    }
-
-    if (contentType.toLowerCase().includes('application/json')) {
-      try {
-        return {
-          statusCode: response.status,
-          payload: JSON.parse(responseText) as unknown,
-          contentType,
-          handler: 'legacy',
-        };
-      } catch {
-        return {
-          statusCode: response.status,
-          contentType: 'application/json',
-          payload: {
-            success: false,
-            error: responseText,
-          },
-          handler: 'legacy',
-        };
-      }
-    }
-
-    return {
-      statusCode: response.status,
-      contentType,
-      payload: responseText,
-      handler: 'legacy',
-    };
-  } catch (error) {
-    request.log.error(
-      { err: error },
-      '[FastifyAPI][internal-data] legacy proxy request failed'
-    );
-    return {
-      statusCode: 502,
-      contentType: 'application/json',
-      payload: {
-        success: false,
-        error: 'Failed to proxy internal data action',
-      },
-      handler: 'legacy',
-    };
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 export const internalDataRoutes: FastifyPluginAsync<
   InternalDataRoutesOptions
 > = async (app, options) => {
@@ -4642,29 +4527,11 @@ export const internalDataRoutes: FastifyPluginAsync<
         );
       }
 
-      if (!options.config.internalDataLegacyFallbackEnabled) {
-        const unsupported = toErrorResponse(
-          `Unsupported action: ${action}`,
-          400
-        );
-        return sendActionResponse(
-          request,
-          reply,
-          unsupported,
-          permission.actorUserId
-        );
-      }
-
-      const legacyHandled = await proxyLegacyInternalDataRequest(
-        request,
-        body,
-        options.config
-      );
-
+      const unsupported = toErrorResponse(`Unsupported action: ${action}`, 400);
       return sendActionResponse(
         request,
         reply,
-        legacyHandled,
+        unsupported,
         permission.actorUserId
       );
     } catch (error) {

@@ -7,7 +7,7 @@ This document records completion of `internal-data` migration phases P2-P7:
 1. P2: conversations/messages local handling.
 2. P3: appExecutions local handling.
 3. P4: users/groups/providers/serviceInstances/apiKeys/sso and group auth actions local handling.
-4. P5: legacy fallback disabled by default.
+4. P5: legacy fallback removed (no proxy fallback path).
 5. P6: production-mode (`next build/start`) gate passed.
 6. P7: cutover/rollback operations finalized.
 
@@ -29,8 +29,8 @@ Unknown actions now return local `400 Unsupported action` by default.
 
 ## Fallback Policy
 
-1. Default: `FASTIFY_INTERNAL_DATA_LEGACY_FALLBACK_ENABLED=0`
-2. Emergency-only override: `FASTIFY_INTERNAL_DATA_LEGACY_FALLBACK_ENABLED=1`
+1. Legacy proxy fallback has been removed from Fastify `internal-data`.
+2. Unknown actions always return local `400 Unsupported action`.
 
 ## Validation Commands
 
@@ -53,5 +53,5 @@ Unknown actions now return local `400 Unsupported action` by default.
 
 ## Notes
 
-1. `x-agentifui-internal-data-handler` response header is used as migration-path proof (`local|legacy`).
-2. Browser fail-open retry to Next legacy endpoint remains as emergency safety net.
+1. `x-agentifui-internal-data-handler` response header is now always `local`.
+2. Browser-side fail-open retry to Next legacy endpoint has been removed.

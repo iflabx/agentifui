@@ -107,8 +107,8 @@ The current migration strategy is:
       - `appExecutions.*` (`getByServiceInstance`, `getById`, `create`, `updateStatus`, `updateComplete`, `delete`)
       - `sso.*` (`getSsoProviders`, `getSsoProviderStats`, `getSsoProviderById`, `createSsoProvider`, `updateSsoProvider`, `deleteSsoProvider`, `toggleSsoProvider`, `updateSsoProviderOrder`)
     - 默认不再透传 legacy：未识别 action 直接返回本地 `400 Unsupported action`。
-    - 如需应急回退，可设置 `FASTIFY_INTERNAL_DATA_LEGACY_FALLBACK_ENABLED=1`，将未识别 action 透传到 legacy Next `internal/data`。
-    - Response includes `x-agentifui-internal-data-handler: local|legacy` for phase-level verification.
+    - 不再支持透传 legacy Next `internal/data`。
+    - Response includes `x-agentifui-internal-data-handler: local` for phase-level verification.
 18. Other configured API prefixes still use Fastify fallback proxy to Next upstream.
 
 ## Smoke Check
@@ -128,4 +128,4 @@ The current migration strategy is:
 1. Rewrites are disabled by default.
 2. Rewrites now use `beforeFiles` so existing Next API route files can still be cut over to Fastify.
 3. Fastify adds `x-agentifui-fastify-bypass: 1` when proxying to Next to prevent rewrite loops.
-4. Browser internal-data client now includes fail-open retry: if rewrite path returns 5xx/network error, it retries with `x-agentifui-fastify-bypass: 1` and falls back to legacy Next handler.
+4. Browser internal-data client is single-path only and does not fallback to legacy Next handler.

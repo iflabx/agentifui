@@ -12,7 +12,6 @@ if ! command -v pm2 >/dev/null 2>&1; then
 fi
 
 export FASTIFY_PROXY_ENABLED=0
-export FASTIFY_INTERNAL_DATA_LEGACY_FALLBACK_ENABLED=0
 
 echo "[cutover-off] restarting ${NEXT_PM2_APP} with FASTIFY_PROXY_ENABLED=0"
 pm2 startOrRestart ecosystem.config.js --only "${NEXT_PM2_APP}" --update-env >/dev/null
@@ -28,7 +27,7 @@ status_code=$(curl -sS -o /tmp/agentifui-cutover-off.json -w "%{http_code}" \
   -H 'content-type: application/json' \
   --data '{}')
 
-if [[ "${status_code}" != "400" ]]; then
+if [[ "${status_code}" != "503" ]]; then
   echo "[cutover-off] smoke check failed: status=${status_code}"
   cat /tmp/agentifui-cutover-off.json || true
   exit 1

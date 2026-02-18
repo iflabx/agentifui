@@ -17,7 +17,6 @@ export interface ApiRuntimeConfig {
   proxyPrefixes: string[];
   sessionCookieNames: string[];
   internalDataProxyTimeoutMs: number;
-  internalDataLegacyFallbackEnabled: boolean;
   upstreamProfileStatusFallbackEnabled: boolean;
 }
 
@@ -127,10 +126,6 @@ export function loadApiRuntimeConfig(): ApiRuntimeConfig {
     internalDataProxyTimeoutMs: parseTimeoutMs(
       process.env.FASTIFY_INTERNAL_DATA_PROXY_TIMEOUT_MS,
       30000
-    ),
-    internalDataLegacyFallbackEnabled: parseBoolean(
-      process.env.FASTIFY_INTERNAL_DATA_LEGACY_FALLBACK_ENABLED,
-      false
     ),
     upstreamProfileStatusFallbackEnabled: parseBoolean(
       process.env.FASTIFY_UPSTREAM_PROFILE_STATUS_FALLBACK_ENABLED,

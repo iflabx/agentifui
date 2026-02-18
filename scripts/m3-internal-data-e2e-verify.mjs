@@ -322,8 +322,6 @@ async function main() {
           FASTIFY_API_PORT: String(fastifyPort),
           FASTIFY_LOG_LEVEL: process.env.FASTIFY_LOG_LEVEL || 'error',
           FASTIFY_INTERNAL_DATA_PROXY_TIMEOUT_MS: '30000',
-          FASTIFY_INTERNAL_DATA_LEGACY_FALLBACK_ENABLED:
-            process.env.FASTIFY_INTERNAL_DATA_LEGACY_FALLBACK_ENABLED || '0',
           NEXT_UPSTREAM_BASE_URL: appBase,
         },
         stdio: ['ignore', 'pipe', 'pipe'],
