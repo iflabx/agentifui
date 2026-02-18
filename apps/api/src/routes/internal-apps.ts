@@ -5,6 +5,7 @@ import {
   queryRowsWithPgSystemContext,
   queryRowsWithPgUserContext,
 } from '../lib/pg-context';
+import { buildRouteErrorPayload } from '../lib/route-error';
 import {
   type ActorIdentity,
   resolveIdentityFromSession,
@@ -167,28 +168,46 @@ async function requireAdminActor(
   config: ApiRuntimeConfig
 ): Promise<
   | { ok: true; actor: ActorIdentity }
-  | { ok: false; statusCode: number; payload: Record<string, string> }
+  | { ok: false; statusCode: number; payload: Record<string, unknown> }
 > {
   const resolved = await resolveIdentityFromSession(request, config);
   if (resolved.kind === 'unauthorized') {
     return {
       ok: false,
       statusCode: 401,
-      payload: { error: 'Unauthorized access' },
+      payload: buildRouteErrorPayload({
+        request,
+        statusCode: 401,
+        source: 'auth',
+        code: 'AUTH_UNAUTHORIZED',
+        userMessage: 'Unauthorized access',
+      }),
     };
   }
   if (resolved.kind === 'error') {
     return {
       ok: false,
       statusCode: 500,
-      payload: { error: 'Failed to verify permissions' },
+      payload: buildRouteErrorPayload({
+        request,
+        statusCode: 500,
+        source: 'auth',
+        code: 'AUTH_VERIFY_FAILED',
+        userMessage: 'Failed to verify permissions',
+      }),
     };
   }
   if (resolved.identity.role !== 'admin') {
     return {
       ok: false,
       statusCode: 403,
-      payload: { error: 'Insufficient permissions' },
+      payload: buildRouteErrorPayload({
+        request,
+        statusCode: 403,
+        source: 'auth',
+        code: 'AUTH_FORBIDDEN',
+        userMessage: 'Insufficient permissions',
+      }),
     };
   }
   return {
@@ -202,21 +221,33 @@ async function requireActor(
   config: ApiRuntimeConfig
 ): Promise<
   | { ok: true; actor: ActorIdentity }
-  | { ok: false; statusCode: number; payload: Record<string, string | boolean> }
+  | { ok: false; statusCode: number; payload: Record<string, unknown> }
 > {
   const resolved = await resolveIdentityFromSession(request, config);
   if (resolved.kind === 'unauthorized') {
     return {
       ok: false,
       statusCode: 401,
-      payload: { success: false, error: 'Unauthorized' },
+      payload: buildRouteErrorPayload({
+        request,
+        statusCode: 401,
+        source: 'auth',
+        code: 'AUTH_UNAUTHORIZED',
+        userMessage: 'Unauthorized',
+      }),
     };
   }
   if (resolved.kind === 'error') {
     return {
       ok: false,
       statusCode: 500,
-      payload: { success: false, error: 'Failed to verify session' },
+      payload: buildRouteErrorPayload({
+        request,
+        statusCode: 500,
+        source: 'auth',
+        code: 'AUTH_VERIFY_FAILED',
+        userMessage: 'Failed to verify session',
+      }),
     };
   }
   return {
@@ -279,16 +310,26 @@ export const internalAppsRoutes: FastifyPluginAsync<
 
         const scoped = scopedRows[0];
         if (!scoped) {
-          return reply
-            .status(404)
-            .send({ success: false, error: 'App instance not found' });
+          return reply.status(404).send(
+            buildRouteErrorPayload({
+              request,
+              statusCode: 404,
+              code: 'APP_INSTANCE_NOT_FOUND',
+              userMessage: 'App instance not found',
+            })
+          );
         }
 
         const detail = await resolveDetailByServiceInstanceId(scoped.id);
         if (!detail) {
-          return reply
-            .status(404)
-            .send({ success: false, error: 'App instance not found' });
+          return reply.status(404).send(
+            buildRouteErrorPayload({
+              request,
+              statusCode: 404,
+              code: 'APP_INSTANCE_NOT_FOUND',
+              userMessage: 'App instance not found',
+            })
+          );
         }
 
         return reply.send({ success: true, app: toAppDetail(detail) });
@@ -375,9 +416,16 @@ export const internalAppsRoutes: FastifyPluginAsync<
         { err: error },
         '[FastifyAPI][internal-apps] GET failed'
       );
-      return reply
-        .status(500)
-        .send({ success: false, error: 'Internal server error' });
+      return reply.status(500).send(
+        buildRouteErrorPayload({
+          request,
+          statusCode: 500,
+          code: 'INTERNAL_APPS_GET_FAILED',
+          userMessage: 'Internal server error',
+          developerMessage:
+            error instanceof Error ? error.message : 'Unknown apps GET error',
+        })
+      );
     }
   });
 
@@ -401,9 +449,14 @@ export const internalAppsRoutes: FastifyPluginAsync<
           visibility !== 'group_only' &&
           visibility !== 'private')
       ) {
-        return reply
-          .status(400)
-          .send({ success: false, error: 'Invalid update payload' });
+        return reply.status(400).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 400,
+            code: 'APP_UPDATE_PAYLOAD_INVALID',
+            userMessage: 'Invalid update payload',
+          })
+        );
       }
 
       const rows = await queryRowsWithPgUserContext<AppRow>(
@@ -436,9 +489,14 @@ export const internalAppsRoutes: FastifyPluginAsync<
       );
 
       if (!rows[0]) {
-        return reply
-          .status(404)
-          .send({ success: false, error: 'App instance not found' });
+        return reply.status(404).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 404,
+            code: 'APP_INSTANCE_NOT_FOUND',
+            userMessage: 'App instance not found',
+          })
+        );
       }
 
       return reply.send({
@@ -450,9 +508,16 @@ export const internalAppsRoutes: FastifyPluginAsync<
         { err: error },
         '[FastifyAPI][internal-apps] PATCH failed'
       );
-      return reply
-        .status(500)
-        .send({ success: false, error: 'Internal server error' });
+      return reply.status(500).send(
+        buildRouteErrorPayload({
+          request,
+          statusCode: 500,
+          code: 'INTERNAL_APPS_PATCH_FAILED',
+          userMessage: 'Internal server error',
+          developerMessage:
+            error instanceof Error ? error.message : 'Unknown apps PATCH error',
+        })
+      );
     }
   });
 };

@@ -2,6 +2,7 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 
 import type { ApiRuntimeConfig } from '../config';
 import { queryRowsWithPgSystemContext } from '../lib/pg-context';
+import { buildRouteErrorPayload } from '../lib/route-error';
 import {
   type ActorIdentity,
   resolveIdentityFromSession,
@@ -77,21 +78,33 @@ async function requireActor(
   config: ApiRuntimeConfig
 ): Promise<
   | { ok: true; actor: ActorIdentity }
-  | { ok: false; statusCode: number; payload: Record<string, string | boolean> }
+  | { ok: false; statusCode: number; payload: Record<string, unknown> }
 > {
   const resolved = await resolveIdentityFromSession(request, config);
   if (resolved.kind === 'unauthorized') {
     return {
       ok: false,
       statusCode: 401,
-      payload: { success: false, error: 'Unauthorized' },
+      payload: buildRouteErrorPayload({
+        request,
+        statusCode: 401,
+        source: 'auth',
+        code: 'AUTH_UNAUTHORIZED',
+        userMessage: 'Unauthorized',
+      }),
     };
   }
   if (resolved.kind === 'error') {
     return {
       ok: false,
       statusCode: 500,
-      payload: { success: false, error: 'Failed to verify session' },
+      payload: buildRouteErrorPayload({
+        request,
+        statusCode: 500,
+        source: 'auth',
+        code: 'AUTH_VERIFY_FAILED',
+        userMessage: 'Failed to verify session',
+      }),
     };
   }
   return {
@@ -120,7 +133,15 @@ export const internalProfileRoutes: FastifyPluginAsync<
       if (
         !canAccessTargetUser(targetUserId, auth.actor.userId, auth.actor.role)
       ) {
-        return reply.status(403).send({ success: false, error: 'Forbidden' });
+        return reply.status(403).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 403,
+            source: 'auth',
+            code: 'AUTH_FORBIDDEN',
+            userMessage: 'Forbidden',
+          })
+        );
       }
 
       const rows = await queryRowsWithPgSystemContext<ProfileRow>(
@@ -137,9 +158,18 @@ export const internalProfileRoutes: FastifyPluginAsync<
         { err: error },
         '[FastifyAPI][internal-profile] GET failed'
       );
-      return reply
-        .status(500)
-        .send({ success: false, error: 'Internal server error' });
+      return reply.status(500).send(
+        buildRouteErrorPayload({
+          request,
+          statusCode: 500,
+          code: 'INTERNAL_PROFILE_GET_FAILED',
+          userMessage: 'Internal server error',
+          developerMessage:
+            error instanceof Error
+              ? error.message
+              : 'Unknown profile GET error',
+        })
+      );
     }
   });
 
@@ -163,7 +193,15 @@ export const internalProfileRoutes: FastifyPluginAsync<
       if (
         !canAccessTargetUser(targetUserId, auth.actor.userId, auth.actor.role)
       ) {
-        return reply.status(403).send({ success: false, error: 'Forbidden' });
+        return reply.status(403).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 403,
+            source: 'auth',
+            code: 'AUTH_FORBIDDEN',
+            userMessage: 'Forbidden',
+          })
+        );
       }
 
       const updates = request.body?.updates || {};
@@ -173,9 +211,14 @@ export const internalProfileRoutes: FastifyPluginAsync<
       );
 
       if (entries.length === 0) {
-        return reply
-          .status(400)
-          .send({ success: false, error: 'No valid fields to update' });
+        return reply.status(400).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 400,
+            code: 'PROFILE_UPDATE_FIELDS_EMPTY',
+            userMessage: 'No valid fields to update',
+          })
+        );
       }
 
       const setClauses = entries.map(
@@ -202,9 +245,14 @@ export const internalProfileRoutes: FastifyPluginAsync<
       );
 
       if (!updateRows[0]) {
-        return reply
-          .status(404)
-          .send({ success: false, error: 'Profile not found' });
+        return reply.status(404).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 404,
+            code: 'PROFILE_NOT_FOUND',
+            userMessage: 'Profile not found',
+          })
+        );
       }
 
       const profileRows = await queryRowsWithPgSystemContext<ProfileRow>(
@@ -221,9 +269,18 @@ export const internalProfileRoutes: FastifyPluginAsync<
         { err: error },
         '[FastifyAPI][internal-profile] PATCH failed'
       );
-      return reply
-        .status(500)
-        .send({ success: false, error: 'Internal server error' });
+      return reply.status(500).send(
+        buildRouteErrorPayload({
+          request,
+          statusCode: 500,
+          code: 'INTERNAL_PROFILE_PATCH_FAILED',
+          userMessage: 'Internal server error',
+          developerMessage:
+            error instanceof Error
+              ? error.message
+              : 'Unknown profile PATCH error',
+        })
+      );
     }
   });
 };
