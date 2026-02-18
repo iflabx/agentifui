@@ -5,10 +5,14 @@ import {
   recordLocalLoginAudit,
 } from '@lib/auth/better-auth/local-login-policy';
 import { auth } from '@lib/auth/better-auth/server';
+import { syncSessionIdentitySideEffects } from '@lib/auth/better-auth/session-identity';
 import '@lib/server/realtime/runtime-registry';
 import { toNextJsHandler } from 'better-auth/next-js';
 
 const handler = toNextJsHandler(auth);
+type HeadersWithGetSetCookie = Headers & {
+  getSetCookie?: () => string[];
+};
 
 function isEmailSignInRequest(request: Request): boolean {
   const { pathname } = new URL(request.url);
@@ -78,13 +82,155 @@ function localLoginBlockedResponse(reason: string): Response {
   );
 }
 
+function readSetCookies(headers: Headers): string[] {
+  const headersWithGetSetCookie = headers as HeadersWithGetSetCookie;
+  const getSetCookie = headersWithGetSetCookie.getSetCookie;
+  if (typeof getSetCookie === 'function') {
+    const cookies = getSetCookie.call(headersWithGetSetCookie);
+    if (Array.isArray(cookies) && cookies.length > 0) {
+      return cookies;
+    }
+  }
+
+  const single = headers.get('set-cookie');
+  return single ? [single] : [];
+}
+
+function parseCookiePair(rawCookie: string): {
+  name: string;
+  value: string;
+} | null {
+  const firstSegment = rawCookie.split(';', 1)[0]?.trim();
+  if (!firstSegment) {
+    return null;
+  }
+
+  const equalsIndex = firstSegment.indexOf('=');
+  if (equalsIndex <= 0) {
+    return null;
+  }
+
+  const name = firstSegment.slice(0, equalsIndex).trim();
+  const value = firstSegment.slice(equalsIndex + 1).trim();
+  if (!name) {
+    return null;
+  }
+
+  return { name, value };
+}
+
+function mergeCookieHeader(
+  existingCookieHeader: string | null,
+  setCookies: string[]
+): string | null {
+  const cookieMap = new Map<string, string>();
+
+  const addCookiePair = (cookiePair: string) => {
+    const equalsIndex = cookiePair.indexOf('=');
+    if (equalsIndex <= 0) {
+      return;
+    }
+    const name = cookiePair.slice(0, equalsIndex).trim();
+    const value = cookiePair.slice(equalsIndex + 1).trim();
+    if (!name) {
+      return;
+    }
+    cookieMap.set(name, value);
+  };
+
+  if (existingCookieHeader) {
+    for (const token of existingCookieHeader.split(';')) {
+      const trimmed = token.trim();
+      if (!trimmed) {
+        continue;
+      }
+      addCookiePair(trimmed);
+    }
+  }
+
+  for (const rawSetCookie of setCookies) {
+    const parsed = parseCookiePair(rawSetCookie);
+    if (!parsed) {
+      continue;
+    }
+    cookieMap.set(parsed.name, parsed.value);
+  }
+
+  if (cookieMap.size === 0) {
+    return existingCookieHeader;
+  }
+
+  return Array.from(cookieMap.entries())
+    .map(([name, value]) => `${name}=${value}`)
+    .join('; ');
+}
+
+function shouldTriggerAuthIdentitySync(
+  request: Request,
+  response: Response,
+  setCookies: string[]
+): boolean {
+  if (setCookies.length === 0) {
+    return false;
+  }
+  if (response.status < 200 || response.status >= 400) {
+    return false;
+  }
+
+  const { pathname } = new URL(request.url);
+  return (
+    pathname.includes('/sign-in/') ||
+    pathname.includes('/sign-up/') ||
+    pathname.includes('/callback/')
+  );
+}
+
+function triggerPostAuthIdentitySync(
+  request: Request,
+  response: Response
+): void {
+  const setCookies = readSetCookies(response.headers);
+  if (!shouldTriggerAuthIdentitySync(request, response, setCookies)) {
+    return;
+  }
+
+  const mergedCookieHeader = mergeCookieHeader(
+    request.headers.get('cookie'),
+    setCookies
+  );
+  const syncHeaders = new Headers(request.headers);
+  if (mergedCookieHeader) {
+    syncHeaders.set('cookie', mergedCookieHeader);
+  }
+
+  void syncSessionIdentitySideEffects(syncHeaders)
+    .then(result => {
+      if (!result.success) {
+        console.warn(
+          '[AuthIdentitySync] post-login identity sync failed:',
+          result.error
+        );
+      }
+    })
+    .catch(error => {
+      console.warn(
+        '[AuthIdentitySync] unexpected post-login identity sync error:',
+        error
+      );
+    });
+}
+
 export async function GET(request: Request) {
-  return handler.GET(request);
+  const response = await handler.GET(request);
+  triggerPostAuthIdentitySync(request, response);
+  return response;
 }
 
 export async function POST(request: Request) {
   if (!isEmailSignInRequest(request)) {
-    return handler.POST(request);
+    const response = await handler.POST(request);
+    triggerPostAuthIdentitySync(request, response);
+    return response;
   }
 
   const email = await parseLocalSignInEmail(request);
@@ -123,6 +269,7 @@ export async function POST(request: Request) {
   }
 
   const response = await handler.POST(request);
+  triggerPostAuthIdentitySync(request, response);
 
   await recordLocalLoginAudit({
     email: data.email,
