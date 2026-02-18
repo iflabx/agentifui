@@ -2,6 +2,8 @@ import type { FastifyPluginAsync } from 'fastify';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
+import { buildRouteErrorPayload } from '../lib/route-error';
+
 const DEFAULT_SECTIONS = ['pages.about', 'pages.home'];
 const SUPPORTED_LOCALES = new Set([
   'en-US',
@@ -110,7 +112,14 @@ export const translationsRoutes: FastifyPluginAsync = async app => {
   }>('/api/translations/:locale', async (request, reply) => {
     const locale = (request.params.locale || '').trim();
     if (!isValidLocale(locale)) {
-      return reply.status(400).send({ error: 'Invalid locale' });
+      return reply.status(400).send(
+        buildRouteErrorPayload({
+          request,
+          statusCode: 400,
+          code: 'TRANSLATION_LOCALE_INVALID',
+          userMessage: 'Invalid locale',
+        })
+      );
     }
 
     const sections = parseSections(request.query.sections);
@@ -154,14 +163,32 @@ export const translationsRoutes: FastifyPluginAsync = async app => {
           : undefined;
 
       if (code === 'ENOENT') {
-        return reply.status(404).send({ error: 'Translation file not found' });
+        return reply.status(404).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 404,
+            code: 'TRANSLATION_FILE_NOT_FOUND',
+            userMessage: 'Translation file not found',
+          })
+        );
       }
 
       request.log.error(
         { err: error, locale },
         '[FastifyAPI][translations] failed to resolve translation file'
       );
-      return reply.status(500).send({});
+      return reply.status(500).send(
+        buildRouteErrorPayload({
+          request,
+          statusCode: 500,
+          code: 'TRANSLATION_RESOLVE_FAILED',
+          userMessage: 'Failed to resolve translation file',
+          developerMessage:
+            error instanceof Error
+              ? error.message
+              : 'Unknown translation resolve error',
+        })
+      );
     }
   });
 };

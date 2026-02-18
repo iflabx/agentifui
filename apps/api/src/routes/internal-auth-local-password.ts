@@ -2,6 +2,7 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 
 import type { ApiRuntimeConfig } from '../config';
 import { queryRowsWithPgSystemContext } from '../lib/pg-context';
+import { buildRouteErrorPayload } from '../lib/route-error';
 import {
   type ProfileStatusIdentity,
   resolveProfileStatusFromSession,
@@ -111,6 +112,14 @@ function parseNonEmptyString(value: unknown): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
+function resolvePayloadErrorMessage(
+  payload: Record<string, unknown>,
+  fallback: string
+): string {
+  const message = parseNonEmptyString(payload.error);
+  return message || fallback;
+}
+
 function resolveBetterAuthOrigin(): string {
   const configured =
     process.env.BETTER_AUTH_URL?.trim() ||
@@ -147,7 +156,7 @@ async function parseJsonBody<TPayload extends object>(
   request: FastifyRequest
 ): Promise<
   | { ok: true; payload: TPayload }
-  | { ok: false; statusCode: number; payload: Record<string, string> }
+  | { ok: false; statusCode: number; payload: Record<string, unknown> }
 > {
   if (request.body == null) {
     return { ok: true, payload: {} as TPayload };
@@ -301,21 +310,33 @@ async function resolveIdentity(
   config: ApiRuntimeConfig
 ): Promise<
   | { ok: true; identity: ProfileStatusIdentity }
-  | { ok: false; statusCode: number; payload: Record<string, string> }
+  | { ok: false; statusCode: number; payload: Record<string, unknown> }
 > {
   const resolved = await resolveProfileStatusFromSession(request, config);
   if (resolved.kind === 'unauthorized') {
     return {
       ok: false,
       statusCode: 401,
-      payload: { error: 'Unauthorized' },
+      payload: buildRouteErrorPayload({
+        request,
+        statusCode: 401,
+        source: 'auth',
+        code: 'AUTH_UNAUTHORIZED',
+        userMessage: 'Unauthorized',
+      }),
     };
   }
   if (resolved.kind === 'error') {
     return {
       ok: false,
       statusCode: 500,
-      payload: { error: 'Failed to verify session' },
+      payload: buildRouteErrorPayload({
+        request,
+        statusCode: 500,
+        source: 'auth',
+        code: 'AUTH_SESSION_VERIFY_FAILED',
+        userMessage: 'Failed to verify session',
+      }),
     };
   }
   return { ok: true, identity: resolved.identity };
@@ -395,7 +416,14 @@ export const internalAuthLocalPasswordRoutes: FastifyPluginAsync<
       ]);
 
       if (!localState) {
-        return reply.status(404).send({ error: 'Profile not found' });
+        return reply.status(404).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 404,
+            code: 'PROFILE_NOT_FOUND',
+            userMessage: 'Profile not found',
+          })
+        );
       }
 
       return reply.send({
@@ -421,9 +449,18 @@ export const internalAuthLocalPasswordRoutes: FastifyPluginAsync<
         { err: error },
         '[FastifyAPI][internal-auth-local-password] GET failed'
       );
-      return reply
-        .status(500)
-        .send({ error: 'Failed to read local password state' });
+      return reply.status(500).send(
+        buildRouteErrorPayload({
+          request,
+          statusCode: 500,
+          code: 'LOCAL_PASSWORD_STATE_READ_FAILED',
+          userMessage: 'Failed to read local password state',
+          developerMessage:
+            error instanceof Error
+              ? error.message
+              : 'Unknown local password state read error',
+        })
+      );
     }
   });
 
@@ -437,12 +474,29 @@ export const internalAuthLocalPasswordRoutes: FastifyPluginAsync<
 
       const parsedBody = await parseJsonBody<PasswordBootstrapPayload>(request);
       if (!parsedBody.ok) {
-        return reply.status(parsedBody.statusCode).send(parsedBody.payload);
+        return reply.status(parsedBody.statusCode).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: parsedBody.statusCode,
+            code: 'REQUEST_BODY_INVALID',
+            userMessage: resolvePayloadErrorMessage(
+              parsedBody.payload,
+              'Invalid JSON body'
+            ),
+          })
+        );
       }
 
       const newPassword = parseNonEmptyString(parsedBody.payload.newPassword);
       if (!newPassword) {
-        return reply.status(400).send({ error: 'newPassword is required' });
+        return reply.status(400).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 400,
+            code: 'LOCAL_PASSWORD_NEW_MISSING',
+            userMessage: 'newPassword is required',
+          })
+        );
       }
 
       try {
@@ -450,9 +504,14 @@ export const internalAuthLocalPasswordRoutes: FastifyPluginAsync<
           auth.identity.authUserId
         );
         if (hasPassword) {
-          return reply
-            .status(409)
-            .send({ error: 'Fallback password already set' });
+          return reply.status(409).send(
+            buildRouteErrorPayload({
+              request,
+              statusCode: 409,
+              code: 'LOCAL_PASSWORD_ALREADY_SET',
+              userMessage: 'Fallback password already set',
+            })
+          );
         }
 
         const passwordResult = await callUpstreamPasswordEndpoint(
@@ -463,9 +522,15 @@ export const internalAuthLocalPasswordRoutes: FastifyPluginAsync<
           'Failed to set fallback password'
         );
         if (!passwordResult.ok) {
-          return reply
-            .status(passwordResult.statusCode)
-            .send({ error: passwordResult.message });
+          return reply.status(passwordResult.statusCode).send(
+            buildRouteErrorPayload({
+              request,
+              statusCode: passwordResult.statusCode,
+              code: 'LOCAL_PASSWORD_SET_FAILED',
+              userMessage:
+                passwordResult.message || 'Failed to set fallback password',
+            })
+          );
         }
 
         await markFallbackPasswordUpdated(
@@ -482,9 +547,18 @@ export const internalAuthLocalPasswordRoutes: FastifyPluginAsync<
           { err: error },
           '[FastifyAPI][internal-auth-local-password] POST bootstrap failed'
         );
-        return reply
-          .status(500)
-          .send({ error: 'Failed to detect fallback password state' });
+        return reply.status(500).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 500,
+            code: 'LOCAL_PASSWORD_STATE_DETECT_FAILED',
+            userMessage: 'Failed to detect fallback password state',
+            developerMessage:
+              error instanceof Error
+                ? error.message
+                : 'Unknown fallback password state detect error',
+          })
+        );
       }
     }
   );
@@ -499,7 +573,17 @@ export const internalAuthLocalPasswordRoutes: FastifyPluginAsync<
 
       const parsedBody = await parseJsonBody<PasswordChangePayload>(request);
       if (!parsedBody.ok) {
-        return reply.status(parsedBody.statusCode).send(parsedBody.payload);
+        return reply.status(parsedBody.statusCode).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: parsedBody.statusCode,
+            code: 'REQUEST_BODY_INVALID',
+            userMessage: resolvePayloadErrorMessage(
+              parsedBody.payload,
+              'Invalid JSON body'
+            ),
+          })
+        );
       }
 
       const currentPassword = parseNonEmptyString(
@@ -507,9 +591,14 @@ export const internalAuthLocalPasswordRoutes: FastifyPluginAsync<
       );
       const newPassword = parseNonEmptyString(parsedBody.payload.newPassword);
       if (!currentPassword || !newPassword) {
-        return reply.status(400).send({
-          error: 'currentPassword and newPassword are required',
-        });
+        return reply.status(400).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 400,
+            code: 'LOCAL_PASSWORD_CHANGE_FIELDS_MISSING',
+            userMessage: 'currentPassword and newPassword are required',
+          })
+        );
       }
 
       try {
@@ -517,9 +606,14 @@ export const internalAuthLocalPasswordRoutes: FastifyPluginAsync<
           auth.identity.authUserId
         );
         if (!hasPassword) {
-          return reply
-            .status(409)
-            .send({ error: 'Fallback password is not set' });
+          return reply.status(409).send(
+            buildRouteErrorPayload({
+              request,
+              statusCode: 409,
+              code: 'LOCAL_PASSWORD_NOT_SET',
+              userMessage: 'Fallback password is not set',
+            })
+          );
         }
 
         const passwordResult = await callUpstreamPasswordEndpoint(
@@ -537,9 +631,15 @@ export const internalAuthLocalPasswordRoutes: FastifyPluginAsync<
           'Failed to change fallback password'
         );
         if (!passwordResult.ok) {
-          return reply
-            .status(passwordResult.statusCode)
-            .send({ error: passwordResult.message });
+          return reply.status(passwordResult.statusCode).send(
+            buildRouteErrorPayload({
+              request,
+              statusCode: passwordResult.statusCode,
+              code: 'LOCAL_PASSWORD_CHANGE_FAILED',
+              userMessage:
+                passwordResult.message || 'Failed to change fallback password',
+            })
+          );
         }
 
         await markFallbackPasswordUpdated(
@@ -557,9 +657,18 @@ export const internalAuthLocalPasswordRoutes: FastifyPluginAsync<
           { err: error },
           '[FastifyAPI][internal-auth-local-password] POST change failed'
         );
-        return reply
-          .status(500)
-          .send({ error: 'Failed to detect fallback password state' });
+        return reply.status(500).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 500,
+            code: 'LOCAL_PASSWORD_STATE_DETECT_FAILED',
+            userMessage: 'Failed to detect fallback password state',
+            developerMessage:
+              error instanceof Error
+                ? error.message
+                : 'Unknown fallback password state detect error',
+          })
+        );
       }
     }
   );

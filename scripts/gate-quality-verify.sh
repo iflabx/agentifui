@@ -8,5 +8,6 @@ pnpm -s guard:rls-strict-consistency
 pnpm -s guard:single-path-internal-data
 pnpm -s guard:route-contract-parity
 pnpm -s guard:fastify-proxy-prefixes
+pnpm -s guard:fastify-error-envelope
 pnpm -s guard:no-raw-pg-in-api
 pnpm -s guard:next-error-envelope

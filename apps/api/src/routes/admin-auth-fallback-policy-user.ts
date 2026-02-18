@@ -2,6 +2,7 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 
 import type { ApiRuntimeConfig } from '../config';
 import { queryRowsWithPgSystemContext } from '../lib/pg-context';
+import { buildRouteErrorPayload } from '../lib/route-error';
 import { resolveIdentityFromSession } from '../lib/upstream-session';
 
 interface AdminAuthFallbackPolicyUserRoutesOptions {
@@ -63,28 +64,46 @@ async function requireAdmin(
   config: ApiRuntimeConfig
 ): Promise<
   | { ok: true }
-  | { ok: false; statusCode: number; payload: Record<string, string> }
+  | { ok: false; statusCode: number; payload: Record<string, unknown> }
 > {
   const resolved = await resolveIdentityFromSession(request, config);
   if (resolved.kind === 'unauthorized') {
     return {
       ok: false,
       statusCode: 401,
-      payload: { error: 'Unauthorized access' },
+      payload: buildRouteErrorPayload({
+        request,
+        statusCode: 401,
+        source: 'auth',
+        code: 'AUTH_UNAUTHORIZED',
+        userMessage: 'Unauthorized access',
+      }),
     };
   }
   if (resolved.kind === 'error') {
     return {
       ok: false,
       statusCode: 500,
-      payload: { error: 'Failed to verify permissions' },
+      payload: buildRouteErrorPayload({
+        request,
+        statusCode: 500,
+        source: 'auth',
+        code: 'AUTH_PERMISSION_VERIFY_FAILED',
+        userMessage: 'Failed to verify permissions',
+      }),
     };
   }
   if (resolved.identity.role !== 'admin') {
     return {
       ok: false,
       statusCode: 403,
-      payload: { error: 'Insufficient permissions' },
+      payload: buildRouteErrorPayload({
+        request,
+        statusCode: 403,
+        source: 'auth',
+        code: 'AUTH_FORBIDDEN',
+        userMessage: 'Insufficient permissions',
+      }),
     };
   }
   return { ok: true };
@@ -163,13 +182,27 @@ export const adminAuthFallbackPolicyUserRoutes: FastifyPluginAsync<
 
       const userId = (request.params.userId || '').trim();
       if (!userId) {
-        return reply.status(400).send({ error: 'userId is required' });
+        return reply.status(400).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 400,
+            code: 'USER_ID_REQUIRED',
+            userMessage: 'userId is required',
+          })
+        );
       }
 
       try {
         const state = await getUserLocalLoginStateByUserId(userId);
         if (!state) {
-          return reply.status(404).send({ error: 'User not found' });
+          return reply.status(404).send(
+            buildRouteErrorPayload({
+              request,
+              statusCode: 404,
+              code: 'USER_NOT_FOUND',
+              userMessage: 'User not found',
+            })
+          );
         }
 
         return reply.send({
@@ -181,9 +214,18 @@ export const adminAuthFallbackPolicyUserRoutes: FastifyPluginAsync<
           { err: error },
           '[FastifyAPI][admin-auth-fallback-policy-user] GET failed'
         );
-        return reply
-          .status(500)
-          .send({ error: 'Failed to read user fallback state' });
+        return reply.status(500).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 500,
+            code: 'USER_FALLBACK_STATE_READ_FAILED',
+            userMessage: 'Failed to read user fallback state',
+            developerMessage:
+              error instanceof Error
+                ? error.message
+                : 'Unknown user fallback state read error',
+          })
+        );
       }
     }
   );
@@ -201,13 +243,25 @@ export const adminAuthFallbackPolicyUserRoutes: FastifyPluginAsync<
 
       const userId = (request.params.userId || '').trim();
       if (!userId) {
-        return reply.status(400).send({ error: 'userId is required' });
+        return reply.status(400).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 400,
+            code: 'USER_ID_REQUIRED',
+            userMessage: 'userId is required',
+          })
+        );
       }
 
       if (typeof request.body?.localLoginEnabled !== 'boolean') {
-        return reply
-          .status(400)
-          .send({ error: 'localLoginEnabled must be a boolean' });
+        return reply.status(400).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 400,
+            code: 'LOCAL_LOGIN_ENABLED_INVALID',
+            userMessage: 'localLoginEnabled must be a boolean',
+          })
+        );
       }
 
       try {
@@ -216,7 +270,14 @@ export const adminAuthFallbackPolicyUserRoutes: FastifyPluginAsync<
           request.body.localLoginEnabled
         );
         if (!state) {
-          return reply.status(404).send({ error: 'User not found' });
+          return reply.status(404).send(
+            buildRouteErrorPayload({
+              request,
+              statusCode: 404,
+              code: 'USER_NOT_FOUND',
+              userMessage: 'User not found',
+            })
+          );
         }
 
         return reply.send({
@@ -228,9 +289,18 @@ export const adminAuthFallbackPolicyUserRoutes: FastifyPluginAsync<
           { err: error },
           '[FastifyAPI][admin-auth-fallback-policy-user] PATCH failed'
         );
-        return reply
-          .status(500)
-          .send({ error: 'Failed to update user fallback state' });
+        return reply.status(500).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 500,
+            code: 'USER_FALLBACK_STATE_UPDATE_FAILED',
+            userMessage: 'Failed to update user fallback state',
+            developerMessage:
+              error instanceof Error
+                ? error.message
+                : 'Unknown user fallback state update error',
+          })
+        );
       }
     }
   );

@@ -2,6 +2,7 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { createCipheriv, createHash, randomBytes } from 'node:crypto';
 
 import type { ApiRuntimeConfig } from '../config';
+import { buildRouteErrorPayload } from '../lib/route-error';
 import { resolveIdentityFromSession } from '../lib/upstream-session';
 
 interface AdminEncryptRoutesOptions {
@@ -27,28 +28,46 @@ async function requireAdmin(
   config: ApiRuntimeConfig
 ): Promise<
   | { ok: true }
-  | { ok: false; statusCode: number; payload: Record<string, string> }
+  | { ok: false; statusCode: number; payload: Record<string, unknown> }
 > {
   const resolved = await resolveIdentityFromSession(request, config);
   if (resolved.kind === 'unauthorized') {
     return {
       ok: false,
       statusCode: 401,
-      payload: { error: 'Unauthorized access' },
+      payload: buildRouteErrorPayload({
+        request,
+        statusCode: 401,
+        source: 'auth',
+        code: 'AUTH_UNAUTHORIZED',
+        userMessage: 'Unauthorized access',
+      }),
     };
   }
   if (resolved.kind === 'error') {
     return {
       ok: false,
       statusCode: 500,
-      payload: { error: 'Failed to verify permissions' },
+      payload: buildRouteErrorPayload({
+        request,
+        statusCode: 500,
+        source: 'auth',
+        code: 'AUTH_PERMISSION_VERIFY_FAILED',
+        userMessage: 'Failed to verify permissions',
+      }),
     };
   }
   if (resolved.identity.role !== 'admin') {
     return {
       ok: false,
       statusCode: 403,
-      payload: { error: 'Insufficient permissions' },
+      payload: buildRouteErrorPayload({
+        request,
+        statusCode: 403,
+        source: 'auth',
+        code: 'AUTH_FORBIDDEN',
+        userMessage: 'Insufficient permissions',
+      }),
     };
   }
   return { ok: true };
@@ -68,7 +87,14 @@ export const adminEncryptRoutes: FastifyPluginAsync<
 
       const { apiKey } = request.body || {};
       if (!apiKey) {
-        return reply.status(400).send({ error: 'Missing API key' });
+        return reply.status(400).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 400,
+            code: 'API_KEY_MISSING',
+            userMessage: 'Missing API key',
+          })
+        );
       }
 
       const masterKey = process.env.API_ENCRYPTION_KEY;
@@ -76,9 +102,14 @@ export const adminEncryptRoutes: FastifyPluginAsync<
         request.log.error(
           '[FastifyAPI][admin-encrypt] API_ENCRYPTION_KEY environment variable not set'
         );
-        return reply.status(500).send({
-          error: 'Server configuration error: encryption key not set',
-        });
+        return reply.status(500).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 500,
+            code: 'API_ENCRYPTION_KEY_MISSING',
+            userMessage: 'Server configuration error: encryption key not set',
+          })
+        );
       }
 
       const encryptedKey = encryptApiKey(apiKey, masterKey);
@@ -88,7 +119,18 @@ export const adminEncryptRoutes: FastifyPluginAsync<
         { err: error },
         '[FastifyAPI][admin-encrypt] POST failed'
       );
-      return reply.status(500).send({ error: 'Error encrypting API key' });
+      return reply.status(500).send(
+        buildRouteErrorPayload({
+          request,
+          statusCode: 500,
+          code: 'API_KEY_ENCRYPT_FAILED',
+          userMessage: 'Error encrypting API key',
+          developerMessage:
+            error instanceof Error
+              ? error.message
+              : 'Unknown API key encrypt error',
+        })
+      );
     }
   });
 };

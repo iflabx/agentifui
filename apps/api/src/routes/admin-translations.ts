@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 import type { ApiRuntimeConfig } from '../config';
+import { buildRouteErrorPayload } from '../lib/route-error';
 import { resolveIdentityFromSession } from '../lib/upstream-session';
 
 interface AdminTranslationsRoutesOptions {
@@ -183,28 +184,46 @@ async function requireAdmin(
   config: ApiRuntimeConfig
 ): Promise<
   | { ok: true }
-  | { ok: false; statusCode: number; payload: Record<string, string> }
+  | { ok: false; statusCode: number; payload: Record<string, unknown> }
 > {
   const resolved = await resolveIdentityFromSession(request, config);
   if (resolved.kind === 'unauthorized') {
     return {
       ok: false,
       statusCode: 401,
-      payload: { error: 'Unauthorized access' },
+      payload: buildRouteErrorPayload({
+        request,
+        statusCode: 401,
+        source: 'auth',
+        code: 'AUTH_UNAUTHORIZED',
+        userMessage: 'Unauthorized access',
+      }),
     };
   }
   if (resolved.kind === 'error') {
     return {
       ok: false,
       statusCode: 500,
-      payload: { error: 'Failed to verify permissions' },
+      payload: buildRouteErrorPayload({
+        request,
+        statusCode: 500,
+        source: 'auth',
+        code: 'AUTH_PERMISSION_VERIFY_FAILED',
+        userMessage: 'Failed to verify permissions',
+      }),
     };
   }
   if (resolved.identity.role !== 'admin') {
     return {
       ok: false,
       statusCode: 403,
-      payload: { error: 'Insufficient permissions' },
+      payload: buildRouteErrorPayload({
+        request,
+        statusCode: 403,
+        source: 'auth',
+        code: 'AUTH_FORBIDDEN',
+        userMessage: 'Insufficient permissions',
+      }),
     };
   }
   return { ok: true };
@@ -228,9 +247,14 @@ export const adminTranslationsRoutes: FastifyPluginAsync<
         typeof request.query.section === 'string' ? request.query.section : '';
 
       if (locale && !isValidLocale(locale)) {
-        return reply
-          .status(400)
-          .send({ error: `Unsupported locale: ${locale}` });
+        return reply.status(400).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 400,
+            code: 'TRANSLATION_LOCALE_UNSUPPORTED',
+            userMessage: `Unsupported locale: ${locale}`,
+          })
+        );
       }
 
       if (locale) {
@@ -239,9 +263,14 @@ export const adminTranslationsRoutes: FastifyPluginAsync<
         if (section) {
           const sectionData = getNestedValue(translations, section);
           if (sectionData === undefined) {
-            return reply.status(404).send({
-              error: `Section '${section}' not found in locale '${locale}'`,
-            });
+            return reply.status(404).send(
+              buildRouteErrorPayload({
+                request,
+                statusCode: 404,
+                code: 'TRANSLATION_SECTION_NOT_FOUND',
+                userMessage: `Section '${section}' not found in locale '${locale}'`,
+              })
+            );
           }
           return reply.send({ locale, section, data: sectionData });
         }
@@ -260,7 +289,18 @@ export const adminTranslationsRoutes: FastifyPluginAsync<
         { err: error },
         '[FastifyAPI][admin-translations] GET failed'
       );
-      return reply.status(500).send({ error: 'Failed to read translations' });
+      return reply.status(500).send(
+        buildRouteErrorPayload({
+          request,
+          statusCode: 500,
+          code: 'TRANSLATION_READ_FAILED',
+          userMessage: 'Failed to read translations',
+          developerMessage:
+            error instanceof Error
+              ? error.message
+              : 'Unknown translations read error',
+        })
+      );
     }
   });
 
@@ -286,15 +326,25 @@ export const adminTranslationsRoutes: FastifyPluginAsync<
       const mode = request.body?.mode === 'replace' ? 'replace' : 'merge';
 
       if (!locale || updates === undefined) {
-        return reply
-          .status(400)
-          .send({ error: 'Missing required parameters: locale, updates' });
+        return reply.status(400).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 400,
+            code: 'TRANSLATION_UPDATE_PARAMS_MISSING',
+            userMessage: 'Missing required parameters: locale, updates',
+          })
+        );
       }
 
       if (!isValidLocale(locale)) {
-        return reply
-          .status(400)
-          .send({ error: `Unsupported locale: ${locale}` });
+        return reply.status(400).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 400,
+            code: 'TRANSLATION_LOCALE_UNSUPPORTED',
+            userMessage: `Unsupported locale: ${locale}`,
+          })
+        );
       }
 
       const currentTranslations = await readTranslationFile(locale);
@@ -341,7 +391,18 @@ export const adminTranslationsRoutes: FastifyPluginAsync<
         { err: error },
         '[FastifyAPI][admin-translations] PUT failed'
       );
-      return reply.status(500).send({ error: 'Failed to update translations' });
+      return reply.status(500).send(
+        buildRouteErrorPayload({
+          request,
+          statusCode: 500,
+          code: 'TRANSLATION_UPDATE_FAILED',
+          userMessage: 'Failed to update translations',
+          developerMessage:
+            error instanceof Error
+              ? error.message
+              : 'Unknown translations update error',
+        })
+      );
     }
   });
 };
