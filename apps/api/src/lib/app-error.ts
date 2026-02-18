@@ -144,3 +144,64 @@ export function maybeReadLegacyError(payload: unknown): string {
   const maybeError = (payload as Record<string, unknown>).error;
   return typeof maybeError === 'string' ? maybeError.trim() : '';
 }
+
+function isObjectRecord(payload: unknown): payload is Record<string, unknown> {
+  return (
+    Boolean(payload) && typeof payload === 'object' && !Array.isArray(payload)
+  );
+}
+
+interface NormalizeLegacyErrorEnvelopeInput {
+  payload: unknown;
+  statusCode: number;
+  requestId: string;
+  source: ApiErrorSource;
+}
+
+export function normalizeLegacyErrorEnvelope(
+  input: NormalizeLegacyErrorEnvelopeInput
+): unknown {
+  const { payload, statusCode, requestId, source } = input;
+  if (statusCode < 400 || !isObjectRecord(payload)) {
+    return payload;
+  }
+
+  const hasLegacyErrorShape = payload.success === false;
+  const existingRequestId = payload.request_id;
+  const hasAppError =
+    isObjectRecord(payload.app_error) &&
+    typeof payload.app_error.code === 'string' &&
+    typeof payload.app_error.source === 'string';
+  if (!hasLegacyErrorShape && !hasAppError) {
+    return payload;
+  }
+
+  const normalizedRequestId =
+    typeof existingRequestId === 'string' && existingRequestId.trim().length > 0
+      ? existingRequestId
+      : requestId;
+
+  if (hasAppError) {
+    if (normalizedRequestId === existingRequestId) {
+      return payload;
+    }
+    return {
+      ...payload,
+      request_id: normalizedRequestId,
+    };
+  }
+
+  const legacyMessage = maybeReadLegacyError(payload) || 'Request failed';
+  const detail = buildApiErrorDetail({
+    status: statusCode,
+    source,
+    userMessage: legacyMessage,
+    requestId: normalizedRequestId,
+    developerMessage: legacyMessage,
+  });
+  return {
+    ...payload,
+    request_id: normalizedRequestId,
+    app_error: detail,
+  };
+}

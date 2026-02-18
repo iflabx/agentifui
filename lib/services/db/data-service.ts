@@ -71,6 +71,29 @@ const PG_POOL_GLOBAL_KEY = '__agentifui_pg_pool__';
 const REALTIME_BRIDGE_ENSURER_GLOBAL_KEY =
   '__agentifui_realtime_bridge_ensurer__';
 const REALTIME_PUBLISHER_GLOBAL_KEY = '__agentifui_realtime_publisher__';
+const TABLE_ACCESS_OWNERS = {
+  profiles: 'managed',
+  conversations: 'managed',
+  messages: 'managed',
+  providers: 'managed',
+  service_instances: 'managed',
+  api_keys: 'raw',
+  app_executions: 'raw',
+  user_identities: 'raw',
+  profile_external_attributes: 'raw',
+  sso_providers: 'raw',
+  groups: 'raw',
+  group_members: 'raw',
+  group_app_permissions: 'raw',
+  user_preferences: 'raw',
+  auth_settings: 'raw',
+  domain_sso_mappings: 'raw',
+  auth_users: 'raw',
+  auth_sessions: 'raw',
+  auth_accounts: 'raw',
+  auth_verifications: 'raw',
+  auth_password_accounts: 'raw',
+} as const;
 const REALTIME_ENABLED_TABLES = new Set([
   'profiles',
   'conversations',
@@ -79,6 +102,8 @@ const REALTIME_ENABLED_TABLES = new Set([
   'service_instances',
   'api_keys',
 ]);
+type TableAccessOwner =
+  (typeof TABLE_ACCESS_OWNERS)[keyof typeof TABLE_ACCESS_OWNERS];
 
 function assertIdentifier(identifier: string, label: string): string {
   if (!IDENTIFIER_PATTERN.test(identifier)) {
@@ -89,6 +114,35 @@ function assertIdentifier(identifier: string, label: string): string {
 
 function quoteIdentifier(identifier: string): string {
   return `"${identifier}"`;
+}
+
+function resolveTableAccessOwner(table: string): TableAccessOwner {
+  const owner = (
+    TABLE_ACCESS_OWNERS as Record<string, TableAccessOwner | undefined>
+  )[table];
+  if (!owner) {
+    throw new DatabaseError(
+      `Table owner is not declared for table: ${table}`,
+      'sql_guard'
+    );
+  }
+  return owner;
+}
+
+function resolveManagedRepositoryForOwnedTable(table: string, pool: SqlPool) {
+  const owner = resolveTableAccessOwner(table);
+  if (owner !== 'managed') {
+    return null;
+  }
+
+  const repository = getManagedCrudRepository(table, pool);
+  if (!repository) {
+    throw new DatabaseError(
+      `Managed repository is missing for table: ${table}`,
+      'drizzle'
+    );
+  }
+  return repository;
 }
 
 export class DataService {
@@ -358,14 +412,14 @@ export class DataService {
     id: string
   ): Promise<RealtimeRow | null> {
     const safeTable = assertIdentifier(table, 'table');
-    const repository = getManagedCrudRepository(safeTable, this.getPool());
+    const pool = this.getPool();
+    const repository = resolveManagedRepositoryForOwnedTable(safeTable, pool);
     if (repository) {
       const row = await repository.findOne({ id });
       return row ? this.normalizeRow<RealtimeRow>(row) : null;
     }
 
     const sql = `SELECT * FROM ${quoteIdentifier(safeTable)} WHERE id = $1 LIMIT 1`;
-    const pool = this.getPool();
     const queryResult = await pool.query(sql, [id]);
     const row = queryResult.rows[0];
     return row ? this.normalizeRow<RealtimeRow>(row) : null;
@@ -485,7 +539,11 @@ export class DataService {
 
     const result = await this.query(
       async () => {
-        const repository = getManagedCrudRepository(safeTable, this.getPool());
+        const pool = this.getPool();
+        const repository = resolveManagedRepositoryForOwnedTable(
+          safeTable,
+          pool
+        );
         if (repository) {
           const row = await repository.findOne(filters);
           return row ? this.normalizeRow<T>(row) : null;
@@ -493,7 +551,6 @@ export class DataService {
 
         const { clause, params } = this.buildWhereClause(filters, 1);
         const sql = `SELECT * FROM ${quoteIdentifier(safeTable)} ${clause} LIMIT 1`;
-        const pool = this.getPool();
         const queryResult = await pool.query(sql, params);
         const row = queryResult.rows[0];
         return row ? this.normalizeRow<T>(row) : null;
@@ -536,7 +593,11 @@ export class DataService {
 
     const result = await this.query(
       async () => {
-        const repository = getManagedCrudRepository(safeTable, this.getPool());
+        const pool = this.getPool();
+        const repository = resolveManagedRepositoryForOwnedTable(
+          safeTable,
+          pool
+        );
         if (repository) {
           const rows = await repository.findMany(filters, orderBy, pagination);
           return rows.map(row => this.normalizeRow<T>(row));
@@ -554,7 +615,6 @@ export class DataService {
           .filter(Boolean)
           .join(' ');
 
-        const pool = this.getPool();
         const queryResult = await pool.query(sql, params);
         return queryResult.rows.map(row => this.normalizeRow<T>(row));
       },
@@ -582,7 +642,11 @@ export class DataService {
 
     const result = await this.query(
       async () => {
-        const repository = getManagedCrudRepository(safeTable, this.getPool());
+        const pool = this.getPool();
+        const repository = resolveManagedRepositoryForOwnedTable(
+          safeTable,
+          pool
+        );
         if (repository) {
           const row = await repository.create(data as Record<string, unknown>);
           return this.normalizeRow<T>(row);
@@ -605,7 +669,6 @@ export class DataService {
           .join(', ');
         const sql = `INSERT INTO ${quoteIdentifier(safeTable)} (${columnsSql}) VALUES (${placeholders}) RETURNING *`;
 
-        const pool = this.getPool();
         const queryResult = await pool.query(sql, values);
         const row = queryResult.rows[0];
         if (!row) {
@@ -643,7 +706,11 @@ export class DataService {
 
     const result = await this.query(
       async () => {
-        const repository = getManagedCrudRepository(safeTable, this.getPool());
+        const pool = this.getPool();
+        const repository = resolveManagedRepositoryForOwnedTable(
+          safeTable,
+          pool
+        );
         if (repository) {
           const row = await repository.update(
             id,
@@ -674,7 +741,6 @@ export class DataService {
         values.push(id);
 
         const sql = `UPDATE ${quoteIdentifier(safeTable)} SET ${setClauses.join(', ')} WHERE id = $${values.length} RETURNING *`;
-        const pool = this.getPool();
         const queryResult = await pool.query(sql, values);
         const row = queryResult.rows[0];
 
@@ -713,14 +779,17 @@ export class DataService {
 
     const result = await this.query(
       async () => {
-        const repository = getManagedCrudRepository(safeTable, this.getPool());
+        const pool = this.getPool();
+        const repository = resolveManagedRepositoryForOwnedTable(
+          safeTable,
+          pool
+        );
         if (repository) {
           await repository.delete(id);
           return;
         }
 
         const sql = `DELETE FROM ${quoteIdentifier(safeTable)} WHERE id = $1`;
-        const pool = this.getPool();
         await pool.query(sql, [id]);
       },
       undefined,
@@ -766,14 +835,17 @@ export class DataService {
 
     return this.query(
       async () => {
-        const repository = getManagedCrudRepository(safeTable, this.getPool());
+        const pool = this.getPool();
+        const repository = resolveManagedRepositoryForOwnedTable(
+          safeTable,
+          pool
+        );
         if (repository) {
           return repository.count(filters);
         }
 
         const { clause, params } = this.buildWhereClause(filters, 1);
         const sql = `SELECT COUNT(*)::int AS total FROM ${quoteIdentifier(safeTable)} ${clause}`;
-        const pool = this.getPool();
         const queryResult = await pool.query<{ total: number }>(sql, params);
         return Number(queryResult.rows[0]?.total || 0);
       },

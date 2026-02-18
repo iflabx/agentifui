@@ -6,6 +6,7 @@ import {
   REQUEST_ID_HEADER,
   buildApiErrorDetail,
   buildApiErrorEnvelope,
+  normalizeLegacyErrorEnvelope,
 } from './lib/app-error';
 import { recordApiErrorEvent } from './lib/error-events';
 import { adminAuthFallbackPolicyRoutes } from './routes/admin-auth-fallback-policy';
@@ -62,6 +63,20 @@ export async function createApiServer(config: ApiRuntimeConfig) {
   await app.register(internalProfileRoutes, { config });
   await app.register(translationsRoutes);
   await app.register(proxyFallbackRoutes, { config });
+
+  app.addHook('preSerialization', (request, reply, payload, done) => {
+    try {
+      const normalized = normalizeLegacyErrorEnvelope({
+        payload,
+        statusCode: reply.statusCode,
+        requestId: request.id,
+        source: 'fastify-api',
+      });
+      done(null, normalized);
+    } catch (error) {
+      done(error as Error);
+    }
+  });
 
   app.setErrorHandler((error, request, reply) => {
     request.log.error(
