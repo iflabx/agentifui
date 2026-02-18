@@ -218,10 +218,7 @@ async function callUpstreamPasswordEndpoint(
   config: ApiRuntimeConfig,
   path: '/api/auth/better/set-password' | '/api/auth/better/change-password',
   body: Record<string, unknown>,
-  defaultErrorMessage: string,
-  legacyFallbackPath?:
-    | '/api/internal/auth/local-password/bootstrap'
-    | '/api/internal/auth/local-password/change'
+  defaultErrorMessage: string
 ): Promise<UpstreamPasswordResponse> {
   async function postJson(targetPath: string): Promise<{
     response: Response;
@@ -255,31 +252,6 @@ async function callUpstreamPasswordEndpoint(
 
   try {
     const primary = await postJson(path);
-
-    if (
-      !primary.response.ok &&
-      primary.response.status === 404 &&
-      legacyFallbackPath
-    ) {
-      const legacy = await postJson(legacyFallbackPath);
-      if (!legacy.response.ok) {
-        return {
-          ok: false,
-          statusCode:
-            legacy.response.status >= 400 && legacy.response.status <= 599
-              ? legacy.response.status
-              : 500,
-          message:
-            extractUpstreamErrorMessage(legacy.payload) || defaultErrorMessage,
-        };
-      }
-
-      return {
-        ok: true,
-        statusCode: 200,
-        token: parseNonEmptyString(legacy.payload?.token) ?? null,
-      };
-    }
 
     if (!primary.response.ok) {
       return {
@@ -488,8 +460,7 @@ export const internalAuthLocalPasswordRoutes: FastifyPluginAsync<
           options.config,
           '/api/auth/better/set-password',
           { newPassword },
-          'Failed to set fallback password',
-          '/api/internal/auth/local-password/bootstrap'
+          'Failed to set fallback password'
         );
         if (!passwordResult.ok) {
           return reply
@@ -563,8 +534,7 @@ export const internalAuthLocalPasswordRoutes: FastifyPluginAsync<
                 ? parsedBody.payload.revokeOtherSessions
                 : undefined,
           },
-          'Failed to change fallback password',
-          '/api/internal/auth/local-password/change'
+          'Failed to change fallback password'
         );
         if (!passwordResult.ok) {
           return reply
