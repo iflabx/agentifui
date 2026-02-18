@@ -83,6 +83,7 @@ describe('resolveSessionIdentity', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    delete process.env.AUTH_IDENTITY_SYNC_INLINE;
     delete process.env.EXTERNAL_ATTRIBUTES_SYNC_MODE;
     delete process.env.EXTERNAL_ATTRIBUTES_SYNC_INTERVAL_MS;
     lockQueryMock.mockResolvedValue({ rows: [] });
@@ -137,7 +138,7 @@ describe('resolveSessionIdentity', () => {
     expect(queryMock).not.toHaveBeenCalled();
   });
 
-  it('returns existing UUID user without creating identity mapping', async () => {
+  it('returns existing UUID user in read-only mode without write side effects', async () => {
     mockedGetSession.mockResolvedValueOnce({
       session: {
         id: 'session-id',
@@ -162,18 +163,74 @@ describe('resolveSessionIdentity', () => {
     expect(result.data.userId).toBe('00000000-0000-4000-8000-000000000001');
     expect(result.data.role).toBe('user');
     expect(result.data.status).toBe('active');
+    expect(mockedUpsertUserIdentity).not.toHaveBeenCalled();
+    expect(mockedUpsertProfileExternalAttributes).not.toHaveBeenCalled();
+    expect(queryMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails in read-only mode when non-UUID auth user has no mapping', async () => {
+    mockedGetSession.mockResolvedValueOnce({
+      session: {
+        id: 'session-id',
+      },
+      user: {
+        id: 'legacy-user-id',
+        email: 'legacy.user@example.com',
+        name: 'Legacy User',
+      },
+    } as never);
+    mockedGetUserIdentityByIssuerSubject.mockResolvedValueOnce({
+      success: true,
+      data: null,
+    });
+
+    const result = await resolveSessionIdentity(new Headers());
+
+    expect(result.success).toBe(false);
+    if (result.success) {
+      throw new Error('Expected failed result');
+    }
+    expect(result.error.message).toContain(
+      'Missing identity mapping for non-UUID auth session user'
+    );
+    expect(mockedUpsertUserIdentity).not.toHaveBeenCalled();
+    expect(mockedUpsertProfileExternalAttributes).not.toHaveBeenCalled();
+  });
+
+  it('upserts primary identity in inline mode for UUID auth users', async () => {
+    process.env.AUTH_IDENTITY_SYNC_INLINE = '1';
+    mockedGetSession.mockResolvedValueOnce({
+      session: {
+        id: 'session-id',
+      },
+      user: {
+        id: '00000000-0000-4000-8000-000000000010',
+        email: 'uuid.user@example.com',
+        name: 'UUID User',
+      },
+    } as never);
+    queryMock.mockResolvedValueOnce({
+      rows: [{ role: 'user', status: 'active' }],
+    });
+
+    const result = await resolveSessionIdentity(new Headers());
+
+    expect(result.success).toBe(true);
+    if (!result.success || !result.data) {
+      throw new Error('Expected resolved identity data');
+    }
+    expect(result.data.userId).toBe('00000000-0000-4000-8000-000000000010');
     expect(mockedUpsertUserIdentity).toHaveBeenCalledTimes(1);
     expect(mockedUpsertUserIdentity.mock.calls[0]?.[0].issuer).toBe(
       'urn:agentifui:better-auth'
     );
     expect(mockedUpsertUserIdentity.mock.calls[0]?.[0].subject).toBe(
-      '00000000-0000-4000-8000-000000000001'
+      '00000000-0000-4000-8000-000000000010'
     );
-    expect(mockedUpsertProfileExternalAttributes).not.toHaveBeenCalled();
-    expect(queryMock).toHaveBeenCalledTimes(1);
   });
 
   it('skips external attributes upsert when existing data is fresh', async () => {
+    process.env.AUTH_IDENTITY_SYNC_INLINE = '1';
     process.env.EXTERNAL_ATTRIBUTES_SYNC_MODE = 'interval';
     process.env.EXTERNAL_ATTRIBUTES_SYNC_INTERVAL_MS = '900000';
 
@@ -213,6 +270,7 @@ describe('resolveSessionIdentity', () => {
     }
 
     expect(mockedUpsertProfileExternalAttributes).not.toHaveBeenCalled();
+    expect(mockedGetProfileExternalAttributes).toHaveBeenCalledTimes(1);
   });
 
   it('uses existing legacy mapping when auth user id is non-UUID', async () => {
@@ -249,6 +307,7 @@ describe('resolveSessionIdentity', () => {
   });
 
   it('creates legacy mapping and syncs external attributes', async () => {
+    process.env.AUTH_IDENTITY_SYNC_INLINE = '1';
     mockedGetSession.mockResolvedValueOnce({
       session: {
         id: 'session-id',
@@ -313,6 +372,7 @@ describe('resolveSessionIdentity', () => {
   });
 
   it('uses mapped owner returned by upsert during concurrent legacy mapping race', async () => {
+    process.env.AUTH_IDENTITY_SYNC_INLINE = '1';
     mockedGetSession.mockResolvedValueOnce({
       session: {
         id: 'session-id',

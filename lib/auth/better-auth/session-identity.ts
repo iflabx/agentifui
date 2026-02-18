@@ -23,6 +23,20 @@ const DEFAULT_EXTERNAL_ATTRIBUTES_SYNC_INTERVAL_MS = 15 * 60 * 1000;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function isTruthyEnv(value: string | undefined): boolean {
+  const normalized = (value || '').trim().toLowerCase();
+  return (
+    normalized === '1' ||
+    normalized === 'true' ||
+    normalized === 'yes' ||
+    normalized === 'on'
+  );
+}
+
+function shouldInlineIdentitySync(): boolean {
+  return isTruthyEnv(process.env.AUTH_IDENTITY_SYNC_INLINE);
+}
+
 function getExternalAttributesSyncIntervalMs(): number {
   const parsed = Number(process.env.EXTERNAL_ATTRIBUTES_SYNC_INTERVAL_MS);
   if (Number.isFinite(parsed) && parsed >= 0) {
@@ -69,6 +83,10 @@ type ResolveUserIdResult = {
   userId: string;
   createdLegacyMapping: boolean;
   ensuredProfile?: EnsureProfileResult;
+};
+
+type ResolveUserIdReadOnlyResult = {
+  userId: string;
 };
 
 type RealtimeRow = Record<string, unknown>;
@@ -473,6 +491,33 @@ async function resolveInternalUserId(
   });
 }
 
+async function resolveInternalUserIdReadOnly(
+  authUserId: string
+): Promise<Result<ResolveUserIdReadOnlyResult>> {
+  if (isUuid(authUserId)) {
+    return success({ userId: authUserId });
+  }
+
+  const existingIdentity = await getUserIdentityByIssuerSubject(
+    INTERNAL_AUTH_ISSUER,
+    authUserId,
+    SYSTEM_CONTEXT
+  );
+  if (!existingIdentity.success) {
+    return failure(existingIdentity.error);
+  }
+
+  if (!existingIdentity.data?.user_id) {
+    return failure(
+      new Error('Missing identity mapping for non-UUID auth session user')
+    );
+  }
+
+  return success({
+    userId: existingIdentity.data.user_id,
+  });
+}
+
 async function ensureProfileStatus(
   userId: string,
   sessionUser: SessionUser
@@ -797,9 +842,12 @@ async function syncExternalAttributes(
   }
 }
 
-export async function resolveSessionIdentity(
-  headers: Headers
-): Promise<Result<ResolvedSessionIdentity | null>> {
+async function resolveSessionWithUser(headers: Headers): Promise<
+  Result<{
+    session: NonNullable<AuthSession>;
+    sessionUser: SessionUser;
+  } | null>
+> {
   let session: AuthSession = null;
 
   try {
@@ -817,6 +865,96 @@ export async function resolveSessionIdentity(
     return success(null);
   }
 
+  return success({
+    session: session as NonNullable<AuthSession>,
+    sessionUser,
+  });
+}
+
+async function loadProfileStatusReadOnly(userId: string): Promise<
+  Result<{
+    role: string | null;
+    status: string | null;
+  }>
+> {
+  try {
+    const queryResult = await runWithPgUserContext(userId, client =>
+      client.query<ProfileStatusRow>(
+        `
+          SELECT
+            role::text AS role,
+            status::text AS status
+          FROM profiles
+          WHERE id = $1::uuid
+          LIMIT 1
+        `,
+        [userId]
+      )
+    );
+    const row = queryResult.rows[0];
+    if (!row) {
+      return failure(new Error('Missing profile row for session user'));
+    }
+
+    return success({
+      role: row.role ?? null,
+      status: row.status ?? null,
+    });
+  } catch (error) {
+    return failure(
+      error instanceof Error
+        ? error
+        : new Error('Failed to load profile status for session user')
+    );
+  }
+}
+
+export async function resolveSessionIdentityReadOnly(
+  headers: Headers
+): Promise<Result<ResolvedSessionIdentity | null>> {
+  const resolvedSession = await resolveSessionWithUser(headers);
+  if (!resolvedSession.success) {
+    return failure(resolvedSession.error);
+  }
+  if (!resolvedSession.data) {
+    return success(null);
+  }
+
+  const { session, sessionUser } = resolvedSession.data;
+  const authUserId = sessionUser.id;
+  const resolvedUserId = await resolveInternalUserIdReadOnly(authUserId);
+  if (!resolvedUserId.success) {
+    return failure(resolvedUserId.error);
+  }
+
+  const profileStatus = await loadProfileStatusReadOnly(
+    resolvedUserId.data.userId
+  );
+  if (!profileStatus.success) {
+    return failure(profileStatus.error);
+  }
+
+  return success({
+    session,
+    authUserId,
+    userId: resolvedUserId.data.userId,
+    role: profileStatus.data.role,
+    status: profileStatus.data.status,
+  });
+}
+
+export async function syncSessionIdentitySideEffects(
+  headers: Headers
+): Promise<Result<ResolvedSessionIdentity | null>> {
+  const resolvedSession = await resolveSessionWithUser(headers);
+  if (!resolvedSession.success) {
+    return failure(resolvedSession.error);
+  }
+  if (!resolvedSession.data) {
+    return success(null);
+  }
+
+  const { session, sessionUser } = resolvedSession.data;
   const authUserId = sessionUser.id;
   const resolvedUserId = await resolveInternalUserId(authUserId, sessionUser);
   if (!resolvedUserId.success) {
@@ -838,10 +976,20 @@ export async function resolveSessionIdentity(
   await syncExternalAttributes(resolvedUserId.data.userId, sessionUser);
 
   return success({
-    session: session as NonNullable<AuthSession>,
+    session,
     authUserId,
     userId: resolvedUserId.data.userId,
     role: ensuredProfileData.role,
     status: ensuredProfileData.status,
   });
+}
+
+export async function resolveSessionIdentity(
+  headers: Headers
+): Promise<Result<ResolvedSessionIdentity | null>> {
+  if (shouldInlineIdentitySync()) {
+    return syncSessionIdentitySideEffects(headers);
+  }
+
+  return resolveSessionIdentityReadOnly(headers);
 }
