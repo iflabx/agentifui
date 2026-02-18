@@ -181,6 +181,27 @@ describe('local-login-policy', () => {
     expect(result.data.reason).toBe('password_account');
   });
 
+  it('treats better-auth account as local password account', async () => {
+    queryMock
+      .mockResolvedValueOnce({ rows: [{ auth_mode: 'normal' }] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: '00000000-0000-4000-8000-000000000001',
+            auth_source: 'better-auth',
+            local_login_enabled: false,
+          },
+        ],
+      });
+
+    const result = await evaluateLocalLoginByEmail('user@example.com');
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error('Expected success');
+    expect(result.data.allowed).toBe(true);
+    expect(result.data.reason).toBe('password_account');
+  });
+
   it('allows unknown user and lets credential check continue', async () => {
     queryMock
       .mockResolvedValueOnce({ rows: [{ auth_mode: 'normal' }] })

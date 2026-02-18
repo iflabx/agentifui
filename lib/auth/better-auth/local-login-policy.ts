@@ -15,6 +15,12 @@ export interface LocalLoginPolicyContext {
 const SYSTEM_POLICY_CONTEXT: LocalLoginPolicyContext = {
   useSystemActor: true,
 };
+const LOCAL_PASSWORD_AUTH_SOURCES = new Set([
+  '',
+  'password',
+  'better-auth',
+  'credentials',
+]);
 
 type ProfileLocalLoginRow = {
   id: string;
@@ -133,6 +139,10 @@ function normalizeAuthMode(input: string | null | undefined): AuthMode {
   }
 
   return 'normal';
+}
+
+function isLocalPasswordAuthSource(authSource: string): boolean {
+  return LOCAL_PASSWORD_AUTH_SOURCES.has(authSource);
 }
 
 function isAuthMode(input: string): input is AuthMode {
@@ -624,7 +634,7 @@ export async function evaluateLocalLoginByEmail(
   }
 
   const authSource = (profile.auth_source || '').trim().toLowerCase();
-  if (!authSource || authSource === 'password') {
+  if (isLocalPasswordAuthSource(authSource)) {
     return success({
       allowed: true,
       authMode: authMode.data,
