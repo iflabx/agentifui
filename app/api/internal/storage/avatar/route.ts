@@ -1,4 +1,6 @@
 import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
+import { resolveRequestId } from '@lib/errors/app-error';
+import { recordErrorEvent } from '@lib/server/errors/error-events';
 import { queryRowsWithPgUserContext } from '@lib/server/pg/user-context';
 import { publishTableChangeEvent } from '@lib/server/realtime/publisher';
 import {
@@ -72,6 +74,32 @@ async function resolveIdentity(request: Request) {
   }
 
   return { ok: true as const, identity: result.data };
+}
+
+async function reportLegacyRelayUsage(input: {
+  request: Request;
+  identity: SessionIdentity;
+  route: string;
+}) {
+  const requestId = resolveRequestId(input.request);
+  await recordErrorEvent({
+    code: 'STORAGE_LEGACY_RELAY_USED',
+    source: 'storage',
+    severity: 'warn',
+    retryable: false,
+    userMessage: 'Legacy relay upload path is active',
+    developerMessage:
+      'Storage avatar route accepted multipart relay upload while legacy relay switch is enabled.',
+    requestId,
+    actorUserId: input.identity.userId,
+    httpStatus: 200,
+    method: input.request.method,
+    route: input.route,
+    context: {
+      upload_type: 'avatar',
+      auth_role: input.identity.role || 'user',
+    },
+  });
 }
 
 async function loadCurrentAvatarUrl(
@@ -345,6 +373,16 @@ export async function POST(request: Request) {
     }
 
     console.warn('[AvatarStorageAPI] Using legacy relay upload path');
+    void reportLegacyRelayUsage({
+      request,
+      identity: auth.identity,
+      route: '/api/internal/storage/avatar',
+    }).catch(error => {
+      console.warn(
+        '[AvatarStorageAPI] failed to record legacy relay usage event:',
+        error instanceof Error ? error.message : String(error)
+      );
+    });
 
     return handleLegacyUpload(request, auth.identity);
   } catch (error) {

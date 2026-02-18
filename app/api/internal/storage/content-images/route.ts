@@ -1,4 +1,6 @@
 import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
+import { resolveRequestId } from '@lib/errors/app-error';
+import { recordErrorEvent } from '@lib/server/errors/error-events';
 import {
   buildPublicObjectUrl,
   deleteObject,
@@ -65,6 +67,32 @@ async function resolveIdentity(request: Request) {
   }
 
   return { ok: true as const, identity: result.data };
+}
+
+async function reportLegacyRelayUsage(input: {
+  request: Request;
+  identity: { userId: string; role: string | null };
+  route: string;
+}) {
+  const requestId = resolveRequestId(input.request);
+  await recordErrorEvent({
+    code: 'STORAGE_LEGACY_RELAY_USED',
+    source: 'storage',
+    severity: 'warn',
+    retryable: false,
+    userMessage: 'Legacy relay upload path is active',
+    developerMessage:
+      'Storage content-images route accepted multipart relay upload while legacy relay switch is enabled.',
+    requestId,
+    actorUserId: input.identity.userId,
+    httpStatus: 200,
+    method: input.request.method,
+    route: input.route,
+    context: {
+      upload_type: 'content-image',
+      auth_role: input.identity.role || 'user',
+    },
+  });
 }
 
 async function attachContentImageObject(
@@ -268,6 +296,16 @@ export async function POST(request: Request) {
     }
 
     console.warn('[ContentImageStorageAPI] Using legacy relay upload path');
+    void reportLegacyRelayUsage({
+      request,
+      identity: auth.identity,
+      route: '/api/internal/storage/content-images',
+    }).catch(error => {
+      console.warn(
+        '[ContentImageStorageAPI] failed to record legacy relay usage event:',
+        error instanceof Error ? error.message : String(error)
+      );
+    });
 
     return handleLegacyUpload(request, auth.identity);
   } catch (error) {
