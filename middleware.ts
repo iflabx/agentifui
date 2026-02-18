@@ -425,6 +425,8 @@ function extractSetCookies(headers: Headers): string[] {
 async function getProfileStatusFromApi(
   request: NextRequest
 ): Promise<ProfileStatusPayload | null> {
+  // Keep middleware auth checks on a read-only path.
+  // Profile/session side effects are triggered after successful auth responses.
   const profileResponse = await fetchInternalEndpoint(
     request,
     INTERNAL_PROFILE_STATUS_PATH,
