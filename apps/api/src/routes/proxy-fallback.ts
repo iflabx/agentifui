@@ -60,12 +60,7 @@ export const proxyFallbackRoutes: FastifyPluginAsync<
   await app.register(replyFrom);
 
   for (const prefix of options.config.proxyPrefixes) {
-    app.route({
-      method: PROXY_METHODS,
-      url: prefix,
-      handler: async (request, reply) =>
-        forwardToNext(request, reply, options.config),
-    });
+    // Register wildcard fallback only, so exact local routes can coexist.
     app.route({
       method: PROXY_METHODS,
       url: `${prefix}/*`,
