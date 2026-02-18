@@ -15,6 +15,7 @@ export interface ApiRuntimeConfig {
   logLevel: string;
   nextUpstreamBaseUrl: string;
   proxyPrefixes: string[];
+  proxyFallbackEnabled: boolean;
   sessionCookieNames: string[];
   internalDataProxyTimeoutMs: number;
 }
@@ -94,6 +95,21 @@ function parseSessionCookieNames(rawValue: string | undefined): string[] {
     });
 }
 
+function parseBoolean(rawValue: string | undefined, fallback = false): boolean {
+  if (!rawValue) {
+    return fallback;
+  }
+
+  const normalized = rawValue.trim().toLowerCase();
+  if (normalized === '1' || normalized === 'true' || normalized === 'yes') {
+    return true;
+  }
+  if (normalized === '0' || normalized === 'false' || normalized === 'no') {
+    return false;
+  }
+  return fallback;
+}
+
 export function loadApiRuntimeConfig(): ApiRuntimeConfig {
   return {
     host: process.env.FASTIFY_API_HOST?.trim() || '0.0.0.0',
@@ -102,6 +118,10 @@ export function loadApiRuntimeConfig(): ApiRuntimeConfig {
     nextUpstreamBaseUrl:
       process.env.NEXT_UPSTREAM_BASE_URL?.trim() || 'http://127.0.0.1:3000',
     proxyPrefixes: parseProxyPrefixes(process.env.FASTIFY_PROXY_PREFIXES),
+    proxyFallbackEnabled: parseBoolean(
+      process.env.FASTIFY_PROXY_FALLBACK_ENABLED,
+      false
+    ),
     sessionCookieNames: parseSessionCookieNames(
       process.env.FASTIFY_AUTH_SESSION_COOKIE_NAMES
     ),

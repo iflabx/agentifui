@@ -57,6 +57,13 @@ async function forwardToNext(
 export const proxyFallbackRoutes: FastifyPluginAsync<
   ProxyFallbackRoutesOptions
 > = async (app, options) => {
+  if (!options.config.proxyFallbackEnabled) {
+    app.log.info(
+      '[FastifyFallbackProxy] disabled (set FASTIFY_PROXY_FALLBACK_ENABLED=1 to enable)'
+    );
+    return;
+  }
+
   await app.register(replyFrom);
 
   for (const prefix of options.config.proxyPrefixes) {

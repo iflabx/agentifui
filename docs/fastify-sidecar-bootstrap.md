@@ -33,7 +33,8 @@ The current migration strategy is:
 4. `FASTIFY_API_HOST`: Fastify bind host (default `0.0.0.0`).
 5. `FASTIFY_API_PORT`: Fastify bind port (default `3010`).
 6. `FASTIFY_LOG_LEVEL`: Fastify log level (default `info`).
-7. `NEXT_UPSTREAM_BASE_URL`: Next upstream URL for Fastify fallback proxy.
+7. `FASTIFY_PROXY_FALLBACK_ENABLED`: `1` enables fallback proxy to Next for unmatched proxied paths (default `0`).
+8. `NEXT_UPSTREAM_BASE_URL`: Next upstream URL for auth outbound calls and optional fallback proxy.
 
 ## Health Endpoints
 
@@ -48,7 +49,7 @@ The current migration strategy is:
 2. `GET /api/internal/apps`
    - Served directly by Fastify.
    - Covers `scope=public|all`, `mode=default`, and `instanceId` query branches.
-   - Uses PostgreSQL + RLS GUC context in Fastify, and bridges session identity via upstream `/api/internal/auth/profile-status`.
+   - Uses PostgreSQL + RLS GUC context in Fastify with local session identity resolution.
 3. `PATCH /api/internal/apps`
    - Served directly by Fastify.
    - Preserves admin-only update contract for app visibility (`public|group_only|private`).

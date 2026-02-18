@@ -126,6 +126,7 @@ async function startServer() {
         host: config.host,
         port: config.port,
         proxyPrefixes: config.proxyPrefixes,
+        proxyFallbackEnabled: config.proxyFallbackEnabled,
       },
       '[FastifyAPI] server started'
     );
