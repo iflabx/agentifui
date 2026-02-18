@@ -8,6 +8,28 @@ export interface PgRlsContextInput {
   systemActor?: boolean;
 }
 
+function parseBooleanEnv(value: string | undefined): boolean | null {
+  if (!value) {
+    return null;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+    return true;
+  }
+  if (['0', 'false', 'no', 'off'].includes(normalized)) {
+    return false;
+  }
+  return null;
+}
+
+function resolveRlsStrictModeSetting(): 'on' | 'off' | null {
+  const parsed = parseBooleanEnv(process.env.APP_RLS_STRICT_MODE);
+  if (parsed === null) {
+    return null;
+  }
+  return parsed ? 'on' : 'off';
+}
+
 function resolveDatabaseUrl(): string {
   const fromPrimary = process.env.DATABASE_URL?.trim();
   if (fromPrimary) {
@@ -92,6 +114,7 @@ export async function runWithPgRlsContext<T>(
   const client = await pool.connect();
   const normalizedUserId = normalizeUserId(context.userId);
   const normalizedSystemActor = normalizeSystemActor(context.systemActor);
+  const strictMode = resolveRlsStrictModeSetting();
 
   try {
     await client.query('BEGIN');
@@ -107,6 +130,12 @@ export async function runWithPgRlsContext<T>(
       `SELECT set_config('app.rls_system_actor', $1::text, true)`,
       [normalizedSystemActor]
     );
+    if (strictMode) {
+      await client.query(
+        `SELECT set_config('app.rls_strict_mode', $1::text, true)`,
+        [strictMode]
+      );
+    }
 
     const resolvedRole = await resolveActorRole(client, context);
     await client.query(
