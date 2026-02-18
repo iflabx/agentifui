@@ -13,6 +13,9 @@ const FORWARDED_HEADERS = [
   'cookie',
   'user-agent',
 ] as const;
+const SESSION_RESOLVER_METRICS_KEY =
+  '__agentifui_fastify_session_resolver_metrics__';
+const DEFAULT_MAX_SESSION_TOKEN_CANDIDATES = 8;
 
 export interface ActorIdentity {
   userId: string;
@@ -41,6 +44,55 @@ interface SessionIdentityRow {
   status: string | null;
 }
 
+type SessionResolverMetricKey =
+  | 'local_ok'
+  | 'local_unauthorized'
+  | 'local_error'
+  | 'upstream_ok'
+  | 'upstream_unauthorized'
+  | 'upstream_error'
+  | 'fallback_used';
+
+type SessionResolverMetrics = Record<SessionResolverMetricKey, number>;
+
+function getSessionResolverMetrics(): SessionResolverMetrics {
+  const globalState = globalThis as unknown as Record<string, unknown>;
+  const existing = globalState[SESSION_RESOLVER_METRICS_KEY] as
+    | SessionResolverMetrics
+    | undefined;
+  if (existing) {
+    return existing;
+  }
+
+  const created: SessionResolverMetrics = {
+    local_ok: 0,
+    local_unauthorized: 0,
+    local_error: 0,
+    upstream_ok: 0,
+    upstream_unauthorized: 0,
+    upstream_error: 0,
+    fallback_used: 0,
+  };
+  globalState[SESSION_RESOLVER_METRICS_KEY] = created;
+  return created;
+}
+
+function bumpResolverMetric(key: SessionResolverMetricKey): void {
+  const metrics = getSessionResolverMetrics();
+  metrics[key] = (metrics[key] || 0) + 1;
+}
+
+export function getSessionResolverMetricsSnapshot(): SessionResolverMetrics {
+  return { ...getSessionResolverMetrics() };
+}
+
+export function resetSessionResolverMetrics(): void {
+  const metrics = getSessionResolverMetrics();
+  for (const key of Object.keys(metrics) as SessionResolverMetricKey[]) {
+    metrics[key] = 0;
+  }
+}
+
 function readHeaderValue(value: string | string[] | undefined): string | null {
   if (typeof value === 'string') {
     const normalized = value.trim();
@@ -58,7 +110,19 @@ function readHeaderValue(value: string | string[] | undefined): string | null {
   return null;
 }
 
-function extractCookieTokens(cookieHeader: string | null): string[] {
+function resolveSessionCookieNames(config: ApiRuntimeConfig): Set<string> {
+  const names = Array.isArray(config.sessionCookieNames)
+    ? config.sessionCookieNames
+    : [];
+  return new Set(
+    names.map(name => name.trim().toLowerCase()).filter(name => name.length > 0)
+  );
+}
+
+function extractCookieTokens(
+  cookieHeader: string | null,
+  sessionCookieNames: Set<string>
+): string[] {
   if (!cookieHeader) {
     return [];
   }
@@ -90,6 +154,10 @@ function extractCookieTokens(cookieHeader: string | null): string[] {
     if (eqIndex <= 0) {
       continue;
     }
+    const name = part.slice(0, eqIndex).trim().toLowerCase();
+    if (!name || !sessionCookieNames.has(name)) {
+      continue;
+    }
 
     const value = part.slice(eqIndex + 1).trim();
     if (!value) {
@@ -106,7 +174,7 @@ function extractCookieTokens(cookieHeader: string | null): string[] {
     }
   }
 
-  return Array.from(tokens);
+  return Array.from(tokens).slice(0, DEFAULT_MAX_SESSION_TOKEN_CANDIDATES);
 }
 
 function extractBearerToken(authorizationHeader: string | null): string | null {
@@ -122,15 +190,20 @@ function extractBearerToken(authorizationHeader: string | null): string | null {
   return token ? token : null;
 }
 
-function extractCandidateSessionTokens(request: FastifyRequest): string[] {
+function extractCandidateSessionTokens(
+  request: FastifyRequest,
+  config: ApiRuntimeConfig
+): string[] {
   const cookieHeader = readHeaderValue(request.headers.cookie);
   const authorizationHeader = readHeaderValue(request.headers.authorization);
-  const tokens = new Set<string>(extractCookieTokens(cookieHeader));
+  const tokens = new Set<string>(
+    extractCookieTokens(cookieHeader, resolveSessionCookieNames(config))
+  );
   const bearerToken = extractBearerToken(authorizationHeader);
   if (bearerToken) {
     tokens.add(bearerToken);
   }
-  return Array.from(tokens);
+  return Array.from(tokens).slice(0, DEFAULT_MAX_SESSION_TOKEN_CANDIDATES);
 }
 
 function normalizeRole(role: string | null): string {
@@ -144,9 +217,10 @@ function normalizeStatus(status: string | null): string | null {
 }
 
 async function resolveProfileStatusLocally(
-  request: FastifyRequest
+  request: FastifyRequest,
+  config: ApiRuntimeConfig
 ): Promise<ResolveProfileStatusResult> {
-  const tokens = extractCandidateSessionTokens(request);
+  const tokens = extractCandidateSessionTokens(request, config);
   if (tokens.length === 0) {
     return { kind: 'unauthorized' };
   }
@@ -308,16 +382,33 @@ export async function resolveProfileStatusFromUpstream(
   request: FastifyRequest,
   config: ApiRuntimeConfig
 ): Promise<ResolveProfileStatusResult> {
-  const local = await resolveProfileStatusLocally(request);
-  if (local.kind !== 'error') {
+  const local = await resolveProfileStatusLocally(request, config);
+  if (local.kind === 'ok') {
+    bumpResolverMetric('local_ok');
     return local;
   }
+  if (local.kind === 'unauthorized') {
+    bumpResolverMetric('local_unauthorized');
+    return local;
+  }
+  bumpResolverMetric('local_error');
 
   if (!config.upstreamProfileStatusFallbackEnabled) {
     return local;
   }
 
-  return resolveProfileStatusViaUpstream(request, config);
+  bumpResolverMetric('fallback_used');
+  const upstream = await resolveProfileStatusViaUpstream(request, config);
+  if (upstream.kind === 'ok') {
+    bumpResolverMetric('upstream_ok');
+    return upstream;
+  }
+  if (upstream.kind === 'unauthorized') {
+    bumpResolverMetric('upstream_unauthorized');
+    return upstream;
+  }
+  bumpResolverMetric('upstream_error');
+  return upstream;
 }
 
 export async function resolveIdentityFromUpstream(

@@ -2,6 +2,8 @@
 import type { ApiRuntimeConfig } from '../config';
 import { queryRowsWithPgSystemContext } from './pg-context';
 import {
+  getSessionResolverMetricsSnapshot,
+  resetSessionResolverMetrics,
   resolveIdentityFromUpstream,
   resolveProfileStatusFromUpstream,
 } from './upstream-session';
@@ -19,6 +21,7 @@ function createConfig(
     logLevel: 'info',
     nextUpstreamBaseUrl: 'http://127.0.0.1:3000',
     proxyPrefixes: ['/api/internal'],
+    sessionCookieNames: ['session_token', 'better-auth.session_token'],
     internalDataProxyTimeoutMs: 30000,
     internalDataLegacyFallbackEnabled: false,
     upstreamProfileStatusFallbackEnabled: false,
@@ -41,6 +44,7 @@ describe('upstream-session resolver', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    resetSessionResolverMetrics();
     global.fetch = jest.fn() as unknown as typeof fetch;
   });
 
@@ -79,7 +83,27 @@ describe('upstream-session resolver', () => {
     const queryParams = mockedQueryRowsWithPgSystemContext.mock
       .calls[0]?.[1] as unknown[] | undefined;
     expect(queryParams?.[0]).toContain('token-123');
+    expect(queryParams?.[0]).not.toContain('dark');
     expect(global.fetch).not.toHaveBeenCalled();
+    expect(getSessionResolverMetricsSnapshot()).toMatchObject({
+      local_ok: 1,
+      fallback_used: 0,
+    });
+  });
+
+  it('ignores non-session cookies when extracting token candidates', async () => {
+    const result = await resolveProfileStatusFromUpstream(
+      createRequest({
+        cookie: 'theme=dark; locale=zh-CN',
+      }),
+      createConfig()
+    );
+
+    expect(result).toEqual({ kind: 'unauthorized' });
+    expect(mockedQueryRowsWithPgSystemContext).not.toHaveBeenCalled();
+    expect(getSessionResolverMetricsSnapshot()).toMatchObject({
+      local_unauthorized: 1,
+    });
   });
 
   it('returns unauthorized when local profile status is not active', async () => {
@@ -99,6 +123,9 @@ describe('upstream-session resolver', () => {
 
     expect(result).toEqual({ kind: 'unauthorized' });
     expect(global.fetch).not.toHaveBeenCalled();
+    expect(getSessionResolverMetricsSnapshot()).toMatchObject({
+      local_unauthorized: 1,
+    });
   });
 
   it('falls back to upstream profile-status when local resolve errors and fallback is enabled', async () => {
@@ -128,6 +155,11 @@ describe('upstream-session resolver', () => {
     }
     expect(result.identity.userId).toBe('00000000-0000-4000-8000-000000000012');
     expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(getSessionResolverMetricsSnapshot()).toMatchObject({
+      local_error: 1,
+      fallback_used: 1,
+      upstream_ok: 1,
+    });
   });
 
   it('maps profile status identity to actor identity', async () => {

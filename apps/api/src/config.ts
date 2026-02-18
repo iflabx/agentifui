@@ -15,10 +15,18 @@ export interface ApiRuntimeConfig {
   logLevel: string;
   nextUpstreamBaseUrl: string;
   proxyPrefixes: string[];
+  sessionCookieNames: string[];
   internalDataProxyTimeoutMs: number;
   internalDataLegacyFallbackEnabled: boolean;
   upstreamProfileStatusFallbackEnabled: boolean;
 }
+
+const DEFAULT_SESSION_COOKIE_NAMES = [
+  'session_token',
+  'better-auth.session_token',
+  '__Secure-session_token',
+  '__Secure-better-auth.session_token',
+];
 
 function parsePort(rawValue: string | undefined, fallback: number): number {
   if (!rawValue) {
@@ -85,6 +93,26 @@ function parseProxyPrefixes(rawValue: string | undefined): string[] {
     });
 }
 
+function parseSessionCookieNames(rawValue: string | undefined): string[] {
+  const source =
+    typeof rawValue === 'string' && rawValue.trim().length > 0
+      ? rawValue
+      : DEFAULT_SESSION_COOKIE_NAMES.join(',');
+  const seen = new Set<string>();
+  return source
+    .split(',')
+    .map(name => name.trim())
+    .filter(Boolean)
+    .filter(name => {
+      const normalized = name.toLowerCase();
+      if (seen.has(normalized)) {
+        return false;
+      }
+      seen.add(normalized);
+      return true;
+    });
+}
+
 export function loadApiRuntimeConfig(): ApiRuntimeConfig {
   return {
     host: process.env.FASTIFY_API_HOST?.trim() || '0.0.0.0',
@@ -93,6 +121,9 @@ export function loadApiRuntimeConfig(): ApiRuntimeConfig {
     nextUpstreamBaseUrl:
       process.env.NEXT_UPSTREAM_BASE_URL?.trim() || 'http://127.0.0.1:3000',
     proxyPrefixes: parseProxyPrefixes(process.env.FASTIFY_PROXY_PREFIXES),
+    sessionCookieNames: parseSessionCookieNames(
+      process.env.FASTIFY_AUTH_SESSION_COOKIE_NAMES
+    ),
     internalDataProxyTimeoutMs: parseTimeoutMs(
       process.env.FASTIFY_INTERNAL_DATA_PROXY_TIMEOUT_MS,
       30000
