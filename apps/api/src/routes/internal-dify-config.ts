@@ -4,7 +4,7 @@ import { createDecipheriv, createHash } from 'node:crypto';
 import type { ApiRuntimeConfig } from '../config';
 import { queryRowsWithPgSystemContext } from '../lib/pg-context';
 import { buildRouteErrorPayload } from '../lib/route-error';
-import { resolveIdentityFromSession } from '../lib/upstream-session';
+import { resolveIdentityFromSession } from '../lib/session-identity';
 
 interface InternalDifyConfigRoutesOptions {
   config: ApiRuntimeConfig;

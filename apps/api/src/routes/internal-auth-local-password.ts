@@ -6,7 +6,7 @@ import { buildRouteErrorPayload } from '../lib/route-error';
 import {
   type ProfileStatusIdentity,
   resolveProfileStatusFromSession,
-} from '../lib/upstream-session';
+} from '../lib/session-identity';
 
 type AuthMode = 'normal' | 'degraded';
 

@@ -16,7 +16,7 @@ import {
 import {
   type ProfileStatusIdentity,
   resolveProfileStatusFromSession,
-} from '../lib/upstream-session';
+} from '../lib/session-identity';
 
 interface InternalDataRoutesOptions {
   config: ApiRuntimeConfig;

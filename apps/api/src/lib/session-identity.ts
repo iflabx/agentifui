@@ -298,19 +298,3 @@ export async function resolveIdentityFromSession(
     },
   };
 }
-
-// Backward-compatible aliases kept for existing route imports.
-export async function resolveProfileStatusFromUpstream(
-  request: FastifyRequest,
-  config: ApiRuntimeConfig
-): Promise<ResolveProfileStatusResult> {
-  return resolveProfileStatusFromSession(request, config);
-}
-
-// Backward-compatible aliases kept for existing route imports.
-export async function resolveIdentityFromUpstream(
-  request: FastifyRequest,
-  config: ApiRuntimeConfig
-): Promise<ResolveIdentityResult> {
-  return resolveIdentityFromSession(request, config);
-}

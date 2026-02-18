@@ -6,7 +6,7 @@ import { buildRouteErrorPayload } from '../lib/route-error';
 import {
   type ActorIdentity,
   resolveIdentityFromSession,
-} from '../lib/upstream-session';
+} from '../lib/session-identity';
 
 interface InternalProfileRoutesOptions {
   config: ApiRuntimeConfig;

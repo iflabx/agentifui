@@ -6,7 +6,7 @@ import {
   resetSessionResolverMetrics,
   resolveIdentityFromSession,
   resolveProfileStatusFromSession,
-} from './upstream-session';
+} from './session-identity';
 
 jest.mock('./pg-context', () => ({
   queryRowsWithPgSystemContext: jest.fn(),
@@ -35,7 +35,7 @@ function createRequest(headers: Record<string, string> = {}) {
   } as never;
 }
 
-describe('upstream-session resolver', () => {
+describe('session-identity resolver', () => {
   const mockedQueryRowsWithPgSystemContext =
     queryRowsWithPgSystemContext as jest.MockedFunction<
       typeof queryRowsWithPgSystemContext

@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import type { ApiRuntimeConfig } from '../config';
 import { buildRouteErrorPayload } from '../lib/route-error';
-import { resolveIdentityFromSession } from '../lib/upstream-session';
+import { resolveIdentityFromSession } from '../lib/session-identity';
 
 interface AdminTranslationsRoutesOptions {
   config: ApiRuntimeConfig;

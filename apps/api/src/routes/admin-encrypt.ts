@@ -3,7 +3,7 @@ import { createCipheriv, createHash, randomBytes } from 'node:crypto';
 
 import type { ApiRuntimeConfig } from '../config';
 import { buildRouteErrorPayload } from '../lib/route-error';
-import { resolveIdentityFromSession } from '../lib/upstream-session';
+import { resolveIdentityFromSession } from '../lib/session-identity';
 
 interface AdminEncryptRoutesOptions {
   config: ApiRuntimeConfig;
