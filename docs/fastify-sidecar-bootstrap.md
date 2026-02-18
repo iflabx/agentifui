@@ -35,6 +35,7 @@ The current migration strategy is:
 6. `FASTIFY_LOG_LEVEL`: Fastify log level (default `info`).
 7. `FASTIFY_PROXY_FALLBACK_ENABLED`: `1` enables fallback proxy to Next for unmatched proxied paths (default `0`).
 8. `NEXT_UPSTREAM_BASE_URL`: Next upstream URL for auth outbound calls and optional fallback proxy.
+9. `REALTIME_SOURCE_MODE`: for Fastify-proxied `/api/internal/apps` and `/api/internal/profile`, use `db-outbox` (guard blocks `app-direct|hybrid`).
 
 ## Health Endpoints
 

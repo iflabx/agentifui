@@ -25,6 +25,39 @@ import { internalProfileRoutes } from './routes/internal-profile';
 import { proxyFallbackRoutes } from './routes/proxy-fallback';
 import { translationsRoutes } from './routes/translations';
 
+const REALTIME_SENSITIVE_PREFIXES = [
+  '/api/internal/apps',
+  '/api/internal/profile',
+];
+
+function hasPrefixCoverage(prefixes: string[], targetPrefix: string): boolean {
+  return prefixes.some(
+    prefix =>
+      prefix === targetPrefix ||
+      prefix.startsWith(`${targetPrefix}/`) ||
+      targetPrefix.startsWith(`${prefix}/`)
+  );
+}
+
+function assertRealtimeModeSupport(config: ApiRuntimeConfig): void {
+  if (config.realtimeSourceMode === 'db-outbox') {
+    return;
+  }
+
+  const matchedPrefixes = REALTIME_SENSITIVE_PREFIXES.filter(prefix =>
+    hasPrefixCoverage(config.proxyPrefixes, prefix)
+  );
+  if (matchedPrefixes.length === 0) {
+    return;
+  }
+
+  throw new Error(
+    `REALTIME_SOURCE_MODE=${config.realtimeSourceMode} is not supported for proxied prefixes: ${matchedPrefixes.join(
+      ', '
+    )}. Use REALTIME_SOURCE_MODE=db-outbox or remove these prefixes from FASTIFY_PROXY_PREFIXES.`
+  );
+}
+
 function resolveHttpStatusCode(error: unknown): number {
   if (typeof error !== 'object' || error === null) {
     return 500;
@@ -37,6 +70,8 @@ function resolveHttpStatusCode(error: unknown): number {
 }
 
 export async function createApiServer(config: ApiRuntimeConfig) {
+  assertRealtimeModeSupport(config);
+
   const app = Fastify({
     logger: {
       level: config.logLevel,
@@ -127,6 +162,7 @@ async function startServer() {
         port: config.port,
         proxyPrefixes: config.proxyPrefixes,
         proxyFallbackEnabled: config.proxyFallbackEnabled,
+        realtimeSourceMode: config.realtimeSourceMode,
       },
       '[FastifyAPI] server started'
     );

@@ -9,6 +9,8 @@ export const DEFAULT_FASTIFY_PROXY_PREFIXES = [
   '/api/translations',
 ];
 
+export type RealtimeSourceMode = 'db-outbox' | 'app-direct' | 'hybrid';
+
 export interface ApiRuntimeConfig {
   host: string;
   port: number;
@@ -16,6 +18,7 @@ export interface ApiRuntimeConfig {
   nextUpstreamBaseUrl: string;
   proxyPrefixes: string[];
   proxyFallbackEnabled: boolean;
+  realtimeSourceMode: RealtimeSourceMode;
   sessionCookieNames: string[];
   internalDataProxyTimeoutMs: number;
 }
@@ -110,6 +113,19 @@ function parseBoolean(rawValue: string | undefined, fallback = false): boolean {
   return fallback;
 }
 
+function parseRealtimeSourceMode(
+  rawValue: string | undefined
+): RealtimeSourceMode {
+  const normalized = (rawValue || 'db-outbox').trim().toLowerCase();
+  if (normalized === 'app-direct') {
+    return 'app-direct';
+  }
+  if (normalized === 'hybrid') {
+    return 'hybrid';
+  }
+  return 'db-outbox';
+}
+
 export function loadApiRuntimeConfig(): ApiRuntimeConfig {
   return {
     host: process.env.FASTIFY_API_HOST?.trim() || '0.0.0.0',
@@ -121,6 +137,9 @@ export function loadApiRuntimeConfig(): ApiRuntimeConfig {
     proxyFallbackEnabled: parseBoolean(
       process.env.FASTIFY_PROXY_FALLBACK_ENABLED,
       false
+    ),
+    realtimeSourceMode: parseRealtimeSourceMode(
+      process.env.REALTIME_SOURCE_MODE
     ),
     sessionCookieNames: parseSessionCookieNames(
       process.env.FASTIFY_AUTH_SESSION_COOKIE_NAMES

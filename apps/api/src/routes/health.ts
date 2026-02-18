@@ -26,6 +26,7 @@ export const healthRoutes: FastifyPluginAsync<HealthRoutesOptions> = async (
         nextUpstreamBaseUrl: options.config.nextUpstreamBaseUrl,
         proxyPrefixes: options.config.proxyPrefixes,
         proxyFallbackEnabled: options.config.proxyFallbackEnabled,
+        realtimeSourceMode: options.config.realtimeSourceMode,
       },
     };
   });
