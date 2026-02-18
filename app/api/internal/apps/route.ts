@@ -1,4 +1,5 @@
 import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
+import { nextApiErrorResponse } from '@lib/errors/next-api-error-response';
 import {
   queryRowsWithPgSystemContext,
   queryRowsWithPgUserContext,
@@ -79,20 +80,29 @@ async function requireAuthenticated(request: Request) {
   if (!identity.success) {
     return {
       ok: false as const,
-      response: NextResponse.json(
-        { success: false, error: 'Failed to verify session' },
-        { status: 500 }
-      ),
+      response: nextApiErrorResponse({
+        request,
+        status: 500,
+        source: 'auth',
+        code: 'AUTH_VERIFY_FAILED',
+        userMessage: 'Failed to verify session',
+        developerMessage:
+          identity.error?.message ||
+          'resolveSessionIdentity returned unsuccessful result',
+      }),
     };
   }
 
   if (!identity.data) {
     return {
       ok: false as const,
-      response: NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      ),
+      response: nextApiErrorResponse({
+        request,
+        status: 401,
+        source: 'auth',
+        code: 'AUTH_UNAUTHORIZED',
+        userMessage: 'Unauthorized',
+      }),
     };
   }
 
@@ -233,18 +243,22 @@ export async function GET(request: Request) {
 
       const scoped = scopedRows[0];
       if (!scoped) {
-        return NextResponse.json(
-          { success: false, error: 'App instance not found' },
-          { status: 404 }
-        );
+        return nextApiErrorResponse({
+          request,
+          status: 404,
+          code: 'APP_INSTANCE_NOT_FOUND',
+          userMessage: 'App instance not found',
+        });
       }
 
       const detail = await resolveDetailByServiceInstanceId(scoped.id);
       if (!detail) {
-        return NextResponse.json(
-          { success: false, error: 'App instance not found' },
-          { status: 404 }
-        );
+        return nextApiErrorResponse({
+          request,
+          status: 404,
+          code: 'APP_INSTANCE_NOT_FOUND',
+          userMessage: 'App instance not found',
+        });
       }
 
       return NextResponse.json({ success: true, app: toAppDetail(detail) });
@@ -329,10 +343,14 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error('[InternalAppsAPI] failed:', error);
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 500,
+      code: 'INTERNAL_APPS_GET_FAILED',
+      userMessage: 'Internal server error',
+      developerMessage:
+        error instanceof Error ? error.message : 'Unknown apps GET error',
+    });
   }
 }
 
@@ -355,10 +373,12 @@ export async function PATCH(request: Request) {
         visibility !== 'group_only' &&
         visibility !== 'private')
     ) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid update payload' },
-        { status: 400 }
-      );
+      return nextApiErrorResponse({
+        request,
+        status: 400,
+        code: 'APP_UPDATE_PAYLOAD_INVALID',
+        userMessage: 'Invalid update payload',
+      });
     }
 
     const oldRow = await resolveDetailByServiceInstanceId(id);
@@ -392,10 +412,12 @@ export async function PATCH(request: Request) {
     );
 
     if (!rows[0]) {
-      return NextResponse.json(
-        { success: false, error: 'App instance not found' },
-        { status: 404 }
-      );
+      return nextApiErrorResponse({
+        request,
+        status: 404,
+        code: 'APP_INSTANCE_NOT_FOUND',
+        userMessage: 'App instance not found',
+      });
     }
 
     await publishTableChangeEvent({
@@ -413,9 +435,13 @@ export async function PATCH(request: Request) {
     });
   } catch (error) {
     console.error('[InternalAppsAPI] PATCH failed:', error);
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 500,
+      code: 'INTERNAL_APPS_PATCH_FAILED',
+      userMessage: 'Internal server error',
+      developerMessage:
+        error instanceof Error ? error.message : 'Unknown apps PATCH error',
+    });
   }
 }

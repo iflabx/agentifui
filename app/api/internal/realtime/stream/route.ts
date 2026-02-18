@@ -1,4 +1,5 @@
 import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
+import { nextApiErrorResponse } from '@lib/errors/next-api-error-response';
 import { queryRowsWithPgUserContext } from '@lib/server/pg/user-context';
 import { ensureRealtimeOutboxDispatcher } from '@lib/server/realtime/outbox-dispatcher';
 import {
@@ -45,30 +46,42 @@ async function resolveIdentity(request: Request) {
   if (!result.success) {
     return {
       ok: false as const,
-      response: NextResponse.json(
-        { success: false, error: 'Failed to verify session' },
-        { status: 500 }
-      ),
+      response: nextApiErrorResponse({
+        request,
+        status: 500,
+        source: 'auth',
+        code: 'AUTH_VERIFY_FAILED',
+        userMessage: 'Failed to verify session',
+        developerMessage:
+          result.error?.message ||
+          'resolveSessionIdentity returned unsuccessful result',
+      }),
     };
   }
 
   if (!result.data) {
     return {
       ok: false as const,
-      response: NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      ),
+      response: nextApiErrorResponse({
+        request,
+        status: 401,
+        source: 'auth',
+        code: 'AUTH_UNAUTHORIZED',
+        userMessage: 'Unauthorized',
+      }),
     };
   }
 
   if (result.data.status !== 'active') {
     return {
       ok: false as const,
-      response: NextResponse.json(
-        { success: false, error: 'Account is not active' },
-        { status: 403 }
-      ),
+      response: nextApiErrorResponse({
+        request,
+        status: 403,
+        source: 'auth',
+        code: 'AUTH_ACCOUNT_INACTIVE',
+        userMessage: 'Account is not active',
+      }),
     };
   }
 
@@ -241,34 +254,43 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const key = (url.searchParams.get('key') || '').trim();
     if (!key) {
-      return NextResponse.json(
-        { success: false, error: 'Missing subscription key' },
-        { status: 400 }
-      );
+      return nextApiErrorResponse({
+        request,
+        status: 400,
+        code: 'REALTIME_SUBSCRIPTION_KEY_MISSING',
+        userMessage: 'Missing subscription key',
+      });
     }
 
     const scope = getKeyScope(key);
     if (!scope) {
-      return NextResponse.json(
-        { success: false, error: 'Unsupported subscription key' },
-        { status: 400 }
-      );
+      return nextApiErrorResponse({
+        request,
+        status: 400,
+        code: 'REALTIME_SUBSCRIPTION_KEY_UNSUPPORTED',
+        userMessage: 'Unsupported subscription key',
+      });
     }
 
     const allowed = await authorizeKeyScope(scope, auth.identity);
     if (!allowed) {
-      return NextResponse.json(
-        { success: false, error: 'Forbidden' },
-        { status: 403 }
-      );
+      return nextApiErrorResponse({
+        request,
+        status: 403,
+        source: 'auth',
+        code: 'AUTH_FORBIDDEN',
+        userMessage: 'Forbidden',
+      });
     }
 
     const config = resolveConfigFromSearchParams(key, url.searchParams);
     if (!config.table) {
-      return NextResponse.json(
-        { success: false, error: 'Missing table in subscription config' },
-        { status: 400 }
-      );
+      return nextApiErrorResponse({
+        request,
+        status: 400,
+        code: 'REALTIME_SUBSCRIPTION_TABLE_MISSING',
+        userMessage: 'Missing table in subscription config',
+      });
     }
 
     const encoder = new TextEncoder();
@@ -432,9 +454,15 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error('[InternalRealtimeStreamAPI] GET failed:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to establish realtime stream' },
-      { status: 500 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 500,
+      code: 'INTERNAL_REALTIME_STREAM_FAILED',
+      userMessage: 'Failed to establish realtime stream',
+      developerMessage:
+        error instanceof Error
+          ? error.message
+          : 'Unknown realtime stream initialization error',
+    });
   }
 }

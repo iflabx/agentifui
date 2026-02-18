@@ -1,4 +1,5 @@
 import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
+import { nextApiErrorResponse } from '@lib/errors/next-api-error-response';
 import { getRealtimeBrokerStats } from '@lib/server/realtime/redis-broker';
 import { realtimeService } from '@lib/services/db/realtime-service';
 
@@ -11,30 +12,42 @@ async function resolveIdentity(request: Request) {
   if (!result.success) {
     return {
       ok: false as const,
-      response: NextResponse.json(
-        { success: false, error: 'Failed to verify session' },
-        { status: 500 }
-      ),
+      response: nextApiErrorResponse({
+        request,
+        status: 500,
+        source: 'auth',
+        code: 'AUTH_VERIFY_FAILED',
+        userMessage: 'Failed to verify session',
+        developerMessage:
+          result.error?.message ||
+          'resolveSessionIdentity returned unsuccessful result',
+      }),
     };
   }
 
   if (!result.data) {
     return {
       ok: false as const,
-      response: NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      ),
+      response: nextApiErrorResponse({
+        request,
+        status: 401,
+        source: 'auth',
+        code: 'AUTH_UNAUTHORIZED',
+        userMessage: 'Unauthorized',
+      }),
     };
   }
 
   if (result.data.status !== 'active') {
     return {
       ok: false as const,
-      response: NextResponse.json(
-        { success: false, error: 'Account is not active' },
-        { status: 403 }
-      ),
+      response: nextApiErrorResponse({
+        request,
+        status: 403,
+        source: 'auth',
+        code: 'AUTH_ACCOUNT_INACTIVE',
+        userMessage: 'Account is not active',
+      }),
     };
   }
 
@@ -49,10 +62,13 @@ export async function GET(request: Request) {
     }
 
     if (auth.identity.role !== 'admin') {
-      return NextResponse.json(
-        { success: false, error: 'Forbidden' },
-        { status: 403 }
-      );
+      return nextApiErrorResponse({
+        request,
+        status: 403,
+        source: 'auth',
+        code: 'AUTH_FORBIDDEN',
+        userMessage: 'Forbidden',
+      });
     }
 
     const stats = realtimeService.getStats();
@@ -67,9 +83,15 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error('[InternalRealtimeStatsAPI] GET failed:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to get realtime stats' },
-      { status: 500 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 500,
+      code: 'INTERNAL_REALTIME_STATS_FAILED',
+      userMessage: 'Failed to get realtime stats',
+      developerMessage:
+        error instanceof Error
+          ? error.message
+          : 'Unknown realtime stats retrieval error',
+    });
   }
 }

@@ -1,4 +1,5 @@
 import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
+import { nextApiErrorResponse } from '@lib/errors/next-api-error-response';
 import { enforceStoragePresignRateLimit } from '@lib/server/security/storage-rate-limit';
 import {
   buildPublicObjectUrl,
@@ -39,30 +40,42 @@ async function resolveIdentity(request: Request) {
   if (!result.success) {
     return {
       ok: false as const,
-      response: NextResponse.json(
-        { success: false, error: 'Failed to verify session' },
-        { status: 500 }
-      ),
+      response: nextApiErrorResponse({
+        request,
+        status: 500,
+        source: 'auth',
+        code: 'AUTH_VERIFY_FAILED',
+        userMessage: 'Failed to verify session',
+        developerMessage:
+          result.error?.message ||
+          'resolveSessionIdentity returned unsuccessful result',
+      }),
     };
   }
 
   if (!result.data) {
     return {
       ok: false as const,
-      response: NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      ),
+      response: nextApiErrorResponse({
+        request,
+        status: 401,
+        source: 'auth',
+        code: 'AUTH_UNAUTHORIZED',
+        userMessage: 'Unauthorized',
+      }),
     };
   }
 
   if (result.data.status !== 'active') {
     return {
       ok: false as const,
-      response: NextResponse.json(
-        { success: false, error: 'Account is not active' },
-        { status: 403 }
-      ),
+      response: nextApiErrorResponse({
+        request,
+        status: 403,
+        source: 'auth',
+        code: 'AUTH_ACCOUNT_INACTIVE',
+        userMessage: 'Account is not active',
+      }),
     };
   }
 
@@ -104,10 +117,13 @@ export async function POST(request: Request) {
       !contentType ||
       !Number.isFinite(fileSize)
     ) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid presign payload' },
-        { status: 400 }
-      );
+      return nextApiErrorResponse({
+        request,
+        status: 400,
+        source: 'storage',
+        code: 'STORAGE_CONTENT_IMAGE_PRESIGN_PAYLOAD_INVALID',
+        userMessage: 'Invalid presign payload',
+      });
     }
 
     if (
@@ -117,10 +133,13 @@ export async function POST(request: Request) {
         targetUserId
       )
     ) {
-      return NextResponse.json(
-        { success: false, error: 'Forbidden' },
-        { status: 403 }
-      );
+      return nextApiErrorResponse({
+        request,
+        status: 403,
+        source: 'auth',
+        code: 'AUTH_FORBIDDEN',
+        userMessage: 'Forbidden',
+      });
     }
 
     const validation = validateUploadInput('content-images', {
@@ -128,10 +147,13 @@ export async function POST(request: Request) {
       sizeBytes: fileSize,
     });
     if (!validation.ok) {
-      return NextResponse.json(
-        { success: false, error: validation.error },
-        { status: 400 }
-      );
+      return nextApiErrorResponse({
+        request,
+        status: 400,
+        source: 'storage',
+        code: 'STORAGE_CONTENT_IMAGE_UPLOAD_INVALID',
+        userMessage: validation.error,
+      });
     }
 
     const path = buildUserObjectPath(
@@ -152,10 +174,17 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error('[ContentImageStoragePresignAPI] POST failed:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to create content image upload URL' },
-      { status: 500 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 500,
+      source: 'storage',
+      code: 'STORAGE_CONTENT_IMAGE_PRESIGN_UPLOAD_FAILED',
+      userMessage: 'Failed to create content image upload URL',
+      developerMessage:
+        error instanceof Error
+          ? error.message
+          : 'Unknown content image upload presign error',
+    });
   }
 }
 
@@ -181,17 +210,23 @@ export async function GET(request: Request) {
     const publicReadEnabled = isStoragePublicReadEnabled();
 
     if (!path) {
-      return NextResponse.json(
-        { success: false, error: 'Missing path' },
-        { status: 400 }
-      );
+      return nextApiErrorResponse({
+        request,
+        status: 400,
+        source: 'storage',
+        code: 'STORAGE_OBJECT_PATH_MISSING',
+        userMessage: 'Missing path',
+      });
     }
 
     if (path.includes('..')) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid path' },
-        { status: 400 }
-      );
+      return nextApiErrorResponse({
+        request,
+        status: 400,
+        source: 'storage',
+        code: 'STORAGE_OBJECT_PATH_INVALID',
+        userMessage: 'Invalid path',
+      });
     }
 
     if (!publicReadEnabled) {
@@ -203,27 +238,36 @@ export async function GET(request: Request) {
           targetUserId
         )
       ) {
-        return NextResponse.json(
-          { success: false, error: 'Forbidden' },
-          { status: 403 }
-        );
+        return nextApiErrorResponse({
+          request,
+          status: 403,
+          source: 'auth',
+          code: 'AUTH_FORBIDDEN',
+          userMessage: 'Forbidden',
+        });
       }
 
       const ownership = assertOwnedObjectPath(path, targetUserId);
       if (!ownership.ok) {
-        return NextResponse.json(
-          { success: false, error: ownership.error },
-          { status: 400 }
-        );
+        return nextApiErrorResponse({
+          request,
+          status: 400,
+          source: 'storage',
+          code: 'STORAGE_CONTENT_IMAGE_OBJECT_PATH_INVALID',
+          userMessage: ownership.error,
+        });
       }
     }
 
     const head = await headObject('content-images', path);
     if (!head.exists) {
-      return NextResponse.json(
-        { success: false, error: 'Content image object not found' },
-        { status: 404 }
-      );
+      return nextApiErrorResponse({
+        request,
+        status: 404,
+        source: 'storage',
+        code: 'STORAGE_CONTENT_IMAGE_OBJECT_NOT_FOUND',
+        userMessage: 'Content image object not found',
+      });
     }
 
     const downloadUrl = createPresignedDownloadUrl('content-images', path, {
@@ -245,9 +289,16 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error('[ContentImageStoragePresignAPI] GET failed:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to create content image download URL' },
-      { status: 500 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 500,
+      source: 'storage',
+      code: 'STORAGE_CONTENT_IMAGE_PRESIGN_DOWNLOAD_FAILED',
+      userMessage: 'Failed to create content image download URL',
+      developerMessage:
+        error instanceof Error
+          ? error.message
+          : 'Unknown content image download presign error',
+    });
   }
 }

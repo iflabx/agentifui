@@ -1,5 +1,6 @@
 import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
 import { resolveRequestId } from '@lib/errors/app-error';
+import { nextApiErrorResponse } from '@lib/errors/next-api-error-response';
 import { recordErrorEvent } from '@lib/server/errors/error-events';
 import { queryRowsWithPgUserContext } from '@lib/server/pg/user-context';
 import { publishTableChangeEvent } from '@lib/server/realtime/publisher';
@@ -46,30 +47,42 @@ async function resolveIdentity(request: Request) {
   if (!result.success) {
     return {
       ok: false as const,
-      response: NextResponse.json(
-        { success: false, error: 'Failed to verify session' },
-        { status: 500 }
-      ),
+      response: nextApiErrorResponse({
+        request,
+        status: 500,
+        source: 'auth',
+        code: 'AUTH_VERIFY_FAILED',
+        userMessage: 'Failed to verify session',
+        developerMessage:
+          result.error?.message ||
+          'resolveSessionIdentity returned unsuccessful result',
+      }),
     };
   }
 
   if (!result.data) {
     return {
       ok: false as const,
-      response: NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      ),
+      response: nextApiErrorResponse({
+        request,
+        status: 401,
+        source: 'auth',
+        code: 'AUTH_UNAUTHORIZED',
+        userMessage: 'Unauthorized',
+      }),
     };
   }
 
   if (result.data.status !== 'active') {
     return {
       ok: false as const,
-      response: NextResponse.json(
-        { success: false, error: 'Account is not active' },
-        { status: 403 }
-      ),
+      response: nextApiErrorResponse({
+        request,
+        status: 403,
+        source: 'auth',
+        code: 'AUTH_ACCOUNT_INACTIVE',
+        userMessage: 'Account is not active',
+      }),
     };
   }
 
@@ -233,27 +246,36 @@ async function handleCommitUpload(request: Request, identity: SessionIdentity) {
   const filePath = (body.path || '').trim();
   const targetUserId = (body.userId || '').trim();
   if (!filePath || !targetUserId) {
-    return NextResponse.json(
-      { success: false, error: 'Invalid commit request' },
-      { status: 400 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 400,
+      source: 'storage',
+      code: 'STORAGE_AVATAR_COMMIT_PAYLOAD_INVALID',
+      userMessage: 'Invalid commit request',
+    });
   }
 
   if (
     !canManageTargetUser(identity.userId, identity.role || 'user', targetUserId)
   ) {
-    return NextResponse.json(
-      { success: false, error: 'Forbidden' },
-      { status: 403 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 403,
+      source: 'auth',
+      code: 'AUTH_FORBIDDEN',
+      userMessage: 'Forbidden',
+    });
   }
 
   const ownership = assertOwnedObjectPath(filePath, targetUserId);
   if (!ownership.ok) {
-    return NextResponse.json(
-      { success: false, error: ownership.error },
-      { status: 400 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 400,
+      source: 'storage',
+      code: 'STORAGE_AVATAR_OBJECT_PATH_INVALID',
+      userMessage: ownership.error,
+    });
   }
 
   try {
@@ -278,7 +300,17 @@ async function handleCommitUpload(request: Request, identity: SessionIdentity) {
 
     const message = error instanceof Error ? error.message : String(error);
     const status = message.includes('not found') ? 404 : 400;
-    return NextResponse.json({ success: false, error: message }, { status });
+    return nextApiErrorResponse({
+      request,
+      status,
+      source: 'storage',
+      code:
+        status === 404
+          ? 'STORAGE_AVATAR_OBJECT_NOT_FOUND'
+          : 'STORAGE_AVATAR_COMMIT_FAILED',
+      userMessage: message,
+      developerMessage: message,
+    });
   }
 }
 
@@ -288,19 +320,25 @@ async function handleLegacyUpload(request: Request, identity: SessionIdentity) {
   const targetUserId = String(formData.get('userId') || '').trim();
 
   if (!file || !(file instanceof File) || !targetUserId) {
-    return NextResponse.json(
-      { success: false, error: 'Invalid upload request' },
-      { status: 400 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 400,
+      source: 'storage',
+      code: 'STORAGE_AVATAR_UPLOAD_PAYLOAD_INVALID',
+      userMessage: 'Invalid upload request',
+    });
   }
 
   if (
     !canManageTargetUser(identity.userId, identity.role || 'user', targetUserId)
   ) {
-    return NextResponse.json(
-      { success: false, error: 'Forbidden' },
-      { status: 403 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 403,
+      source: 'auth',
+      code: 'AUTH_FORBIDDEN',
+      userMessage: 'Forbidden',
+    });
   }
 
   const validation = validateUploadInput('avatars', {
@@ -308,10 +346,13 @@ async function handleLegacyUpload(request: Request, identity: SessionIdentity) {
     sizeBytes: file.size,
   });
   if (!validation.ok) {
-    return NextResponse.json(
-      { success: false, error: validation.error },
-      { status: 400 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 400,
+      source: 'storage',
+      code: 'STORAGE_AVATAR_UPLOAD_INVALID',
+      userMessage: validation.error,
+    });
   }
 
   const filePath = buildUserObjectPath(
@@ -362,14 +403,14 @@ export async function POST(request: Request) {
     }
 
     if (!isLegacyRelayEnabled()) {
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            'Legacy relay upload is disabled. Use the presign + commit upload flow.',
-        },
-        { status: 410 }
-      );
+      return nextApiErrorResponse({
+        request,
+        status: 410,
+        source: 'storage',
+        code: 'STORAGE_LEGACY_RELAY_DISABLED',
+        userMessage:
+          'Legacy relay upload is disabled. Use the presign + commit upload flow.',
+      });
     }
 
     console.warn('[AvatarStorageAPI] Using legacy relay upload path');
@@ -387,10 +428,15 @@ export async function POST(request: Request) {
     return handleLegacyUpload(request, auth.identity);
   } catch (error) {
     console.error('[AvatarStorageAPI] POST failed:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to upload avatar' },
-      { status: 500 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 500,
+      source: 'storage',
+      code: 'STORAGE_AVATAR_UPLOAD_FAILED',
+      userMessage: 'Failed to upload avatar',
+      developerMessage:
+        error instanceof Error ? error.message : 'Unknown avatar upload error',
+    });
   }
 }
 
@@ -409,10 +455,13 @@ export async function DELETE(request: Request) {
     const filePath = (body.filePath || '').trim();
     const targetUserId = (body.userId || '').trim() || auth.identity.userId;
     if (!filePath) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid delete request' },
-        { status: 400 }
-      );
+      return nextApiErrorResponse({
+        request,
+        status: 400,
+        source: 'storage',
+        code: 'STORAGE_AVATAR_DELETE_PAYLOAD_INVALID',
+        userMessage: 'Invalid delete request',
+      });
     }
 
     if (
@@ -422,18 +471,24 @@ export async function DELETE(request: Request) {
         targetUserId
       )
     ) {
-      return NextResponse.json(
-        { success: false, error: 'Forbidden' },
-        { status: 403 }
-      );
+      return nextApiErrorResponse({
+        request,
+        status: 403,
+        source: 'auth',
+        code: 'AUTH_FORBIDDEN',
+        userMessage: 'Forbidden',
+      });
     }
 
     const ownership = assertOwnedObjectPath(filePath, targetUserId);
     if (!ownership.ok) {
-      return NextResponse.json(
-        { success: false, error: ownership.error },
-        { status: 400 }
-      );
+      return nextApiErrorResponse({
+        request,
+        status: 400,
+        source: 'storage',
+        code: 'STORAGE_AVATAR_OBJECT_PATH_INVALID',
+        userMessage: ownership.error,
+      });
     }
 
     await deleteObject('avatars', filePath);
@@ -443,9 +498,14 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('[AvatarStorageAPI] DELETE failed:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to delete avatar' },
-      { status: 500 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 500,
+      source: 'storage',
+      code: 'STORAGE_AVATAR_DELETE_FAILED',
+      userMessage: 'Failed to delete avatar',
+      developerMessage:
+        error instanceof Error ? error.message : 'Unknown avatar delete error',
+    });
   }
 }

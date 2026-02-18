@@ -1,4 +1,5 @@
 import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
+import { nextApiErrorResponse } from '@lib/errors/next-api-error-response';
 import { queryRowsWithPgSystemContext } from '@lib/server/pg/user-context';
 import { publishTableChangeEvent } from '@lib/server/realtime/publisher';
 
@@ -34,20 +35,29 @@ async function resolveIdentity(request: Request) {
   if (!result.success) {
     return {
       ok: false as const,
-      response: NextResponse.json(
-        { success: false, error: 'Failed to verify session' },
-        { status: 500 }
-      ),
+      response: nextApiErrorResponse({
+        request,
+        status: 500,
+        source: 'auth',
+        code: 'AUTH_VERIFY_FAILED',
+        userMessage: 'Failed to verify session',
+        developerMessage:
+          result.error?.message ||
+          'resolveSessionIdentity returned unsuccessful result',
+      }),
     };
   }
 
   if (!result.data) {
     return {
       ok: false as const,
-      response: NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      ),
+      response: nextApiErrorResponse({
+        request,
+        status: 401,
+        source: 'auth',
+        code: 'AUTH_UNAUTHORIZED',
+        userMessage: 'Unauthorized',
+      }),
     };
   }
 
@@ -82,10 +92,13 @@ export async function GET(request: Request) {
         auth.identity.role || 'user'
       )
     ) {
-      return NextResponse.json(
-        { success: false, error: 'Forbidden' },
-        { status: 403 }
-      );
+      return nextApiErrorResponse({
+        request,
+        status: 403,
+        source: 'auth',
+        code: 'AUTH_FORBIDDEN',
+        userMessage: 'Forbidden',
+      });
     }
 
     const rows = await queryRowsWithPgSystemContext(
@@ -99,10 +112,14 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error('[InternalProfileAPI] GET failed:', error);
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 500,
+      code: 'INTERNAL_PROFILE_GET_FAILED',
+      userMessage: 'Internal server error',
+      developerMessage:
+        error instanceof Error ? error.message : 'Unknown profile GET error',
+    });
   }
 }
 
@@ -126,10 +143,13 @@ export async function PATCH(request: Request) {
         auth.identity.role || 'user'
       )
     ) {
-      return NextResponse.json(
-        { success: false, error: 'Forbidden' },
-        { status: 403 }
-      );
+      return nextApiErrorResponse({
+        request,
+        status: 403,
+        source: 'auth',
+        code: 'AUTH_FORBIDDEN',
+        userMessage: 'Forbidden',
+      });
     }
 
     const updates = body.updates || {};
@@ -139,10 +159,12 @@ export async function PATCH(request: Request) {
     );
 
     if (entries.length === 0) {
-      return NextResponse.json(
-        { success: false, error: 'No valid fields to update' },
-        { status: 400 }
-      );
+      return nextApiErrorResponse({
+        request,
+        status: 400,
+        code: 'PROFILE_UPDATE_FIELDS_EMPTY',
+        userMessage: 'No valid fields to update',
+      });
     }
 
     const setClauses = entries.map(
@@ -170,10 +192,12 @@ export async function PATCH(request: Request) {
     );
 
     if (!updateRows[0]) {
-      return NextResponse.json(
-        { success: false, error: 'Profile not found' },
-        { status: 404 }
-      );
+      return nextApiErrorResponse({
+        request,
+        status: 404,
+        code: 'PROFILE_NOT_FOUND',
+        userMessage: 'Profile not found',
+      });
     }
 
     const profileRows = await queryRowsWithPgSystemContext(
@@ -197,9 +221,13 @@ export async function PATCH(request: Request) {
     });
   } catch (error) {
     console.error('[InternalProfileAPI] PATCH failed:', error);
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 500,
+      code: 'INTERNAL_PROFILE_PATCH_FAILED',
+      userMessage: 'Internal server error',
+      developerMessage:
+        error instanceof Error ? error.message : 'Unknown profile PATCH error',
+    });
   }
 }

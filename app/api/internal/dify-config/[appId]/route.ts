@@ -1,4 +1,5 @@
 import { getDifyAppConfig } from '@lib/config/dify-config';
+import { nextApiErrorResponse } from '@lib/errors/next-api-error-response';
 import { requireAdmin } from '@lib/services/admin/require-admin';
 
 import { NextResponse } from 'next/server';
@@ -28,9 +29,18 @@ export async function GET(
     });
   } catch (error) {
     console.error('[InternalDifyConfigAPI] failed:', error);
-    return NextResponse.json(
-      { success: false, error: 'Internal server error', config: null },
-      { status: 500 }
-    );
+    return nextApiErrorResponse({
+      request,
+      status: 500,
+      code: 'INTERNAL_DIFY_CONFIG_FAILED',
+      userMessage: 'Internal server error',
+      developerMessage:
+        error instanceof Error
+          ? error.message
+          : 'Unknown dify config retrieval error',
+      extra: {
+        config: null,
+      },
+    });
   }
 }
