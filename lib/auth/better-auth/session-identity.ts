@@ -20,6 +20,8 @@ const INTERNAL_AUTH_PROVIDER = 'better-auth';
 const PROVIDER_ISSUER_PREFIX = 'urn:better-auth:provider:';
 const LEGACY_MAPPING_LOCK_PREFIX = 'legacy-auth-user';
 const DEFAULT_EXTERNAL_ATTRIBUTES_SYNC_INTERVAL_MS = 15 * 60 * 1000;
+const MISSING_IDENTITY_MAPPING_ERROR_MESSAGE =
+  'Missing identity mapping for non-UUID auth session user';
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -33,8 +35,43 @@ function isTruthyEnv(value: string | undefined): boolean {
   );
 }
 
+function parseBooleanEnv(
+  value: string | undefined,
+  fallbackValue: boolean
+): boolean {
+  if (!value) {
+    return fallbackValue;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (
+    normalized === '1' ||
+    normalized === 'true' ||
+    normalized === 'yes' ||
+    normalized === 'on'
+  ) {
+    return true;
+  }
+  if (
+    normalized === '0' ||
+    normalized === 'false' ||
+    normalized === 'no' ||
+    normalized === 'off'
+  ) {
+    return false;
+  }
+  return fallbackValue;
+}
+
 function shouldInlineIdentitySync(): boolean {
   return isTruthyEnv(process.env.AUTH_IDENTITY_SYNC_INLINE);
+}
+
+function shouldRecoverMissingMappingOnReadOnlyResolve(): boolean {
+  return parseBooleanEnv(
+    process.env.AUTH_IDENTITY_RECOVER_MISSING_MAPPING,
+    true
+  );
 }
 
 function getExternalAttributesSyncIntervalMs(): number {
@@ -508,9 +545,7 @@ async function resolveInternalUserIdReadOnly(
   }
 
   if (!existingIdentity.data?.user_id) {
-    return failure(
-      new Error('Missing identity mapping for non-UUID auth session user')
-    );
+    return failure(new Error(MISSING_IDENTITY_MAPPING_ERROR_MESSAGE));
   }
 
   return success({
@@ -991,5 +1026,19 @@ export async function resolveSessionIdentity(
     return syncSessionIdentitySideEffects(headers);
   }
 
-  return resolveSessionIdentityReadOnly(headers);
+  const readOnlyResolved = await resolveSessionIdentityReadOnly(headers);
+  if (readOnlyResolved.success || !readOnlyResolved.error) {
+    return readOnlyResolved;
+  }
+
+  if (
+    !shouldRecoverMissingMappingOnReadOnlyResolve() ||
+    !readOnlyResolved.error.message.includes(
+      MISSING_IDENTITY_MAPPING_ERROR_MESSAGE
+    )
+  ) {
+    return readOnlyResolved;
+  }
+
+  return syncSessionIdentitySideEffects(headers);
 }

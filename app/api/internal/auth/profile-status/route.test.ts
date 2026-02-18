@@ -1,5 +1,6 @@
 /** @jest-environment node */
 import { resolveSessionIdentityReadOnly } from '@lib/auth/better-auth/session-identity';
+import { REQUEST_ID_HEADER } from '@lib/errors/app-error';
 
 import { GET } from './route';
 
@@ -37,7 +38,9 @@ describe('Internal Auth Profile Status Route', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(401);
-    expect(payload).toEqual({ error: 'unauthorized' });
+    expect(response.headers.get(REQUEST_ID_HEADER)).toBeTruthy();
+    expect(payload.success).toBe(false);
+    expect(payload.app_error?.code).toBe('AUTH_UNAUTHORIZED');
   });
 
   it('returns 500 when session identity resolve fails', async () => {
@@ -50,7 +53,9 @@ describe('Internal Auth Profile Status Route', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(500);
-    expect(payload).toEqual({ error: 'profile_status_failed' });
+    expect(response.headers.get(REQUEST_ID_HEADER)).toBeTruthy();
+    expect(payload.success).toBe(false);
+    expect(payload.app_error?.code).toBe('AUTH_PROFILE_STATUS_RESOLVE_FAILED');
   });
 
   it('returns profile status payload for authenticated identity', async () => {

@@ -1,9 +1,46 @@
 import { resolveSessionIdentityReadOnly } from '@lib/auth/better-auth/session-identity';
+import {
+  REQUEST_ID_HEADER,
+  buildAppErrorDetail,
+  buildAppErrorEnvelope,
+  resolveRequestId,
+} from '@lib/errors/app-error';
 import '@lib/server/realtime/runtime-registry';
 
 import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
+
+function buildErrorResponse(
+  request: Request,
+  input: {
+    status: number;
+    code: string;
+    userMessage: string;
+    developerMessage: string;
+  }
+) {
+  const requestId = resolveRequestId(request);
+  const detail = buildAppErrorDetail({
+    status: input.status,
+    source: 'next-api',
+    code: input.code,
+    userMessage: input.userMessage,
+    developerMessage: input.developerMessage,
+    requestId,
+  });
+  const response = NextResponse.json(
+    buildAppErrorEnvelope(detail, input.userMessage),
+    {
+      status: input.status,
+      headers: {
+        'Cache-Control': 'no-store',
+      },
+    }
+  );
+  response.headers.set(REQUEST_ID_HEADER, requestId);
+  return response;
+}
 
 export async function GET(request: Request) {
   try {
@@ -15,16 +52,23 @@ export async function GET(request: Request) {
         '[InternalAuthProfileStatus] failed to resolve session identity:',
         resolvedIdentity.error
       );
-      return NextResponse.json(
-        {
-          error: 'profile_status_failed',
-        },
-        { status: 500 }
-      );
+      return buildErrorResponse(request, {
+        status: 500,
+        code: 'AUTH_PROFILE_STATUS_RESOLVE_FAILED',
+        userMessage: 'Failed to resolve profile status',
+        developerMessage:
+          resolvedIdentity.error?.message ||
+          'resolveSessionIdentityReadOnly returned failure',
+      });
     }
 
     if (!resolvedIdentity.data) {
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+      return buildErrorResponse(request, {
+        status: 401,
+        code: 'AUTH_UNAUTHORIZED',
+        userMessage: 'Unauthorized',
+        developerMessage: 'No authenticated session identity',
+      });
     }
 
     return NextResponse.json(
@@ -46,11 +90,12 @@ export async function GET(request: Request) {
       '[InternalAuthProfileStatus] failed to resolve profile status:',
       error
     );
-    return NextResponse.json(
-      {
-        error: 'profile_status_failed',
-      },
-      { status: 500 }
-    );
+    return buildErrorResponse(request, {
+      status: 500,
+      code: 'AUTH_PROFILE_STATUS_EXCEPTION',
+      userMessage: 'Failed to resolve profile status',
+      developerMessage:
+        error instanceof Error ? error.message : 'Unknown profile status error',
+    });
   }
 }

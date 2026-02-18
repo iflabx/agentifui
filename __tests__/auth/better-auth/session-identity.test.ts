@@ -82,8 +82,9 @@ describe('resolveSessionIdentity', () => {
   const poolConnectMock = jest.fn();
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
     delete process.env.AUTH_IDENTITY_SYNC_INLINE;
+    delete process.env.AUTH_IDENTITY_RECOVER_MISSING_MAPPING;
     delete process.env.EXTERNAL_ATTRIBUTES_SYNC_MODE;
     delete process.env.EXTERNAL_ATTRIBUTES_SYNC_INTERVAL_MS;
     lockQueryMock.mockResolvedValue({ rows: [] });
@@ -169,6 +170,7 @@ describe('resolveSessionIdentity', () => {
   });
 
   it('fails in read-only mode when non-UUID auth user has no mapping', async () => {
+    process.env.AUTH_IDENTITY_RECOVER_MISSING_MAPPING = '0';
     mockedGetSession.mockResolvedValueOnce({
       session: {
         id: 'session-id',
@@ -195,6 +197,64 @@ describe('resolveSessionIdentity', () => {
     );
     expect(mockedUpsertUserIdentity).not.toHaveBeenCalled();
     expect(mockedUpsertProfileExternalAttributes).not.toHaveBeenCalled();
+  });
+
+  it('recovers non-UUID user mapping by running side-effect sync in read-only mode', async () => {
+    process.env.AUTH_IDENTITY_RECOVER_MISSING_MAPPING = '1';
+    mockedGetSession
+      .mockResolvedValueOnce({
+        session: {
+          id: 'session-id',
+        },
+        user: {
+          id: 'legacy-user-id',
+          email: 'legacy.user@example.com',
+          name: 'Legacy User',
+        },
+      } as never)
+      .mockResolvedValueOnce({
+        session: {
+          id: 'session-id',
+        },
+        user: {
+          id: 'legacy-user-id',
+          email: 'legacy.user@example.com',
+          name: 'Legacy User',
+        },
+      } as never);
+    mockedGetUserIdentityByIssuerSubject
+      .mockResolvedValueOnce({
+        success: true,
+        data: null,
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: null,
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: null,
+      });
+    queryMock
+      .mockResolvedValueOnce({
+        rows: [],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ role: 'user', status: 'active' }],
+      });
+
+    const result = await resolveSessionIdentity(new Headers());
+
+    expect(result.success).toBe(true);
+    if (!result.success || !result.data) {
+      throw new Error('Expected resolved identity data');
+    }
+    expect(result.data.userId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    );
+    expect(result.data.role).toBe('user');
+    expect(result.data.status).toBe('active');
+    expect(mockedUpsertUserIdentity).toHaveBeenCalledTimes(1);
   });
 
   it('upserts primary identity in inline mode for UUID auth users', async () => {

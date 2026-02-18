@@ -13,6 +13,10 @@ const handler = toNextJsHandler(auth);
 type HeadersWithGetSetCookie = Headers & {
   getSetCookie?: () => string[];
 };
+const DEFAULT_SYNC_RETRY_ATTEMPTS = 3;
+const DEFAULT_SYNC_RETRY_DELAY_MS = 250;
+const MAX_SYNC_RETRY_ATTEMPTS = 6;
+const MAX_SYNC_RETRY_DELAY_MS = 5000;
 
 function isEmailSignInRequest(request: Request): boolean {
   const { pathname } = new URL(request.url);
@@ -94,6 +98,68 @@ function readSetCookies(headers: Headers): string[] {
 
   const single = headers.get('set-cookie');
   return single ? [single] : [];
+}
+
+function parseBoundedPositiveInt(
+  value: string | undefined,
+  fallback: number,
+  maxValue: number
+): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.max(1, Math.min(maxValue, Math.floor(parsed)));
+}
+
+function getSyncRetryAttempts(): number {
+  return parseBoundedPositiveInt(
+    process.env.AUTH_IDENTITY_SYNC_RETRY_ATTEMPTS,
+    DEFAULT_SYNC_RETRY_ATTEMPTS,
+    MAX_SYNC_RETRY_ATTEMPTS
+  );
+}
+
+function getSyncRetryDelayMs(): number {
+  return parseBoundedPositiveInt(
+    process.env.AUTH_IDENTITY_SYNC_RETRY_DELAY_MS,
+    DEFAULT_SYNC_RETRY_DELAY_MS,
+    MAX_SYNC_RETRY_DELAY_MS
+  );
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function runPostAuthIdentitySyncWithRetry(
+  headers: Headers
+): Promise<{ ok: true; attempts: number } | { ok: false; attempts: number }> {
+  const maxAttempts = getSyncRetryAttempts();
+  const retryDelayMs = getSyncRetryDelayMs();
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const result = await syncSessionIdentitySideEffects(headers);
+    if (result.success) {
+      return { ok: true, attempts: attempt };
+    }
+
+    if (attempt >= maxAttempts) {
+      console.warn('[AuthIdentitySync] post-login identity sync failed:', {
+        attempt,
+        error: result.error,
+      });
+      return { ok: false, attempts: attempt };
+    }
+
+    console.warn('[AuthIdentitySync] retrying post-login identity sync:', {
+      attempt,
+      error: result.error,
+    });
+    await delay(retryDelayMs * attempt);
+  }
+
+  return { ok: false, attempts: maxAttempts };
 }
 
 function parseCookiePair(rawCookie: string): {
@@ -203,14 +269,17 @@ function triggerPostAuthIdentitySync(
     syncHeaders.set('cookie', mergedCookieHeader);
   }
 
-  void syncSessionIdentitySideEffects(syncHeaders)
-    .then(result => {
-      if (!result.success) {
-        console.warn(
-          '[AuthIdentitySync] post-login identity sync failed:',
-          result.error
-        );
+  void runPostAuthIdentitySyncWithRetry(syncHeaders)
+    .then(syncResult => {
+      if (syncResult.ok) {
+        return;
       }
+      console.warn(
+        '[AuthIdentitySync] post-login identity sync exhausted retries:',
+        {
+          attempts: syncResult.attempts,
+        }
+      );
     })
     .catch(error => {
       console.warn(
