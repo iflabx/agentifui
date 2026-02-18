@@ -167,12 +167,14 @@ export function normalizeLegacyErrorEnvelope(
   }
 
   const hasLegacyErrorShape = payload.success === false;
+  const legacyMessageFromPayload = maybeReadLegacyError(payload);
+  const hasLegacyErrorMessage = legacyMessageFromPayload.length > 0;
   const existingRequestId = payload.request_id;
   const hasAppError =
     isObjectRecord(payload.app_error) &&
     typeof payload.app_error.code === 'string' &&
     typeof payload.app_error.source === 'string';
-  if (!hasLegacyErrorShape && !hasAppError) {
+  if (!hasLegacyErrorShape && !hasLegacyErrorMessage && !hasAppError) {
     return payload;
   }
 
@@ -191,7 +193,7 @@ export function normalizeLegacyErrorEnvelope(
     };
   }
 
-  const legacyMessage = maybeReadLegacyError(payload) || 'Request failed';
+  const legacyMessage = legacyMessageFromPayload || 'Request failed';
   const detail = buildApiErrorDetail({
     status: statusCode,
     source,
@@ -199,8 +201,15 @@ export function normalizeLegacyErrorEnvelope(
     requestId: normalizedRequestId,
     developerMessage: legacyMessage,
   });
+  const normalizedPayload = hasLegacyErrorShape
+    ? payload
+    : {
+        ...payload,
+        success: false,
+        error: legacyMessage,
+      };
   return {
-    ...payload,
+    ...normalizedPayload,
     request_id: normalizedRequestId,
     app_error: detail,
   };

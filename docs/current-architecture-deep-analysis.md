@@ -11,6 +11,7 @@
 2. 已将高频内部路由切换到统一 `app_error + request_id` 返回（含 `/api/internal/apps`、`/api/internal/profile`、`/api/internal/realtime/*`、`/api/internal/storage/*`、`/api/internal/dify-config/[appId]`、`/api/auth/sso/providers`）。
 3. 当前 `app/api/internal`、`app/api/admin`、`app/api/auth` 生产路由已清零 `{ success:false,error }` 旧返回结构（测试文件除外）。
 4. 门禁验证通过：`pnpm gate:quality:verify`、`pnpm m9:gate:verify`。
+5. Fastify 侧 `normalizeLegacyErrorEnvelope` 已扩展支持 `{ error: '...' }` payload 自动标准化，避免遗漏 `success/app_error/request_id`。
 
 当前仍建议保持关注的剩余点：
 

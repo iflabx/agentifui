@@ -35,6 +35,23 @@ describe('normalizeLegacyErrorEnvelope', () => {
     );
   });
 
+  it('normalizes error-only payload into standard envelope', () => {
+    const payload = { error: 'Unauthorized access' };
+    const normalized = normalizeLegacyErrorEnvelope({
+      payload,
+      statusCode: 401,
+      requestId: 'req-2b',
+      source: 'fastify-api',
+    }) as Record<string, unknown>;
+
+    expect(normalized.success).toBe(false);
+    expect(normalized.error).toBe('Unauthorized access');
+    expect(normalized.request_id).toBe('req-2b');
+    expect((normalized.app_error as { code?: string }).code).toBe(
+      'AUTH_UNAUTHORIZED'
+    );
+  });
+
   it('keeps existing app_error envelope unchanged when request_id exists', () => {
     const detail = buildApiErrorDetail({
       status: 400,
