@@ -8,6 +8,7 @@ import {
   buildAppErrorEnvelope,
   resolveRequestId,
 } from '@lib/errors/app-error';
+import { fetchWithDifyProxyResilience } from '@lib/server/dify/proxy-resilience';
 import { recordErrorEvent } from '@lib/server/errors/error-events';
 import {
   runWithRequestErrorContext,
@@ -527,8 +528,86 @@ async function proxyToDify(
       duplex: 'half',
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const response = await fetch(targetUrl, fetchOptions as any);
+    const resilienceResult = await fetchWithDifyProxyResilience({
+      circuitKey: `${appId}:${difyApiUrl}`,
+      requestSignal: req.signal,
+      execute: async signal => {
+        const requestInit: RequestInit & { duplex?: 'half' } = {
+          ...fetchOptions,
+          signal,
+        };
+        return fetch(targetUrl, requestInit);
+      },
+    });
+
+    if (!resilienceResult.ok) {
+      if (resilienceResult.reason === 'circuit-open') {
+        const payload = withAgentErrorEnvelope(
+          {
+            code: 'DIFY_CIRCUIT_OPEN',
+            message:
+              'Dify upstream is temporarily unavailable. Please retry later.',
+            error:
+              'Dify upstream is temporarily unavailable. Please retry later.',
+          },
+          {
+            source: agentSource,
+            status: 503,
+            locale: requestLocale,
+            requestId,
+            route: routePath,
+            method: req.method,
+            actorUserId: resolvedIdentity.data.userId,
+          }
+        );
+        const baseResponse = NextResponse.json(payload, { status: 503 });
+        if (
+          typeof resilienceResult.retryAfterSeconds === 'number' &&
+          resilienceResult.retryAfterSeconds > 0
+        ) {
+          baseResponse.headers.set(
+            'Retry-After',
+            String(resilienceResult.retryAfterSeconds)
+          );
+        }
+        return baseResponse;
+      }
+
+      if (resilienceResult.reason === 'timeout') {
+        const payload = withAgentErrorEnvelope(
+          {
+            code: 'DIFY_UPSTREAM_TIMEOUT',
+            message: 'Dify upstream request timed out.',
+            error: 'Dify upstream request timed out.',
+          },
+          {
+            source: agentSource,
+            status: 504,
+            locale: requestLocale,
+            requestId,
+            route: routePath,
+            method: req.method,
+            actorUserId: resolvedIdentity.data.userId,
+          }
+        );
+        return NextResponse.json(payload, { status: 504 });
+      }
+
+      if (resilienceResult.reason === 'client-abort') {
+        return new Response(null, {
+          status: 499,
+          statusText: 'Client Closed Request',
+          headers: createMinimalHeaders(),
+        });
+      }
+
+      throw (
+        resilienceResult.error ||
+        new Error('Failed to connect to Dify upstream')
+      );
+    }
+
+    const response = resilienceResult.response;
     console.log(
       `[App: ${appId}] [${req.method}] Dify response status: ${response.status}`
     );

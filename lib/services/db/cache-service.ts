@@ -20,21 +20,33 @@ interface CacheMetricsSnapshot {
   l2WriteErrors: number;
 }
 
-interface RedisSetOptions {
-  ttlSeconds?: number;
-  keepTtl?: boolean;
+interface RedisSetCommandOptions {
+  EX?: number;
 }
 
-interface RedisCacheManager {
-  getJson<T>(key: string): Promise<T | null>;
-  setJson<T>(key: string, value: T, options?: RedisSetOptions): Promise<void>;
-  del(key: string): Promise<number>;
-  deletePattern(pattern: string): Promise<number>;
+interface RedisClientLike {
+  isOpen: boolean;
+  connect: () => Promise<void>;
+  get: (key: string) => Promise<string | null>;
+  set: (
+    key: string,
+    value: string,
+    options?: RedisSetCommandOptions
+  ) => Promise<unknown>;
+  del: (keys: string | string[]) => Promise<number>;
+  scanIterator: (options: {
+    MATCH: string;
+    COUNT?: number;
+  }) => AsyncIterable<string | string[]>;
+  on: (event: string, listener: (error: unknown) => void) => void;
 }
 
-type RedisManagerModule = {
-  getRedisManager?: () => RedisCacheManager;
-  redisManager?: RedisCacheManager;
+type RedisModule = {
+  createClient: (options: {
+    url: string;
+    socket?: { connectTimeout?: number };
+    pingInterval?: number;
+  }) => RedisClientLike;
 };
 
 function parseBooleanEnv(
@@ -61,6 +73,17 @@ function toSeconds(ms: number): number {
   return Math.max(1, Math.ceil(ms / 1000));
 }
 
+function toPositiveNumber(value: string | undefined, fallback: number): number {
+  if (!value) {
+    return fallback;
+  }
+  const parsed = Number(value.trim());
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.floor(parsed);
+}
+
 function escapeRegexPattern(value: string): string {
   return value.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -70,7 +93,7 @@ export class CacheService {
   private cache = new Map<string, CacheItem<unknown>>();
   private cleanupTimer: NodeJS.Timeout | null = null;
   private inflight = new Map<string, Promise<unknown>>();
-  private redisManager: RedisCacheManager | null | undefined;
+  private redisClient: RedisClientLike | null | undefined;
   private redisLoadWarned = false;
   private redisRuntimeWarned = false;
 
@@ -145,46 +168,86 @@ export class CacheService {
         error instanceof Error ? error.message : String(error)
       );
     }
-    this.redisManager = null;
+    this.redisClient = null;
   }
 
-  private getRedisManager(): RedisCacheManager | null {
+  private resolveRedisUrl(): string | null {
+    const fromPrimary = process.env.REDIS_URL?.trim();
+    if (fromPrimary) {
+      return fromPrimary;
+    }
+
+    const host = process.env.REDIS_HOST?.trim();
+    if (!host) {
+      return null;
+    }
+
+    const port = process.env.REDIS_PORT?.trim() || '6379';
+    const db = process.env.REDIS_DB?.trim() || '0';
+    const password = process.env.REDIS_PASSWORD?.trim();
+
+    if (password) {
+      return `redis://:${encodeURIComponent(password)}@${host}:${port}/${db}`;
+    }
+
+    return `redis://${host}:${port}/${db}`;
+  }
+
+  private createRedisClient(redisUrl: string): RedisClientLike {
+    const runtimeRequire = eval('require') as (id: string) => unknown;
+    const redisModule = runtimeRequire('redis') as RedisModule;
+    const client = redisModule.createClient({
+      url: redisUrl,
+      socket: {
+        connectTimeout: toPositiveNumber(
+          process.env.REDIS_CONNECT_TIMEOUT_MS,
+          5000
+        ),
+      },
+      pingInterval: toPositiveNumber(process.env.REDIS_PING_INTERVAL_MS, 10000),
+    });
+
+    client.on('error', error => {
+      console.error('[CacheService] Redis client error:', error);
+    });
+
+    return client;
+  }
+
+  private async getRedisClient(): Promise<RedisClientLike | null> {
     if (!this.isServerRuntime() || !this.redisL2Enabled) {
       return null;
     }
 
-    const hasRedisConfig = Boolean(
-      process.env.REDIS_URL?.trim() || process.env.REDIS_HOST?.trim()
-    );
-    if (!hasRedisConfig) {
-      this.redisManager = null;
+    const redisUrl = this.resolveRedisUrl();
+    if (!redisUrl) {
+      this.redisClient = null;
       return null;
     }
 
-    if (this.redisManager !== undefined) {
-      return this.redisManager;
+    if (this.redisClient !== undefined) {
+      if (this.redisClient && !this.redisClient.isOpen) {
+        try {
+          await this.redisClient.connect();
+        } catch (error) {
+          this.disableRedisL2AfterRuntimeFailure('redis connect', error);
+          return null;
+        }
+      }
+      return this.redisClient;
     }
 
     try {
-      // Dynamic require prevents browser bundle from resolving node-only deps.
-      const runtimeRequire = eval('require') as (id: string) => unknown;
-      const redisModule = runtimeRequire(
-        '../../infra/redis/manager'
-      ) as RedisManagerModule;
-      const manager =
-        typeof redisModule.getRedisManager === 'function'
-          ? redisModule.getRedisManager()
-          : redisModule.redisManager;
-
-      if (!manager) {
-        throw new Error('Redis manager export is unavailable');
+      const client = this.createRedisClient(redisUrl);
+      if (!client.isOpen) {
+        await client.connect();
       }
 
-      this.redisManager = manager;
-      return manager;
+      this.redisClient = client;
+      return client;
     } catch (error) {
       this.warnRedisLoadFailureOnce(error);
-      this.redisManager = null;
+      this.redisClient = null;
       return null;
     }
   }
@@ -219,19 +282,20 @@ export class CacheService {
   }
 
   private async readL2<T>(key: string, ttl: number): Promise<T | null> {
-    const redis = this.getRedisManager();
+    const redis = await this.getRedisClient();
     if (!redis) {
       return null;
     }
 
     try {
-      const value = await redis.getJson<T>(this.toRedisKey(key));
-      if (value === null) {
+      const raw = await redis.get(this.toRedisKey(key));
+      if (raw === null) {
         this.metrics.l2Misses += 1;
         this.logDebug(`L2 miss: ${key}`);
         return null;
       }
 
+      const value = JSON.parse(raw) as T;
       this.metrics.l2Hits += 1;
       this.setL1(key, value, ttl);
       this.logDebug(`L2 hit: ${key}`);
@@ -244,14 +308,14 @@ export class CacheService {
   }
 
   private async writeL2<T>(key: string, data: T, ttl: number): Promise<void> {
-    const redis = this.getRedisManager();
+    const redis = await this.getRedisClient();
     if (!redis) {
       return;
     }
 
     try {
-      await redis.setJson(this.toRedisKey(key), data, {
-        ttlSeconds: toSeconds(ttl),
+      await redis.set(this.toRedisKey(key), JSON.stringify(data), {
+        EX: toSeconds(ttl),
       });
       this.logDebug(`L2 write: ${key}`);
     } catch (error) {
@@ -261,7 +325,7 @@ export class CacheService {
   }
 
   private async deleteL2Key(key: string): Promise<void> {
-    const redis = this.getRedisManager();
+    const redis = await this.getRedisClient();
     if (!redis) {
       return;
     }
@@ -275,13 +339,27 @@ export class CacheService {
   }
 
   private async deleteL2Pattern(pattern: string): Promise<void> {
-    const redis = this.getRedisManager();
+    const redis = await this.getRedisClient();
     if (!redis) {
       return;
     }
 
     try {
-      await redis.deletePattern(this.toRedisKey(pattern));
+      const toDelete: string[] = [];
+      for await (const cursorValue of redis.scanIterator({
+        MATCH: this.toRedisKey(pattern),
+        COUNT: 100,
+      })) {
+        if (Array.isArray(cursorValue)) {
+          toDelete.push(...cursorValue);
+        } else if (typeof cursorValue === 'string') {
+          toDelete.push(cursorValue);
+        }
+      }
+
+      if (toDelete.length > 0) {
+        await redis.del(toDelete);
+      }
     } catch (error) {
       this.metrics.l2WriteErrors += 1;
       this.disableRedisL2AfterRuntimeFailure('L2 pattern delete', error);
