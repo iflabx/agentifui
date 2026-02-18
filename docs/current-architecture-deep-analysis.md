@@ -12,11 +12,14 @@
 3. 当前 `app/api/internal`、`app/api/admin`、`app/api/auth` 生产路由已清零 `{ success:false,error }` 旧返回结构（测试文件除外）。
 4. 门禁验证通过：`pnpm gate:quality:verify`、`pnpm m9:gate:verify`。
 5. Fastify 侧 `normalizeLegacyErrorEnvelope` 已扩展支持 `{ error: '...' }` payload 自动标准化，避免遗漏 `success/app_error/request_id`。
-6. Fastify 关键业务路由与 `internal-data` 动作层均已收口，`apps/api/src/routes` 生产代码已清零 `{ success:false,error }` 直写格式。
+6. Fastify 关键业务路由与 `internal-data` 动作层均已收口，`apps/api/src/routes` 生产代码已清零 `.send({ error: ... })` 直写格式，并新增 `guard:fastify-error-envelope` 防回弹。
+7. Fastify `proxy-fallback` 默认关闭（`FASTIFY_PROXY_FALLBACK_ENABLED=0`），避免隐式回源 Next；仅在显式开关时启用。
+8. Fastify 会话解析模块已从 `upstream-session` 重命名为 `session-identity`，并移除 `FromUpstream` 兼容别名，语义与实现一致。
+9. 对 `internal-apps/internal-profile` 增加 realtime 模式门禁：在 Fastify 代理场景下强制 `REALTIME_SOURCE_MODE=db-outbox`，启动期阻断 `app-direct/hybrid`。
 
 当前仍建议保持关注的剩余点：
 
-1. `internal-apps/internal-profile` 的实时副作用一致性在 `REALTIME_SOURCE_MODE=app-direct` 场景仍建议补专门契约验证（默认 `db-outbox` 路径已可用）。
+1. Next-only 模式下仍保留同名路由实现作为回退能力；若后续决定 Fastify-only，需要单独执行“Next 路由瘦身/下线”收口。
 
 ## 1. 执行摘要
 
@@ -61,7 +64,7 @@
 
 - 入口：`pnpm dev:all`（`dev:web` + `dev:api`）
 - Next rewrite 将部分 `/api/*` 前缀转发到 Fastify
-- Fastify 对未本地实现路径再回源 Next
+- Fastify 默认不回源 Next（`FASTIFY_PROXY_FALLBACK_ENABLED=0`）；仅在显式开关时对未本地实现路径回源
 
 关键代码：
 
