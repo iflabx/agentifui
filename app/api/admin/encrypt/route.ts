@@ -1,61 +1,67 @@
-import { nextApiErrorResponse } from '@lib/errors/next-api-error-response';
-import { requireAdmin } from '@lib/services/admin/require-admin';
-import { encryptApiKey } from '@lib/utils/encryption';
+import {
+  REQUEST_ID_HEADER,
+  buildAppErrorDetail,
+  buildAppErrorEnvelope,
+  resolveRequestId,
+} from '@lib/errors/app-error';
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
-/**
- * POST handler for encrypting an API key.
- * This endpoint is for admin use only.
- * @param request - The NextRequest object.
- * @returns A NextResponse object with the encrypted key or an error message.
- */
-export async function POST(request: NextRequest) {
-  try {
-    const authResult = await requireAdmin(request.headers);
-    if (!authResult.ok) return authResult.response;
+export const runtime = 'nodejs';
 
-    // get request data
-    const { apiKey } = await request.json();
+function buildDisabledResponse(status: number, requestId: string) {
+  const detail = buildAppErrorDetail({
+    status,
+    source: 'next-api',
+    requestId,
+    code: 'NEXT_BUSINESS_ROUTE_DISABLED',
+    userMessage:
+      'This API is served by Fastify. Enable Fastify proxy/cutover to use this endpoint.',
+    developerMessage:
+      'Next.js business API route is disabled after Fastify convergence.',
+    retryable: false,
+  });
+  return buildAppErrorEnvelope(detail, detail.userMessage);
+}
 
-    if (!apiKey) {
-      return nextApiErrorResponse({
-        request,
-        status: 400,
-        code: 'API_KEY_MISSING',
-        userMessage: 'Missing API key',
-      });
-    }
+function buildDisabledJson(status: number, requestId: string) {
+  const response = NextResponse.json(buildDisabledResponse(status, requestId), {
+    status,
+    headers: {
+      'Cache-Control': 'no-store',
+    },
+  });
+  response.headers.set(REQUEST_ID_HEADER, requestId);
+  response.headers.set('x-agentifui-next-handler', 'next-disabled');
+  return response;
+}
 
-    // get encryption key from environment variables
-    const masterKey = process.env.API_ENCRYPTION_KEY;
+export async function GET(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
 
-    if (!masterKey) {
-      console.error('API_ENCRYPTION_KEY environment variable not set');
-      return nextApiErrorResponse({
-        request,
-        status: 500,
-        code: 'API_ENCRYPTION_KEY_MISSING',
-        userMessage: 'Server configuration error: encryption key not set',
-      });
-    }
+export async function POST(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
 
-    // encrypt the API key
-    const encryptedKey = encryptApiKey(apiKey, masterKey);
+export async function PUT(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
 
-    // return the encrypted key
-    return NextResponse.json({ encryptedKey });
-  } catch (error) {
-    console.error('Error encrypting API key:', error);
-    return nextApiErrorResponse({
-      request,
-      status: 500,
-      code: 'API_KEY_ENCRYPT_FAILED',
-      userMessage: 'Error encrypting API key',
-      developerMessage:
-        error instanceof Error
-          ? error.message
-          : 'Unknown API key encrypt error',
-    });
-  }
+export async function PATCH(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
+
+export async function DELETE(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
+
+export async function OPTIONS(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
 }

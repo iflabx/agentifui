@@ -1,46 +1,67 @@
-import { getDifyAppConfig } from '@lib/config/dify-config';
-import { nextApiErrorResponse } from '@lib/errors/next-api-error-response';
-import { requireAdmin } from '@lib/services/admin/require-admin';
+import {
+  REQUEST_ID_HEADER,
+  buildAppErrorDetail,
+  buildAppErrorEnvelope,
+  resolveRequestId,
+} from '@lib/errors/app-error';
 
 import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 
-export async function GET(
-  request: Request,
-  context: { params: Promise<{ appId: string }> }
-) {
-  try {
-    const authResult = await requireAdmin(request.headers);
-    if (!authResult.ok) {
-      return authResult.response;
-    }
+function buildDisabledResponse(status: number, requestId: string) {
+  const detail = buildAppErrorDetail({
+    status,
+    source: 'next-api',
+    requestId,
+    code: 'NEXT_BUSINESS_ROUTE_DISABLED',
+    userMessage:
+      'This API is served by Fastify. Enable Fastify proxy/cutover to use this endpoint.',
+    developerMessage:
+      'Next.js business API route is disabled after Fastify convergence.',
+    retryable: false,
+  });
+  return buildAppErrorEnvelope(detail, detail.userMessage);
+}
 
-    const { appId } = await context.params;
-    const url = new URL(request.url);
-    const forceRefresh = url.searchParams.get('forceRefresh') === '1';
+function buildDisabledJson(status: number, requestId: string) {
+  const response = NextResponse.json(buildDisabledResponse(status, requestId), {
+    status,
+    headers: {
+      'Cache-Control': 'no-store',
+    },
+  });
+  response.headers.set(REQUEST_ID_HEADER, requestId);
+  response.headers.set('x-agentifui-next-handler', 'next-disabled');
+  return response;
+}
 
-    const config = await getDifyAppConfig(appId, forceRefresh, {
-      actorUserId: authResult.userId,
-    });
-    return NextResponse.json({
-      success: true,
-      config,
-    });
-  } catch (error) {
-    console.error('[InternalDifyConfigAPI] failed:', error);
-    return nextApiErrorResponse({
-      request,
-      status: 500,
-      code: 'INTERNAL_DIFY_CONFIG_FAILED',
-      userMessage: 'Internal server error',
-      developerMessage:
-        error instanceof Error
-          ? error.message
-          : 'Unknown dify config retrieval error',
-      extra: {
-        config: null,
-      },
-    });
-  }
+export async function GET(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
+
+export async function POST(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
+
+export async function PUT(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
+
+export async function PATCH(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
+
+export async function DELETE(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
+
+export async function OPTIONS(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
 }

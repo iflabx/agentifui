@@ -1,117 +1,67 @@
-import { nextApiErrorResponse } from '@lib/errors/next-api-error-response';
-import { queryRowsWithPgSystemContext } from '@lib/server/pg/user-context';
-import { requireAdmin } from '@lib/services/admin/require-admin';
+import {
+  REQUEST_ID_HEADER,
+  buildAppErrorDetail,
+  buildAppErrorEnvelope,
+  resolveRequestId,
+} from '@lib/errors/app-error';
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
-/**
- * Admin Users for Group API Route
- *
- * Handle user pagination list request in group member management
- * Support search, pagination, and exclude existing members
- */
-export async function POST(request: NextRequest) {
-  try {
-    const authResult = await requireAdmin(request.headers);
-    if (!authResult.ok) return authResult.response;
+export const runtime = 'nodejs';
 
-    // parse request parameters
-    const body = await request.json();
-    const { page = 1, pageSize = 10, search, excludeUserIds = [] } = body;
-    const safePage = Math.max(1, Number(page) || 1);
-    const safePageSize = Math.min(100, Math.max(1, Number(pageSize) || 10));
-    const offset = (safePage - 1) * safePageSize;
-    const trimmedSearch = typeof search === 'string' ? search.trim() : '';
+function buildDisabledResponse(status: number, requestId: string) {
+  const detail = buildAppErrorDetail({
+    status,
+    source: 'next-api',
+    requestId,
+    code: 'NEXT_BUSINESS_ROUTE_DISABLED',
+    userMessage:
+      'This API is served by Fastify. Enable Fastify proxy/cutover to use this endpoint.',
+    developerMessage:
+      'Next.js business API route is disabled after Fastify convergence.',
+    retryable: false,
+  });
+  return buildAppErrorEnvelope(detail, detail.userMessage);
+}
 
-    const whereClauses: string[] = ["status = 'active'"];
-    const params: Array<string | string[] | number> = [];
+function buildDisabledJson(status: number, requestId: string) {
+  const response = NextResponse.json(buildDisabledResponse(status, requestId), {
+    status,
+    headers: {
+      'Cache-Control': 'no-store',
+    },
+  });
+  response.headers.set(REQUEST_ID_HEADER, requestId);
+  response.headers.set('x-agentifui-next-handler', 'next-disabled');
+  return response;
+}
 
-    if (trimmedSearch.length > 0) {
-      params.push(`%${trimmedSearch}%`);
-      const searchParamIndex = params.length;
-      whereClauses.push(
-        `(username ILIKE $${searchParamIndex} OR full_name ILIKE $${searchParamIndex} OR email ILIKE $${searchParamIndex})`
-      );
-    }
+export async function GET(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
 
-    if (Array.isArray(excludeUserIds) && excludeUserIds.length > 0) {
-      const sanitizedIds = excludeUserIds.filter(
-        (id: unknown) => typeof id === 'string' && id.trim().length > 0
-      );
-      if (sanitizedIds.length > 0) {
-        params.push(sanitizedIds);
-        const excludeParamIndex = params.length;
-        whereClauses.push(`NOT (id = ANY($${excludeParamIndex}::uuid[]))`);
-      }
-    }
+export async function POST(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
 
-    const whereSql = whereClauses.join(' AND ');
+export async function PUT(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
 
-    const countRows = await queryRowsWithPgSystemContext<{ total: string }>(
-      `SELECT COUNT(*)::text AS total FROM profiles WHERE ${whereSql}`,
-      params
-    );
-    const total = Number(countRows[0]?.total || 0);
+export async function PATCH(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
 
-    params.push(safePageSize);
-    const limitParamIndex = params.length;
-    params.push(offset);
-    const offsetParamIndex = params.length;
+export async function DELETE(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
 
-    const users = await queryRowsWithPgSystemContext<{
-      id: string;
-      username: string | null;
-      full_name: string | null;
-      email: string | null;
-      avatar_url: string | null;
-      role: string | null;
-      status: string | null;
-    }>(
-      `
-      SELECT id, username, full_name, email, avatar_url, role, status
-      FROM profiles
-      WHERE ${whereSql}
-      ORDER BY created_at DESC
-      LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}
-      `,
-      params
-    );
-
-    // calculate pagination information
-    const totalPages = Math.ceil(total / safePageSize);
-
-    // format user data
-    const formattedUsers = (users || []).map(
-      (user: (typeof users)[number]) => ({
-        id: user.id,
-        username: user.username,
-        full_name: user.full_name,
-        email: user.email,
-        avatar_url: user.avatar_url,
-        role: user.role,
-        status: user.status,
-      })
-    );
-
-    return NextResponse.json({
-      users: formattedUsers,
-      page: safePage,
-      pageSize: safePageSize,
-      total,
-      totalPages,
-      success: true,
-    });
-  } catch (error) {
-    console.error('User list API error:', error);
-    return nextApiErrorResponse({
-      request,
-      status: 500,
-      code: 'ADMIN_USERS_FOR_GROUP_LIST_FAILED',
-      userMessage: 'Server internal error',
-      developerMessage:
-        error instanceof Error
-          ? error.message
-          : 'Unknown admin users-for-group error',
-    });
-  }
+export async function OPTIONS(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
 }

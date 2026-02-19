@@ -28,9 +28,7 @@ function extractPrefixList(sourceText, variableName, filePath) {
 }
 
 function readRouteSources() {
-  const files = readdirSync(routesDir)
-    .filter(name => name.endsWith('.ts'))
-    .filter(name => name !== 'proxy-fallback.ts');
+  const files = readdirSync(routesDir).filter(name => name.endsWith('.ts'));
   return files.map(name => ({
     file: resolve(routesDir, name),
     source: readFileSync(resolve(routesDir, name), 'utf8'),
@@ -73,4 +71,3 @@ function main() {
 }
 
 main();
-

@@ -1,61 +1,67 @@
-import { nextApiErrorResponse } from '@lib/errors/next-api-error-response';
-import { queryRowsWithPgSystemContext } from '@lib/server/pg/user-context';
-import { requireAdmin } from '@lib/services/admin/require-admin';
+import {
+  REQUEST_ID_HEADER,
+  buildAppErrorDetail,
+  buildAppErrorEnvelope,
+  resolveRequestId,
+} from '@lib/errors/app-error';
 
 import { NextResponse } from 'next/server';
 
-/**
- * Admin Users API Route
- *
- * Handle admin user management related API requests
- * Get user list (simplified version, for user selection in group management)
- */
-export async function GET(request: Request) {
-  try {
-    const authResult = await requireAdmin(request.headers);
-    if (!authResult.ok) return authResult.response;
+export const runtime = 'nodejs';
 
-    const users = await queryRowsWithPgSystemContext<{
-      id: string;
-      full_name: string | null;
-      username: string | null;
-      avatar_url: string | null;
-      role: string | null;
-      status: string | null;
-    }>(
-      `
-      SELECT id, full_name, username, avatar_url, role, status
-      FROM profiles
-      WHERE status = 'active'
-      ORDER BY full_name ASC NULLS LAST, username ASC NULLS LAST, created_at DESC
-      `
-    );
+function buildDisabledResponse(status: number, requestId: string) {
+  const detail = buildAppErrorDetail({
+    status,
+    source: 'next-api',
+    requestId,
+    code: 'NEXT_BUSINESS_ROUTE_DISABLED',
+    userMessage:
+      'This API is served by Fastify. Enable Fastify proxy/cutover to use this endpoint.',
+    developerMessage:
+      'Next.js business API route is disabled after Fastify convergence.',
+    retryable: false,
+  });
+  return buildAppErrorEnvelope(detail, detail.userMessage);
+}
 
-    // format user data, prioritize showing real name
-    const formattedUsers = (users || []).map(
-      (user: (typeof users)[number]) => ({
-        id: user.id,
-        full_name: user.full_name || user.username || 'Unknown user',
-        username: user.username,
-        avatar_url: user.avatar_url,
-        role: user.role,
-        status: user.status,
-      })
-    );
+function buildDisabledJson(status: number, requestId: string) {
+  const response = NextResponse.json(buildDisabledResponse(status, requestId), {
+    status,
+    headers: {
+      'Cache-Control': 'no-store',
+    },
+  });
+  response.headers.set(REQUEST_ID_HEADER, requestId);
+  response.headers.set('x-agentifui-next-handler', 'next-disabled');
+  return response;
+}
 
-    return NextResponse.json({
-      users: formattedUsers,
-      success: true,
-    });
-  } catch (error) {
-    console.error('User list API error:', error);
-    return nextApiErrorResponse({
-      request,
-      status: 500,
-      code: 'ADMIN_USERS_LIST_FAILED',
-      userMessage: 'Server internal error',
-      developerMessage:
-        error instanceof Error ? error.message : 'Unknown admin users error',
-    });
-  }
+export async function GET(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
+
+export async function POST(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
+
+export async function PUT(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
+
+export async function PATCH(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
+
+export async function DELETE(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
+
+export async function OPTIONS(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
 }

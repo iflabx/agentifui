@@ -29,7 +29,6 @@ import { internalStorageAvatarRoutes } from './routes/internal-storage-avatar';
 import { internalStorageAvatarPresignRoutes } from './routes/internal-storage-avatar-presign';
 import { internalStorageContentImagesRoutes } from './routes/internal-storage-content-images';
 import { internalStorageContentImagesPresignRoutes } from './routes/internal-storage-content-images-presign';
-import { proxyFallbackRoutes } from './routes/proxy-fallback';
 import { translationsRoutes } from './routes/translations';
 
 const REALTIME_SENSITIVE_PREFIXES = [
@@ -122,7 +121,6 @@ export async function createApiServer(config: ApiRuntimeConfig) {
   await app.register(internalStorageContentImagesPresignRoutes, { config });
   await app.register(internalStorageContentImagesRoutes, { config });
   await app.register(translationsRoutes);
-  await app.register(proxyFallbackRoutes, { config });
 
   app.addHook('preSerialization', (request, reply, payload, done) => {
     try {
@@ -186,7 +184,6 @@ async function startServer() {
         host: config.host,
         port: config.port,
         proxyPrefixes: config.proxyPrefixes,
-        proxyFallbackEnabled: config.proxyFallbackEnabled,
         realtimeSourceMode: config.realtimeSourceMode,
       },
       '[FastifyAPI] server started'

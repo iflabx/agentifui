@@ -1,72 +1,67 @@
-import { getActiveProviders } from '@lib/db/providers';
-import { getServiceInstancesByProvider } from '@lib/db/service-instances';
-import { nextApiErrorResponse } from '@lib/errors/next-api-error-response';
-import { requireAdmin } from '@lib/services/admin/require-admin';
+import {
+  REQUEST_ID_HEADER,
+  buildAppErrorDetail,
+  buildAppErrorEnvelope,
+  resolveRequestId,
+} from '@lib/errors/app-error';
 
 import { NextResponse } from 'next/server';
 
-/**
- * Get admin backend status information
- */
-export async function GET(request: Request) {
-  try {
-    const authResult = await requireAdmin(request.headers);
-    if (!authResult.ok) return authResult.response;
+export const runtime = 'nodejs';
 
-    // check if there are active service providers
-    const providersResult = await getActiveProviders();
+function buildDisabledResponse(status: number, requestId: string) {
+  const detail = buildAppErrorDetail({
+    status,
+    source: 'next-api',
+    requestId,
+    code: 'NEXT_BUSINESS_ROUTE_DISABLED',
+    userMessage:
+      'This API is served by Fastify. Enable Fastify proxy/cutover to use this endpoint.',
+    developerMessage:
+      'Next.js business API route is disabled after Fastify convergence.',
+    retryable: false,
+  });
+  return buildAppErrorEnvelope(detail, detail.userMessage);
+}
 
-    if (!providersResult.success) {
-      return nextApiErrorResponse({
-        request,
-        status: 500,
-        code: 'ADMIN_STATUS_PROVIDERS_READ_FAILED',
-        userMessage: 'Cannot get provider information',
-        developerMessage:
-          providersResult.error?.message ||
-          'Unknown provider information retrieval error',
-        extra: {
-          hasActiveProviders: false,
-          hasActiveInstances: false,
-        },
-      });
-    }
+function buildDisabledJson(status: number, requestId: string) {
+  const response = NextResponse.json(buildDisabledResponse(status, requestId), {
+    status,
+    headers: {
+      'Cache-Control': 'no-store',
+    },
+  });
+  response.headers.set(REQUEST_ID_HEADER, requestId);
+  response.headers.set('x-agentifui-next-handler', 'next-disabled');
+  return response;
+}
 
-    const providers = providersResult.data;
-    let hasActiveInstances = false;
+export async function GET(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
 
-    // check if there are configured service instances
-    if (providers.length > 0) {
-      for (const provider of providers) {
-        const instancesResult = await getServiceInstancesByProvider(
-          provider.id
-        );
-        if (instancesResult.success && instancesResult.data.length > 0) {
-          hasActiveInstances = true;
-          break;
-        }
-      }
-    }
+export async function POST(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
 
-    return NextResponse.json({
-      hasActiveProviders: providers.length > 0,
-      hasActiveInstances,
-      providersCount: providers.length,
-      timestamp: new Date().toISOString(),
-    });
-  } catch (error) {
-    console.error('Failed to get admin status:', error);
-    return nextApiErrorResponse({
-      request,
-      status: 500,
-      code: 'ADMIN_STATUS_READ_FAILED',
-      userMessage: 'Failed to get status information',
-      developerMessage:
-        error instanceof Error ? error.message : 'Unknown admin status error',
-      extra: {
-        hasActiveProviders: false,
-        hasActiveInstances: false,
-      },
-    });
-  }
+export async function PUT(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
+
+export async function PATCH(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
+
+export async function DELETE(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
+
+export async function OPTIONS(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
 }

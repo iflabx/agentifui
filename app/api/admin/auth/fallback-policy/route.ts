@@ -1,109 +1,67 @@
 import {
-  type AuthMode,
-  getAuthModeSetting,
-  setAuthModeSetting,
-} from '@lib/auth/better-auth/local-login-policy';
-import { nextApiErrorResponse } from '@lib/errors/next-api-error-response';
-import { requireAdmin } from '@lib/services/admin/require-admin';
+  REQUEST_ID_HEADER,
+  buildAppErrorDetail,
+  buildAppErrorEnvelope,
+  resolveRequestId,
+} from '@lib/errors/app-error';
 
 import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 
-function parseAuthMode(input: unknown): AuthMode | null {
-  if (typeof input !== 'string') {
-    return null;
-  }
-
-  const normalized = input.trim().toLowerCase();
-  if (normalized === 'normal' || normalized === 'degraded') {
-    return normalized;
-  }
-
-  return null;
+function buildDisabledResponse(status: number, requestId: string) {
+  const detail = buildAppErrorDetail({
+    status,
+    source: 'next-api',
+    requestId,
+    code: 'NEXT_BUSINESS_ROUTE_DISABLED',
+    userMessage:
+      'This API is served by Fastify. Enable Fastify proxy/cutover to use this endpoint.',
+    developerMessage:
+      'Next.js business API route is disabled after Fastify convergence.',
+    retryable: false,
+  });
+  return buildAppErrorEnvelope(detail, detail.userMessage);
 }
 
-export async function GET(request: Request) {
-  const authResult = await requireAdmin(request.headers);
-  if (!authResult.ok) {
-    return authResult.response;
-  }
-
-  const modeResult = await getAuthModeSetting({
-    actorUserId: authResult.userId,
+function buildDisabledJson(status: number, requestId: string) {
+  const response = NextResponse.json(buildDisabledResponse(status, requestId), {
+    status,
+    headers: {
+      'Cache-Control': 'no-store',
+    },
   });
-  if (!modeResult.success) {
-    console.error(
-      '[AdminAuthFallbackPolicy] failed to read auth mode:',
-      modeResult.error
-    );
-    return nextApiErrorResponse({
-      request,
-      status: 500,
-      source: 'auth',
-      code: 'AUTH_MODE_READ_FAILED',
-      userMessage: 'Failed to read auth mode',
-      developerMessage:
-        modeResult.error?.message || 'Unknown auth mode read error',
-    });
-  }
-
-  return NextResponse.json({
-    success: true,
-    authMode: modeResult.data,
-  });
+  response.headers.set(REQUEST_ID_HEADER, requestId);
+  response.headers.set('x-agentifui-next-handler', 'next-disabled');
+  return response;
 }
 
-export async function PATCH(request: Request) {
-  const authResult = await requireAdmin(request.headers);
-  if (!authResult.ok) {
-    return authResult.response;
-  }
+export async function GET(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
 
-  let payload: { authMode?: unknown } = {};
-  try {
-    payload = (await request.json()) as { authMode?: unknown };
-  } catch {
-    return nextApiErrorResponse({
-      request,
-      status: 400,
-      code: 'REQUEST_JSON_INVALID',
-      userMessage: 'Invalid JSON body',
-    });
-  }
+export async function POST(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
 
-  const authMode = parseAuthMode(payload.authMode);
-  if (!authMode) {
-    return nextApiErrorResponse({
-      request,
-      status: 400,
-      source: 'auth',
-      code: 'AUTH_MODE_INVALID',
-      userMessage: 'authMode must be "normal" or "degraded"',
-    });
-  }
+export async function PUT(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
 
-  const updateResult = await setAuthModeSetting(authMode, {
-    actorUserId: authResult.userId,
-  });
-  if (!updateResult.success) {
-    console.error(
-      '[AdminAuthFallbackPolicy] failed to update auth mode:',
-      updateResult.error
-    );
-    return nextApiErrorResponse({
-      request,
-      status: 500,
-      source: 'auth',
-      code: 'AUTH_MODE_UPDATE_FAILED',
-      userMessage: 'Failed to update auth mode',
-      developerMessage:
-        updateResult.error?.message || 'Unknown auth mode update error',
-    });
-  }
+export async function PATCH(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
 
-  return NextResponse.json({
-    success: true,
-    authMode: updateResult.data,
-  });
+export async function DELETE(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
+}
+
+export async function OPTIONS(_request: Request) {
+  const requestId = resolveRequestId();
+  return buildDisabledJson(503, requestId);
 }

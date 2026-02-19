@@ -3,7 +3,6 @@ export const REQUEST_ID_HEADER = 'x-request-id';
 export type ApiErrorSource =
   | 'fastify-api'
   | 'internal-data'
-  | 'proxy-fallback'
   | 'dify-proxy'
   | 'storage'
   | 'auth'

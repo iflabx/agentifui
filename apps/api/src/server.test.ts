@@ -11,7 +11,6 @@ function createConfig(
     logLevel: 'silent',
     nextUpstreamBaseUrl: 'http://127.0.0.1:3000',
     proxyPrefixes: ['/api/internal/apps', '/api/internal/profile'],
-    proxyFallbackEnabled: false,
     realtimeSourceMode: 'db-outbox',
     sessionCookieNames: ['session_token'],
     internalDataProxyTimeoutMs: 30000,

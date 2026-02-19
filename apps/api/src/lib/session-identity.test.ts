@@ -21,7 +21,6 @@ function createConfig(
     logLevel: 'info',
     nextUpstreamBaseUrl: 'http://127.0.0.1:3000',
     proxyPrefixes: ['/api/internal'],
-    proxyFallbackEnabled: false,
     realtimeSourceMode: 'db-outbox',
     sessionCookieNames: ['session_token', 'better-auth.session_token'],
     internalDataProxyTimeoutMs: 30000,

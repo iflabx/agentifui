@@ -70,6 +70,14 @@ function hasPrefixCoverage(routePath, proxyPrefixes) {
   });
 }
 
+function hasDisabledStubMarker(sourceText) {
+  return (
+    sourceText.includes('next-disabled') ||
+    sourceText.includes('NEXT_BUSINESS_ROUTE_DISABLED') ||
+    sourceText.includes('buildDisabledResponse')
+  );
+}
+
 function main() {
   const configSource = readFileSync(apiConfigFile, 'utf8');
   const proxyPrefixes = extractPrefixList(
@@ -79,7 +87,8 @@ function main() {
   );
 
   const routeFiles = walkRouteFiles(nextApiDir);
-  const violations = [];
+  const ownershipViolations = [];
+  const activeRouteViolations = [];
 
   for (const routeFile of routeFiles) {
     const routePath = toRoutePath(routeFile);
@@ -88,15 +97,37 @@ function main() {
     }
 
     if (!hasPrefixCoverage(routePath, proxyPrefixes)) {
-      violations.push({ routePath, routeFile: relative(rootDir, routeFile) });
+      ownershipViolations.push({
+        routePath,
+        routeFile: relative(rootDir, routeFile),
+      });
+      continue;
+    }
+
+    const source = readFileSync(routeFile, 'utf8');
+    if (!hasDisabledStubMarker(source)) {
+      activeRouteViolations.push({
+        routePath,
+        routeFile: relative(rootDir, routeFile),
+      });
     }
   }
 
-  if (violations.length > 0) {
+  if (ownershipViolations.length > 0) {
     console.error('[next-business-boundary] non-auth Next API route is outside Fastify proxy ownership:');
-    for (const item of violations) {
+    for (const item of ownershipViolations) {
       console.error(`- ${item.routePath} (${item.routeFile})`);
     }
+  }
+
+  if (activeRouteViolations.length > 0) {
+    console.error('[next-business-boundary] non-auth Next API route must be a disabled stub:');
+    for (const item of activeRouteViolations) {
+      console.error(`- ${item.routePath} (${item.routeFile})`);
+    }
+  }
+
+  if (ownershipViolations.length > 0 || activeRouteViolations.length > 0) {
     process.exit(1);
   }
 
