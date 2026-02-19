@@ -108,6 +108,7 @@
     "guard:rls-strict-consistency": "node scripts/check-rls-strict-consistency.mjs",
     "guard:single-path-internal-data": "node scripts/check-single-path-internal-data.mjs",
     "guard:route-contract-parity": "node scripts/check-route-contract-parity.mjs",
+    "guard:next-business-boundary": "node scripts/check-next-business-boundary.mjs",
     "guard:fastify-proxy-prefixes": "node scripts/check-fastify-proxy-prefixes.mjs",
     "guard:fastify-error-envelope": "node scripts/check-fastify-error-envelope.mjs",
     "guard:no-raw-pg-in-api": "node scripts/check-no-raw-pg-in-api.mjs",

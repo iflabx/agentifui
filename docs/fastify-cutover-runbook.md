@@ -20,6 +20,8 @@ business API traffic should be handled by Fastify, while auth/SSO remains Next-o
 3. Build artifacts are ready. Next build must include Fastify rewrite rules:
    - `FASTIFY_PROXY_ENABLED=1 FASTIFY_PROXY_BASE_URL=http://127.0.0.1:3010 pnpm build`
    - `pnpm build:api`
+4. Boundary guard passes (auth/SSO remains Next-owned, business APIs must stay under Fastify-owned prefixes):
+   - `pnpm -s guard:next-business-boundary`
 
 ## Enable Cutover
 
