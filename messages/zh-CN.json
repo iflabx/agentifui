@@ -1671,6 +1671,61 @@
           "statusChangeConfirm": "将{name}的状态更改为{status} ？",
           "batchRoleChangeConfirm": "将{count}个用户的角色更改为{role} ？",
           "batchStatusChangeConfirm": "将{count}个用户的状态更改为{status} ？"
+        },
+        "editModal": {
+          "title": "Edit User: {name}",
+          "description": "Edit local profile fields. IdP-synced identity fields are read-only.",
+          "loading": "Loading user details...",
+          "noData": "Unable to load user details",
+          "sections": {
+            "profile": "Editable Profile",
+            "readonly": "IdP/Identity Read-only Fields"
+          },
+          "badges": {
+            "idpManaged": "IdP managed",
+            "localAccount": "Local account"
+          },
+          "fields": {
+            "fullName": "Full name",
+            "username": "Username",
+            "email": "Email",
+            "phone": "Phone",
+            "avatarUrl": "Avatar URL",
+            "role": "Role",
+            "status": "Status"
+          },
+          "options": {
+            "role": {
+              "admin": "Administrator",
+              "manager": "Manager",
+              "user": "Regular User"
+            },
+            "status": {
+              "active": "Active",
+              "suspended": "Suspended",
+              "pending": "Pending"
+            }
+          },
+          "readonly": {
+            "idpHint": "This field is synchronized from IdP and cannot be edited here.",
+            "authSource": "Auth source",
+            "ssoProviderId": "SSO provider ID",
+            "employeeNumber": "Employee number",
+            "departmentName": "Department",
+            "jobTitle": "Job title",
+            "managerName": "Manager",
+            "syncedAt": "Synced at",
+            "lastSeenAt": "Last seen at"
+          },
+          "actions": {
+            "cancel": "Cancel",
+            "save": "Save Changes",
+            "saving": "Saving..."
+          },
+          "messages": {
+            "updateSuccess": "User profile updated",
+            "updateFailed": "Failed to update user profile"
+          }
         }
       },
       "ssoProviders": {
@@ -2075,140 +2130,39 @@
     "about": {
       "sections": [
         {
-          "id": "section-1754655785513-1coqlomn8",
+          "id": "section-1771431512384-2k7g078xn",
           "layout": "single-column",
           "columns": [
             [
               {
-                "id": "comp-1754655785513-drqxj9u2y",
+                "id": "comp-1771431513435-v5hlo825j",
                 "type": "heading",
                 "props": {
-                  "content": "关于 AgentifUI",
-                  "level": 1,
-                  "textAlign": "center"
-                }
-              },
-              {
-                "id": "comp-1754655785513-9ofzcdpsf",
-                "type": "paragraph",
-                "props": {
-                  "content": "连接 AI 与企业，打造大模型应用新体验",
-                  "textAlign": "center"
-                }
-              }
-            ]
-          ]
-        },
-        {
-          "id": "section-1754655785513-9prn2le6b",
-          "layout": "single-column",
-          "columns": [
-            [
-              {
-                "id": "comp-1754655785513-tx96kmz4r",
-                "type": "heading",
-                "props": {
-                  "content": "我们的使命",
+                  "content": "New Heading",
                   "level": 2,
                   "textAlign": "left"
                 }
-              },
-              {
-                "id": "comp-1754655785513-kjjf0b6zo",
-                "type": "paragraph",
-                "props": {
-                  "content": "AgentifUI 致力于利用大型语言模型的力量，为企业提供创新的应用解决方案。我们整合了多种模型供应商的能力，并基于 Dify 后端提供稳定、可靠的服务，帮助团队充分利用 AI 技术的价值。",
-                  "textAlign": "left"
-                }
               }
             ]
-          ]
-        },
-        {
-          "id": "section-1754655785513-s2cs5yr9y",
-          "layout": "single-column",
-          "columns": [
-            [
-              {
-                "id": "comp-1754655785513-ldeft2c7k",
-                "type": "heading",
-                "props": {
-                  "content": "我们的价值观",
-                  "level": 2,
-                  "textAlign": "left"
-                }
-              },
-              {
-                "id": "comp-1754655785513-igu96ir94",
-                "type": "cards",
-                "props": {
-                  "layout": "grid",
-                  "items": [
-                    {
-                      "title": "技术创新",
-                      "description": "持续集成前沿的大模型技术，为企业提供领先的 AI 解决方案"
-                    },
-                    {
-                      "title": "数据安全",
-                      "description": "支持私有化部署和严格的数据保护措施，确保企业数据的安全与隐私"
-                    },
-                    {
-                      "title": "灵活定制",
-                      "description": "提供高度可定制的解决方案，满足不同行业和场景的特定需求"
-                    },
-                    {
-                      "title": "知识增强",
-                      "description": "通过 RAG 技术实现私有知识库的整合，增强模型的上下文感知能力"
-                    }
-                  ]
-                }
-              }
-            ]
-          ]
-        },
-        {
-          "id": "section-1754655785513-2pmrtihgq",
-          "layout": "single-column",
-          "columns": [
-            [
-              {
-                "id": "comp-1754655785513-3l83pa52m",
-                "type": "button",
-                "props": {
-                  "text": "开始探索",
-                  "variant": "solid",
-                  "action": "link",
-                  "url": "/chat",
-                  "textAlign": "center"
-                }
-              }
-            ]
-          ]
-        },
-        {
-          "id": "section-1754655785513-byfail2zl",
-          "layout": "single-column",
-          "columns": [
-            [
-              {
-                "id": "comp-1754655785513-ip1qbopuu",
-                "type": "paragraph",
-                "props": {
-                  "content": "© {year} AgentifUI. 探索大模型应用的未来。",
-                  "textAlign": "center"
-                }
-              }
-            ]
-          ]
+          ],
+          "commonProps": {
+            "theme": "auto",
+            "spacing": "normal",
+            "textAlign": "left",
+            "animation": "none",
+            "interactive": true,
+            "dragBehavior": "inherit"
+          }
         }
       ],
       "metadata": {
         "version": "1.0.0",
-        "lastModified": "2025-08-08T12:23:05.513Z",
+        "lastModified": "2026-02-18T16:18:34.992Z",
         "author": "system-migration",
         "migratedFrom": "legacy-format",
         "migrationTimestamp": "2025-08-08T12:23:05.513Z",
-        "locale": "zh-CN"
+        "locale": "zh-CN",
+        "migrated": true
       }
     }
   },

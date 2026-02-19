@@ -1,9 +1,11 @@
 'use client';
 
+import { UserEditModal } from '@components/admin/users/user-edit-modal';
 import { UserFiltersComponent } from '@components/admin/users/user-filters';
 import { UserStatsCards } from '@components/admin/users/user-stats-cards';
 import { UserTable } from '@components/admin/users/user-table';
 import { ConfirmDialog } from '@components/ui';
+import type { EnhancedUser } from '@lib/db/users';
 import { useProfile } from '@lib/hooks/use-profile';
 import { useUserManagementStore } from '@lib/stores/user-management-store';
 import { cn } from '@lib/utils';
@@ -24,20 +26,15 @@ import React, { useEffect } from 'react';
 
 import { useTranslations } from 'next-intl';
 
-interface User {
-  id: string;
-  role: 'admin' | 'manager' | 'user';
-  full_name?: string | null;
-  email?: string | null;
-}
-
 export default function UsersManagementPage() {
   const { profile: currentUserProfile } = useProfile();
   const t = useTranslations('pages.admin.users');
 
   // Dialog state for delete confirmation
   const [showDeleteDialog, setShowDeleteDialog] = React.useState(false);
-  const [userToDelete, setUserToDelete] = React.useState<User | null>(null);
+  const [userToDelete, setUserToDelete] = React.useState<EnhancedUser | null>(
+    null
+  );
   const [isDeleting, setIsDeleting] = React.useState(false);
 
   const [showBatchDialog, setShowBatchDialog] = React.useState(false);
@@ -46,6 +43,9 @@ export default function UsersManagementPage() {
     value: string;
   } | null>(null);
   const [isBatchUpdating, setIsBatchUpdating] = React.useState(false);
+  const [showEditModal, setShowEditModal] = React.useState(false);
+  const [editingUserId, setEditingUserId] = React.useState<string | null>(null);
+  const [isSavingEdit, setIsSavingEdit] = React.useState(false);
 
   // get status and operations from user management store
   const {
@@ -56,9 +56,11 @@ export default function UsersManagementPage() {
     loading,
     error,
     selectedUserIds,
+    selectedUser,
     loadUsers,
     loadStats,
     loadFilterOptions,
+    loadUserDetail,
 
     updateFilters,
     setPage,
@@ -67,15 +69,23 @@ export default function UsersManagementPage() {
     clearSelection,
     changeUserRole,
     changeUserStatus,
+    updateUser,
     removeUser,
     batchChangeRole,
     batchChangeStatus,
     clearError,
   } = useUserManagementStore();
 
+  const editingUser =
+    (editingUserId && selectedUser?.id === editingUserId
+      ? selectedUser
+      : null) ||
+    users.find(user => user.id === editingUserId) ||
+    null;
+
   // check if can change user role (prevent admin from downgrading other admins)
   const canChangeUserRole = (
-    targetUser: User,
+    targetUser: EnhancedUser,
     newRole: 'admin' | 'manager' | 'user'
   ) => {
     // if current user is not admin, do not allow any role change
@@ -99,7 +109,7 @@ export default function UsersManagementPage() {
   };
 
   // check if can delete user (prevent deleting admin account)
-  const canDeleteUser = (targetUser: User) => {
+  const canDeleteUser = (targetUser: EnhancedUser) => {
     // if current user is not admin, do not allow delete
     if (currentUserProfile?.role !== 'admin') {
       return false;
@@ -192,7 +202,7 @@ export default function UsersManagementPage() {
 
   // handle user role change (with safety check)
   const handleChangeRole = async (
-    user: User,
+    user: EnhancedUser,
     role: 'admin' | 'manager' | 'user'
   ) => {
     if (!canChangeUserRole(user, role)) {
@@ -213,7 +223,7 @@ export default function UsersManagementPage() {
 
   // handle user status change
   const handleChangeStatus = async (
-    user: User,
+    user: EnhancedUser,
     status: 'active' | 'suspended' | 'pending'
   ) => {
     const success = await changeUserStatus(user.id, status);
@@ -229,7 +239,7 @@ export default function UsersManagementPage() {
   };
 
   // handle user delete (with safety check)
-  const handleDeleteUser = (user: User) => {
+  const handleDeleteUser = (user: EnhancedUser) => {
     if (!canDeleteUser(user)) {
       return;
     }
@@ -307,7 +317,8 @@ export default function UsersManagementPage() {
   };
 
   // handle view user (use toast temporarily)
-  const handleViewUser = (user: User) => {
+  const handleViewUser = async (user: EnhancedUser) => {
+    await loadUserDetail(user.id);
     toast.success(
       t('actions.viewUser', {
         name: user.full_name || user.email || 'Unknown User',
@@ -315,13 +326,47 @@ export default function UsersManagementPage() {
     );
   };
 
-  // handle edit user (use toast temporarily)
-  const handleEditUser = (user: User) => {
-    toast.success(
-      t('actions.editUser', {
-        name: user.full_name || user.email || 'Unknown User',
-      })
-    );
+  // handle edit user
+  const handleEditUser = async (user: EnhancedUser) => {
+    setEditingUserId(user.id);
+    setShowEditModal(true);
+    await loadUserDetail(user.id);
+  };
+
+  const handleSaveEdit = async (updates: Record<string, unknown>) => {
+    if (!editingUserId) {
+      return false;
+    }
+
+    setIsSavingEdit(true);
+    try {
+      const success = await updateUser(
+        editingUserId,
+        updates as Partial<EnhancedUser>
+      );
+      if (!success) {
+        toast.error(t('editModal.messages.updateFailed'));
+        return false;
+      }
+
+      toast.success(t('editModal.messages.updateSuccess'));
+      await Promise.all([
+        loadUsers(),
+        loadStats(),
+        loadUserDetail(editingUserId),
+      ]);
+      return true;
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  const handleCloseEditModal = () => {
+    if (isSavingEdit) {
+      return;
+    }
+    setShowEditModal(false);
+    setEditingUserId(null);
   };
 
   // pagination control
@@ -624,6 +669,16 @@ export default function UsersManagementPage() {
           variant="default"
           icon="edit"
           isLoading={isBatchUpdating}
+        />
+
+        <UserEditModal
+          isOpen={showEditModal}
+          user={editingUser}
+          isLoading={loading.userDetail}
+          isSubmitting={isSavingEdit}
+          canEditRoleStatus={currentUserProfile?.role === 'admin'}
+          onClose={handleCloseEditModal}
+          onSave={handleSaveEdit}
         />
       </div>
     </div>

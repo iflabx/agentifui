@@ -24,8 +24,30 @@ interface EnhancedUser {
   role: UserRole;
   status: AccountStatus;
   auth_source?: string;
+  is_idp_managed?: boolean;
+  editable_fields?: string[];
   sso_provider_id?: string | null;
   employee_number?: string | null;
+  external_profile?: {
+    source_issuer?: string | null;
+    source_provider?: string | null;
+    employee_number?: string | null;
+    department_code?: string | null;
+    department_name?: string | null;
+    department_path?: string | null;
+    cost_center?: string | null;
+    job_title?: string | null;
+    employment_type?: string | null;
+    manager_employee_number?: string | null;
+    manager_name?: string | null;
+    phone_e164?: string | null;
+    office_location?: string | null;
+    hire_date?: string | null;
+    attributes?: Record<string, unknown>;
+    locked?: boolean;
+    synced_at?: string | null;
+    last_seen_at?: string | null;
+  } | null;
   profile_created_at: string;
   profile_updated_at: string;
   last_login?: string | null;
@@ -387,14 +409,15 @@ export const useUserManagementStore = create<UserManagementState>()(
           );
 
           if (result.success) {
+            const updatedUser = result.data;
             // Update local state
             set(state => ({
               users: state.users.map(user =>
-                user.id === userId ? { ...user, ...updates } : user
+                user.id === userId ? { ...user, ...updatedUser } : user
               ),
               selectedUser:
                 state.selectedUser?.id === userId
-                  ? { ...state.selectedUser, ...updates }
+                  ? { ...state.selectedUser, ...updatedUser }
                   : state.selectedUser,
               loading: { ...state.loading, updating: false },
             }));

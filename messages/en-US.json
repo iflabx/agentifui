@@ -1671,6 +1671,61 @@
             "suspended": "Suspended",
             "pending": "Pending"
           }
+        },
+        "editModal": {
+          "title": "Edit User: {name}",
+          "description": "Edit local profile fields. IdP-synced identity fields are read-only.",
+          "loading": "Loading user details...",
+          "noData": "Unable to load user details",
+          "sections": {
+            "profile": "Editable Profile",
+            "readonly": "IdP/Identity Read-only Fields"
+          },
+          "badges": {
+            "idpManaged": "IdP managed",
+            "localAccount": "Local account"
+          },
+          "fields": {
+            "fullName": "Full name",
+            "username": "Username",
+            "email": "Email",
+            "phone": "Phone",
+            "avatarUrl": "Avatar URL",
+            "role": "Role",
+            "status": "Status"
+          },
+          "options": {
+            "role": {
+              "admin": "Administrator",
+              "manager": "Manager",
+              "user": "Regular User"
+            },
+            "status": {
+              "active": "Active",
+              "suspended": "Suspended",
+              "pending": "Pending"
+            }
+          },
+          "readonly": {
+            "idpHint": "This field is synchronized from IdP and cannot be edited here.",
+            "authSource": "Auth source",
+            "ssoProviderId": "SSO provider ID",
+            "employeeNumber": "Employee number",
+            "departmentName": "Department",
+            "jobTitle": "Job title",
+            "managerName": "Manager",
+            "syncedAt": "Synced at",
+            "lastSeenAt": "Last seen at"
+          },
+          "actions": {
+            "cancel": "Cancel",
+            "save": "Save Changes",
+            "saving": "Saving..."
+          },
+          "messages": {
+            "updateSuccess": "User profile updated",
+            "updateFailed": "Failed to update user profile"
+          }
         }
       },
       "ssoProviders": {

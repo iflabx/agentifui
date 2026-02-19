@@ -116,6 +116,23 @@ interface ProfileRow {
   created_at: string;
   updated_at: string;
   last_login: string | null;
+  source_issuer?: string | null;
+  source_provider?: string | null;
+  department_code?: string | null;
+  department_name?: string | null;
+  department_path?: string | null;
+  cost_center?: string | null;
+  job_title?: string | null;
+  employment_type?: string | null;
+  manager_employee_number?: string | null;
+  manager_name?: string | null;
+  phone_e164?: string | null;
+  office_location?: string | null;
+  hire_date?: string | null;
+  external_attributes?: Record<string, unknown> | null;
+  external_locked?: boolean | null;
+  external_synced_at?: string | null;
+  external_last_seen_at?: string | null;
 }
 
 interface GroupMembershipSummaryRow {
@@ -418,6 +435,37 @@ const LOCAL_SSO_PROTOCOLS = new Set<SsoProtocol>([
   'SAML',
   'OAuth2',
   'OIDC',
+]);
+
+const LOCAL_PROFILE_AUTH_SOURCES = new Set([
+  '',
+  'password',
+  'better-auth',
+  'credentials',
+  'native',
+]);
+
+const PROFILE_UPDATE_COLUMNS = new Set([
+  'email',
+  'phone',
+  'full_name',
+  'username',
+  'avatar_url',
+  'role',
+  'status',
+]);
+
+const PROFILE_ALWAYS_EDITABLE_COLUMNS = new Set([
+  'username',
+  'avatar_url',
+  'role',
+  'status',
+]);
+
+const PROFILE_LOCAL_ONLY_EDITABLE_COLUMNS = new Set([
+  'email',
+  'phone',
+  'full_name',
 ]);
 
 const USER_SORT_COLUMN_MAP: Record<string, string> = {
@@ -798,6 +846,37 @@ function buildAssistantPreview(content: string): string {
   return `${previewBase.slice(0, 100)}...`;
 }
 
+function normalizeAuthSource(source: string | null | undefined): string {
+  return (source || 'native').trim().toLowerCase() || 'native';
+}
+
+function isIdpManagedAuthSource(source: string | null | undefined): boolean {
+  return !LOCAL_PROFILE_AUTH_SOURCES.has(normalizeAuthSource(source));
+}
+
+function resolveEditableProfileColumns(
+  source: string | null | undefined
+): Set<string> {
+  const editable = new Set(PROFILE_ALWAYS_EDITABLE_COLUMNS);
+  if (!isIdpManagedAuthSource(source)) {
+    for (const column of PROFILE_LOCAL_ONLY_EDITABLE_COLUMNS) {
+      editable.add(column);
+    }
+  }
+  return editable;
+}
+
+function normalizeNullableTextValue(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
 function encryptApiKeyValue(value: string, masterKey: string): string {
   const hash = createHash('sha256');
   hash.update(masterKey);
@@ -811,6 +890,27 @@ function encryptApiKeyValue(value: string, masterKey: string): string {
 }
 
 function sanitizeProfileRow(row: ProfileRow): Record<string, unknown> {
+  const normalizedAuthSource = normalizeAuthSource(row.auth_source);
+  const editableFields = Array.from(
+    resolveEditableProfileColumns(normalizedAuthSource)
+  ).sort();
+  const hasExternalProfile =
+    Boolean(row.source_issuer) ||
+    Boolean(row.source_provider) ||
+    Boolean(row.department_name) ||
+    Boolean(row.department_code) ||
+    Boolean(row.department_path) ||
+    Boolean(row.job_title) ||
+    Boolean(row.cost_center) ||
+    Boolean(row.employment_type) ||
+    Boolean(row.manager_employee_number) ||
+    Boolean(row.manager_name) ||
+    Boolean(row.phone_e164) ||
+    Boolean(row.office_location) ||
+    Boolean(row.hire_date) ||
+    Boolean(row.external_synced_at) ||
+    Boolean(row.external_last_seen_at);
+
   return {
     id: row.id,
     email: row.email || null,
@@ -825,9 +925,33 @@ function sanitizeProfileRow(row: ProfileRow): Record<string, unknown> {
     avatar_url: row.avatar_url || null,
     role: row.role || 'user',
     status: row.status || 'active',
-    auth_source: row.auth_source || 'native',
+    auth_source: normalizedAuthSource,
+    is_idp_managed: isIdpManagedAuthSource(normalizedAuthSource),
+    editable_fields: editableFields,
     sso_provider_id: row.sso_provider_id || null,
     employee_number: row.employee_number || null,
+    external_profile: hasExternalProfile
+      ? {
+          source_issuer: row.source_issuer || null,
+          source_provider: row.source_provider || null,
+          employee_number: row.employee_number || null,
+          department_code: row.department_code || null,
+          department_name: row.department_name || null,
+          department_path: row.department_path || null,
+          cost_center: row.cost_center || null,
+          job_title: row.job_title || null,
+          employment_type: row.employment_type || null,
+          manager_employee_number: row.manager_employee_number || null,
+          manager_name: row.manager_name || null,
+          phone_e164: row.phone_e164 || null,
+          office_location: row.office_location || null,
+          hire_date: row.hire_date || null,
+          attributes: row.external_attributes || {},
+          locked: row.external_locked ?? true,
+          synced_at: row.external_synced_at || null,
+          last_seen_at: row.external_last_seen_at || null,
+        }
+      : null,
     profile_created_at: row.created_at,
     profile_updated_at: row.updated_at,
     last_login: row.last_login,
@@ -2451,11 +2575,30 @@ async function handleUserAction(
           p.status::text,
           p.auth_source,
           p.sso_provider_id::text,
-          p.employee_number,
+          COALESCE(pea.employee_number, p.employee_number) AS employee_number,
           p.created_at::text,
           p.updated_at::text,
-          p.last_login::text
+          p.last_login::text,
+          pea.source_issuer,
+          pea.source_provider,
+          pea.department_code,
+          pea.department_name,
+          pea.department_path,
+          pea.cost_center,
+          pea.job_title,
+          pea.employment_type,
+          pea.manager_employee_number,
+          pea.manager_name,
+          pea.phone_e164,
+          pea.office_location,
+          pea.hire_date::text,
+          pea.attributes AS external_attributes,
+          pea.locked AS external_locked,
+          pea.synced_at::text AS external_synced_at,
+          pea.last_seen_at::text AS external_last_seen_at
         FROM profiles p
+        LEFT JOIN profile_external_attributes pea
+          ON pea.user_id = p.id
         WHERE p.id = $1::uuid
         LIMIT 1
       `,
@@ -2480,28 +2623,49 @@ async function handleUserAction(
       return toErrorResponse('Missing userId', 400);
     }
 
-    const allowedColumns = new Set([
-      'email',
-      'phone',
-      'full_name',
-      'username',
-      'avatar_url',
-      'role',
-      'status',
-      'auth_source',
-      'sso_provider_id',
-      'employee_number',
-      'department',
-      'job_title',
-      'last_login',
-    ]);
+    const profileRows = await queryRowsWithPgSystemContext<{
+      id: string;
+      auth_source: string | null;
+    }>(
+      `
+        SELECT id::text, auth_source
+        FROM profiles
+        WHERE id = $1::uuid
+        LIMIT 1
+      `,
+      [userId]
+    );
+
+    const currentProfile = profileRows[0];
+    if (!currentProfile?.id) {
+      return toErrorResponse('User profile not found', 404);
+    }
+
+    const editableColumns = resolveEditableProfileColumns(
+      currentProfile.auth_source
+    );
+    const requestedColumns = Object.keys(updates);
+    const blockedColumns = requestedColumns.filter(
+      key => PROFILE_UPDATE_COLUMNS.has(key) && !editableColumns.has(key)
+    );
+
+    if (blockedColumns.length > 0) {
+      return toErrorResponse(
+        `Read-only fields for auth source ${normalizeAuthSource(currentProfile.auth_source)}: ${blockedColumns.join(', ')}`,
+        400
+      );
+    }
 
     const setClauses: string[] = [];
     const values: unknown[] = [];
     let index = 1;
 
     for (const [key, rawValue] of Object.entries(updates)) {
-      if (!allowedColumns.has(key)) {
+      if (!PROFILE_UPDATE_COLUMNS.has(key)) {
+        continue;
+      }
+
+      if (!editableColumns.has(key)) {
         continue;
       }
 
@@ -2527,23 +2691,27 @@ async function handleUserAction(
         continue;
       }
 
-      if (key === 'sso_provider_id') {
-        setClauses.push(`sso_provider_id = $${index}::uuid`);
-        values.push(readString(rawValue) || null);
+      if (key === 'email') {
+        const normalizedEmail = normalizeNullableTextValue(rawValue);
+        setClauses.push(`email = $${index}`);
+        values.push(normalizedEmail ? normalizedEmail.toLowerCase() : null);
         index += 1;
         continue;
       }
 
-      if (key === 'last_login') {
-        setClauses.push(`last_login = $${index}::timestamptz`);
-        values.push(readString(rawValue) || null);
+      if (key === 'phone' || key === 'full_name' || key === 'username') {
+        setClauses.push(`${key} = $${index}`);
+        values.push(normalizeNullableTextValue(rawValue));
         index += 1;
         continue;
       }
 
-      setClauses.push(`${key} = $${index}`);
-      values.push(rawValue ?? null);
-      index += 1;
+      if (key === 'avatar_url') {
+        setClauses.push(`avatar_url = $${index}`);
+        values.push(normalizeNullableTextValue(rawValue));
+        index += 1;
+        continue;
+      }
     }
 
     if (setClauses.length === 0) {
