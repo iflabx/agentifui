@@ -11,8 +11,8 @@ cd AgentifUI
 pnpm install
 
 # 2. Setup
-cp .env.example .env.local
-# Edit .env.local
+cp .env.example .env.dev
+# Edit .env.dev
 
 # 3. Create Branch
 git checkout -b feat/your-feature  # or fix/issue-name

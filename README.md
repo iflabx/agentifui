@@ -88,8 +88,8 @@ For local development and testing:
 pnpm install
 
 # 2 — Copy environment template and configure
-cp .env.example .env.local
-# Edit .env.local with your PostgreSQL / Redis / MinIO and other settings
+cp .env.example .env.dev
+# Edit .env.dev with your PostgreSQL / Redis / MinIO and other settings
 
 # 3 — Run development server
 pnpm run dev

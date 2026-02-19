@@ -5,7 +5,7 @@ module.exports = {
       script: 'pnpm',
       args: 'start',
       interpreter: 'none',
-      env_file: './.env.local',
+      env_file: './.env.dev',
       env: {
         NODE_ENV: 'production',
         PORT: process.env.PORT || 3000,
@@ -31,7 +31,7 @@ module.exports = {
       script: 'pnpm',
       args: 'start:standalone',
       interpreter: 'none',
-      env_file: './.env.local',
+      env_file: './.env.dev',
       env: {
         NODE_ENV: 'production',
         PORT: process.env.PORT || 3000,
@@ -54,7 +54,7 @@ module.exports = {
       script: 'pnpm',
       args: 'start:api',
       interpreter: 'none',
-      env_file: './.env.local',
+      env_file: './.env.dev',
       env: {
         NODE_ENV: 'production',
         FASTIFY_API_HOST: process.env.FASTIFY_API_HOST || '0.0.0.0',

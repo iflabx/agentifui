@@ -1,116 +1,122 @@
-# AgentifUI Quick Deployment Guide
+# AgentifUI Production Deployment (Current Minimal Scheme)
 
-## Overview
+## 1. Scope
 
-This guide deploys AgentifUI with the current backend baseline:
+This document describes the only production deployment path currently in use:
 
-- PostgreSQL 18
-- Redis 7.x
-- MinIO (S3 compatible)
-- better-auth
-- Dify (optional, if your app depends on it)
+1. Environment file: `.env.prod`
+2. Deploy entry: `pnpm deploy` (runs `scripts/deploy-prod.sh`)
+3. Process manager: PM2 with `ecosystem.prod.config.js`
+4. Runtime processes:
+   - `AgentifUI-Prod` (Next.js)
+   - `AgentifUI-API-Prod` (Fastify API)
 
-Supabase CLI is no longer required for runtime deployment.
+Legacy deploy commands are not part of this runbook.
 
-## 1. Host Prerequisites
+## 2. Prerequisites
 
-Install the base toolchain:
+1. Node.js LTS, pnpm, PM2 installed.
+2. PostgreSQL, Redis, and MinIO are reachable from deploy host.
+3. Repository is checked out on the production directory.
 
-```bash
-sudo apt-get update && sudo apt-get upgrade -y
-sudo apt-get install -y curl git jq ca-certificates gnupg lsb-release
-```
+## 3. Configure `.env.prod`
 
-Install Node.js (NVM), pnpm, PM2:
-
-```bash
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
-source ~/.bashrc
-nvm install --lts
-nvm use --lts
-npm install -g pnpm pm2
-```
-
-Install Docker:
-
-```bash
-curl -fsSL https://get.docker.com -o get-docker.sh
-sh get-docker.sh
-sudo usermod -aG docker $USER
-newgrp docker
-```
-
-## 2. Start Core Data Services
-
-You can use your own managed services, or run local containers.
-
-```bash
-# PostgreSQL 18
-docker run -d --name agentifui-postgres \
-  -e POSTGRES_USER=agentif \
-  -e POSTGRES_PASSWORD=agentif \
-  -e POSTGRES_DB=agentifui \
-  -p 5432:5432 postgres:18-alpine
-
-# Redis 7
-docker run -d --name agentifui-redis \
-  -p 6379:6379 redis:7-alpine
-
-# MinIO
-docker run -d --name agentifui-minio \
-  -e MINIO_ROOT_USER=minioadmin \
-  -e MINIO_ROOT_PASSWORD=minioadmin \
-  -p 9000:9000 -p 9001:9001 \
-  bitnami/minio:latest
-```
-
-Create the bucket (once):
-
-```bash
-docker run --rm --network host \
-  -e MC_HOST_local=http://minioadmin:minioadmin@127.0.0.1:9000 \
-  minio/mc mb --ignore-existing local/agentifui
-```
-
-## 3. Deploy AgentifUI
-
-```bash
-git clone https://github.com/ifLabX/AgentifUI.git
-cd AgentifUI
-pnpm install
-```
-
-Create `.env.prod` (you can copy from `.env.prod.example`) with production settings:
-
-```env
-NODE_ENV=production
-NEXT_PUBLIC_APP_URL=http://127.0.0.1:3000
-
-DATABASE_URL=postgresql://agentif:agentif@127.0.0.1:5432/agentifui
-MIGRATOR_DATABASE_URL=postgresql://agentif:agentif@127.0.0.1:5432/agentifui
-
-REDIS_URL=redis://127.0.0.1:6379/0
-
-S3_ENDPOINT=http://127.0.0.1:9000
-S3_ACCESS_KEY_ID=minioadmin
-S3_SECRET_ACCESS_KEY=minioadmin
-S3_BUCKET=agentifui
-S3_ENABLE_PATH_STYLE=1
-
-BETTER_AUTH_SECRET=replace_with_32_plus_random_chars
-```
-
-Build and start:
+Create and edit production env:
 
 ```bash
 cp .env.prod.example .env.prod
-# edit .env.prod and fill real secrets before deployment
-
-pnpm deploy
-pm2 save
 ```
 
-If you need to run migrations inside deploy, provide a command explicitly:
+Required groups:
+
+1. Database and cache
+   - `DATABASE_URL`
+   - `MIGRATOR_DATABASE_URL`
+   - `REDIS_URL`
+2. Object storage
+   - `S3_ENDPOINT`
+   - `S3_BUCKET`
+   - `S3_ACCESS_KEY_ID`
+   - `S3_SECRET_ACCESS_KEY`
+   - `S3_ENABLE_PATH_STYLE`
+3. Auth and encryption
+   - `BETTER_AUTH_SECRET`
+   - `API_ENCRYPTION_KEY`
+4. Network and runtime
+   - `NEXT_PUBLIC_APP_URL`
+   - `PORT`
+   - `FASTIFY_API_PORT`
+   - `CORS_ALLOWED_ORIGINS`
+
+Secret generation examples:
+
+```bash
+openssl rand -base64 48
+openssl rand -hex 32
+```
+
+For the current "dev-container + host data stack" setup, recommended values are:
+
+1. `DATABASE_URL=postgresql://agentif_app:agentif_app@172.20.0.1:5432/agentifui_prod`
+2. `MIGRATOR_DATABASE_URL=postgresql://agentif:agentif@172.20.0.1:5432/agentifui_prod`
+3. `REDIS_URL=redis://172.20.0.1:6379/1`
+4. `S3_ENDPOINT=http://172.20.0.1:9000`
+5. `S3_BUCKET=agentifui-prod`
+6. `NEXT_PUBLIC_APP_URL` / `BETTER_AUTH_URL` set to your production access URL
+
+## 4. Initialize Isolated Prod Data Resources
+
+Create dedicated PostgreSQL database:
+
+```bash
+psql "postgresql://agentif:agentif@172.20.0.1:5432/postgres" -v ON_ERROR_STOP=1 <<'SQL'
+SELECT 'CREATE DATABASE agentifui_prod OWNER agentif'
+WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'agentifui_prod');
+\gexec
+SQL
+```
+
+Create runtime DB role grants in prod database:
+
+```bash
+AGENTIF_ENV_FILE=.env.prod bash scripts/with-env-local.sh \
+  bash scripts/m4-runtime-role-setup.sh
+```
+
+Create dedicated MinIO bucket:
+
+```bash
+AGENTIF_ENV_FILE=.env.prod bash scripts/with-env-local.sh pnpm -s m7:s3:bootstrap
+```
+
+Apply baseline schema migrations (fresh install):
+
+```bash
+AGENTIF_ENV_FILE=.env.prod bash scripts/with-env-local.sh bash -lc '
+for migration in ./database/migrations/202602*.sql; do
+  psql "$MIGRATOR_DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"
+done
+'
+```
+
+## 5. Deploy
+
+First deployment:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm deploy
+```
+
+What `pnpm deploy` does:
+
+1. Install dependencies (enabled by default).
+2. Build web/shared/api.
+3. Optionally run migrations.
+4. `pm2 startOrRestart ecosystem.prod.config.js --update-env`
+5. Run production smoke check.
+
+Run deploy with migration command:
 
 ```bash
 AGENTIF_DEPLOY_RUN_MIGRATIONS=1 \
@@ -118,47 +124,82 @@ AGENTIF_DEPLOY_MIGRATION_COMMAND='your_migration_command_here' \
 pnpm deploy
 ```
 
-## 4. Health Checks
+Useful toggles:
+
+1. Skip install:
 
 ```bash
-# App
-curl -I http://127.0.0.1:3000
+AGENTIF_DEPLOY_INSTALL=0 pnpm deploy
+```
 
-# PM2
+2. Skip smoke:
+
+```bash
+AGENTIF_DEPLOY_SMOKE=0 pnpm deploy
+```
+
+## 6. Validate
+
+```bash
 pm2 status AgentifUI-Prod AgentifUI-API-Prod
-
-# PostgreSQL
-pg_isready -h 127.0.0.1 -p 5432 -U agentif -d agentifui
-
-# Redis
-redis-cli -h 127.0.0.1 -p 6379 ping
-
-# MinIO
-curl -f http://127.0.0.1:9000/minio/health/live
+pnpm smoke:prod
+curl -I http://127.0.0.1:3000
+curl -I http://127.0.0.1:3010
 ```
 
-## 5. Optional: Test Stack from Repository Scripts
+## 7. Operations
 
-If you are validating migration gates, you can use repository test-stack scripts:
+Start prod services (PM2):
 
 ```bash
-pnpm stack:test:up
-pnpm stack:test:health
+pnpm pm2:prod:start
 ```
 
-## 6. Troubleshooting
+Restart prod services:
 
-1. `BETTER_AUTH_SECRET` warning:
-   - Generate a strong secret: `openssl rand -base64 48`
-2. MinIO upload fails:
-   - Check `S3_ENDPOINT` and `S3_ENABLE_PATH_STYLE=1`
-3. DB migration scripts fail:
-   - Ensure your migration path uses `database/migrations/202602*.sql`
-4. Port conflicts:
-   - Change host ports and keep env values aligned
+```bash
+pnpm pm2:prod:restart
+```
 
-## 7. Next Steps
+Stop prod services:
 
-1. Run M5/M6/M8 gate checks after deployment.
-2. Configure external IdP (OIDC/CAS bridge) for production SSO.
-3. Add backup/restore and alerting as part of M9 final closeout.
+```bash
+pnpm pm2:prod:stop
+```
+
+Remove prod PM2 entries:
+
+```bash
+pnpm pm2:prod:delete
+```
+
+View logs:
+
+```bash
+pm2 logs AgentifUI-Prod
+pm2 logs AgentifUI-API-Prod
+```
+
+Run without PM2 (single-process/manual mode):
+
+```bash
+pnpm start:prod
+pnpm start:prod:api
+```
+
+## 8. Troubleshooting
+
+1. Login returns `403/503`
+   - Verify `BETTER_AUTH_SECRET`, `NEXT_PUBLIC_APP_URL`, and auth-related callback domains.
+2. White screen or static chunk load failure
+   - Re-run `pnpm deploy`; ensure smoke check passes.
+3. Storage upload/read failure
+   - Verify `S3_ENDPOINT`, `S3_BUCKET`, and MinIO credentials.
+4. API endpoints fail
+   - Check `FASTIFY_API_PORT` and PM2 status for `AgentifUI-API-Prod`.
+
+## 9. Non-goals of this runbook
+
+1. No staging/develop deployment procedures.
+2. No legacy deploy flows.
+3. No migration-framework history discussion.
