@@ -24,6 +24,10 @@ import { internalDifyConfigRoutes } from './routes/internal-dify-config';
 import { internalProfileRoutes } from './routes/internal-profile';
 import { internalRealtimeStatsRoutes } from './routes/internal-realtime-stats';
 import { internalRealtimeStreamRoutes } from './routes/internal-realtime-stream';
+import { internalStorageAvatarRoutes } from './routes/internal-storage-avatar';
+import { internalStorageAvatarPresignRoutes } from './routes/internal-storage-avatar-presign';
+import { internalStorageContentImagesRoutes } from './routes/internal-storage-content-images';
+import { internalStorageContentImagesPresignRoutes } from './routes/internal-storage-content-images-presign';
 import { proxyFallbackRoutes } from './routes/proxy-fallback';
 import { translationsRoutes } from './routes/translations';
 
@@ -82,6 +86,16 @@ export async function createApiServer(config: ApiRuntimeConfig) {
     trustProxy: true,
   });
 
+  // Keep legacy multipart requests reachable so storage routes can return
+  // explicit compatibility errors (410/501) instead of Fastify's default 415.
+  app.addContentTypeParser(
+    /^multipart\/form-data(?:;.*)?$/i,
+    { parseAs: 'buffer' },
+    (_request, body, done) => {
+      done(null, body);
+    }
+  );
+
   await app.register(cors, {
     origin: true,
     credentials: true,
@@ -101,6 +115,10 @@ export async function createApiServer(config: ApiRuntimeConfig) {
   await app.register(internalProfileRoutes, { config });
   await app.register(internalRealtimeStreamRoutes, { config });
   await app.register(internalRealtimeStatsRoutes, { config });
+  await app.register(internalStorageAvatarPresignRoutes, { config });
+  await app.register(internalStorageAvatarRoutes, { config });
+  await app.register(internalStorageContentImagesPresignRoutes, { config });
+  await app.register(internalStorageContentImagesRoutes, { config });
   await app.register(translationsRoutes);
   await app.register(proxyFallbackRoutes, { config });
 

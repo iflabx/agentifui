@@ -119,7 +119,19 @@ The current migration strategy is:
 19. `GET /api/internal/realtime/stats`
     - Served directly by Fastify.
     - Preserves admin-only contract and exposes subscription + broker metrics.
-20. Other configured API prefixes should be migrated route-by-route and not rely on fallback as a steady-state path.
+20. `POST/GET /api/internal/storage/avatar/presign`
+    - Served directly by Fastify.
+    - Preserves avatar upload/download presign contract, ownership checks, and public/private read-mode behavior.
+21. `POST/DELETE /api/internal/storage/avatar`
+    - Served directly by Fastify.
+    - Preserves avatar commit/delete contract and profile `avatar_url` update semantics.
+22. `POST/GET /api/internal/storage/content-images/presign`
+    - Served directly by Fastify.
+    - Preserves content-image upload/download presign contract and read-mode behavior.
+23. `GET/POST/DELETE /api/internal/storage/content-images`
+    - Served directly by Fastify.
+    - Preserves content-image list/commit/delete contract with ownership checks.
+24. Other configured API prefixes should be migrated route-by-route and not rely on fallback as a steady-state path.
 
 ## Smoke Check
 

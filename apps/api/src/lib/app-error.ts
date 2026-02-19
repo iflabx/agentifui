@@ -4,6 +4,7 @@ export type ApiErrorSource =
   | 'fastify-api'
   | 'internal-data'
   | 'proxy-fallback'
+  | 'storage'
   | 'auth'
   | 'db';
 

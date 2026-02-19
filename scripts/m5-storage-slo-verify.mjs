@@ -12,6 +12,10 @@ const appBase = `http://127.0.0.1:${appPort}`;
 const appMode = (process.env.M5_STORAGE_SLO_APP_MODE || 'production')
   .trim()
   .toLowerCase();
+const useFastifyProxy =
+  process.env.M5_STORAGE_SLO_USE_FASTIFY_PROXY !== '0';
+const fastifyPort = Number(process.env.M5_STORAGE_SLO_FASTIFY_PORT || 3420);
+const fastifyBase = `http://127.0.0.1:${fastifyPort}`;
 const skipBuild =
   process.env.M5_STORAGE_SLO_SKIP_BUILD === '1' ||
   process.env.M5_STORAGE_SLO_SKIP_BUILD === 'true';
@@ -39,6 +43,18 @@ const fallbackDatabaseUrl =
   'postgresql://agentif:agentif@172.20.0.1:5432/agentifui';
 const fallbackRedisUrl = 'redis://172.20.0.1:6379/0';
 const fallbackS3Endpoint = 'http://172.20.0.1:9000';
+const defaultFastifyProxyPrefixes = [
+  '/api/internal/data',
+  '/api/internal/apps',
+  '/api/internal/profile',
+  '/api/internal/realtime',
+  '/api/internal/storage',
+  '/api/internal/dify-config',
+  '/api/internal/auth/local-password',
+  '/api/internal/fastify-health',
+  '/api/admin',
+  '/api/translations',
+];
 
 const tinyPngBytes = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7YJ7sAAAAASUVORK5CYII=',
@@ -360,6 +376,11 @@ async function main() {
     S3_PUBLIC_READ_ENABLED: process.env.S3_PUBLIC_READ_ENABLED || '1',
     STORAGE_PRESIGN_RATE_LIMIT:
       process.env.STORAGE_PRESIGN_RATE_LIMIT || '10000',
+    FASTIFY_PROXY_ENABLED: useFastifyProxy ? '1' : '0',
+    FASTIFY_PROXY_BASE_URL: fastifyBase,
+    FASTIFY_PROXY_PREFIXES:
+      process.env.FASTIFY_PROXY_PREFIXES ||
+      defaultFastifyProxyPrefixes.join(','),
     NEXT_TELEMETRY_DISABLED: '1',
     NEXT_DISABLE_SWC_WORKER: process.env.NEXT_DISABLE_SWC_WORKER || '1',
   };
@@ -388,6 +409,7 @@ async function main() {
     resolvedAppMode === 'production' ? 'production' : 'development';
 
   let appProc = null;
+  let apiProc = null;
   let exitCode = 0;
 
   const dbClient = new Client({ connectionString: databaseUrl });
@@ -395,6 +417,32 @@ async function main() {
   try {
     let lastStartupError = null;
     for (let attempt = 1; attempt <= appStartRetryCount; attempt += 1) {
+      if (useFastifyProxy) {
+        apiProc = startProcess('pnpm', ['--filter', '@agentifui/api', 'dev'], {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            NODE_ENV: 'development',
+            DATABASE_URL: databaseUrl,
+            REDIS_URL: redisUrl,
+            S3_ENDPOINT: s3Endpoint,
+            S3_ACCESS_KEY_ID: process.env.S3_ACCESS_KEY_ID || 'minioadmin',
+            S3_SECRET_ACCESS_KEY:
+              process.env.S3_SECRET_ACCESS_KEY || 'minioadmin',
+            S3_BUCKET: process.env.S3_BUCKET || 'agentifui',
+            S3_ENABLE_PATH_STYLE: process.env.S3_ENABLE_PATH_STYLE || '1',
+            S3_PUBLIC_READ_ENABLED: process.env.S3_PUBLIC_READ_ENABLED || '1',
+            FASTIFY_API_HOST: '127.0.0.1',
+            FASTIFY_API_PORT: String(fastifyPort),
+            FASTIFY_LOG_LEVEL: process.env.FASTIFY_LOG_LEVEL || 'error',
+            FASTIFY_INTERNAL_DATA_PROXY_TIMEOUT_MS:
+              process.env.FASTIFY_INTERNAL_DATA_PROXY_TIMEOUT_MS || '30000',
+            NEXT_UPSTREAM_BASE_URL: appBase,
+          },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+      }
+
       appProc = startProcess(
         'pnpm',
         [
@@ -411,6 +459,9 @@ async function main() {
       );
 
       try {
+        if (useFastifyProxy) {
+          await waitForServer(`${fastifyBase}/healthz`, apiProc, appReadyTimeoutMs);
+        }
         await waitForServer(
           `${appBase}/api/auth/better/get-session`,
           appProc,
@@ -421,7 +472,9 @@ async function main() {
       } catch (error) {
         lastStartupError = error;
         await terminateProcess(appProc);
+        await terminateProcess(apiProc);
         appProc = null;
+        apiProc = null;
         if (attempt < appStartRetryCount) {
           console.warn(
             `[m5-storage-slo-verify] app start attempt ${attempt}/${appStartRetryCount} failed, retrying...`
@@ -433,6 +486,15 @@ async function main() {
 
     if (lastStartupError) {
       throw lastStartupError;
+    }
+
+    await waitForServer(
+      `${appBase}/api/auth/better/get-session`,
+      appProc,
+      appReadyTimeoutMs
+    );
+    if (useFastifyProxy) {
+      await waitForServer(`${fastifyBase}/healthz`, apiProc, appReadyTimeoutMs);
     }
 
     const jar = new CookieJar();
@@ -561,6 +623,7 @@ async function main() {
     );
   } finally {
     await terminateProcess(appProc);
+    await terminateProcess(apiProc);
     await dbClient.end().catch(() => {});
     process.exit(exitCode);
   }
