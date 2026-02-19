@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-NEXT_PM2_APP="${NEXT_PM2_APP:-AgentifUI}"
-API_PM2_APP="${API_PM2_APP:-AgentifUI-API}"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PM2_CONFIG="${PM2_CONFIG:-ecosystem.prod.config.js}"
+
+if [[ "${PM2_CONFIG}" != /* ]]; then
+  PM2_CONFIG="${ROOT_DIR}/${PM2_CONFIG}"
+fi
+
+NEXT_PM2_APP="${NEXT_PM2_APP:-AgentifUI-Prod}"
+API_PM2_APP="${API_PM2_APP:-AgentifUI-API-Prod}"
 NEXT_PORT="${PORT:-3000}"
 STOP_FASTIFY_API="${STOP_FASTIFY_API:-0}"
 
@@ -11,10 +18,16 @@ if ! command -v pm2 >/dev/null 2>&1; then
   exit 1
 fi
 
+if [[ ! -f "${PM2_CONFIG}" ]]; then
+  echo "[cutover-off] pm2 config not found: ${PM2_CONFIG}"
+  exit 1
+fi
+
 export FASTIFY_PROXY_ENABLED=0
 
+echo "[cutover-off] using PM2 config: ${PM2_CONFIG}"
 echo "[cutover-off] restarting ${NEXT_PM2_APP} with FASTIFY_PROXY_ENABLED=0"
-pm2 startOrRestart ecosystem.config.js --only "${NEXT_PM2_APP}" --update-env >/dev/null
+pm2 startOrRestart "${PM2_CONFIG}" --only "${NEXT_PM2_APP}" --update-env >/dev/null
 
 if [[ "${STOP_FASTIFY_API}" == "1" ]]; then
   echo "[cutover-off] stopping ${API_PM2_APP}"

@@ -8,7 +8,7 @@ The current migration strategy is:
 1. Keep Next.js as the frontend runtime.
 2. Run Fastify in parallel for API migration.
 3. Use Next.js rewrites to forward selected `/api/*` prefixes to Fastify.
-4. Let Fastify proxy not-yet-migrated routes back to Next upstream.
+4. Keep Fastify fallback proxy disabled by default; only use it as an emergency rollback aid.
 
 ## Workspace Layout
 
@@ -34,6 +34,7 @@ The current migration strategy is:
 5. `FASTIFY_API_PORT`: Fastify bind port (default `3010`).
 6. `FASTIFY_LOG_LEVEL`: Fastify log level (default `info`).
 7. `FASTIFY_PROXY_FALLBACK_ENABLED`: `1` enables fallback proxy to Next for unmatched proxied paths (default `0`).
+   - This is emergency-only and should stay `0` in normal operation.
 8. `NEXT_UPSTREAM_BASE_URL`: Next upstream URL for auth outbound calls and optional fallback proxy.
 9. `REALTIME_SOURCE_MODE`: for Fastify-proxied `/api/internal/apps` and `/api/internal/profile`, use `db-outbox` (guard blocks `app-direct|hybrid`).
 
@@ -111,7 +112,7 @@ The current migration strategy is:
     - 默认不再透传 legacy：未识别 action 直接返回本地 `400 Unsupported action`。
     - 不再支持透传 legacy Next `internal/data`。
     - Response includes `x-agentifui-internal-data-handler: local` for phase-level verification.
-18. Other configured API prefixes still use Fastify fallback proxy to Next upstream.
+18. Other configured API prefixes should be migrated route-by-route and not rely on fallback as a steady-state path.
 
 ## Smoke Check
 
@@ -122,7 +123,7 @@ The current migration strategy is:
 3. Rewrite check from Next to Fastify:
    - `FASTIFY_PROXY_ENABLED=1 FASTIFY_PROXY_BASE_URL=http://127.0.0.1:3010 PORT=3320 pnpm dev`
    - `curl -i "http://127.0.0.1:3320/api/translations/en-US?sections=pages.home"`
-4. Fallback check (not yet migrated route):
+4. Optional emergency fallback check (for rollback drills only):
    - `curl -i "http://127.0.0.1:3320/api/internal/auth/profile-status"`
 
 ## Notes
@@ -131,3 +132,4 @@ The current migration strategy is:
 2. Rewrites now use `beforeFiles` so existing Next API route files can still be cut over to Fastify.
 3. Fastify adds `x-agentifui-fastify-bypass: 1` when proxying to Next to prevent rewrite loops.
 4. Browser internal-data client is single-path only and does not fallback to legacy Next handler.
+5. In target A, auth/SSO routes stay in Next while business APIs converge to Fastify.

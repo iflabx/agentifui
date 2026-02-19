@@ -325,7 +325,8 @@
    - `M9_GAP_DIFY_REAL_PROVIDER_COMMAND`
    - `M9_GAP_LOCAL_STATE_COMMAND`
    - `M9_GAP_TRANSLATIONS_COMMAND`
-4. 如需强制三项都执行，设置 `M9_GAP_REQUIRE_ALL=1`。
+4. `scripts/m9-gap-tests-verify.sh` 现在在 `CI=true`、`NODE_ENV=production`、`AGENTIF_ENV_FILE=.env.prod` 或 `M9_GAP_PROFILE=prod` 下会默认强制三项都执行（`require_all=1`）。
+5. 仍可用 `M9_GAP_REQUIRE_ALL=0|1` 显式覆盖默认行为。
 
 ### 6.5 结论
 
