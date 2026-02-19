@@ -80,7 +80,7 @@ cd AgentifUI
 pnpm install
 ```
 
-Create `.env.local` with current stack settings:
+Create `.env.prod` (you can copy from `.env.prod.example`) with production settings:
 
 ```env
 NODE_ENV=production
@@ -103,9 +103,19 @@ BETTER_AUTH_SECRET=replace_with_32_plus_random_chars
 Build and start:
 
 ```bash
-pnpm build
-pm2 start ecosystem.config.js --only AgentifUI --update-env
+cp .env.prod.example .env.prod
+# edit .env.prod and fill real secrets before deployment
+
+pnpm deploy
 pm2 save
+```
+
+If you need to run migrations inside deploy, provide a command explicitly:
+
+```bash
+AGENTIF_DEPLOY_RUN_MIGRATIONS=1 \
+AGENTIF_DEPLOY_MIGRATION_COMMAND='your_migration_command_here' \
+pnpm deploy
 ```
 
 ## 4. Health Checks
@@ -113,6 +123,9 @@ pm2 save
 ```bash
 # App
 curl -I http://127.0.0.1:3000
+
+# PM2
+pm2 status AgentifUI-Prod AgentifUI-API-Prod
 
 # PostgreSQL
 pg_isready -h 127.0.0.1 -p 5432 -U agentif -d agentifui

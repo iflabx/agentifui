@@ -206,9 +206,9 @@
 1. 在 `dev` 完成功能开发与自测。
 2. 执行基础检查：`pnpm type-check && pnpm lint`。
 3. 提交并打发布 tag（例如 `v1.0.x`）。
-4. `prod` 目录切换到该 tag，执行 `pnpm install --frozen-lockfile && pnpm build`。
-5. 备份生产数据库并执行 migration。
-6. 重启生产 PM2 进程并执行 smoke 验证。
+4. `prod` 目录切换到该 tag，执行 `pnpm deploy`（调用 `scripts/deploy-prod.sh`）。
+5. 需要迁移时，通过 `AGENTIF_DEPLOY_RUN_MIGRATIONS=1` + `AGENTIF_DEPLOY_MIGRATION_COMMAND` 显式传入迁移命令。
+6. 完成后确认 `AgentifUI-Prod` 与 `AgentifUI-API-Prod` 进程状态，并执行 smoke 验证。
 
 ### 10A.4 关于“用 PM2 跑 dev”
 
