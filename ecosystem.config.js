@@ -5,10 +5,11 @@ module.exports = {
       script: 'pnpm',
       args: 'start',
       interpreter: 'none',
+      env_file: './.env.local',
       env: {
         NODE_ENV: 'production',
         PORT: process.env.PORT || 3000,
-        FASTIFY_PROXY_ENABLED: process.env.FASTIFY_PROXY_ENABLED || '0',
+        FASTIFY_PROXY_ENABLED: process.env.FASTIFY_PROXY_ENABLED || '1',
         FASTIFY_PROXY_BASE_URL:
           process.env.FASTIFY_PROXY_BASE_URL || 'http://127.0.0.1:3010',
         FASTIFY_PROXY_PREFIXES: process.env.FASTIFY_PROXY_PREFIXES,
@@ -30,11 +31,12 @@ module.exports = {
       script: 'pnpm',
       args: 'start:standalone',
       interpreter: 'none',
+      env_file: './.env.local',
       env: {
         NODE_ENV: 'production',
         PORT: process.env.PORT || 3000,
         HOSTNAME: '0.0.0.0',
-        FASTIFY_PROXY_ENABLED: process.env.FASTIFY_PROXY_ENABLED || '0',
+        FASTIFY_PROXY_ENABLED: process.env.FASTIFY_PROXY_ENABLED || '1',
         FASTIFY_PROXY_BASE_URL:
           process.env.FASTIFY_PROXY_BASE_URL || 'http://127.0.0.1:3010',
         FASTIFY_PROXY_PREFIXES: process.env.FASTIFY_PROXY_PREFIXES,
@@ -52,6 +54,7 @@ module.exports = {
       script: 'pnpm',
       args: 'start:api',
       interpreter: 'none',
+      env_file: './.env.local',
       env: {
         NODE_ENV: 'production',
         FASTIFY_API_HOST: process.env.FASTIFY_API_HOST || '0.0.0.0',

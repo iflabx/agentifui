@@ -50,8 +50,8 @@ function parseFastifyProxyPrefixes(raw: string | undefined): string[] {
 }
 
 function isFastifyProxyEnabled(value: string | undefined): boolean {
-  if (!value) {
-    return false;
+  if (!value || value.trim().length === 0) {
+    return true;
   }
   const normalized = value.trim().toLowerCase();
   return normalized === '1' || normalized === 'true' || normalized === 'yes';
@@ -74,7 +74,8 @@ const nextConfig: NextConfig = {
       return [];
     }
 
-    const proxyBaseUrl = process.env.FASTIFY_PROXY_BASE_URL?.trim();
+    const proxyBaseUrl =
+      process.env.FASTIFY_PROXY_BASE_URL?.trim() || 'http://127.0.0.1:3010';
     if (!proxyBaseUrl) {
       return [];
     }
