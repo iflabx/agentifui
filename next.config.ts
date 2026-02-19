@@ -24,6 +24,7 @@ const DEFAULT_FASTIFY_PROXY_PREFIXES = [
   '/api/internal/data',
   '/api/internal/apps',
   '/api/internal/profile',
+  '/api/internal/realtime',
   '/api/internal/dify-config',
   '/api/internal/auth/local-password',
   '/api/internal/fastify-health',

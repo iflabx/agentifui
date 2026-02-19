@@ -112,7 +112,14 @@ The current migration strategy is:
     - 默认不再透传 legacy：未识别 action 直接返回本地 `400 Unsupported action`。
     - 不再支持透传 legacy Next `internal/data`。
     - Response includes `x-agentifui-internal-data-handler: local` for phase-level verification.
-18. Other configured API prefixes should be migrated route-by-route and not rely on fallback as a steady-state path.
+18. `GET /api/internal/realtime/stream`
+    - Served directly by Fastify.
+    - Preserves SSE contract (`ready/ping/message/replay-gap`) and `last-event-id` replay behavior.
+    - Preserves key-level permission model (`self/admin/conversation-owner/admin-only`) and default key->table config mapping.
+19. `GET /api/internal/realtime/stats`
+    - Served directly by Fastify.
+    - Preserves admin-only contract and exposes subscription + broker metrics.
+20. Other configured API prefixes should be migrated route-by-route and not rely on fallback as a steady-state path.
 
 ## Smoke Check
 

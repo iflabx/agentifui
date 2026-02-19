@@ -10,6 +10,9 @@ loadEnv({ path: '.env.test-stack' });
 
 const appPort = Number(process.env.M6_REALTIME_APP_PORT || 3321);
 const appBase = `http://127.0.0.1:${appPort}`;
+const useFastifyProxy = process.env.M6_REALTIME_USE_FASTIFY_PROXY !== '0';
+const fastifyPort = Number(process.env.M6_REALTIME_FASTIFY_PORT || 3421);
+const fastifyBase = `http://127.0.0.1:${fastifyPort}`;
 const appReadyTimeoutMs = Number(
   process.env.M6_REALTIME_READY_TIMEOUT_MS || 120000
 );
@@ -27,6 +30,17 @@ const fallbackDatabaseUrl =
   'postgresql://agentif:agentif@172.20.0.1:5432/agentifui';
 const fallbackRedisUrl = 'redis://172.20.0.1:6379/0';
 const fallbackS3Endpoint = 'http://172.20.0.1:9000';
+const defaultFastifyProxyPrefixes = [
+  '/api/internal/data',
+  '/api/internal/apps',
+  '/api/internal/profile',
+  '/api/internal/realtime',
+  '/api/internal/dify-config',
+  '/api/internal/auth/local-password',
+  '/api/internal/fastify-health',
+  '/api/admin',
+  '/api/translations',
+];
 
 function parseBooleanEnv(value, fallbackValue) {
   if (!value) {
@@ -661,6 +675,11 @@ async function main() {
     S3_BUCKET: process.env.S3_BUCKET || 'agentifui',
     S3_ENABLE_PATH_STYLE: process.env.S3_ENABLE_PATH_STYLE || '1',
     S3_PUBLIC_READ_ENABLED: process.env.S3_PUBLIC_READ_ENABLED || '1',
+    FASTIFY_PROXY_ENABLED: useFastifyProxy ? '1' : '0',
+    FASTIFY_PROXY_BASE_URL: fastifyBase,
+    FASTIFY_PROXY_PREFIXES:
+      process.env.FASTIFY_PROXY_PREFIXES ||
+      defaultFastifyProxyPrefixes.join(','),
     REALTIME_SSE_KEEPALIVE_MS: process.env.REALTIME_SSE_KEEPALIVE_MS || '3000',
     REALTIME_SOURCE_MODE: process.env.REALTIME_SOURCE_MODE || 'db-outbox',
     NEXT_TELEMETRY_DISABLED: '1',
@@ -668,6 +687,7 @@ async function main() {
   };
 
   let appProc = null;
+  let apiProc = null;
 
   const dbClient = new Client({ connectionString: databaseUrl });
   const collectors = [];
@@ -680,6 +700,25 @@ async function main() {
 
     let lastStartupError = null;
     for (let attempt = 1; attempt <= appStartRetryCount; attempt += 1) {
+      if (useFastifyProxy) {
+        apiProc = startProcess('pnpm', ['--filter', '@agentifui/api', 'dev'], {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            NODE_ENV: 'development',
+            DATABASE_URL: databaseUrl,
+            REDIS_URL: redisUrl,
+            FASTIFY_API_HOST: '127.0.0.1',
+            FASTIFY_API_PORT: String(fastifyPort),
+            FASTIFY_LOG_LEVEL: process.env.FASTIFY_LOG_LEVEL || 'error',
+            FASTIFY_INTERNAL_DATA_PROXY_TIMEOUT_MS:
+              process.env.FASTIFY_INTERNAL_DATA_PROXY_TIMEOUT_MS || '30000',
+            NEXT_UPSTREAM_BASE_URL: appBase,
+          },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+      }
+
       appProc = startProcess('pnpm', ['next', 'dev', '-p', String(appPort)], {
         cwd: process.cwd(),
         env: appEnv,
@@ -687,6 +726,9 @@ async function main() {
       });
 
       try {
+        if (useFastifyProxy) {
+          await waitForServer(`${fastifyBase}/healthz`, apiProc, appReadyTimeoutMs);
+        }
         await waitForServer(
           `${appBase}/api/auth/better/get-session`,
           appProc,
@@ -697,7 +739,9 @@ async function main() {
       } catch (error) {
         lastStartupError = error;
         await terminateProcess(appProc);
+        await terminateProcess(apiProc);
         appProc = null;
+        apiProc = null;
         if (attempt < appStartRetryCount) {
           console.warn(
             `[m6-realtime-e2e] app start attempt ${attempt}/${appStartRetryCount} failed, retrying...`
@@ -716,6 +760,9 @@ async function main() {
       appProc,
       appReadyTimeoutMs
     );
+    if (useFastifyProxy) {
+      await waitForServer(`${fastifyBase}/healthz`, apiProc, appReadyTimeoutMs);
+    }
 
     const jarA = new CookieJar();
     const jarB = new CookieJar();
@@ -1061,6 +1108,7 @@ async function main() {
       }
     }
     await dbClient.end().catch(() => {});
+    await terminateProcess(apiProc);
     await terminateProcess(appProc);
     process.exit(exitCode);
   }

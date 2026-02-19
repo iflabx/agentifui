@@ -22,12 +22,15 @@ import { internalAuthLocalPasswordRoutes } from './routes/internal-auth-local-pa
 import { internalDataRoutes } from './routes/internal-data';
 import { internalDifyConfigRoutes } from './routes/internal-dify-config';
 import { internalProfileRoutes } from './routes/internal-profile';
+import { internalRealtimeStatsRoutes } from './routes/internal-realtime-stats';
+import { internalRealtimeStreamRoutes } from './routes/internal-realtime-stream';
 import { proxyFallbackRoutes } from './routes/proxy-fallback';
 import { translationsRoutes } from './routes/translations';
 
 const REALTIME_SENSITIVE_PREFIXES = [
   '/api/internal/apps',
   '/api/internal/profile',
+  '/api/internal/realtime',
 ];
 
 function hasPrefixCoverage(prefixes: string[], targetPrefix: string): boolean {
@@ -96,6 +99,8 @@ export async function createApiServer(config: ApiRuntimeConfig) {
   await app.register(internalDataRoutes, { config });
   await app.register(internalDifyConfigRoutes, { config });
   await app.register(internalProfileRoutes, { config });
+  await app.register(internalRealtimeStreamRoutes, { config });
+  await app.register(internalRealtimeStatsRoutes, { config });
   await app.register(translationsRoutes);
   await app.register(proxyFallbackRoutes, { config });
 

@@ -62,7 +62,7 @@ function normalizeSystemActor(systemActor: boolean | null | undefined): string {
   return systemActor ? 'true' : 'false';
 }
 
-function getPgPool(): Pool {
+export function getPgPool(): Pool {
   const globalState = globalThis as unknown as Record<string, unknown>;
   const existing = globalState[PG_POOL_GLOBAL_KEY] as Pool | undefined;
   if (existing) {

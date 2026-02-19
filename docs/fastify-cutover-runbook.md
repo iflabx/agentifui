@@ -4,7 +4,7 @@
 
 This runbook controls Next.js API ingress cutover to Fastify sidecar for:
 `/api/internal/data*`, `/api/internal/apps*`, `/api/internal/profile*`,
-`/api/internal/dify-config*`, `/api/internal/auth/local-password*`,
+`/api/internal/realtime*`, `/api/internal/dify-config*`, `/api/internal/auth/local-password*`,
 `/api/internal/fastify-health*`, `/api/admin*`, and `/api/translations*`.
 
 This runbook follows Fastify-only target A:
