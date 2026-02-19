@@ -31,10 +31,12 @@ const fallbackDatabaseUrl =
 const fallbackRedisUrl = 'redis://172.20.0.1:6379/0';
 const fallbackS3Endpoint = 'http://172.20.0.1:9000';
 const defaultFastifyProxyPrefixes = [
+  '/api/dify',
   '/api/internal/data',
   '/api/internal/apps',
   '/api/internal/profile',
   '/api/internal/realtime',
+  '/api/internal/ops/dify-resilience',
   '/api/internal/dify-config',
   '/api/internal/auth/local-password',
   '/api/internal/fastify-health',

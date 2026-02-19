@@ -3,9 +3,10 @@
 ## Scope
 
 This runbook controls Next.js API ingress cutover to Fastify sidecar for:
-`/api/internal/data*`, `/api/internal/apps*`, `/api/internal/profile*`,
-`/api/internal/realtime*`, `/api/internal/storage*`, `/api/internal/dify-config*`, `/api/internal/auth/local-password*`,
-`/api/internal/fastify-health*`, `/api/admin*`, and `/api/translations*`.
+`/api/dify*`, `/api/internal/data*`, `/api/internal/apps*`, `/api/internal/profile*`,
+`/api/internal/realtime*`, `/api/internal/storage*`, `/api/internal/ops/dify-resilience*`,
+`/api/internal/dify-config*`, `/api/internal/auth/local-password*`, `/api/internal/fastify-health*`,
+`/api/admin*`, and `/api/translations*`.
 
 This runbook follows Fastify-only target A:
 business API traffic should be handled by Fastify, while auth/SSO remains Next-owned.

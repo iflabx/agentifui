@@ -119,19 +119,26 @@ The current migration strategy is:
 19. `GET /api/internal/realtime/stats`
     - Served directly by Fastify.
     - Preserves admin-only contract and exposes subscription + broker metrics.
-20. `POST/GET /api/internal/storage/avatar/presign`
+20. `DELETE/GET/HEAD/OPTIONS/PATCH/POST/PUT /api/dify/:appId/*`
+    - Served directly by Fastify.
+    - Preserves Dify proxy contract, including app-type path rewrite (`workflow`/`text-generation`) and multipart passthrough.
+    - Uses Fastify-local timeout + circuit breaker resilience for upstream protection.
+21. `GET /api/internal/ops/dify-resilience`
+    - Served directly by Fastify.
+    - Preserves admin-only resilience metrics snapshot and circuit state inspection.
+22. `POST/GET /api/internal/storage/avatar/presign`
     - Served directly by Fastify.
     - Preserves avatar upload/download presign contract, ownership checks, and public/private read-mode behavior.
-21. `POST/DELETE /api/internal/storage/avatar`
+23. `POST/DELETE /api/internal/storage/avatar`
     - Served directly by Fastify.
     - Preserves avatar commit/delete contract and profile `avatar_url` update semantics.
-22. `POST/GET /api/internal/storage/content-images/presign`
+24. `POST/GET /api/internal/storage/content-images/presign`
     - Served directly by Fastify.
     - Preserves content-image upload/download presign contract and read-mode behavior.
-23. `GET/POST/DELETE /api/internal/storage/content-images`
+25. `GET/POST/DELETE /api/internal/storage/content-images`
     - Served directly by Fastify.
     - Preserves content-image list/commit/delete contract with ownership checks.
-24. Other configured API prefixes should be migrated route-by-route and not rely on fallback as a steady-state path.
+26. Other configured API prefixes should be migrated route-by-route and not rely on fallback as a steady-state path.
 
 ## Smoke Check
 

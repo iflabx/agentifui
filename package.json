@@ -97,6 +97,7 @@
     "m8:rollback:drill": "node scripts/m8-rollback-drill.mjs",
     "m8:gate:report": "node scripts/m8-gate-verify.mjs",
     "m8:gate:verify": "bash scripts/m8-gate-verify.sh",
+    "m9:dify-proxy:verify": "node scripts/m9-dify-proxy-verify.mjs",
     "m9:gap:verify": "bash scripts/m9-gap-tests-verify.sh",
     "m9:gate:verify": "pnpm m9:gap:verify && pnpm gate:quality:verify",
     "gate:strict-consistency:verify": "bash scripts/gate-strict-consistency-verify.sh",
