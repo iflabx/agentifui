@@ -65,5 +65,6 @@ pm2-logs/
 .dev-env.local
 .playwright-cli/
 output/
+local-scripts/
 
 .serena
