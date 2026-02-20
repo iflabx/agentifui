@@ -19,7 +19,6 @@ import { adminUsersForGroupRoutes } from './routes/admin-users-for-group';
 import { difyProxyRoutes } from './routes/dify-proxy';
 import { healthRoutes } from './routes/health';
 import { internalAppsRoutes } from './routes/internal-apps';
-import { internalAuthLocalPasswordRoutes } from './routes/internal-auth-local-password';
 import { internalDataRoutes } from './routes/internal-data';
 import { internalDifyConfigRoutes } from './routes/internal-dify-config';
 import { internalProfileRoutes } from './routes/internal-profile';
@@ -110,7 +109,6 @@ export async function createApiServer(config: ApiRuntimeConfig) {
   await app.register(difyProxyRoutes, { config });
   await app.register(healthRoutes, { config });
   await app.register(internalAppsRoutes, { config });
-  await app.register(internalAuthLocalPasswordRoutes, { config });
   await app.register(internalDataRoutes, { config });
   await app.register(internalDifyConfigRoutes, { config });
   await app.register(internalProfileRoutes, { config });

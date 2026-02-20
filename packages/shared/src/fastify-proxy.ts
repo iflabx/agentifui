@@ -3,7 +3,6 @@ export const DEFAULT_FASTIFY_PROXY_PREFIXES = [
   '/api/internal/apps',
   '/api/internal/profile',
   '/api/internal/dify-config',
-  '/api/internal/auth/local-password',
   '/api/internal/fastify-health',
   '/api/admin',
   '/api/translations',
