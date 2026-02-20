@@ -80,7 +80,7 @@ Create runtime DB role grants in prod database:
 
 ```bash
 AGENTIF_ENV_FILE=.env.prod bash scripts/with-env-local.sh \
-  bash scripts/m4-runtime-role-setup.sh
+  pnpm -s m4:runtime-role:setup
 ```
 
 Create dedicated MinIO bucket:
