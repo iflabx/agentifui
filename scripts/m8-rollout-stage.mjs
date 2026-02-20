@@ -186,7 +186,7 @@ export async function runStage(overrides = {}) {
   const smokeCommand = resolveString(
     overrides.smokeCommand,
     process.env.M8_SMOKE_COMMAND,
-    'bash scripts/m8-smoke-verify.sh'
+    'bash local-scripts/m8-smoke-verify.sh'
   )
   const reconcileCommand = resolveString(
     overrides.reconcileCommand,

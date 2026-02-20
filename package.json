@@ -61,7 +61,6 @@
     "m7:ci:verify": "node scripts/m7-ci-verify.mjs",
     "m7:ci:runtime:verify": "bash scripts/m7-ci-runtime-verify.sh",
     "m8:metrics:verify": "node scripts/m8-metrics-verify.mjs",
-    "m8:smoke:verify": "bash scripts/m8-smoke-verify.sh",
     "m8:stage:run": "node scripts/m8-rollout-stage.mjs",
     "m8:rollout:run": "node scripts/m8-rollout-run.mjs",
     "m8:rollback:drill": "node scripts/m8-rollback-drill.mjs",
