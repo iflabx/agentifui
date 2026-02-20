@@ -32,6 +32,8 @@ Required groups:
 1. Database and cache
    - `DATABASE_URL`
    - `MIGRATOR_DATABASE_URL`
+   - `APP_DATABASE_ROLE`
+   - `APP_DATABASE_PASSWORD`
    - `REDIS_URL`
 2. Object storage
    - `S3_ENDPOINT`
@@ -76,17 +78,65 @@ WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'agentifui_prod');
 SQL
 ```
 
-Create runtime DB role grants in prod database:
+Create runtime DB role and grants in prod database:
 
 ```bash
-AGENTIF_ENV_FILE=.env.prod bash scripts/with-env-local.sh \
-  pnpm -s m4:runtime-role:setup
+set -a
+source .env.prod
+set +a
+
+psql "$MIGRATOR_DATABASE_URL" \
+  -v ON_ERROR_STOP=1 \
+  -v app_role="$APP_DATABASE_ROLE" \
+  -v app_password="$APP_DATABASE_PASSWORD" <<'SQL'
+SELECT format(
+  'CREATE ROLE %I LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOREPLICATION NOBYPASSRLS',
+  :'app_role',
+  :'app_password'
+)
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM pg_roles
+  WHERE rolname = :'app_role'
+);
+\gexec
+
+SELECT format(
+  'ALTER ROLE %I LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOREPLICATION NOBYPASSRLS',
+  :'app_role',
+  :'app_password'
+);
+\gexec
+
+SELECT format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), :'app_role');
+\gexec
+SELECT format('GRANT USAGE ON SCHEMA public TO %I', :'app_role');
+\gexec
+SELECT format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO %I', :'app_role');
+\gexec
+SELECT format('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO %I', :'app_role');
+\gexec
+SELECT format('GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO %I', :'app_role');
+\gexec
+
+SELECT format('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO %I', :'app_role');
+\gexec
+SELECT format('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO %I', :'app_role');
+\gexec
+SELECT format('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO %I', :'app_role');
+\gexec
+SQL
 ```
 
 Create dedicated MinIO bucket:
 
 ```bash
-AGENTIF_ENV_FILE=.env.prod bash scripts/with-env-local.sh pnpm -s m7:s3:bootstrap
+set -a
+source .env.prod
+set +a
+
+mc alias set local "$S3_ENDPOINT" "$S3_ACCESS_KEY_ID" "$S3_SECRET_ACCESS_KEY"
+mc mb --ignore-existing "local/$S3_BUCKET"
 ```
 
 Apply baseline schema migrations (fresh install):
@@ -203,3 +253,4 @@ pnpm start:prod:api
 1. No staging/develop deployment procedures.
 2. No legacy deploy flows.
 3. No migration-framework history discussion.
+4. No maintainer-only migration verification gates (`m5`/`m6`/`m9`) in public docs.

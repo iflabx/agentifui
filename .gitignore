@@ -66,5 +66,6 @@ pm2-logs/
 .playwright-cli/
 output/
 local-scripts/
+local-docs/
 
 .serena
