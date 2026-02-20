@@ -1673,58 +1673,58 @@
           "batchStatusChangeConfirm": "Modificare lo stato di {count} utenti in {status}?"
         },
         "editModal": {
-          "title": "Edit User: {name}",
-          "description": "Edit local profile fields. IdP-synced identity fields are read-only.",
-          "loading": "Loading user details...",
-          "noData": "Unable to load user details",
+          "title": "Modifica utente: {name}",
+          "description": "Puoi modificare i campi del profilo locale. I campi identità sincronizzati da IdP sono in sola lettura.",
+          "loading": "Caricamento dettagli utente...",
+          "noData": "Impossibile caricare i dettagli utente",
           "sections": {
-            "profile": "Editable Profile",
-            "readonly": "IdP/Identity Read-only Fields"
+            "profile": "Profilo modificabile",
+            "readonly": "Campi IdP/Identità in sola lettura"
           },
           "badges": {
-            "idpManaged": "IdP managed",
-            "localAccount": "Local account"
+            "idpManaged": "Gestito da IdP",
+            "localAccount": "Account locale"
           },
           "fields": {
-            "fullName": "Full name",
-            "username": "Username",
+            "fullName": "Nome completo",
+            "username": "Nome utente",
             "email": "Email",
-            "phone": "Phone",
-            "avatarUrl": "Avatar URL",
-            "role": "Role",
-            "status": "Status"
+            "phone": "Telefono",
+            "avatarUrl": "URL avatar",
+            "role": "Ruolo",
+            "status": "Stato"
           },
           "options": {
             "role": {
-              "admin": "Administrator",
+              "admin": "Amministratore",
               "manager": "Manager",
-              "user": "Regular User"
+              "user": "Utente standard"
             },
             "status": {
-              "active": "Active",
-              "suspended": "Suspended",
-              "pending": "Pending"
+              "active": "Attivo",
+              "suspended": "Sospeso",
+              "pending": "In attesa"
             }
           },
           "readonly": {
-            "idpHint": "This field is synchronized from IdP and cannot be edited here.",
-            "authSource": "Auth source",
-            "ssoProviderId": "SSO provider ID",
-            "employeeNumber": "Employee number",
-            "departmentName": "Department",
-            "jobTitle": "Job title",
-            "managerName": "Manager",
-            "syncedAt": "Synced at",
-            "lastSeenAt": "Last seen at"
+            "idpHint": "Questo campo è sincronizzato da IdP e non può essere modificato qui.",
+            "authSource": "Origine autenticazione",
+            "ssoProviderId": "ID provider SSO",
+            "employeeNumber": "Matricola",
+            "departmentName": "Reparto",
+            "jobTitle": "Ruolo lavorativo",
+            "managerName": "Responsabile",
+            "syncedAt": "Sincronizzato il",
+            "lastSeenAt": "Ultima attività"
           },
           "actions": {
-            "cancel": "Cancel",
-            "save": "Save Changes",
-            "saving": "Saving..."
+            "cancel": "Annulla",
+            "save": "Salva modifiche",
+            "saving": "Salvataggio..."
           },
           "messages": {
-            "updateSuccess": "User profile updated",
-            "updateFailed": "Failed to update user profile"
+            "updateSuccess": "Profilo utente aggiornato",
+            "updateFailed": "Impossibile aggiornare il profilo utente"
           }
         }
       },

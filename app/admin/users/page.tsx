@@ -83,6 +83,9 @@ export default function UsersManagementPage() {
     users.find(user => user.id === editingUserId) ||
     null;
 
+  const getUserDisplayName = (user?: Partial<EnhancedUser> | null) =>
+    user?.full_name || user?.email || t('actions.defaultUser');
+
   // check if can change user role (prevent admin from downgrading other admins)
   const canChangeUserRole = (
     targetUser: EnhancedUser,
@@ -214,7 +217,7 @@ export default function UsersManagementPage() {
       const roleText = t(`messages.roles.${role}`);
       toast.success(
         t('messages.roleChangeSuccess', {
-          name: user.full_name || user.email || 'Unknown User',
+          name: getUserDisplayName(user),
           role: roleText,
         })
       );
@@ -231,7 +234,7 @@ export default function UsersManagementPage() {
       const statusText = t(`messages.statuses.${status}`);
       toast.success(
         t('messages.statusChangeSuccess', {
-          name: user.full_name || user.email || 'Unknown User',
+          name: getUserDisplayName(user),
           status: statusText,
         })
       );
@@ -257,7 +260,7 @@ export default function UsersManagementPage() {
     if (success) {
       toast.success(
         t('messages.deleteSuccess', {
-          name: userToDelete.full_name || userToDelete.email || 'Unknown User',
+          name: getUserDisplayName(userToDelete),
         })
       );
       setShowDeleteDialog(false);
@@ -321,7 +324,7 @@ export default function UsersManagementPage() {
     await loadUserDetail(user.id);
     toast.success(
       t('actions.viewUser', {
-        name: user.full_name || user.email || 'Unknown User',
+        name: getUserDisplayName(user),
       })
     );
   };
@@ -632,8 +635,7 @@ export default function UsersManagementPage() {
           onConfirm={handleConfirmDeleteUser}
           title={t('actions.deleteUser')}
           message={t('messages.deleteConfirm', {
-            name:
-              userToDelete?.full_name || userToDelete?.email || 'Unknown User',
+            name: getUserDisplayName(userToDelete),
           })}
           confirmText={t('actions.deleteUser')}
           variant="danger"

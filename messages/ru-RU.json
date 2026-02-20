@@ -1673,58 +1673,58 @@
           "batchStatusChangeConfirm": "Изменить статус {count} пользователей на {status}?"
         },
         "editModal": {
-          "title": "Edit User: {name}",
-          "description": "Edit local profile fields. IdP-synced identity fields are read-only.",
-          "loading": "Loading user details...",
-          "noData": "Unable to load user details",
+          "title": "Редактировать пользователя: {name}",
+          "description": "Можно редактировать поля локального профиля. Поля идентификации, синхронизируемые из IdP, доступны только для чтения.",
+          "loading": "Загрузка данных пользователя...",
+          "noData": "Не удалось загрузить данные пользователя",
           "sections": {
-            "profile": "Editable Profile",
-            "readonly": "IdP/Identity Read-only Fields"
+            "profile": "Редактируемый профиль",
+            "readonly": "Поля IdP/идентификации только для чтения"
           },
           "badges": {
-            "idpManaged": "IdP managed",
-            "localAccount": "Local account"
+            "idpManaged": "Управляется IdP",
+            "localAccount": "Локальная учетная запись"
           },
           "fields": {
-            "fullName": "Full name",
-            "username": "Username",
-            "email": "Email",
-            "phone": "Phone",
-            "avatarUrl": "Avatar URL",
-            "role": "Role",
-            "status": "Status"
+            "fullName": "Полное имя",
+            "username": "Имя пользователя",
+            "email": "Эл. почта",
+            "phone": "Телефон",
+            "avatarUrl": "URL аватара",
+            "role": "Роль",
+            "status": "Статус"
           },
           "options": {
             "role": {
-              "admin": "Administrator",
-              "manager": "Manager",
-              "user": "Regular User"
+              "admin": "Администратор",
+              "manager": "Менеджер",
+              "user": "Обычный пользователь"
             },
             "status": {
-              "active": "Active",
-              "suspended": "Suspended",
-              "pending": "Pending"
+              "active": "Активен",
+              "suspended": "Заблокирован",
+              "pending": "Ожидает"
             }
           },
           "readonly": {
-            "idpHint": "This field is synchronized from IdP and cannot be edited here.",
-            "authSource": "Auth source",
-            "ssoProviderId": "SSO provider ID",
-            "employeeNumber": "Employee number",
-            "departmentName": "Department",
-            "jobTitle": "Job title",
-            "managerName": "Manager",
-            "syncedAt": "Synced at",
-            "lastSeenAt": "Last seen at"
+            "idpHint": "Это поле синхронизируется из IdP и не может быть отредактировано здесь.",
+            "authSource": "Источник аутентификации",
+            "ssoProviderId": "ID SSO-провайдера",
+            "employeeNumber": "Табельный номер",
+            "departmentName": "Отдел",
+            "jobTitle": "Должность",
+            "managerName": "Руководитель",
+            "syncedAt": "Синхронизировано",
+            "lastSeenAt": "Последняя активность"
           },
           "actions": {
-            "cancel": "Cancel",
-            "save": "Save Changes",
-            "saving": "Saving..."
+            "cancel": "Отмена",
+            "save": "Сохранить изменения",
+            "saving": "Сохранение..."
           },
           "messages": {
-            "updateSuccess": "User profile updated",
-            "updateFailed": "Failed to update user profile"
+            "updateSuccess": "Профиль пользователя обновлен",
+            "updateFailed": "Не удалось обновить профиль пользователя"
           }
         }
       },

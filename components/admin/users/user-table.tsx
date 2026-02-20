@@ -72,6 +72,9 @@ export const UserTable: React.FC<UserTableProps> = ({
   } | null>(null);
   const [isUpdating, setIsUpdating] = React.useState(false);
 
+  const getUserDisplayName = (user?: Partial<EnhancedUser> | null) =>
+    user?.full_name || user?.email || t('actions.defaultUser');
+
   // Check if the user can change the user role (prevent admin from demoting other admins)
   const canChangeUserRole = (
     targetUser: EnhancedUser,
@@ -807,10 +810,7 @@ export const UserTable: React.FC<UserTableProps> = ({
         onConfirm={handleConfirmAction}
         title={t('actions.changeRole')}
         message={t('messages.roleChangeConfirm', {
-          name:
-            pendingAction?.user?.full_name ||
-            pendingAction?.user?.email ||
-            'Unknown User',
+          name: getUserDisplayName(pendingAction?.user),
           role:
             pendingAction?.value && pendingAction?.type === 'role'
               ? t(`messages.roles.${pendingAction.value}`)
@@ -828,10 +828,7 @@ export const UserTable: React.FC<UserTableProps> = ({
         onConfirm={handleConfirmAction}
         title={t('actions.changeStatus')}
         message={t('messages.statusChangeConfirm', {
-          name:
-            pendingAction?.user?.full_name ||
-            pendingAction?.user?.email ||
-            'Unknown User',
+          name: getUserDisplayName(pendingAction?.user),
           status:
             pendingAction?.value && pendingAction?.type === 'status'
               ? t(`messages.statuses.${pendingAction.value}`)

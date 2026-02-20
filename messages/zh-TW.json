@@ -1673,58 +1673,58 @@
           "batchStatusChangeConfirm": "要將{count}位使用者的狀態變更為{status}嗎？"
         },
         "editModal": {
-          "title": "Edit User: {name}",
-          "description": "Edit local profile fields. IdP-synced identity fields are read-only.",
-          "loading": "Loading user details...",
-          "noData": "Unable to load user details",
+          "title": "編輯使用者：{name}",
+          "description": "可編輯本地個人資料欄位。由 IdP 同步的身分欄位為唯讀。",
+          "loading": "正在載入使用者詳細資料...",
+          "noData": "無法載入使用者詳細資料",
           "sections": {
-            "profile": "Editable Profile",
-            "readonly": "IdP/Identity Read-only Fields"
+            "profile": "可編輯個人資料",
+            "readonly": "IdP／身分唯讀欄位"
           },
           "badges": {
-            "idpManaged": "IdP managed",
-            "localAccount": "Local account"
+            "idpManaged": "IdP 管理",
+            "localAccount": "本地帳號"
           },
           "fields": {
-            "fullName": "Full name",
-            "username": "Username",
-            "email": "Email",
-            "phone": "Phone",
-            "avatarUrl": "Avatar URL",
-            "role": "Role",
-            "status": "Status"
+            "fullName": "姓名",
+            "username": "使用者名稱",
+            "email": "電子郵件",
+            "phone": "手機號碼",
+            "avatarUrl": "頭像 URL",
+            "role": "角色",
+            "status": "狀態"
           },
           "options": {
             "role": {
-              "admin": "Administrator",
-              "manager": "Manager",
-              "user": "Regular User"
+              "admin": "管理員",
+              "manager": "管理者",
+              "user": "一般使用者"
             },
             "status": {
-              "active": "Active",
-              "suspended": "Suspended",
-              "pending": "Pending"
+              "active": "啟用",
+              "suspended": "停用",
+              "pending": "待啟用"
             }
           },
           "readonly": {
-            "idpHint": "This field is synchronized from IdP and cannot be edited here.",
-            "authSource": "Auth source",
-            "ssoProviderId": "SSO provider ID",
-            "employeeNumber": "Employee number",
-            "departmentName": "Department",
-            "jobTitle": "Job title",
-            "managerName": "Manager",
-            "syncedAt": "Synced at",
-            "lastSeenAt": "Last seen at"
+            "idpHint": "此欄位由 IdP 同步，無法在此編輯。",
+            "authSource": "驗證來源",
+            "ssoProviderId": "SSO 提供者 ID",
+            "employeeNumber": "員工編號",
+            "departmentName": "部門",
+            "jobTitle": "職稱",
+            "managerName": "主管",
+            "syncedAt": "同步時間",
+            "lastSeenAt": "最近活動時間"
           },
           "actions": {
-            "cancel": "Cancel",
-            "save": "Save Changes",
-            "saving": "Saving..."
+            "cancel": "取消",
+            "save": "儲存變更",
+            "saving": "儲存中..."
           },
           "messages": {
-            "updateSuccess": "User profile updated",
-            "updateFailed": "Failed to update user profile"
+            "updateSuccess": "使用者資料已更新",
+            "updateFailed": "更新使用者資料失敗"
           }
         }
       },
