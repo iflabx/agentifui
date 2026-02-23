@@ -196,7 +196,9 @@ export class DataService {
       }) => SqlPool;
     };
 
-    const sessionOptions = resolvePgSessionOptionsFromEnv();
+    const sessionOptions = resolvePgSessionOptionsFromEnv({
+      systemActor: true,
+    });
     const pool = new pgModule.Pool({
       connectionString: this.resolveDatabaseUrl(),
       max: Number(process.env.PG_POOL_MAX || 10),

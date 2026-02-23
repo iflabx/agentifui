@@ -23,6 +23,9 @@ export interface ApiRuntimeConfig {
   realtimeSourceMode: RealtimeSourceMode;
   sessionCookieNames: string[];
   internalDataProxyTimeoutMs: number;
+  difyTempConfigEnabled: boolean;
+  difyTempConfigAllowedHosts: string[];
+  difyTempConfigAllowPrivate: boolean;
 }
 
 const DEFAULT_SESSION_COOKIE_NAMES = [
@@ -31,6 +34,23 @@ const DEFAULT_SESSION_COOKIE_NAMES = [
   '__Secure-session_token',
   '__Secure-better-auth.session_token',
 ];
+
+function parseBooleanEnv(
+  rawValue: string | undefined,
+  fallback: boolean
+): boolean {
+  if (!rawValue) {
+    return fallback;
+  }
+  const normalized = rawValue.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+    return true;
+  }
+  if (['0', 'false', 'no', 'off'].includes(normalized)) {
+    return false;
+  }
+  return fallback;
+}
 
 function parsePort(rawValue: string | undefined, fallback: number): number {
   if (!rawValue) {
@@ -57,6 +77,25 @@ function parseTimeoutMs(
   }
 
   return Math.floor(parsed);
+}
+
+function parseCsvList(rawValue: string | undefined): string[] {
+  if (!rawValue) {
+    return [];
+  }
+  const seen = new Set<string>();
+  return rawValue
+    .split(',')
+    .map(value => value.trim())
+    .filter(Boolean)
+    .map(value => value.toLowerCase())
+    .filter(value => {
+      if (seen.has(value)) {
+        return false;
+      }
+      seen.add(value);
+      return true;
+    });
 }
 
 function parseProxyPrefixes(rawValue: string | undefined): string[] {
@@ -130,6 +169,17 @@ export function loadApiRuntimeConfig(): ApiRuntimeConfig {
     internalDataProxyTimeoutMs: parseTimeoutMs(
       process.env.FASTIFY_INTERNAL_DATA_PROXY_TIMEOUT_MS,
       30000
+    ),
+    difyTempConfigEnabled: parseBooleanEnv(
+      process.env.DIFY_TEMP_CONFIG_ENABLED,
+      false
+    ),
+    difyTempConfigAllowedHosts: parseCsvList(
+      process.env.DIFY_TEMP_CONFIG_ALLOWED_HOSTS
+    ),
+    difyTempConfigAllowPrivate: parseBooleanEnv(
+      process.env.DIFY_TEMP_CONFIG_ALLOW_PRIVATE,
+      false
     ),
   };
 }

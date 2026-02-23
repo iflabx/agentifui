@@ -86,6 +86,38 @@ function localLoginBlockedResponse(reason: string): Response {
   );
 }
 
+function splitSetCookieHeader(header: string): string[] {
+  const values: string[] = [];
+  let start = 0;
+  let inExpires = false;
+  for (let i = 0; i < header.length; i += 1) {
+    const char = header[i];
+    if (!inExpires) {
+      if (header.slice(i, i + 8).toLowerCase() === 'expires=') {
+        inExpires = true;
+        i += 7;
+        continue;
+      }
+      if (char === ',') {
+        const part = header.slice(start, i).trim();
+        if (part) {
+          values.push(part);
+        }
+        start = i + 1;
+      }
+    } else if (char === ';') {
+      inExpires = false;
+    }
+  }
+
+  const last = header.slice(start).trim();
+  if (last) {
+    values.push(last);
+  }
+
+  return values;
+}
+
 function readSetCookies(headers: Headers): string[] {
   const headersWithGetSetCookie = headers as HeadersWithGetSetCookie;
   const getSetCookie = headersWithGetSetCookie.getSetCookie;
@@ -97,7 +129,7 @@ function readSetCookies(headers: Headers): string[] {
   }
 
   const single = headers.get('set-cookie');
-  return single ? [single] : [];
+  return single ? splitSetCookieHeader(single) : [];
 }
 
 function parseBoundedPositiveInt(

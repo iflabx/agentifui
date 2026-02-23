@@ -3,14 +3,24 @@ function isTruthyEnv(value: string | null | undefined): boolean {
   return ['1', 'true', 'yes', 'on'].includes(normalized);
 }
 
+type PgSessionOptionsInput = {
+  systemActor?: boolean;
+};
+
 /**
  * Build PostgreSQL session options passed at connection startup.
  */
-export function resolvePgSessionOptionsFromEnv(): string | undefined {
+export function resolvePgSessionOptionsFromEnv(
+  input: PgSessionOptionsInput = {}
+): string | undefined {
   const options: string[] = [];
 
   if (isTruthyEnv(process.env.APP_RLS_STRICT_MODE)) {
     options.push(`-c app.rls_strict_mode=on`);
+  }
+
+  if (input.systemActor) {
+    options.push(`-c app.rls_system_actor=on`);
   }
 
   if (options.length === 0) {

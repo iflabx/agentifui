@@ -211,6 +211,10 @@ function normalizeEmail(value: unknown): string | null {
   return email ? email.toLowerCase() : null;
 }
 
+function isActiveStatus(status: string | null | undefined): boolean {
+  return (status || '').trim().toLowerCase() === 'active';
+}
+
 function toSessionUser(session: AuthSession): SessionUser | null {
   if (!session?.user || typeof session.user !== 'object') {
     return null;
@@ -968,6 +972,9 @@ export async function resolveSessionIdentityReadOnly(
   if (!profileStatus.success) {
     return failure(profileStatus.error);
   }
+  if (!isActiveStatus(profileStatus.data.status)) {
+    return success(null);
+  }
 
   return success({
     session,
@@ -1006,6 +1013,10 @@ export async function syncSessionIdentitySideEffects(
       return failure(ensuredProfile.error);
     }
     ensuredProfileData = ensuredProfile.data;
+  }
+
+  if (!isActiveStatus(ensuredProfileData.status)) {
+    return success(null);
   }
 
   await syncExternalAttributes(resolvedUserId.data.userId, sessionUser);
