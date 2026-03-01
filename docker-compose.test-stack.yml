@@ -48,6 +48,9 @@ services:
       MINIO_ROOT_USER: ${TEST_MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${TEST_MINIO_ROOT_PASSWORD:-minioadmin}
       MINIO_BROWSER_REDIRECT_URL: http://127.0.0.1:${TEST_MINIO_CONSOLE_PORT:-9001}
+      # Reduce background scan pressure and tolerate transient slow storage on dev host.
+      MINIO_SCANNER_SPEED: ${TEST_MINIO_SCANNER_SPEED:-slowest}
+      MINIO_DRIVE_MAX_TIMEOUT: ${TEST_MINIO_DRIVE_MAX_TIMEOUT:-2m}
     ports:
       - '${TEST_MINIO_API_PORT:-9000}:9000'
       - '${TEST_MINIO_CONSOLE_PORT:-9001}:9001'
