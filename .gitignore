@@ -67,5 +67,6 @@ pm2-logs/
 output/
 local-scripts/
 local-docs/
+local_docs/
 
 .serena
