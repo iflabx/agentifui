@@ -54,6 +54,7 @@ next-env.d.ts
 .env
 !.env.example
 !.env.prod.example
+!.env.test.example
 
 # docs
 docs/security

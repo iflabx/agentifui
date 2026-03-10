@@ -13,7 +13,7 @@ import type { Result } from '@lib/types/result';
 import { randomUUID } from 'crypto';
 
 const FALLBACK_DATABASE_URL =
-  'postgresql://agentif:agentif@172.20.0.1:5432/agentifui';
+  'postgresql://agentif:agentif@172.20.0.1:5432/agentifui_test';
 const PG_POOL_GLOBAL_KEY = '__agentifui_pg_pool__';
 
 type PoolLike = {

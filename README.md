@@ -72,6 +72,7 @@ PostgreSQL + Redis + MinIO + better-auth
 
 > 📋 **New to deployment?** See our streamlined guide: [`docs/QUICK-DEPLOYMENT.md`](./docs/QUICK-DEPLOYMENT.md)
 > ⚙️ **Configuration reference:** [`docs/CONFIGURATION.md`](./docs/CONFIGURATION.md)
+> 🧪 **Isolated test profile:** [`docs/TEST-ENV.md`](./docs/TEST-ENV.md)
 
 ```bash
 # Quick deployment on Ubuntu/Debian server
