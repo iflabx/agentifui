@@ -16,7 +16,8 @@ interface SSOButtonProps {
   size?: 'default' | 'sm' | 'lg';
   disabled?: boolean;
   children?: React.ReactNode;
-  providerId?: string; // specific provider ID
+  providerId?: string;
+  authFlow?: 'better-auth' | 'managed-cas';
 }
 
 interface BetterAuthSsoProvider {
@@ -24,7 +25,9 @@ interface BetterAuthSsoProvider {
   domain: string;
   displayName: string;
   icon: string;
-  mode: 'native' | 'cas-bridge';
+  mode: 'native' | 'cas-bridge' | 'managed-cas';
+  authFlow: 'better-auth' | 'managed-cas';
+  description?: string | null;
 }
 
 export function SSOButton({
@@ -35,6 +38,7 @@ export function SSOButton({
   disabled = false,
   children,
   providerId,
+  authFlow = 'better-auth',
 }: SSOButtonProps) {
   const [isLoading, setIsLoading] = useState(false);
   const t = useTranslations('pages.auth.sso');
@@ -52,6 +56,16 @@ export function SSOButton({
         typeof returnUrl === 'string' && returnUrl.startsWith('/')
           ? returnUrl
           : '/chat';
+
+      if (authFlow === 'managed-cas') {
+        const loginUrl = new URL(
+          `/api/sso/${encodeURIComponent(providerId)}/login`,
+          window.location.origin
+        );
+        loginUrl.searchParams.set('returnUrl', callbackURL);
+        window.location.href = loginUrl.toString();
+        return;
+      }
 
       const result = await signInWithSsoProvider(
         providerId,
@@ -111,9 +125,11 @@ export function SSOButton({
 export function SSOCard({
   returnUrl,
   className,
+  hideWhenEmpty = false,
 }: {
   returnUrl?: string;
   className?: string;
+  hideWhenEmpty?: boolean;
 }) {
   const [providers, setProviders] = useState<BetterAuthSsoProvider[]>([]);
   const [loading, setLoading] = useState(true);
@@ -215,6 +231,10 @@ export function SSOCard({
   }
 
   if (providers.length === 0) {
+    if (hideWhenEmpty) {
+      return null;
+    }
+
     return (
       <div
         className={cn(
@@ -269,6 +289,7 @@ export function SSOCard({
                 key={provider.providerId}
                 returnUrl={returnUrl}
                 providerId={provider.providerId}
+                authFlow={provider.authFlow}
                 variant="gradient"
                 className="w-full font-serif"
               >

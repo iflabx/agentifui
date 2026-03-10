@@ -1000,7 +1000,7 @@
             "description": "管理後台概覽"
           },
           "apiConfig": {
-            "text": "API 設定",
+            "text": "應用設定",
             "description": "管理應用程式實例和設定參數"
           },
           "content": {
@@ -2482,7 +2482,7 @@
     "admin": {
       "main": "管理後台",
       "users": "使用者管理",
-      "apiConfig": "API設定",
+      "apiConfig": "應用設定",
       "security": "安全設定",
       "analytics": "資料分析",
       "content": "頁面內容管理",

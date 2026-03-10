@@ -1000,7 +1000,7 @@
             "description": "管理パネル概要"
           },
           "apiConfig": {
-            "text": "API設定",
+            "text": "アプリケーション設定",
             "description": "アプリケーションインスタンスと設定パラメータを管理"
           },
           "content": {
@@ -2482,7 +2482,7 @@
     "admin": {
       "main": "管理パネル",
       "users": "ユーザー管理",
-      "apiConfig": "API設定",
+      "apiConfig": "アプリケーション設定",
       "security": "セキュリティ設定",
       "analytics": "データ分析",
       "content": "コンテンツ管理",

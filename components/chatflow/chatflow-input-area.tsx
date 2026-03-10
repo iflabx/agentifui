@@ -1,11 +1,18 @@
 'use client';
 
+import {
+  formatChatUiError,
+  reportTraceableClientError,
+} from '@lib/hooks/chat-interface/error-utils';
+import { isChatSubmitResult } from '@lib/hooks/chat-interface/guards';
+import type { ChatSubmitResult } from '@lib/hooks/chat-interface/types';
 import { FileUploadField } from '@components/workflow/workflow-input-form/file-upload-field';
 import { FormField } from '@components/workflow/workflow-input-form/form-field';
 import { validateFormData } from '@components/workflow/workflow-input-form/validation';
 import { useChatWidth } from '@lib/hooks/use-chat-width';
 import { useCurrentApp } from '@lib/hooks/use-current-app';
 import type { DifyUserInputFormItem } from '@lib/services/dify/types';
+import { useNotificationStore } from '@lib/stores/ui/notification-store';
 import { cn } from '@lib/utils';
 import { Loader2, RotateCcw, Send, Workflow } from 'lucide-react';
 
@@ -25,7 +32,7 @@ interface ChatflowInputAreaProps {
     query: string,
     inputs: ChatflowFormData,
     files?: UploadPayloadFile[]
-  ) => Promise<void>;
+  ) => Promise<unknown> | unknown;
   isProcessing?: boolean;
   isWaiting?: boolean;
   className?: string;
@@ -253,13 +260,67 @@ export function ChatflowInputArea({
       setErrors({});
 
       try {
-        await onSubmit(query.trim(), formData, files);
+        const submitResult = await onSubmit(query.trim(), formData, files);
+
+        if (isChatSubmitResult(submitResult) && !submitResult.ok) {
+          const submitFailureMessage =
+            submitResult.errorMessage || 'Failed to submit chatflow request.';
+
+          void reportTraceableClientError({
+            code: submitResult.errorCode || 'CHATFLOW_SUBMIT_FAILED',
+            userMessage: submitFailureMessage,
+            developerMessage: 'ChatflowInputArea submission returned ok=false',
+            requestId: submitResult.requestId,
+            context: {
+              component: 'chatflow-input-area',
+              phase: 'submit_result',
+              instanceId,
+              currentAppInstanceId: currentAppInstance?.instance_id || null,
+              queryLength: query.trim().length,
+              fileCount: files.length,
+              surfaced: Boolean(submitResult.surfaced),
+            },
+          });
+
+          if (!submitResult.surfaced) {
+            useNotificationStore.getState().showNotification(
+              submitFailureMessage,
+              'error',
+              5000
+            );
+          }
+          return;
+        }
 
         // Clear the form after successful submission
         setQuery('');
         setFormData({ ...initialFormData });
       } catch (error) {
         console.error('[ChatflowInputArea] Submission failed:', error);
+        const { errorMessage, errorCode, requestId } = formatChatUiError(
+          error,
+          'Failed to submit chatflow request.',
+          'frontend'
+        );
+        void reportTraceableClientError({
+          code: errorCode || 'CHATFLOW_SUBMIT_THROWN',
+          userMessage: errorMessage,
+          developerMessage: error instanceof Error ? error.message : String(error),
+          requestId,
+          context: {
+            component: 'chatflow-input-area',
+            phase: 'submit_throw',
+            instanceId,
+            currentAppInstanceId: currentAppInstance?.instance_id || null,
+            queryLength: query.trim().length,
+            fileCount: files.length,
+          },
+        });
+        useNotificationStore.getState().showNotification(
+          errorMessage,
+          'error',
+          5000
+        );
       }
     },
     [

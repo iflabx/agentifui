@@ -1000,7 +1000,7 @@
             "description": "Admin panel overview"
           },
           "apiConfig": {
-            "text": "API Configuration",
+            "text": "Application Configuration",
             "description": "Manage application instances and configuration parameters"
           },
           "content": {
@@ -2482,7 +2482,7 @@
     "admin": {
       "main": "Admin Panel",
       "users": "User Management",
-      "apiConfig": "API Configuration",
+      "apiConfig": "Application Configuration",
       "security": "Security Settings",
       "analytics": "Data Analytics",
       "content": "Content Management",

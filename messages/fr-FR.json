@@ -1000,7 +1000,7 @@
             "description": "Aperçu du panneau d'administration"
           },
           "apiConfig": {
-            "text": "Configuration de l'API",
+            "text": "Configuration de l'application",
             "description": "Gérer les instances d'application et les paramètres de configuration"
           },
           "content": {
@@ -2482,7 +2482,7 @@
     "admin": {
       "main": "Panneau d'administration",
       "users": "Gestion des utilisateurs",
-      "apiConfig": "Configuration de l'API",
+      "apiConfig": "Configuration de l'application",
       "security": "Paramètres de sécurité",
       "analytics": "Analyse de données",
       "content": "Gestion du contenu",

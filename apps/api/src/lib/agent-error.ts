@@ -2,6 +2,7 @@ export type AgentErrorSource =
   | 'dify-workflow'
   | 'dify-completion'
   | 'dify-chat'
+  | 'dify-proxy'
   | 'agent-generic';
 
 type AgentErrorKind =

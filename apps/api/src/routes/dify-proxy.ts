@@ -6,7 +6,8 @@ import type {
 } from 'fastify';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
-import { Readable } from 'node:stream';
+import { Readable, pipeline } from 'node:stream';
+import { promisify } from 'node:util';
 
 import type { ApiRuntimeConfig } from '../config';
 import {
@@ -27,6 +28,8 @@ import {
 import { recordApiErrorEvent } from '../lib/error-events';
 import { buildRouteErrorPayload } from '../lib/route-error';
 import { resolveIdentityFromSession } from '../lib/session-identity';
+
+const pipelineAsync = promisify(pipeline);
 
 interface DifyProxyRoutesOptions {
   config: ApiRuntimeConfig;
@@ -164,7 +167,7 @@ function adjustApiPathByAppType(
   }
 
   if (isWorkflowAppType(appType)) {
-    const commonApis = ['files/upload', 'audio-to-text'];
+    const commonApis = ['info', 'parameters', 'files/upload', 'audio-to-text'];
     const isCommonApi = commonApis.some(api => originalPath.startsWith(api));
     if (!isCommonApi && !originalPath.startsWith('workflows/')) {
       return `workflows/${originalPath}`;
@@ -235,6 +238,77 @@ function extractErrorMessage(payload: unknown): string | null {
   return null;
 }
 
+function buildLogPreview(content: string, maxLength = 240): string | null {
+  const normalized = content.replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return null;
+  }
+  return normalized.slice(0, maxLength);
+}
+
+function logDifyProxyFailure(
+  request: FastifyRequest,
+  input: {
+    appId: string;
+    routePath: string;
+    slugPath: string;
+    agentSource: AgentErrorSource;
+    failureKind: string;
+    level?: 'warn' | 'error';
+    upstreamStatus?: number;
+    upstreamContentType?: string;
+    upstreamErrorCode?: string | null;
+    responseBody?: string;
+    retryAfterSeconds?: number;
+    elapsedMs?: number;
+    error?: unknown;
+  }
+): void {
+  const logPayload: Record<string, unknown> = {
+    appId: input.appId,
+    route: input.routePath,
+    slugPath: input.slugPath,
+    method: request.method,
+    agentSource: input.agentSource,
+    failureKind: input.failureKind,
+    upstreamStatus: input.upstreamStatus,
+    upstreamContentType: input.upstreamContentType,
+    upstreamErrorCode: input.upstreamErrorCode,
+    retryAfterSeconds: input.retryAfterSeconds,
+    elapsedMs: input.elapsedMs,
+  };
+
+  if (typeof input.responseBody === 'string') {
+    logPayload.responseBytes = Buffer.byteLength(input.responseBody);
+    const responsePreview = buildLogPreview(input.responseBody);
+    if (responsePreview) {
+      logPayload.responsePreview = responsePreview;
+    }
+  }
+
+  if (input.level === 'error') {
+    if (input.error) {
+      request.log.error(
+        { err: input.error, ...logPayload },
+        '[FastifyDifyProxy] non-stream failure'
+      );
+      return;
+    }
+    request.log.error(logPayload, '[FastifyDifyProxy] non-stream failure');
+    return;
+  }
+
+  if (input.error) {
+    request.log.warn(
+      { err: input.error, ...logPayload },
+      '[FastifyDifyProxy] non-stream failure'
+    );
+    return;
+  }
+
+  request.log.warn(logPayload, '[FastifyDifyProxy] non-stream failure');
+}
+
 function resolveRequestLocale(request: FastifyRequest): string | undefined {
   const languageHeader = request.headers['accept-language'];
   const rawValue =
@@ -298,6 +372,143 @@ function copyHeaders(
       reply.header(key, value);
     }
   });
+}
+
+function copyRawHeaders(
+  reply: FastifyReply,
+  source: Headers,
+  allow: (key: string) => boolean
+): void {
+  source.forEach((value, key) => {
+    if (allow(key.toLowerCase())) {
+      reply.raw.setHeader(key, value);
+    }
+  });
+}
+
+function getChunkByteLength(chunk: unknown): number {
+  if (typeof chunk === 'string') {
+    return Buffer.byteLength(chunk);
+  }
+  if (Buffer.isBuffer(chunk)) {
+    return chunk.byteLength;
+  }
+  if (chunk instanceof Uint8Array) {
+    return chunk.byteLength;
+  }
+  return 0;
+}
+
+async function sendUpstreamStream(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  upstream: Response,
+  options: {
+    allow: (key: string) => boolean;
+    appId: string;
+    routePath: string;
+    slugPath: string;
+    streamKind: 'sse' | 'media';
+    defaultHeaders?: Record<string, string>;
+  }
+): Promise<void> {
+  const startedAt = Date.now();
+  const upstreamContentType = upstream.headers.get('content-type') || '';
+  const upstreamNodeStream = Readable.fromWeb(upstream.body as never);
+  let byteCount = 0;
+  let chunkCount = 0;
+  let closeLogged = false;
+
+  upstreamNodeStream.on('data', chunk => {
+    byteCount += getChunkByteLength(chunk);
+    chunkCount += 1;
+  });
+
+  const handleResponseClose = () => {
+    if (closeLogged || reply.raw.writableEnded) {
+      return;
+    }
+    closeLogged = true;
+    request.log.warn(
+      {
+        appId: options.appId,
+        route: options.routePath,
+        slugPath: options.slugPath,
+        streamKind: options.streamKind,
+        upstreamStatus: upstream.status,
+        upstreamContentType,
+        byteCount,
+        chunkCount,
+        durationMs: Date.now() - startedAt,
+      },
+      '[FastifyDifyProxy] downstream stream closed early'
+    );
+  };
+
+  reply.hijack();
+  reply.raw.statusCode = upstream.status;
+  copyRawHeaders(reply, upstream.headers, options.allow);
+
+  for (const [key, value] of Object.entries(options.defaultHeaders || {})) {
+    if (!reply.raw.hasHeader(key)) {
+      reply.raw.setHeader(key, value);
+    }
+  }
+
+  if (typeof reply.raw.flushHeaders === 'function') {
+    reply.raw.flushHeaders();
+  }
+
+  request.log.info(
+    {
+      appId: options.appId,
+      route: options.routePath,
+      slugPath: options.slugPath,
+      streamKind: options.streamKind,
+      upstreamStatus: upstream.status,
+      upstreamContentType,
+    },
+    '[FastifyDifyProxy] upstream stream started'
+  );
+
+  reply.raw.once('close', handleResponseClose);
+
+  try {
+    await pipelineAsync(upstreamNodeStream, reply.raw);
+    request.log.info(
+      {
+        appId: options.appId,
+        route: options.routePath,
+        slugPath: options.slugPath,
+        streamKind: options.streamKind,
+        upstreamStatus: upstream.status,
+        upstreamContentType,
+        byteCount,
+        chunkCount,
+        durationMs: Date.now() - startedAt,
+      },
+      '[FastifyDifyProxy] upstream stream completed'
+    );
+  } catch (error) {
+    request.log.warn(
+      {
+        err: error,
+        appId: options.appId,
+        route: options.routePath,
+        slugPath: options.slugPath,
+        streamKind: options.streamKind,
+        upstreamStatus: upstream.status,
+        upstreamContentType,
+        byteCount,
+        chunkCount,
+        durationMs: Date.now() - startedAt,
+      },
+      '[FastifyDifyProxy] upstream stream failed'
+    );
+    throw error;
+  } finally {
+    reply.raw.removeListener('close', handleResponseClose);
+  }
 }
 
 async function withAgentErrorEnvelope(
@@ -685,17 +896,9 @@ async function handleDifyProxy(
     upstreamHeaders.set('Content-Type', 'application/json');
   }
 
-  const clientAbortController = new AbortController();
-  const handleClientAbort = () => {
-    clientAbortController.abort();
-  };
-  request.raw.once('aborted', handleClientAbort);
-  request.raw.once('close', handleClientAbort);
-
   try {
     const resilienceResult = await fetchWithDifyProxyResilience({
       circuitKey: `${appId}:${difyApiUrl}`,
-      requestSignal: clientAbortController.signal,
       execute: async signal => {
         const requestInit: RequestInit = {
           method: actualMethod,
@@ -713,6 +916,16 @@ async function handleDifyProxy(
 
     if (!resilienceResult.ok) {
       if (resilienceResult.reason === 'circuit-open') {
+        logDifyProxyFailure(request, {
+          appId,
+          routePath,
+          slugPath,
+          agentSource,
+          failureKind: 'circuit-open',
+          retryAfterSeconds: resilienceResult.retryAfterSeconds,
+          elapsedMs: resilienceResult.elapsedMs,
+        });
+
         const payload = await buildAppErrorPayload({
           request,
           status: 503,
@@ -739,6 +952,15 @@ async function handleDifyProxy(
       }
 
       if (resilienceResult.reason === 'timeout') {
+        logDifyProxyFailure(request, {
+          appId,
+          routePath,
+          slugPath,
+          agentSource,
+          failureKind: 'timeout',
+          elapsedMs: resilienceResult.elapsedMs,
+        });
+
         const payload = await buildAppErrorPayload({
           request,
           status: 504,
@@ -754,9 +976,27 @@ async function handleDifyProxy(
       }
 
       if (resilienceResult.reason === 'client-abort') {
+        logDifyProxyFailure(request, {
+          appId,
+          routePath,
+          slugPath,
+          agentSource,
+          failureKind: 'client-abort',
+          elapsedMs: resilienceResult.elapsedMs,
+        });
         reply.status(499).send();
         return;
       }
+
+      logDifyProxyFailure(request, {
+        appId,
+        routePath,
+        slugPath,
+        agentSource,
+        failureKind: 'network-error',
+        elapsedMs: resilienceResult.elapsedMs,
+        error: resilienceResult.error,
+      });
 
       throw (
         resilienceResult.error ||
@@ -783,28 +1023,41 @@ async function handleDifyProxy(
     ).toLowerCase();
 
     if (upstream.body && responseContentType.includes('text/event-stream')) {
-      copyHeaders(reply, upstream.headers, key => {
-        return (
-          key === 'content-type' ||
-          key === 'cache-control' ||
-          key === 'connection'
-        );
+      await sendUpstreamStream(request, reply, upstream, {
+        appId,
+        routePath,
+        slugPath,
+        streamKind: 'sse',
+        allow: key => {
+          return (
+            key === 'content-type' ||
+            key === 'cache-control' ||
+            key === 'connection'
+          );
+        },
+        defaultHeaders: {
+          'Cache-Control': 'no-cache, no-transform',
+          Connection: 'keep-alive',
+          'X-Accel-Buffering': 'no',
+        },
       });
-      reply.status(upstream.status);
-      reply.send(Readable.fromWeb(upstream.body as never));
       return;
     }
 
     if (upstream.body && isMediaContentType(responseContentType)) {
-      copyHeaders(reply, upstream.headers, key => {
-        return (
-          key.startsWith('content-') ||
-          key === 'accept-ranges' ||
-          key === 'vary'
-        );
+      await sendUpstreamStream(request, reply, upstream, {
+        appId,
+        routePath,
+        slugPath,
+        streamKind: 'media',
+        allow: key => {
+          return (
+            key.startsWith('content-') ||
+            key === 'accept-ranges' ||
+            key === 'vary'
+          );
+        },
       });
-      reply.status(upstream.status);
-      reply.send(Readable.fromWeb(upstream.body as never));
       return;
     }
 
@@ -812,6 +1065,19 @@ async function handleDifyProxy(
 
     try {
       const jsonData = JSON.parse(responseData);
+      if (!upstream.ok) {
+        logDifyProxyFailure(request, {
+          appId,
+          routePath,
+          slugPath,
+          agentSource,
+          failureKind: 'upstream-json-error',
+          upstreamStatus: upstream.status,
+          upstreamContentType: responseContentType,
+          upstreamErrorCode: extractErrorCode(jsonData),
+          responseBody: responseData,
+        });
+      }
       const normalizedPayload = await withAgentErrorEnvelope(jsonData, {
         source: agentSource,
         status: upstream.status,
@@ -835,6 +1101,17 @@ async function handleDifyProxy(
         return;
       }
 
+      logDifyProxyFailure(request, {
+        appId,
+        routePath,
+        slugPath,
+        agentSource,
+        failureKind: 'upstream-text-error',
+        upstreamStatus: upstream.status,
+        upstreamContentType: responseContentType,
+        responseBody: responseData,
+      });
+
       const normalizedPayload = await withAgentErrorEnvelope(responseData, {
         source: agentSource,
         status: upstream.status,
@@ -851,7 +1128,15 @@ async function handleDifyProxy(
       return;
     }
   } catch (error) {
-    request.log.error({ err: error }, '[FastifyDifyProxy] request failed');
+    logDifyProxyFailure(request, {
+      appId,
+      routePath,
+      slugPath,
+      agentSource,
+      failureKind: 'request-failed',
+      level: 'error',
+      error,
+    });
 
     const payload = await withAgentErrorEnvelope(
       {
@@ -871,9 +1156,6 @@ async function handleDifyProxy(
     );
 
     reply.status(502).send(payload);
-  } finally {
-    request.raw.removeListener('aborted', handleClientAbort);
-    request.raw.removeListener('close', handleClientAbort);
   }
 }
 

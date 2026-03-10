@@ -1000,7 +1000,7 @@
             "description": "管理后台概览"
           },
           "apiConfig": {
-            "text": "API 配置",
+            "text": "应用配置",
             "description": "管理应用实例和配置参数"
           },
           "content": {
@@ -2381,7 +2381,7 @@
     "admin": {
       "main": "管理后台",
       "users": "用户管理",
-      "apiConfig": "API配置",
+      "apiConfig": "应用配置",
       "security": "安全设置",
       "analytics": "数据分析",
       "content": "页面内容管理",

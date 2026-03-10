@@ -1,4 +1,5 @@
 import { ConditionalNavBar } from '@components/nav-bar';
+import { ClientErrorMonitor } from '@components/observability/client-error-monitor';
 import { ConditionalSidebar } from '@components/sidebar/conditional-sidebar';
 import { DynamicTitle } from '@components/ui/dynamic-title';
 import { NotificationBar } from '@components/ui/notification-bar';
@@ -87,6 +88,7 @@ export default async function RootLayout({
         <Providers>
           <NextIntlClientProvider messages={messages}>
             <DynamicTitle />
+            <ClientErrorMonitor />
             <ClientLayout fontClasses={fontClasses}>
               <ConditionalSidebar />
               <ConditionalNavBar />

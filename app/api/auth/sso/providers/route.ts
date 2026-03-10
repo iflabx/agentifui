@@ -1,12 +1,29 @@
 import { getPublicSsoProviders } from '@lib/auth/better-auth/server';
+import {
+  PublicLoginSsoProvider,
+  toPublicManagedSsoProvider,
+} from '@lib/auth/managed-sso';
+import { listManagedSsoProvidersForLogin } from '@lib/auth/managed-sso-server';
 import { nextApiErrorResponse } from '@lib/errors/next-api-error-response';
 
 import { NextResponse } from 'next/server';
 
 export async function GET(request: Request) {
   try {
+    const managedProviders = (await listManagedSsoProvidersForLogin())
+      .map(toPublicManagedSsoProvider)
+      .filter(
+        (provider): provider is PublicLoginSsoProvider => provider !== null
+      );
+
+    const runtimeProviders: PublicLoginSsoProvider[] =
+      getPublicSsoProviders().map(provider => ({
+        ...provider,
+        authFlow: 'better-auth',
+      }));
+
     return NextResponse.json({
-      providers: getPublicSsoProviders(),
+      providers: [...managedProviders, ...runtimeProviders],
       success: true,
     });
   } catch (error) {
