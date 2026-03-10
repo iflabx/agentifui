@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import type { ApiErrorDetail } from './app-error';
+import { appendErrorEventMirror } from './error-event-mirror';
 import { queryRowsWithPgSystemContext } from './pg-context';
 
 const CONTEXT_REDACT_PATTERN =
@@ -83,6 +84,24 @@ export async function recordApiErrorEvent(input: {
     route: route || undefined,
     method: method || undefined,
     message: detail.userMessage,
+  });
+
+  await appendErrorEventMirror({
+    runtime: 'fastify',
+    fingerprint,
+    code: detail.code,
+    source: detail.source,
+    severity: detail.severity,
+    retryable: detail.retryable,
+    userMessage: detail.userMessage,
+    developerMessage: detail.developerMessage || null,
+    httpStatus: input.statusCode || null,
+    method,
+    route,
+    requestId: detail.requestId,
+    traceId: null,
+    actorUserId,
+    contextJson,
   });
 
   await queryRowsWithPgSystemContext(

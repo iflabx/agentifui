@@ -66,8 +66,11 @@ export function toUiError(
 }
 
 export function formatUiErrorMessage(error: UiError): string {
-  if (!error.requestId) {
-    return error.message;
+  const debugParts = [`Code: ${error.code}`];
+
+  if (error.requestId) {
+    debugParts.push(`Request ID: ${error.requestId}`);
   }
-  return `${error.message} (Request ID: ${error.requestId})`;
+
+  return `${error.message} (${debugParts.join(', ')})`;
 }

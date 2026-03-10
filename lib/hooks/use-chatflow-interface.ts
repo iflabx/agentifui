@@ -1,5 +1,6 @@
 'use client';
 
+import { isChatSubmitResult } from '@lib/hooks/chat-interface/guards';
 import { useChatflowExecutionStore } from '@lib/stores/chatflow-execution-store';
 
 import { useCallback, useEffect } from 'react';
@@ -48,9 +49,18 @@ export function useChatflowInterface() {
         const difyFiles = files ? formatFilesForDify(files) : undefined;
 
         // Step 4: Use the modified handleSubmit to pass inputs as the third argument
-        await chatInterface.handleSubmit(userMessage, difyFiles, inputs);
+        const submitResult = (await chatInterface.handleSubmit(
+          userMessage,
+          difyFiles,
+          inputs
+        )) as unknown;
+
+        if (isChatSubmitResult(submitResult) && !submitResult.ok) {
+          return submitResult;
+        }
 
         console.log('[useChatflowInterface] Chatflow data sent successfully');
+        return submitResult;
       } catch (error) {
         console.error('[useChatflowInterface] Chatflow submit failed:', error);
         // Stop execution tracking on error

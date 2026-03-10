@@ -82,7 +82,7 @@ export function LoginForm() {
 
       {/* Login options area */}
       <div className="space-y-6">
-        {ssoOnlyMode && <SSOCard returnUrl="/chat" />}
+        <SSOCard returnUrl="/chat" hideWhenEmpty={!ssoOnlyMode} />
 
         {!ssoOnlyMode && (
           <>

@@ -1,6 +1,12 @@
 'use client';
 
 import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
+import {
+  formatChatUiError,
+  reportTraceableClientError,
+} from '@lib/hooks/chat-interface/error-utils';
+import { isChatSubmitResult } from '@lib/hooks/chat-interface/guards';
+import type { ChatSubmitResult } from '@lib/hooks/chat-interface/types';
 import { useChatWidth, useInputHeightReset } from '@lib/hooks';
 import { useChatInputRouteSync } from '@lib/hooks/use-chat-input-route-sync';
 import { useCurrentApp } from '@lib/hooks/use-current-app';
@@ -60,7 +66,10 @@ interface ChatInputProps {
   className?: string;
   placeholder?: string;
   maxHeight?: number;
-  onSubmit?: (message: string, files?: ChatUploadFile[]) => void;
+  onSubmit?: (
+    message: string,
+    files?: ChatUploadFile[]
+  ) => Promise<unknown> | unknown;
   onStop?: () => void;
   isProcessing?: boolean;
   isWaitingForResponse?: boolean;
@@ -287,7 +296,40 @@ export const ChatInput = ({
         // 🎯 Fix: No longer clearing here, but by listening to isWaiting state changes to clear
         // This clears immediately when validation succeeds, instead of waiting for the entire streaming response to end
         // Call submit function, clearing is handled by useEffect monitoring isWaiting state changes
-        await onSubmit(savedMessage, filesToSend);
+        const submitResult = await onSubmit(savedMessage, filesToSend);
+
+        if (isChatSubmitResult(submitResult) && !submitResult.ok) {
+          const submitFailureMessage =
+            submitResult.errorMessage ||
+            `${t('input.messageSendFailed')}: ${t('input.unknownError')}`;
+
+          void reportTraceableClientError({
+            code: submitResult.errorCode || 'CHAT_INPUT_SUBMIT_FAILED',
+            userMessage: submitFailureMessage,
+            developerMessage: 'ChatInput submission returned ok=false',
+            requestId: submitResult.requestId,
+            context: {
+              component: 'chat-input',
+              phase: 'submit_result',
+              currentAppId: currentAppId || null,
+              userId: session?.user?.id || null,
+              attachmentCount: savedAttachments.length,
+              messageLength: savedMessage.length,
+              surfaced: Boolean(submitResult.surfaced),
+            },
+          });
+
+          if (!submitResult.surfaced) {
+            setMessage(savedMessage);
+            useAttachmentStore.getState().setFiles(savedAttachments);
+            useNotificationStore.getState().showNotification(
+              submitFailureMessage,
+              'error',
+              5000
+            );
+          }
+          return;
+        }
 
         // 🎯 Fix: Clear operation has been moved to useEffect, no longer needed here
         console.log('[ChatInput] Submission successful');
@@ -301,13 +343,32 @@ export const ChatInput = ({
         '[ChatInput] Message submission failed, executing rollback',
         error
       );
+      const { errorMessage, errorCode, requestId } = formatChatUiError(
+        error,
+        `${t('input.messageSendFailed')}: ${t('input.unknownError')}`,
+        'frontend'
+      );
       // Fix: If validation failed (isWaiting didn't become true), need to restore state
       // If validation succeeded but subsequent failure, input has been cleared, also need to restore
       setMessage(savedMessage);
       useAttachmentStore.getState().setFiles(savedAttachments);
+      void reportTraceableClientError({
+        code: errorCode || 'CHAT_INPUT_SUBMIT_THROWN',
+        userMessage: errorMessage,
+        developerMessage: error instanceof Error ? error.message : String(error),
+        requestId,
+        context: {
+          component: 'chat-input',
+          phase: 'submit_throw',
+          currentAppId: currentAppId || null,
+          userId: session?.user?.id || null,
+          attachmentCount: savedAttachments.length,
+          messageLength: savedMessage.length,
+        },
+      });
       // Call notification Store to show error message
       useNotificationStore.getState().showNotification(
-        `${t('input.messageSendFailed')}: ${(error as Error)?.message || t('input.unknownError')}`,
+        errorMessage,
         'error',
         3000 // Duration 3 seconds
       );

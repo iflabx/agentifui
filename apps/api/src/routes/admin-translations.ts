@@ -13,6 +13,7 @@ interface AdminTranslationsRoutesOptions {
 type TranslationData = {
   [key: string]: string | TranslationData;
 };
+type TranslationUpdateMode = 'merge' | 'replace';
 
 const SUPPORTED_LOCALES = new Set([
   'en-US',
@@ -175,6 +176,65 @@ function setNestedValue(
   }
 
   current[lastKey] = value;
+}
+
+function isTranslationObject(
+  value: TranslationData | string | undefined
+): value is TranslationData {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function applyTranslationUpdate(
+  currentTranslations: TranslationData,
+  section: string,
+  updates: TranslationData | string,
+  mode: TranslationUpdateMode
+): TranslationData {
+  if (section) {
+    const updatedTranslations: TranslationData = { ...currentTranslations };
+    if (mode === 'replace') {
+      setNestedValue(updatedTranslations, section, updates);
+      return updatedTranslations;
+    }
+
+    const currentSection = getNestedValue(currentTranslations, section);
+    if (isTranslationObject(currentSection) && isTranslationObject(updates)) {
+      const mergedSection = deepMerge(currentSection, updates);
+      setNestedValue(updatedTranslations, section, mergedSection);
+      return updatedTranslations;
+    }
+
+    setNestedValue(updatedTranslations, section, updates);
+    return updatedTranslations;
+  }
+
+  if (mode === 'replace') {
+    return updates as TranslationData;
+  }
+
+  if (isTranslationObject(updates)) {
+    return deepMerge(currentTranslations, updates);
+  }
+
+  return currentTranslations;
+}
+
+async function updateSingleLocaleTranslation(params: {
+  locale: string;
+  section: string;
+  updates: TranslationData | string;
+  mode: TranslationUpdateMode;
+}): Promise<string> {
+  const { locale, section, updates, mode } = params;
+  const currentTranslations = await readTranslationFile(locale);
+  const updatedTranslations = applyTranslationUpdate(
+    currentTranslations,
+    section,
+    updates,
+    mode
+  );
+  await writeTranslationFile(locale, updatedTranslations);
+  return new Date().toISOString();
 }
 
 async function requireAdmin(
@@ -345,44 +405,19 @@ export const adminTranslationsRoutes: FastifyPluginAsync<
         );
       }
 
-      const currentTranslations = await readTranslationFile(locale);
-      let updatedTranslations: TranslationData;
+      const updatedAt = await updateSingleLocaleTranslation({
+        locale,
+        section,
+        updates: updates as TranslationData | string,
+        mode,
+      });
 
-      if (section) {
-        updatedTranslations = { ...currentTranslations };
-        if (mode === 'replace') {
-          setNestedValue(
-            updatedTranslations,
-            section,
-            updates as TranslationData | string
-          );
-        } else {
-          const currentSection =
-            getNestedValue(currentTranslations, section) || {};
-          const mergedSection = deepMerge(
-            currentSection as TranslationData,
-            updates as TranslationData
-          );
-          setNestedValue(updatedTranslations, section, mergedSection);
-        }
-      } else {
-        if (mode === 'replace') {
-          updatedTranslations = updates as TranslationData;
-        } else {
-          updatedTranslations = deepMerge(
-            currentTranslations,
-            updates as TranslationData
-          );
-        }
-      }
-
-      await writeTranslationFile(locale, updatedTranslations);
       return reply.send({
         success: true,
         locale,
         section: section || null,
         mode,
-        updatedAt: new Date().toISOString(),
+        updatedAt,
       });
     } catch (error) {
       request.log.error(
@@ -395,6 +430,115 @@ export const adminTranslationsRoutes: FastifyPluginAsync<
           statusCode: 500,
           code: 'TRANSLATION_UPDATE_FAILED',
           userMessage: 'Failed to update translations',
+          developerMessage:
+            error instanceof Error
+              ? error.message
+              : 'Unknown translations update error',
+        })
+      );
+    }
+  });
+
+  app.post<{
+    Body: {
+      section?: string;
+      updates?: Record<string, TranslationData | string>;
+      mode?: TranslationUpdateMode;
+    };
+  }>('/api/admin/translations', async (request, reply) => {
+    try {
+      const authResult = await requireAdmin(request, options.config);
+      if (!authResult.ok) {
+        return reply.status(authResult.statusCode).send(authResult.payload);
+      }
+
+      const section =
+        typeof request.body?.section === 'string' ? request.body.section : '';
+      const mode = request.body?.mode === 'replace' ? 'replace' : 'merge';
+      const updates = request.body?.updates;
+
+      if (
+        !section ||
+        !updates ||
+        typeof updates !== 'object' ||
+        Array.isArray(updates)
+      ) {
+        return reply.status(400).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 400,
+            code: 'TRANSLATION_BATCH_PARAMS_MISSING',
+            userMessage:
+              'Missing required parameters: section, updates (locale map)',
+          })
+        );
+      }
+
+      const results: Array<{
+        locale: string;
+        success: boolean;
+        updatedAt: string;
+      }> = [];
+      const errors: Array<{ locale: string; error: string }> = [];
+
+      for (const [locale, localeUpdates] of Object.entries(updates)) {
+        if (!isValidLocale(locale)) {
+          errors.push({
+            locale,
+            error: `Unsupported locale: ${locale}`,
+          });
+          continue;
+        }
+
+        if (localeUpdates === undefined) {
+          errors.push({
+            locale,
+            error: `Missing updates for locale: ${locale}`,
+          });
+          continue;
+        }
+
+        try {
+          const updatedAt = await updateSingleLocaleTranslation({
+            locale,
+            section,
+            updates: localeUpdates,
+            mode,
+          });
+          results.push({ locale, success: true, updatedAt });
+        } catch (error) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : 'Unknown translations update error';
+          errors.push({ locale, error: message });
+          request.log.error(
+            { err: error, locale },
+            '[FastifyAPI][admin-translations] POST locale update failed'
+          );
+        }
+      }
+
+      return reply.send({
+        success: errors.length === 0,
+        section,
+        mode,
+        results,
+        errors,
+        totalProcessed: results.length + errors.length,
+        totalErrors: errors.length,
+      });
+    } catch (error) {
+      request.log.error(
+        { err: error },
+        '[FastifyAPI][admin-translations] POST failed'
+      );
+      return reply.status(500).send(
+        buildRouteErrorPayload({
+          request,
+          statusCode: 500,
+          code: 'TRANSLATION_BATCH_UPDATE_FAILED',
+          userMessage: 'Failed to batch update translations',
           developerMessage:
             error instanceof Error
               ? error.message

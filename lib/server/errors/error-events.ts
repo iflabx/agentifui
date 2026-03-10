@@ -4,6 +4,8 @@ import { getPgPool } from '@lib/server/pg/pool';
 import { createHash } from 'node:crypto';
 import 'server-only';
 
+import { appendErrorEventMirror } from './error-event-mirror';
+
 export interface RecordErrorEventInput {
   code: string;
   source: AppErrorSource;
@@ -179,6 +181,24 @@ export async function recordErrorEvent(
     route: route || undefined,
     method: method || undefined,
     userMessage,
+  });
+
+  await appendErrorEventMirror({
+    runtime: 'next',
+    fingerprint,
+    code: input.code,
+    source: input.source,
+    severity: input.severity,
+    retryable: input.retryable,
+    userMessage,
+    developerMessage: developerMessage || null,
+    httpStatus: input.httpStatus || null,
+    method,
+    route,
+    requestId: input.requestId,
+    traceId,
+    actorUserId,
+    contextJson,
   });
 
   await publishToRedisStream(input, fingerprint);

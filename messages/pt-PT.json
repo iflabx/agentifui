@@ -1000,7 +1000,7 @@
             "description": "Visão geral do painel de administração"
           },
           "apiConfig": {
-            "text": "Configuração da API",
+            "text": "Configuração da Aplicação",
             "description": "Gerir instâncias de aplicação e parâmetros de configuração"
           },
           "content": {
@@ -2482,7 +2482,7 @@
     "admin": {
       "main": "Painel de Administração",
       "users": "Gestão de Utilizadores",
-      "apiConfig": "Configuração da API",
+      "apiConfig": "Configuração da Aplicação",
       "security": "Definições de Segurança",
       "analytics": "Análise de Dados",
       "content": "Gestão de Conteúdo",

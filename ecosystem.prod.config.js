@@ -3,7 +3,7 @@ module.exports = {
     {
       name: 'AgentifUI-Prod',
       script: 'pnpm',
-      args: 'start',
+      args: 'start:prod',
       interpreter: 'none',
       env_file: './.env.prod',
       env: {
@@ -25,7 +25,7 @@ module.exports = {
     {
       name: 'AgentifUI-API-Prod',
       script: 'pnpm',
-      args: 'start:api',
+      args: 'start:prod:api',
       interpreter: 'none',
       env_file: './.env.prod',
       env: {
