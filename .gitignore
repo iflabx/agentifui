@@ -66,6 +66,7 @@ pm2-logs/
 .playwright-cli/
 output/
 local-scripts/
+local_scripts/
 local-docs/
 local_docs/
 

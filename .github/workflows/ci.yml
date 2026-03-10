@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [ main, develop ]
   push:
-    branches: [ main ]
+    branches: [ main, develop ]
   workflow_dispatch:
 
 # Cancel previous runs for the same PR/branch
@@ -73,7 +73,7 @@ jobs:
     name: Install Dependencies
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.source == 'true' || needs.changes.outputs.config == 'true' || needs.changes.outputs.tests == 'true'
+    if: needs.changes.outputs.source == 'true' || needs.changes.outputs.config == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.styles == 'true'
     permissions:
       contents: read
     steps:
@@ -114,6 +114,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -132,14 +134,22 @@ jobs:
 
       - name: Run ESLint on changed files
         run: |
-          # Get list of changed JS/TS files in this PR
-          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMRT ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} | grep -E '\.(js|jsx|ts|tsx)$' | tr '\n' ' ' || true)
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          elif [[ "${{ github.event.before }}" != "" && "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]]; then
+            RANGE="${{ github.event.before }}..${{ github.sha }}"
+          else
+            RANGE="$(git hash-object -t tree /dev/null)..${{ github.sha }}"
+          fi
+
+          echo "Using diff range: $RANGE"
+          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMRT "$RANGE" | grep -E '\.(js|jsx|ts|tsx)$' | tr '\n' ' ' || true)
           
           if [ -n "$CHANGED_FILES" ]; then
             echo "Running ESLint on changed files: $CHANGED_FILES"
             pnpm exec eslint --cache --cache-location node_modules/.cache/eslint/.eslint-cache $CHANGED_FILES
           else
-            echo "No JS/TS files changed in this PR"
+            echo "No JS/TS files changed in this event"
           fi
 
   # TypeScript type checking
@@ -308,9 +318,17 @@ jobs:
           fi
           
           # Check if any required job was skipped when it shouldn't be
+          if [[ "${{ needs.changes.outputs.source }}" == "true" ]] || \
+             [[ "${{ needs.changes.outputs.config }}" == "true" ]] || \
+             [[ "${{ needs.changes.outputs.styles }}" == "true" ]]; then
+            if [[ "${{ needs.format-and-lint.result }}" == "skipped" ]]; then
+              echo "❌ Format and lint job was skipped"
+              exit 1
+            fi
+          fi
+
           if [[ "${{ needs.changes.outputs.source }}" == "true" ]] || [[ "${{ needs.changes.outputs.config }}" == "true" ]]; then
-            if [[ "${{ needs.format-and-lint.result }}" == "skipped" ]] || \
-               [[ "${{ needs.type-check.result }}" == "skipped" ]] || \
+            if [[ "${{ needs.type-check.result }}" == "skipped" ]] || \
                [[ "${{ needs.build.result }}" == "skipped" ]] || \
                [[ "${{ needs.security-check.result }}" == "skipped" ]]; then
               echo "❌ Required job was skipped"
