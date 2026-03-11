@@ -41,14 +41,22 @@ jobs:
           filters: |
             source:
               - 'app/**/*.{ts,tsx,js,jsx}'
+              - 'apps/**/*.{ts,tsx,js,jsx}'
               - 'components/**/*.{ts,tsx,js,jsx}'
               - 'lib/**/*.{ts,tsx,js,jsx}'
+              - 'packages/**/*.{ts,tsx,js,jsx}'
               - 'middleware.ts'
               - '*.{ts,tsx,js,jsx}'
             config:
+              - '.github/workflows/**/*.{yml,yaml}'
               - 'package.json'
+              - 'pnpm-workspace.yaml'
               - 'pnpm-lock.yaml'
               - 'tsconfig.json'
+              - 'apps/*/package.json'
+              - 'apps/*/tsconfig.json'
+              - 'packages/*/package.json'
+              - 'packages/*/tsconfig.json'
               - 'next.config.ts'
               - 'tailwind.config.js'
               - 'eslint.config.mjs'
@@ -56,6 +64,9 @@ jobs:
               - 'postcss.config.mjs'
               - '.prettierrc.json'
               - '.prettierignore'
+              - 'database/migrations/**/*.sql'
+              - 'scripts/check-*.mjs'
+              - 'scripts/gate-quality-verify.sh'
             tests:
               - '__tests__/**/*.{ts,tsx,js,jsx}'
               - '**/*.test.{ts,tsx,js,jsx}'
@@ -194,8 +205,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run TypeScript type check
-        run: pnpm run type-check
+      - name: Run TypeScript type checks
+        run: |
+          pnpm run type-check
+          pnpm --filter @agentifui/shared type-check
+          pnpm --filter @agentifui/api type-check
 
 
   # Build the application
@@ -323,6 +337,12 @@ jobs:
           for migration in "${migrations[@]}"; do
             psql "$MIGRATOR_DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"
           done
+
+      - name: Build shared workspace package
+        run: pnpm --filter @agentifui/shared build
+
+      - name: Build API workspace package
+        run: pnpm --filter @agentifui/api build
 
       - name: Build application
         run: pnpm run build
