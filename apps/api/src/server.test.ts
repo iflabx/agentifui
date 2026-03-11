@@ -14,6 +14,9 @@ function createConfig(
     realtimeSourceMode: 'db-outbox',
     sessionCookieNames: ['session_token'],
     internalDataProxyTimeoutMs: 30000,
+    difyTempConfigEnabled: false,
+    difyTempConfigAllowedHosts: [],
+    difyTempConfigAllowPrivate: false,
     ...overrides,
   };
 }

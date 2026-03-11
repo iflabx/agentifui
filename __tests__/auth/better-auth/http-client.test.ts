@@ -21,7 +21,7 @@ describe('better-auth http-client getCurrentSession', () => {
   it('returns null when auth endpoint returns 401', async () => {
     mockedFetch.mockResolvedValueOnce(jsonResponse({}, 401));
 
-    const session = await getCurrentSession();
+    const session = await getCurrentSession({ forceRefresh: true });
 
     expect(session).toBeNull();
     expect(mockedFetch).toHaveBeenCalledTimes(1);
@@ -41,7 +41,7 @@ describe('better-auth http-client getCurrentSession', () => {
     };
     mockedFetch.mockResolvedValueOnce(jsonResponse(payload, 200));
 
-    const session = await getCurrentSession();
+    const session = await getCurrentSession({ forceRefresh: true });
 
     expect(session).toEqual(payload);
     expect(mockedFetch).toHaveBeenCalledTimes(1);
@@ -76,7 +76,7 @@ describe('better-auth http-client getCurrentSession', () => {
         )
       );
 
-    const session = await getCurrentSession();
+    const session = await getCurrentSession({ forceRefresh: true });
 
     expect(mockedFetch).toHaveBeenCalledTimes(2);
     expect(mockedFetch.mock.calls[0]?.[0]).toBe('/api/auth/better/get-session');
@@ -120,7 +120,7 @@ describe('better-auth http-client getCurrentSession', () => {
         )
       );
 
-    await expect(getCurrentSession()).rejects.toThrow(
+    await expect(getCurrentSession({ forceRefresh: true })).rejects.toThrow(
       'Failed to resolve internal UUID for current session user'
     );
   });

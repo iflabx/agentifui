@@ -31,6 +31,8 @@ function createCasProvider(overrides?: Partial<SsoProvider>): SsoProvider {
         },
       },
       security: {
+        require_https: true,
+        validate_certificates: true,
         allowed_redirect_hosts: ['bistu.edu.cn'],
       },
       ui: {
