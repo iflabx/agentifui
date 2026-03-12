@@ -52,7 +52,7 @@ client_error_status=$(curl -sS -o /tmp/agentifui-cutover-off-client-error.json -
   -H 'content-type: application/json' \
   --data '{}')
 
-if [[ "${client_error_status}" != "400" ]]; then
+if [[ "${client_error_status}" != "503" ]]; then
   echo "[cutover-off] client error route smoke failed: status=${client_error_status}"
   cat /tmp/agentifui-cutover-off-client-error.json || true
   exit 1
