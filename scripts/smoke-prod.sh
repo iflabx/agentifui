@@ -45,6 +45,16 @@ if [[ "${chunk_status}" != "200" ]]; then
   exit 1
 fi
 
+client_error_status="$(curl -sS -o /tmp/agentifui-smoke-client-error.json -w '%{http_code}' \
+  -X POST "${WEB_BASE_URL}/api/internal/error-events/client" \
+  -H 'content-type: application/json' \
+  --data '{}')"
+if [[ "${client_error_status}" != "400" ]]; then
+  echo "[smoke-prod] client error route check failed (${client_error_status})" >&2
+  cat /tmp/agentifui-smoke-client-error.json || true
+  exit 1
+fi
+
 api_status="$(curl -sS -o /dev/null -w '%{http_code}' "${FASTIFY_BASE_URL}/")"
 if [[ "${api_status}" == "000" || "${api_status}" =~ ^5 ]]; then
   echo "[smoke-prod] fastify endpoint unhealthy (${api_status}): ${FASTIFY_BASE_URL}/" >&2

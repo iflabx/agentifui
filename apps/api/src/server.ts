@@ -21,6 +21,7 @@ import { healthRoutes } from './routes/health';
 import { internalAppsRoutes } from './routes/internal-apps';
 import { internalDataRoutes } from './routes/internal-data';
 import { internalDifyConfigRoutes } from './routes/internal-dify-config';
+import { internalErrorEventsClientRoutes } from './routes/internal-error-events-client';
 import { internalProfileRoutes } from './routes/internal-profile';
 import { internalRealtimeStatsRoutes } from './routes/internal-realtime-stats';
 import { internalRealtimeStreamRoutes } from './routes/internal-realtime-stream';
@@ -111,6 +112,7 @@ export async function createApiServer(config: ApiRuntimeConfig) {
   await app.register(internalAppsRoutes, { config });
   await app.register(internalDataRoutes, { config });
   await app.register(internalDifyConfigRoutes, { config });
+  await app.register(internalErrorEventsClientRoutes, { config });
   await app.register(internalProfileRoutes, { config });
   await app.register(internalRealtimeStreamRoutes, { config });
   await app.register(internalRealtimeStatsRoutes, { config });

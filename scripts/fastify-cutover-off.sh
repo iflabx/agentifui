@@ -46,4 +46,16 @@ if [[ "${status_code}" != "503" ]]; then
   exit 1
 fi
 
+echo "[cutover-off] smoke check: http://127.0.0.1:${NEXT_PORT}/api/internal/error-events/client"
+client_error_status=$(curl -sS -o /tmp/agentifui-cutover-off-client-error.json -w "%{http_code}" \
+  -X POST "http://127.0.0.1:${NEXT_PORT}/api/internal/error-events/client" \
+  -H 'content-type: application/json' \
+  --data '{}')
+
+if [[ "${client_error_status}" != "400" ]]; then
+  echo "[cutover-off] client error route smoke failed: status=${client_error_status}"
+  cat /tmp/agentifui-cutover-off-client-error.json || true
+  exit 1
+fi
+
 echo "[cutover-off] done"

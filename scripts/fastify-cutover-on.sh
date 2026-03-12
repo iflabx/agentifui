@@ -52,7 +52,10 @@ verify_rewrite_manifest() {
 const fs = require('fs');
 const path = process.argv[2];
 const expectedBase = (process.env.EXPECTED_FASTIFY_PROXY_BASE || '').replace(/\/+$/, '');
-const expectedDestination = `${expectedBase}/api/internal/data`;
+const expectedSources = [
+  '/api/internal/data',
+  '/api/internal/error-events/client',
+];
 
 const manifest = JSON.parse(fs.readFileSync(path, 'utf8'));
 const rewrites = manifest?.rewrites || {};
@@ -62,16 +65,21 @@ const rules = [
   ...(Array.isArray(rewrites.fallback) ? rewrites.fallback : []),
 ];
 
-const matched = rules.some(rule =>
-  rule &&
-  rule.source === '/api/internal/data' &&
-  typeof rule.destination === 'string' &&
-  rule.destination.replace(/\/+$/, '') === expectedDestination
-);
+const missingSources = expectedSources.filter(source => {
+  const expectedDestination = `${expectedBase}${source}`;
+  return !rules.some(rule =>
+    rule &&
+    rule.source === source &&
+    typeof rule.destination === 'string' &&
+    rule.destination.replace(/\/+$/, '') === expectedDestination
+  );
+});
 
-if (!matched) {
-  console.error('[cutover-on] Next build does not contain expected Fastify rewrite rule');
-  console.error(`[cutover-on] expected destination: ${expectedDestination}`);
+if (missingSources.length > 0) {
+  console.error('[cutover-on] Next build does not contain expected Fastify rewrite rules');
+  for (const source of missingSources) {
+    console.error(`[cutover-on] missing source: ${source}`);
+  }
   process.exit(1);
 }
 NODE
@@ -125,6 +133,18 @@ status_code=$(curl -sS -o /tmp/agentifui-cutover-on.json -w "%{http_code}" \
 if [[ "${status_code}" != "400" ]]; then
   echo "[cutover-on] smoke check failed: status=${status_code}"
   cat /tmp/agentifui-cutover-on.json || true
+  exit 1
+fi
+
+echo "[cutover-on] smoke check: http://127.0.0.1:${NEXT_PORT}/api/internal/error-events/client"
+client_error_status=$(curl -sS -o /tmp/agentifui-cutover-on-client-error.json -w "%{http_code}" \
+  -X POST "http://127.0.0.1:${NEXT_PORT}/api/internal/error-events/client" \
+  -H 'content-type: application/json' \
+  --data '{}')
+
+if [[ "${client_error_status}" != "400" ]]; then
+  echo "[cutover-on] client error route smoke failed: status=${client_error_status}"
+  cat /tmp/agentifui-cutover-on-client-error.json || true
   exit 1
 fi
 

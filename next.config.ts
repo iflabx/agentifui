@@ -25,6 +25,7 @@ const DEFAULT_FASTIFY_PROXY_PREFIXES = [
   '/api/internal/data',
   '/api/internal/apps',
   '/api/internal/profile',
+  '/api/internal/error-events/client',
   '/api/internal/realtime',
   '/api/internal/storage',
   '/api/internal/ops/dify-resilience',
