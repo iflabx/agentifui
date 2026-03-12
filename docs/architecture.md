@@ -1,232 +1,216 @@
-# AgentifUI Architecture Documentation
+# AgentifUI Architecture
 
-## Executive Summary
+## Scope
 
-AgentifUI demonstrates **enterprise-grade architecture** with modern tech stack, comprehensive security, and excellent scalability foundations. The system exhibits strong architectural patterns with room for advanced optimization.
+This document describes the current repository architecture as of March 12, 2026. It is intentionally narrower than a long-term vision document: the goal is to explain how the codebase works today.
 
-## System Overview
+## Repository Shape
 
-### Tech Stack
+AgentifUI is a small monorepo with three main runtime areas:
 
-- **Frontend**: Next.js 15 (App Router), React 19, TypeScript
-- **Backend**: PostgreSQL + Redis + MinIO + better-auth
-- **State Management**: Zustand
-- **UI Framework**: Tailwind CSS 4, Radix UI
-- **API Integration**: Dify LLM services
-- **Package Manager**: pnpm
+| Area           | Path                          | Role                                                                   |
+| -------------- | ----------------------------- | ---------------------------------------------------------------------- |
+| Web app        | `app/`, `components/`, `lib/` | Next.js UI, auth handlers, server utilities, route compatibility layer |
+| API sidecar    | `apps/api/`                   | Fastify server for business APIs and proxy-heavy internal routes       |
+| Shared package | `packages/shared/`            | Cross-runtime helpers used by multiple packages                        |
 
-### Architecture Layers
+## Runtime Topology
 
-The system follows a clean 3-tier architecture pattern:
+```text
+Browser
+  -> Next.js App Router
+      - pages / layouts / SSR
+      - better-auth endpoints
+      - selected compatibility route handlers
+  -> selected /api/* rewrites
+      -> Fastify sidecar (apps/api)
+          -> PostgreSQL
+          -> Redis
+          -> MinIO / S3
+          -> Dify upstreams
+```
 
-**1. Presentation Layer**
+The split is deliberate:
 
-- `app/` - Next.js routes and pages
-- `components/` - Reusable React components
-- UI layer with proper separation of concerns
+- Next.js owns UI rendering, auth entrypoints, and a small number of route handlers that must stay in the App Router.
+- Fastify owns the increasingly centralized business API surface, especially routes that need explicit envelopes, shared proxy policy, and stronger operational control.
 
-**2. Business Logic Layer**
+## Current Request Boundaries
 
-- `lib/services/` - API integration services
-- `lib/stores/` - Zustand state management
-- `lib/hooks/` - Custom React hooks
-- Clear service abstractions
+### Routes that stay in Next.js
 
-**3. Data Access Layer**
+These continue to execute in the App Router layer:
 
-- `lib/db/` - Database operations
-- `lib/services/db/` - Advanced data services
-- `database/` - Migrations and RLS policies
-- Caching and real-time subscriptions
+- `app/api/auth/better/[...all]/route.ts`
+- `app/api/auth/sso/providers/route.ts`
+- `app/api/sso/[providerId]/*`
+- `app/api/internal/auth/*`
+- compatibility stubs such as `app/api/internal/data/route.ts` and `app/api/internal/error-events/client/route.ts`
 
-## Layer Separation Analysis
+Those compatibility stubs are intentional. When Fastify proxying is disabled, they return explicit `503` envelopes instead of silently serving stale logic.
 
-### Strengths
+### Routes that are normally served by Fastify
 
-- **Loose Coupling**: Clean interfaces between layers
-- **Service Abstraction**: Proper Dify API integration layer
-- **Type Safety**: Comprehensive TypeScript coverage
-- **Legacy Compatibility**: Gradual migration patterns
+When `FASTIFY_PROXY_ENABLED` is on, Next.js rewrites selected prefixes to Fastify. The current default prefix list is defined in:
 
-### Coupling Patterns
+- `next.config.ts`
+- `apps/api/src/config.ts`
 
-- **Presentation → Business**: One-way dependency through hooks
-- **Business → Data**: Service layer abstraction
-- **Data → External**: Secure proxy patterns
+The active list includes:
 
-## Performance & Scalability Architecture
+- `/api/dify`
+- `/api/internal/data`
+- `/api/internal/apps`
+- `/api/internal/profile`
+- `/api/internal/error-events/client`
+- `/api/internal/realtime`
+- `/api/internal/storage`
+- `/api/internal/ops/dify-resilience`
+- `/api/internal/dify-config`
+- `/api/internal/fastify-health`
+- `/api/admin`
+- `/api/translations`
 
-### Optimization Patterns
+Guard scripts are part of the architecture here. They prevent drift between the Next rewrite layer, the Fastify route contract, and the disabled Next compatibility handlers.
 
-- **Caching Strategy**: In-memory cache with TTL management
-- **Real-time Optimization**: Managed subscription service
-- **Data Pagination**: Efficient message loading
-- **SSR/SSG**: Next.js 15 App Router optimization
+## Data Access Pattern
 
-### Performance Features
+The repository uses PostgreSQL as the primary source of truth.
 
-- **Streaming**: Real-time chat responses
-- **Batching**: Efficient database operations
-- **Memory Management**: Automatic cleanup patterns
-- **Connection Pooling**: PostgreSQL pooling and runtime role isolation
+### Next.js side
 
-## Security Architecture
+Most Next.js server-side data access lives under `lib/`:
 
-### Security Layers
+- `lib/db/` contains direct DB-oriented modules for business entities.
+- `lib/server/pg/` manages connection pooling and session-scoped actor context.
+- `lib/services/` contains higher-level orchestration around Dify, caching, content flows, and admin logic.
 
-1. **API Key Management**
-   - AES-256-GCM encryption (`lib/utils/encryption.ts`)
-   - Secure key generation with proper random bytes
-   - Encrypted database storage
+### Fastify side
 
-2. **Authentication & Authorization**
-   - better-auth with OIDC/SSO support
-   - Row Level Security (RLS) policies
-   - Admin role management
+Fastify routes live in `apps/api/src/routes/` and use `apps/api/src/lib/` plus shared repository logic from the main app. The sidecar centralizes:
 
-3. **API Security**
-   - Proxy layer (`app/api/dify/[appId]/[...slug]/route.ts`)
-   - Request validation and type checking
-   - CORS configuration
+- route-level error envelopes
+- proxy policy
+- auth/session lookup for proxied requests
+- storage and realtime route behavior
+- operational health and observability endpoints
 
-4. **Data Protection**
-   - Encrypted sensitive data storage
-   - Secure session management
-   - Proper input validation
+## PostgreSQL Security Model
 
-## Key Components
+The project has moved to local PostgreSQL ownership and no longer depends on Supabase tables or `auth.users`.
 
-### Service Layer (`lib/services/`)
+Key runtime ideas:
 
-- **Dify Integration**: Complete API abstraction with type safety
-- **Database Services**: Advanced caching and real-time subscriptions
-- **Admin Services**: User management and content translation
+- RLS is enabled on the main business tables through SQL migrations.
+- The application sets PostgreSQL GUCs such as `app.current_user_id`, `app.current_user_role`, and `app.rls_system_actor` per request.
+- `APP_RLS_STRICT_MODE=1` tightens the legacy bypass behavior so only explicit system-actor contexts can bypass actor checks.
 
-### State Management (`lib/stores/`)
+Relevant implementation files:
 
-- **Zustand Stores**: Lightweight, efficient state management
-- **Modular Design**: Separate stores for different domains
-- **Real-time Sync**: Integration with Redis-backed channels
+- `lib/server/pg/pool.ts`
+- `lib/server/pg/session-options.ts`
+- `lib/server/pg/user-context.ts`
+- `database/migrations/20260215030000_m4_rpc_rls_guc_hardening.sql`
+- `database/migrations/20260215050000_m4_table_rls_phase2.sql`
+- `database/migrations/20260215070000_m4_table_rls_phase3.sql`
+- `database/migrations/20260215080000_m4_rls_strict_mode_switch.sql`
 
-### Data Layer (`lib/db/`)
+## Auth and Identity Model
 
-- **Database Access**: Direct database operations
-- **Caching Service**: In-memory cache with TTL
-- **Real-time Service**: Managed subscription system
+Authentication is provided by better-auth, backed by PostgreSQL tables in `public`:
 
-## Architectural Strengths
+- `auth_users`
+- `auth_sessions`
+- `auth_accounts`
+- `auth_verifications`
 
-### Major Strengths
+Business-facing profile and identity data are separate:
 
-1. **Modern Foundation**: Cutting-edge tech stack (Next.js 15, React 19)
-2. **Security-First**: Comprehensive encryption and RLS
-3. **Performance Optimized**: Sophisticated caching and real-time services
-4. **Type Safety**: Full TypeScript coverage
-5. **Scalability Ready**: Proper service separation patterns
-6. **Internationalization**: Multi-language support architecture
-7. **Developer Experience**: Excellent tooling and development workflow
+- `profiles`
+- `user_identities`
+- `profile_external_attributes`
+- `sso_providers`
+- `domain_sso_mappings`
+- `auth_settings`
 
-### Technical Excellence
+This split lets the app keep auth persistence, business profile state, and external IdP metadata distinct.
 
-- **Clean Architecture**: Clear separation of concerns
-- **Service Layer**: Proper abstraction patterns
-- **Error Handling**: Comprehensive error management
-- **Real-time Features**: Efficient subscription management
+## Realtime and Caching
 
-## Improvement Recommendations
+Realtime is currently anchored on a database outbox pattern.
 
-### High Priority
+- `database/migrations/20260215170000_m6_realtime_outbox_cdc.sql` creates `realtime_outbox_events` and triggers on key business tables.
+- Redis is used for cache invalidation and broker-style helpers.
+- When realtime-sensitive prefixes are proxied through Fastify, `REALTIME_SOURCE_MODE` must stay `db-outbox`.
 
-1. **Observability Layer**: Add monitoring and metrics
-2. **Circuit Breakers**: Implement resilience patterns for external APIs
-3. **API Rate Limiting**: Add request throttling
-4. **Distributed Caching**: Consider Redis for multi-instance deployment
+This rule is enforced at Fastify startup in `apps/api/src/server.ts`.
 
-### Medium Priority
+## Storage
 
-1. **Service Mesh**: For microservices evolution
-2. **CQRS Pattern**: For complex query optimization
-3. **Automated Performance Testing**: CI/CD integration
-4. **Error Recovery**: Advanced retry mechanisms
+Object storage uses MinIO or another S3-compatible backend.
 
-### Long-term Vision
+Current public storage flows include:
 
-1. **Microservices Migration**: Gradual decomposition strategy
-2. **Event-Driven Architecture**: Implement pub/sub patterns
-3. **AI/ML Pipeline**: Enhanced LLM integration patterns
-4. **Multi-tenant Architecture**: Enterprise scaling
+- avatar upload and presign endpoints
+- content-image upload and presign endpoints
+- optional trusted-avatar host filtering
 
-## Database Design
+Relevant code paths:
 
-### Core Tables
+- `app/api/internal/storage/*`
+- `apps/api/src/routes/internal-storage-*`
+- `lib/services/content-image-upload-service.ts`
+- `lib/utils/profile-cache-security.ts`
 
-- **profiles**: User profile information
-- **conversations**: Chat conversation records
-- **messages**: Individual chat messages
-- **service_instances**: Dify app configurations
-- **api_keys**: Encrypted API key storage
-- **organizations**: Multi-tenant support
-- **group_permissions**: Role-based access control
+## Error Handling and Observability
 
-### Security Features
+The architecture standardizes error envelopes across Next.js and Fastify.
 
-- **Row Level Security (RLS)**: Database-level access control
-- **Encrypted Storage**: Sensitive data protection
-- **Audit Trails**: Change tracking and compliance
+Important pieces:
 
-## API Design
+- shared request-id propagation
+- compatibility normalization of legacy errors
+- persisted API/frontend error events in `error_events`
+- smoke checks for production routes
+- guard scripts for route and envelope consistency
 
-### Dify Integration
+The recent `/api/internal/error-events/client` cutover is an example of this pattern: Fastify serves the live route, while the Next.js file remains as an explicit disabled stub for cutover-off mode.
 
-- **Proxy Pattern**: Secure API key management
-- **Streaming Support**: Real-time response handling
-- **Type Safety**: Comprehensive TypeScript definitions
-- **Error Handling**: Robust error management
+## Deployment Model
 
-### Internal APIs
+The supported production shape is:
 
-- **RESTful Design**: Standard HTTP methods
-- **Authentication**: better-auth integration
-- **Validation**: Request/response validation
-- **Rate Limiting**: Protection against abuse
+- `AgentifUI-Prod` - Next.js process managed by PM2
+- `AgentifUI-API-Prod` - Fastify process managed by PM2
+- deployment entrypoint: `pnpm deploy`
+- PM2 config: `ecosystem.prod.config.js`
+- smoke check: `scripts/smoke-prod.sh`
 
-## Deployment Architecture
+There is no separate public staging runbook in this repository. The documented public flows are `dev`, isolated `test`, and `prod`.
 
-### Development Environment
+## CI Model
 
-- **Next.js Dev Server**: Hot reload and debugging
-- **Test Stack Containers**: Local PostgreSQL/Redis/MinIO development
-- **Type Checking**: Continuous type validation
+GitHub Actions currently runs on pushes and pull requests for both `main` and `develop`.
 
-### Production Environment
+The pipeline does the following:
 
-- **Next.js Build**: Optimized static generation
-- **Managed Data Services**: PostgreSQL/Redis/MinIO with centralized auth
-- **PM2**: Process management
-- **CDN**: Asset optimization
+- install dependencies with pnpm
+- run format/lint checks on changed files
+- run root and workspace type checks
+- start isolated PostgreSQL, Redis, and MinIO services on the GitHub runner
+- apply SQL migrations
+- build shared, API, and web packages
+- run tests
+- run lightweight security scans
 
-## Monitoring & Observability
+This matters architecturally because the repository now assumes monorepo-aware CI and explicit service startup for build/test verification.
 
-### Current Status
+## Architectural Invariants
 
-- **Development Tools**: Comprehensive debugging setup
-- **Error Handling**: User-friendly error messages
-- **Performance Tracking**: Basic metrics
+These are the current rules worth preserving:
 
-### Recommended Additions
-
-- **Application Monitoring**: APM integration
-- **Log Aggregation**: Centralized logging
-- **Performance Metrics**: Real-time monitoring
-- **Health Checks**: Service availability monitoring
-
-## Conclusion
-
-AgentifUI exhibits **exceptional architectural maturity** with strong foundations for enterprise growth. The system balances modern technology adoption with practical scalability patterns, making it well-positioned for continued evolution.
-
-**Architecture Grade: A-** (Enterprise-ready with optimization opportunities)
-
----
-
-_Last updated: 2025-07-11_
-_Version: 1.0_
+1. Fastify and Next route boundaries must stay explicit.
+2. Prefix lists for rewrites and Fastify registration must stay in sync.
+3. Business data should flow through PostgreSQL with RLS-aware actor context.
+4. Test and CI environments should use isolated database, Redis, and bucket namespaces.
+5. Disabled compatibility routes should fail closed, not silently serve stale business logic.

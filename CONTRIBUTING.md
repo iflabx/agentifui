@@ -1,63 +1,109 @@
 # Contributing Guide
 
+## Base Branch
+
+- Use `develop` for normal feature, fix, and documentation work.
+- Only target `main` when a maintainer explicitly asks for a release or hotfix PR.
+
 ## Quick Setup
 
-**Prerequisites**: Node.js 18.17+, pnpm 8.0+, Git
+### Prerequisites
+
+- Node.js 22+
+- Corepack or pnpm `10.14.0`
+- Git
+- PostgreSQL, Redis, and MinIO if you want to run the full stack locally
+
+### Clone and Install
 
 ```bash
-# 1. Fork & Clone
-git clone https://github.com/ifLabX/AgentifUI.git
-cd AgentifUI
-pnpm install
+git clone https://github.com/iflabx/agentifui.git
+cd agentifui
 
-# 2. Setup
+corepack enable
+corepack prepare pnpm@10.14.0 --activate
+pnpm install --frozen-lockfile
+```
+
+### Configure Local Runtime
+
+```bash
 cp .env.example .env.dev
-# Edit .env.dev
-
-# 3. Create Branch
-git checkout -b feat/your-feature  # or fix/issue-name
+# edit .env.dev for your local PostgreSQL / Redis / MinIO / auth settings
 ```
 
-## Development Commands
+### Create a Working Branch
 
 ```bash
-pnpm dev          # Start dev server
-pnpm type-check   # TypeScript check
-pnpm format:check # Format check
-pnpm lint         # Lint check
-pnpm build        # Build test
-pnpm i18n:check   # Translation check
+git switch develop
+git pull
+git switch -c feat/your-change
 ```
 
-## Before PR
-
-Required checks:
+## Daily Commands
 
 ```bash
-pnpm type-check && pnpm format:check && pnpm lint && pnpm build
+pnpm dev:all          # Next.js + Fastify together
+pnpm dev:web          # Next.js only
+pnpm dev:api          # Fastify only
+pnpm type-check
+pnpm lint
+pnpm test
+pnpm build:all
+pnpm gate:quality:verify
 ```
 
-## Process
+If you change translations, also run:
 
-1. **Fork** → **Branch** → **Code** → **Test** → **PR**
-2. **Commit format**: `type(scope): description`
-3. **CLA**: Sign at https://cla.iflabx.com (required for external contributors)
+```bash
+pnpm i18n:check
+```
 
-## Issue Guidelines
+## Before Opening a PR
 
-**Bug reports**: Include environment, steps, expected vs actual
-**Feature requests**: Include problem, solution, use cases
+Run the relevant checks locally:
+
+```bash
+pnpm format:check
+pnpm gate:quality:verify
+pnpm test
+pnpm build:all
+```
+
+Notes:
+
+- `pnpm build` only covers the Next.js app. Use `pnpm build:all` before a PR so shared and Fastify packages are checked too.
+- If you only run targeted tests, explain that in the PR description.
+- If you change runtime behavior, public routes, configuration, or deployment flow, update `README.md` and the relevant files under `docs/` in the same PR.
+
+## Pull Request Expectations
+
+1. Keep each PR focused on one change set.
+2. Link the issue or explain why the PR is needed.
+3. Call out database, environment-variable, deployment, or CI impact.
+4. Include screenshots for visible UI changes.
+5. Prefer follow-up PRs over mixing refactors and behavior changes into one large submission.
+
+## Commit Style
+
+Use Conventional Commits where practical:
+
+- `feat:`
+- `fix:`
+- `docs:`
+- `refactor:`
+- `test:`
+- `chore:`
 
 ## Standards
 
-- **Code**: TypeScript/React with Prettier
-- **Commit types**: feat, fix, docs, style, refactor, perf, test
-- **Dependencies**: Apache 2.0/MIT/BSD only, discuss in issues first
+- Use `pnpm`, not `npm` or `yarn`.
+- Keep TypeScript and ESLint warnings under control; do not bypass quality gates without a clear reason.
+- Update `.env*.example` when adding or renaming public runtime configuration.
+- Do not leave dead route paths or outdated docs behind after a cutover.
 
 ## Support
 
-- **Issues**: Bug reports & features
-- **Discussions**: Questions & community
-- **Docs**: Check [./docs/](./docs/) first
-
-**CLA**: By submitting code, you agree it may become part of future releases under the CLA terms.
+- Start with `README.md` and `docs/`.
+- Use GitHub Issues for bugs and feature requests.
+- External contributors must complete the CLA flow if the repository requests it.

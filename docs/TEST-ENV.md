@@ -2,29 +2,39 @@
 
 ## Scope
 
-This guide describes the minimum isolated test setup for AgentifUI when `dev` and `prod` already share existing PostgreSQL, Redis, and MinIO services.
+This guide describes the minimum isolated test setup for AgentifUI when development and production already use existing PostgreSQL, Redis, and MinIO services.
 
-The goal is isolation at the data namespace level:
+The goal is data isolation, not full infrastructure isolation.
 
-- PostgreSQL: dedicated test database
-- Redis: dedicated DB plus dedicated key/channel prefixes
-- MinIO: dedicated bucket
+## Files and Profiles
 
-This avoids direct writes into `dev` or `prod` business data, while still reusing the same service instances and ports.
+Use:
 
-## Recommended Files
+- `.env.test` for isolated test runs
+- `.env.dev` for development
+- `.env.prod` for production
 
-- Copy `.env.test.example` to `.env.test`
-- Keep `.env.dev` for development
-- Keep `.env.prod` for production verification
+Start from the public template:
 
-If you run commands inside a dev container, replace `127.0.0.1` with the host gateway that reaches the shared data services. In the current workspace setup that gateway is `172.20.0.1`.
+```bash
+cp .env.test.example .env.test
+```
 
-## Minimum Isolated Test Values
+You can load it with the shared wrapper:
+
+```bash
+AGENTIF_ENV_FILE=.env.test bash scripts/with-env-local.sh <command>
+```
+
+## Minimum Isolated Values
 
 Use a dedicated namespace for every shared service:
 
 ```env
+NODE_ENV=test
+NEXT_PUBLIC_APP_URL=http://127.0.0.1:3000
+BETTER_AUTH_URL=http://127.0.0.1:3000
+
 DATABASE_URL=postgresql://agentif:agentif@127.0.0.1:5432/agentifui_test
 MIGRATOR_DATABASE_URL=postgresql://agentif:agentif@127.0.0.1:5432/agentifui_test
 
@@ -39,13 +49,24 @@ S3_ENDPOINT=http://127.0.0.1:9000
 S3_BUCKET=agentifui-test
 S3_ACCESS_KEY_ID=minioadmin
 S3_SECRET_ACCESS_KEY=minioadmin
+S3_REGION=us-east-1
+S3_ENABLE_PATH_STYLE=1
+
+BETTER_AUTH_ENABLED=true
+AUTH_BACKEND=better-auth
+BETTER_AUTH_SECRET=test-only-better-auth-secret-change-me
+API_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 ```
 
-## Why Redis Needs More Than A Different DB
+If you run tests inside a dev container, replace `127.0.0.1` with the host gateway that reaches the shared data services.
 
-Using a different Redis DB such as `/2` separates most keys, but this project also uses named realtime channels and stream keys. Keep the test names explicit so test traffic does not collide with `dev` or `prod`.
+## Why Redis Needs More Than a Different DB
 
-Relevant runtime knobs:
+A separate Redis DB such as `/2` is necessary but not sufficient.
+
+This project also uses named cache prefixes, invalidation channels, and realtime stream keys. Keep test values explicit so test traffic does not collide with `dev` or `prod`.
+
+Relevant variables:
 
 - `REDIS_PREFIX`
 - `CACHE_L2_KEY_PREFIX`
@@ -53,11 +74,11 @@ Relevant runtime knobs:
 - `REALTIME_REDIS_CHANNEL`
 - `REALTIME_REDIS_STREAM_KEY`
 
-## Create The Test Namespaces
+## Bootstrap the Test Namespaces
 
 ### PostgreSQL
 
-Create a dedicated database once:
+Create the test database once:
 
 ```bash
 psql "postgresql://agentif:agentif@127.0.0.1:5432/postgres" -v ON_ERROR_STOP=1 <<'SQL'
@@ -65,11 +86,20 @@ CREATE DATABASE agentifui_test;
 SQL
 ```
 
-Run migrations against the test database before running integration tests.
+Then apply the public SQL migrations:
+
+```bash
+AGENTIF_ENV_FILE=.env.test bash scripts/with-env-local.sh bash -lc '
+shopt -s nullglob
+for migration in database/migrations/*.sql; do
+  psql "$MIGRATOR_DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"
+done
+'
+```
 
 ### Redis
 
-No separate database creation step is required. Using `redis://127.0.0.1:6379/2` is enough, provided the test-only prefixes and channel names are also set.
+No extra bootstrap step is required beyond choosing a dedicated DB and test-only prefixes.
 
 ### MinIO
 
@@ -80,36 +110,38 @@ mc alias set local http://127.0.0.1:9000 minioadmin minioadmin
 mc mb --ignore-existing local/agentifui-test
 ```
 
-## Running With The Test Profile
+## Running Commands with the Test Profile
 
-Example commands on the host:
+Examples:
 
 ```bash
-cp .env.test.example .env.test
-# edit .env.test if needed
-
-set -a
-source .env.test
-set +a
-
-pnpm test
+AGENTIF_ENV_FILE=.env.test bash scripts/with-env-local.sh pnpm test
+AGENTIF_ENV_FILE=.env.test bash scripts/with-env-local.sh pnpm build
+AGENTIF_ENV_FILE=.env.test bash scripts/with-env-local.sh pnpm --filter @agentifui/api build
 ```
 
-Inside a dev container, use the same flow but replace hostnames in `.env.test` with the host gateway, for example `172.20.0.1`.
+Use targeted commands when possible, but keep the test profile loaded so runtime assumptions match the isolated namespace.
+
+## CI Parity
+
+GitHub Actions uses the same variable model and applies the same SQL migrations, but it starts temporary PostgreSQL, Redis, and MinIO services on the GitHub runner itself.
+
+That means CI does not talk to your existing dev or prod services unless you explicitly point it there.
 
 ## Isolation Boundary
 
-With the configuration above:
+With the setup above:
 
-- test does not write into the `dev` or `prod` PostgreSQL databases
-- test does not write into the `dev` or `prod` MinIO buckets
-- test does not share Redis keys, cache invalidation channels, or realtime channels with `dev` or `prod`
+- tests do not write into the dev PostgreSQL database
+- tests do not write into the prod PostgreSQL database
+- tests do not write into dev or prod MinIO buckets
+- tests do not share Redis prefixes, invalidation channels, or realtime stream keys with dev or prod
 
-What is still shared:
+What is still shared in the minimum scheme:
 
-- PostgreSQL server process and ports
-- Redis server process and ports
-- MinIO server process and ports
+- PostgreSQL server process and port
+- Redis server process and port
+- MinIO server process and port
 - machine resources such as CPU, memory, network, and disk
 
-So this is data isolation, not full infrastructure isolation.
+So this is namespace isolation, not full infrastructure isolation.
