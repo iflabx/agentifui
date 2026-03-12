@@ -1,33 +1,43 @@
 > [!IMPORTANT]
 >
-> 1. Read [CONTRIBUTING.md](../CONTRIBUTING.md)
-> 2. Ensure issue exists and you're assigned
-> 3. Link correctly: `Fixes #<issue number>`
+> - Target `develop` unless a maintainer explicitly asked for a `main` hotfix/release PR.
+> - Read [CONTRIBUTING.md](../CONTRIBUTING.md).
+> - Link the issue correctly, for example: `Fixes #123`.
 
-## What & Why
+## Summary
 
-**What**: Brief description
-**Why**: Problem solved
+Briefly describe what changed.
 
-Fixes #(issue number)
+## Why
 
-## Pre-PR Checklist
+Explain the problem, risk, or user need this PR addresses.
 
-Run these:
+Fixes #
 
-- [ ] `pnpm type-check`
+## Validation
+
 - [ ] `pnpm format:check`
-- [ ] `pnpm lint`
-- [ ] `pnpm build`
-- [ ] `pnpm i18n:check` (if applicable)
+- [ ] `pnpm gate:quality:verify`
+- [ ] `pnpm test`
+- [ ] `pnpm build:all`
+- [ ] `pnpm i18n:check` (if translations changed)
+- [ ] Manual or targeted tests are described below when full test coverage was not run
 
-## Type
+### Test Notes
 
-- [ ] 🐛 Bug fix
-- [ ] ✨ Feature
-- [ ] 💥 Breaking change
-- [ ] 📚 Docs
-- [ ] ♻️ Refactor
-- [ ] ⚡ Performance
+Describe manual checks, targeted tests, screenshots, or why some checks were skipped.
 
-## Screenshots (if UI changes)
+## Docs and Ops Impact
+
+- [ ] No public doc changes required
+- [ ] Updated `README.md` and/or `docs/*` for public behavior changes
+- [ ] Added or updated `.env*.example` entries for new runtime configuration
+- [ ] Database / migration impact explained below
+- [ ] Deployment / CI impact explained below
+
+## Checklist
+
+- [ ] Commit messages follow the repository's Conventional Commit style
+- [ ] The PR is scoped to one logical change set
+- [ ] New routes, rewrites, or cutovers do not leave stale public docs behind
+- [ ] UI changes include screenshots when relevant

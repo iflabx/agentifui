@@ -1,57 +1,87 @@
 # Font Configuration Guide
 
-AgentifUI uses a modern combination of Chinese and English fonts to provide an elegant reading experience.
+## Scope
 
-## Font Combinations
+This document describes the font setup currently implemented in the codebase.
 
-| Use Case            | Font                            | Tailwind Class | Description                                        |
-| :------------------ | :------------------------------ | :------------- | :------------------------------------------------- |
-| UI Text             | Inter + Noto Sans SC            | `font-sans`    | Modern and clean, suitable for UI elements         |
-| Reading Content     | Crimson Pro + Noto Serif SC     | `font-serif`   | Elegant and legible, suitable for long-form text   |
-| Decorative Headings | Playfair Display + Noto Sans SC | `font-display` | Highly decorative, suitable for important headings |
+The authoritative implementation lives in:
 
-## Usage
+- `app/layout.tsx`
+- `tailwind.config.js`
+- `app/globals.css`
 
-### Basic Usage
+## Loaded Font Families
+
+The app currently loads these Google fonts with `next/font` in `app/layout.tsx`:
+
+- `Inter`
+- `Noto Sans SC`
+- `Crimson Pro`
+- `Noto Serif SC`
+- `Playfair Display`
+
+## Current Font Strategy
+
+AgentifUI is intentionally serif-first.
+
+### Default content stack
+
+The default reading/UI stack is built around:
+
+- `Crimson Pro`
+- `Noto Serif SC`
+- `Georgia`
+- `serif`
+
+This is exposed through:
+
+- `font-serif`
+- the global default text styling in `app/globals.css`
+
+### Display stack
+
+Decorative headings use:
+
+- `Playfair Display`
+- `Noto Serif SC`
+- `serif`
+
+This is exposed through:
+
+- `font-display`
+
+### Opt-in sans stack
+
+Dense UI elements can opt into:
+
+- `Inter`
+- `Noto Sans SC`
+- system sans fallbacks
+
+This is exposed through the `.font-sans` utility in `app/globals.css`.
+
+## Important Implementation Detail
+
+`tailwind.config.js` keeps both Tailwind `sans` and `serif` families mapped to the serif-first stack. That means the repository default is intentionally not a normal sans-serif UI.
+
+If you want a true sans-serif override, use the explicit `.font-sans` class from `app/globals.css`.
+
+## Recommended Usage
+
+- Use `font-serif` for most page text, forms, and long-form UI copy.
+- Use `font-display` for hero headings or prominent titles.
+- Use `font-sans` sparingly for dense controls, small badges, or places where sans text renders better at small sizes.
+
+## Examples
 
 ```tsx
-// Default UI font
-<div className="font-sans">Interface Text</div>
-
-// Reading font
-<div className="font-serif">Reading content</div>
-
-// Decorative heading font
-<h1 className="font-display">Display Title</h1>
+<h1 className="font-display text-4xl">Hero Title</h1>
+<p className="font-serif">Default content copy</p>
+<span className="font-sans text-xs">Compact badge label</span>
 ```
 
-### Responsive Font Sizes
+## Notes
 
-```tsx
-// Responsive Heading
-<h1 className="font-display text-2xl md:text-3xl lg:text-4xl">
-  Responsive Heading
-</h1>
-
-// Responsive Body Text
-<p className="font-serif text-base md:text-lg">
-  Responsive body content
-</p>
-```
-
-## Font Weights
-
-Supported weights: `font-light`, `font-normal`, `font-medium`, `font-semibold`, `font-bold`
-
-```tsx
-<p className="font-sans font-medium">Medium weight text</p>
-<p className="font-serif font-bold">Bold serif text</p>
-```
-
-## Font Characteristics
-
-- **Inter + Noto Sans SC**: A modern sans-serif font, clear and highly legible.
-- **Crimson Pro + Noto Serif SC**: An elegant serif font for a comfortable reading experience.
-- **Playfair Display**: A decorative serif font, ideal for headings.
-
-All fonts are loaded via Google Fonts and support mixed Chinese and English display.
+- Inputs, textareas, selects, and buttons are also normalized in `app/globals.css` so typography stays consistent.
+- Mixed English and CJK rendering is a first-class concern in the current setup.
+- If you change fonts, update all three places: `app/layout.tsx`, `tailwind.config.js`, and `app/globals.css`.

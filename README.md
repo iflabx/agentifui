@@ -1,155 +1,125 @@
-# <h1 align="center">AgentifUI – Enterprise-Grade Intelligent Chat Platform</h1>
+# AgentifUI
 
-> **Community Edition** – Apache 2.0
-> **Enterprise Edition** – Commercial License (contact [license@iflabx.com](mailto:license@iflabx.com))
-> Maintained by the **ifLabX community** and sponsored by **ifLabX Corp**.
+> Community Edition: Apache 2.0
+> Commercial licensing and support: contact [license@iflabx.com](mailto:license@iflabx.com)
 
-AgentifUI is a modern, multi-device intelligent-chat front-end built with the Next.js 15 App Router.
-By combining **better-auth**, **PostgreSQL/Redis/MinIO**, **Dify API**, **Zustand** state management and layered data services, it delivers a secure, scalable and easy-to-maintain LLM chat experience—ideal for corporate knowledge bases, AI assistants and other enterprise scenarios.
+AgentifUI is a monorepo for an enterprise-oriented AI application frontend built on Next.js 15, React 19, Fastify, PostgreSQL, Redis, MinIO, better-auth, and Dify. The current codebase uses a split runtime:
 
-| Edition        | License     | Scope & Extras                                                     |
-| -------------- | ----------- | ------------------------------------------------------------------ |
-| **Community**  | Apache 2.0  | Core chat UI, REST/GraphQL API, single-tenant                      |
-| **Enterprise** | Proprietary | ✅ Multi-tenant ✅ SAML/LDAP ✅ SLA & Support ✅ Brand-removal/OEM |
+- `app/` serves the Next.js UI, auth handlers, and compatibility API stubs.
+- `apps/api/` runs the Fastify sidecar for business APIs and proxy-heavy routes.
+- PostgreSQL, Redis, and MinIO provide durable data, cache/realtime plumbing, and object storage.
 
----
+## Key Capabilities
 
-## ✨ Key Features
+- Multi-app UI for chat, agent, chatbot, chatflow, workflow, and text generation flows
+- better-auth based login, SSO, local-password fallback controls, and phone-OTP support
+- Fastify sidecar for selected `/api/*` prefixes, with cutover and smoke-check scripts
+- PostgreSQL-backed persistence with runtime actor context and RLS-aware access patterns
+- Redis-backed cache invalidation, realtime broker helpers, and shared prefixes for isolation
+- MinIO/S3 avatar and content-image upload flows
+- Error-event capture pipeline for frontend and API failures
+- Production deployment via PM2, `pnpm deploy`, and smoke verification
 
-- Responsive chat UI (desktop & mobile)
-- Multiple apps / conversation management
-- Message persistence with resume-from-breakpoint
-- **Dify API** integration with streaming responses
-- **better-auth** authentication with OIDC/SSO support
-- Encrypted API-key storage and per-user / per-instance key rotation
-- High-performance message pagination & caching
-- Light/Dark theme switch & a11y-friendly components
-- Robust error handling and real-time state sync
+## Tech Stack
 
----
+| Layer          | Current Stack                                      |
+| -------------- | -------------------------------------------------- |
+| Web app        | Next.js 15 App Router, React 19, TypeScript        |
+| API sidecar    | Fastify 5 in `apps/api`                            |
+| Shared package | `packages/shared` for cross-runtime helpers        |
+| Data           | PostgreSQL, Redis, MinIO / S3-compatible storage   |
+| Auth           | better-auth with SSO and local-password extensions |
+| Styling        | Tailwind CSS 4, Radix UI, next/font                |
+| Tooling        | pnpm 10, Jest, ESLint, Prettier, Husky, PM2        |
 
-## 🛠 Tech Stack
+## Runtime Architecture
 
-| Layer          | Tools                                                         |
-| -------------- | ------------------------------------------------------------- |
-| Framework      | **Next.js 15** (App Router), **React 18**, **Tailwind CSS 4** |
-| State          | **Zustand**                                                   |
-| Backend        | **PostgreSQL 18**, **Redis 7.x**, **MinIO**, **better-auth**  |
-| LLM / Chat API | **Dify**, OpenAI, others                                      |
-| Utilities      | clsx/cn, Lucide Icons, lodash, date-fns                       |
-| Language       | **TypeScript** everywhere                                     |
-
----
-
-## 🔗 Architecture Overview
-
-```
-UI Components (React)
-↓
-Custom Hooks (use-*)
-↓
-DB Access Layer  (lib/db/*)
-↓
-Service Layer    (lib/services/*)
-↓
-PostgreSQL + Redis + MinIO + better-auth
+```text
+Browser
+  -> Next.js App Router (UI, SSR, auth routes, compatibility stubs)
+  -> selected /api/* rewrites -> Fastify sidecar
+  -> PostgreSQL / Redis / MinIO / Dify
 ```
 
-### Core Design Highlights
+Notes:
 
-| Area                 | Why it matters                                                                                                 |
-| -------------------- | -------------------------------------------------------------------------------------------------------------- |
-| **Security**         | Relies on DB-verified conversation IDs only—no transient state writes, guaranteeing consistency.               |
-| **Maintainability**  | Seamless conversion between temporary IDs, Dify IDs and DB IDs makes the data-flow resilient.                  |
-| **Easy Integration** | Encrypted API-key vault, per-user/instance key scope and graceful fallback mechanism.                          |
-| **Data Sovereignty** | Strict end-to-end TypeScript types + PostgreSQL **RLS** and runtime role isolation ensure row-level isolation. |
+- Fastify proxy prefixes are configured in `next.config.ts` and `apps/api/src/config.ts`.
+- Auth routes such as `/api/auth/better/*` remain in Next.js.
+- Some legacy Next API files intentionally remain as disabled stubs so `fastify:cutover:off` can fail closed with explicit `503` responses.
 
----
+## Quick Start
 
-## 🚀 Quick Start (Community Edition)
+### Prerequisites
 
-### 🏃‍♂️ Quick Server Deployment
+- Node.js 22+
+- Corepack or pnpm `10.14.0`
+- PostgreSQL
+- Redis
+- MinIO or another S3-compatible object store
 
-> 📋 **New to deployment?** See our streamlined guide: [`docs/QUICK-DEPLOYMENT.md`](./docs/QUICK-DEPLOYMENT.md)
-> ⚙️ **Configuration reference:** [`docs/CONFIGURATION.md`](./docs/CONFIGURATION.md)
-> 🧪 **Isolated test profile:** [`docs/TEST-ENV.md`](./docs/TEST-ENV.md)
+### Local Development
 
 ```bash
-# Quick deployment on Ubuntu/Debian server
-# Installs: NVM, pnpm, PM2, Docker, Dify, AgentifUI
+corepack enable
+corepack prepare pnpm@10.14.0 --activate
+pnpm install --frozen-lockfile
 
-# Follow the 13-step guide in docs/QUICK-DEPLOYMENT.md
-```
-
-### 💻 Local Development
-
-For local development and testing:
-
-```bash
-# 1 — Install dependencies
-pnpm install
-
-# 2 — Copy environment template and configure
 cp .env.example .env.dev
-# Edit .env.dev with your PostgreSQL / Redis / MinIO and other settings
+# edit .env.dev
 
-# 3 — Run development server
-pnpm run dev
-
-# 4 — Open your browser
-http://localhost:3000
+pnpm dev:all
 ```
 
-**Prerequisites for local development:**
+Then open `http://localhost:3000`.
 
-- Node.js 18+ (22+ recommended)
-- pnpm 9+
-- PostgreSQL 18
-- Redis 7.x
-- MinIO (or S3-compatible object storage)
+Useful variants:
 
-### Development Tools
+- `pnpm dev:web` - start the Next.js app only
+- `pnpm dev:api` - start the Fastify sidecar only
 
-The project includes comprehensive code quality and formatting tools:
+### Production Deployment
+
+Use the public runbooks:
+
+- `docs/CONFIGURATION.md`
+- `docs/QUICK-DEPLOYMENT.md`
+- `docs/TEST-ENV.md`
+
+## Common Commands
 
 ```bash
-# Format all code
-pnpm run format
-
-# Check code formatting
-pnpm run format:check
-
-# Run type checking
-pnpm run type-check
-
-# Build project
-pnpm run build
+pnpm dev:all
+pnpm type-check
+pnpm lint
+pnpm test
+pnpm build:all
+pnpm gate:quality:verify
+pnpm smoke:prod
 ```
 
-**Automatic Formatting**:
+## Repository Layout
 
-- **VSCode**: Install Prettier extension for real-time formatting on save
-- **Git Hooks**: Husky automatically formats code on commit
-- **Supported Files**: TypeScript, React, JSON, Markdown, CSS, YAML
+| Path                   | Purpose                                                              |
+| ---------------------- | -------------------------------------------------------------------- |
+| `app/`                 | Next.js App Router pages, layouts, and route handlers                |
+| `apps/api/`            | Fastify API sidecar                                                  |
+| `components/`          | Shared and domain UI components                                      |
+| `lib/`                 | Server helpers, DB access, services, hooks, stores, auth             |
+| `packages/shared/`     | Shared runtime utilities                                             |
+| `database/migrations/` | SQL schema and RLS migrations                                        |
+| `scripts/`             | Public runtime, deployment, guard, and maintenance scripts           |
+| `docs/`                | User-facing configuration, deployment, architecture, and schema docs |
 
----
+## Additional Docs
 
-## 📂 Project Structure
+- `CONTRIBUTING.md`
+- `docs/architecture.md`
+- `docs/DATABASE-DESIGN.md`
+- `docs/FONTS.md`
 
-| Path          | Purpose                                  |
-| ------------- | ---------------------------------------- |
-| `app/`        | Next.js routes & pages                   |
-| `components/` | Shared & domain UI components            |
-| `lib/`        | Data, services, hooks, state             |
-| `docs/`       | Architecture, DB schema & API-key design |
-| `database/`   | SQL migrations & RLS policies            |
+## Contributing and Support
 
----
-
-## 🤝 Getting Help / Contributing
-
-- **Issues & PRs**: Please open them on [GitHub Issues](https://github.com/ifLabX/AgentifUI/issues). All contributors must pass the CLA bot check.
-- **Security reports**: Please email [security@iflabx.com](mailto:security@iflabx.com)
-- **Enterprise/OEM inquiries**: For commercial support or integration, email [license@iflabx.com](mailto:license@iflabx.com)
-
-> AgentifUI is dual-licensed. The Community Edition is open source under **Apache 2.0**; the Enterprise Edition adds multi-tenant, SAML/LDAP, branding removal and SLA support under a commercial license. See `LICENSE`, `NOTICE` and `TRADEMARK_POLICY.md` for details.
+- Open issues and pull requests on GitHub.
+- Read `CONTRIBUTING.md` before sending a PR.
+- Report security issues to [security@iflabx.com](mailto:security@iflabx.com).
+- See `.github/TRADEMARK_POLICY.md` for trademark usage.

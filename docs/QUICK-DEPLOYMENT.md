@@ -1,54 +1,88 @@
-# AgentifUI Production Deployment (Current Minimal Scheme)
+# AgentifUI Production Deployment
 
 ## 1. Scope
 
-This document describes the only production deployment path currently in use:
+This is the current public production runbook.
 
-1. Environment file: `.env.prod`
-2. Deploy entry: `pnpm deploy` (runs `scripts/deploy-prod.sh`)
-3. Process manager: PM2 with `ecosystem.prod.config.js`
-4. Runtime processes:
-   - `AgentifUI-Prod` (Next.js)
-   - `AgentifUI-API-Prod` (Fastify API)
+It assumes:
 
-Legacy deploy commands are not part of this runbook.
+1. You deploy from a checked-out repository directory.
+2. Production uses `.env.prod`.
+3. PM2 manages two processes:
+   - `AgentifUI-Prod` for Next.js
+   - `AgentifUI-API-Prod` for Fastify
+4. The supported deploy entrypoint is `pnpm deploy`.
 
 ## 2. Prerequisites
 
-1. Node.js LTS, pnpm, PM2 installed.
-2. PostgreSQL, Redis, and MinIO are reachable from deploy host.
-3. Repository is checked out on the production directory.
+Install and prepare:
 
-## 3. Configure `.env.prod`
+- Node.js 22+
+- Corepack or pnpm `10.14.0`
+- PM2
+- PostgreSQL
+- Redis
+- MinIO or another S3-compatible object store
 
-Create and edit production env:
+Clone the repository and install dependencies:
+
+```bash
+corepack enable
+corepack prepare pnpm@10.14.0 --activate
+pnpm install --frozen-lockfile
+```
+
+## 3. Create `.env.prod`
 
 ```bash
 cp .env.prod.example .env.prod
 ```
 
-Required groups:
+At minimum, set:
 
-1. Database and cache
-   - `DATABASE_URL`
-   - `MIGRATOR_DATABASE_URL`
-   - `APP_DATABASE_ROLE`
-   - `APP_DATABASE_PASSWORD`
-   - `REDIS_URL`
-2. Object storage
-   - `S3_ENDPOINT`
-   - `S3_BUCKET`
-   - `S3_ACCESS_KEY_ID`
-   - `S3_SECRET_ACCESS_KEY`
-   - `S3_ENABLE_PATH_STYLE`
-3. Auth and encryption
-   - `BETTER_AUTH_SECRET`
-   - `API_ENCRYPTION_KEY`
-4. Network and runtime
-   - `NEXT_PUBLIC_APP_URL`
-   - `PORT`
-   - `FASTIFY_API_PORT`
-   - `CORS_ALLOWED_ORIGINS`
+### App URLs
+
+- `NEXT_PUBLIC_APP_URL`
+- `BETTER_AUTH_URL`
+- `PORT`
+
+### PostgreSQL
+
+- `DATABASE_URL`
+- `MIGRATOR_DATABASE_URL`
+- `APP_DATABASE_ROLE`
+- `APP_DATABASE_PASSWORD`
+- `APP_RLS_STRICT_MODE=1`
+
+### Redis
+
+- `REDIS_URL`
+- `REDIS_PREFIX`
+
+### S3 / MinIO
+
+- `S3_ENDPOINT`
+- `S3_BUCKET`
+- `S3_ACCESS_KEY_ID`
+- `S3_SECRET_ACCESS_KEY`
+- `S3_REGION`
+- `S3_ENABLE_PATH_STYLE`
+
+### Auth / secrets
+
+- `BETTER_AUTH_ENABLED=true`
+- `AUTH_BACKEND=better-auth`
+- `BETTER_AUTH_SECRET`
+- `API_ENCRYPTION_KEY`
+
+### Fastify sidecar
+
+- `FASTIFY_PROXY_ENABLED=1`
+- `FASTIFY_PROXY_BASE_URL`
+- `FASTIFY_API_HOST`
+- `FASTIFY_API_PORT`
+- `NEXT_UPSTREAM_BASE_URL`
+- `CORS_ALLOWED_ORIGINS`
 
 Secret generation examples:
 
@@ -57,28 +91,23 @@ openssl rand -base64 48
 openssl rand -hex 32
 ```
 
-For the current "dev-container + host data stack" setup, recommended values are:
+If you are deploying from a container to data services exposed on the host, replace `127.0.0.1` with the reachable host gateway for your environment.
 
-1. `DATABASE_URL=postgresql://agentif_app:agentif_app@172.20.0.1:5432/agentifui_prod`
-2. `MIGRATOR_DATABASE_URL=postgresql://agentif:agentif@172.20.0.1:5432/agentifui_prod`
-3. `REDIS_URL=redis://172.20.0.1:6379/1`
-4. `S3_ENDPOINT=http://172.20.0.1:9000`
-5. `S3_BUCKET=agentifui-prod`
-6. `NEXT_PUBLIC_APP_URL` / `BETTER_AUTH_URL` set to your production access URL
+## 4. Create Isolated Production Data Namespaces
 
-## 4. Initialize Isolated Prod Data Resources
+### PostgreSQL database
 
-Create dedicated PostgreSQL database:
+Create a dedicated production database once:
 
 ```bash
-psql "postgresql://agentif:agentif@172.20.0.1:5432/postgres" -v ON_ERROR_STOP=1 <<'SQL'
+psql "postgresql://agentif:agentif@127.0.0.1:5432/postgres" -v ON_ERROR_STOP=1 <<'SQL'
 SELECT 'CREATE DATABASE agentifui_prod OWNER agentif'
 WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'agentifui_prod');
 \gexec
 SQL
 ```
 
-Create runtime DB role and grants in prod database:
+### Runtime role and grants
 
 ```bash
 set -a
@@ -128,7 +157,14 @@ SELECT format('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTI
 SQL
 ```
 
-Create dedicated MinIO bucket:
+### Redis namespace
+
+No separate Redis creation step is required, but production should use its own logical DB and prefix values. The template uses:
+
+- `REDIS_URL=redis://127.0.0.1:6379/1`
+- `REDIS_PREFIX=agentifui-prod`
+
+### MinIO bucket
 
 ```bash
 set -a
@@ -139,34 +175,50 @@ mc alias set local "$S3_ENDPOINT" "$S3_ACCESS_KEY_ID" "$S3_SECRET_ACCESS_KEY"
 mc mb --ignore-existing "local/$S3_BUCKET"
 ```
 
-Apply baseline schema migrations (fresh install):
+## 5. Apply SQL Migrations
+
+For a fresh environment, apply all public SQL migrations in lexical order:
 
 ```bash
 AGENTIF_ENV_FILE=.env.prod bash scripts/with-env-local.sh bash -lc '
-for migration in ./database/migrations/202602*.sql; do
+shopt -s nullglob
+for migration in database/migrations/*.sql; do
   psql "$MIGRATOR_DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"
 done
 '
 ```
 
-## 5. Deploy
+## 6. Deploy
 
-First deployment:
+Standard deploy:
 
 ```bash
-pnpm install --frozen-lockfile
 pnpm deploy
 ```
 
-What `pnpm deploy` does:
+What `pnpm deploy` currently does:
 
-1. Install dependencies (enabled by default).
-2. Build web/shared/api.
-3. Optionally run migrations.
-4. `pm2 startOrRestart ecosystem.prod.config.js --update-env`
-5. Run production smoke check.
+1. optionally runs `pnpm install --frozen-lockfile`
+2. runs `pnpm build:all`
+3. optionally runs a custom migration command
+4. runs `pm2 startOrRestart ecosystem.prod.config.js --update-env`
+5. runs `scripts/smoke-prod.sh`
 
-Run deploy with migration command:
+Useful switches:
+
+### Use a different env file
+
+```bash
+AGENTIF_PROD_ENV_FILE=/path/to/.env.prod pnpm deploy
+```
+
+### Skip dependency install
+
+```bash
+AGENTIF_DEPLOY_INSTALL=0 pnpm deploy
+```
+
+### Run a migration command during deploy
 
 ```bash
 AGENTIF_DEPLOY_RUN_MIGRATIONS=1 \
@@ -174,83 +226,116 @@ AGENTIF_DEPLOY_MIGRATION_COMMAND='your_migration_command_here' \
 pnpm deploy
 ```
 
-Useful toggles:
-
-1. Skip install:
-
-```bash
-AGENTIF_DEPLOY_INSTALL=0 pnpm deploy
-```
-
-2. Skip smoke:
+### Skip smoke check
 
 ```bash
 AGENTIF_DEPLOY_SMOKE=0 pnpm deploy
 ```
 
-## 6. Validate
+## 7. Validate
+
+Check process state:
 
 ```bash
 pm2 status AgentifUI-Prod AgentifUI-API-Prod
-pnpm smoke:prod
-curl -I http://127.0.0.1:3000
-curl -I http://127.0.0.1:3010
 ```
 
-## 7. Operations
+Run the built-in smoke:
 
-Start prod services (PM2):
+```bash
+pnpm smoke:prod
+```
+
+Minimal manual checks:
+
+```bash
+curl -I http://127.0.0.1:3000
+curl -fsS http://127.0.0.1:3010/healthz
+curl -i -X POST http://127.0.0.1:3000/api/internal/error-events/client \
+  -H 'content-type: application/json' \
+  --data '{}'
+```
+
+Expected results:
+
+- web home page responds
+- Fastify `/healthz` responds
+- `/api/internal/error-events/client` returns `400` in the normal proxied production path
+
+## 8. Operations
+
+PM2 helpers:
 
 ```bash
 pnpm pm2:prod:start
-```
-
-Restart prod services:
-
-```bash
 pnpm pm2:prod:restart
-```
-
-Stop prod services:
-
-```bash
 pnpm pm2:prod:stop
-```
-
-Remove prod PM2 entries:
-
-```bash
 pnpm pm2:prod:delete
 ```
 
-View logs:
+Logs:
 
 ```bash
 pm2 logs AgentifUI-Prod
 pm2 logs AgentifUI-API-Prod
 ```
 
-Run without PM2 (single-process/manual mode):
+Fastify boundary helpers:
+
+```bash
+pnpm fastify:cutover:on
+pnpm fastify:cutover:off
+```
+
+Manual process start without PM2:
 
 ```bash
 pnpm start:prod
 pnpm start:prod:api
 ```
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
-1. Login returns `403/503`
-   - Verify `BETTER_AUTH_SECRET`, `NEXT_PUBLIC_APP_URL`, and auth-related callback domains.
-2. White screen or static chunk load failure
-   - Re-run `pnpm deploy`; ensure smoke check passes.
-3. Storage upload/read failure
-   - Verify `S3_ENDPOINT`, `S3_BUCKET`, and MinIO credentials.
-4. API endpoints fail
-   - Check `FASTIFY_API_PORT` and PM2 status for `AgentifUI-API-Prod`.
+### Login or callback failures
 
-## 9. Non-goals of this runbook
+Check:
 
-1. No staging/develop deployment procedures.
-2. No legacy deploy flows.
-3. No migration-framework history discussion.
-4. No maintainer-only migration verification gates (`m5`/`m6`/`m9`) in public docs.
+- `BETTER_AUTH_SECRET`
+- `NEXT_PUBLIC_APP_URL`
+- `BETTER_AUTH_URL`
+- callback domain / reverse-proxy headers
+
+### API requests fail or bypass Fastify unexpectedly
+
+Check:
+
+- `FASTIFY_PROXY_ENABLED`
+- `FASTIFY_PROXY_BASE_URL`
+- `FASTIFY_API_PORT`
+- `NEXT_UPSTREAM_BASE_URL`
+- PM2 status for `AgentifUI-API-Prod`
+
+### Storage failures
+
+Check:
+
+- `S3_ENDPOINT`
+- `S3_BUCKET`
+- credentials
+- bucket existence
+
+### Fresh deploy cannot read tables
+
+Check:
+
+- migrations were applied to the correct database
+- `DATABASE_URL` and `MIGRATOR_DATABASE_URL` point to the same schema target
+- runtime grants were applied to `APP_DATABASE_ROLE`
+
+## 10. Non-goals
+
+This runbook does not cover:
+
+- internal maintainer migration rehearsal scripts
+- staging-specific release-process notes
+- legacy one-process deployment flows
