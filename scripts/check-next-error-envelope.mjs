@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -90,7 +89,9 @@ async function main() {
 
   console.error('next-error-envelope: violations found:');
   for (const violation of violations) {
-    console.error(`- ${violation.file}:${violation.line} -> ${violation.reason}`);
+    console.error(
+      `- ${violation.file}:${violation.line} -> ${violation.reason}`
+    );
   }
   process.exit(1);
 }

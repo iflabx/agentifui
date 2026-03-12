@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-
-import { readdirSync, readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const rootDir = process.cwd();

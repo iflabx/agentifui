@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import { ensureS3BucketExists } from './m7-shared.mjs'
+import { ensureS3BucketExists } from './m7-shared.mjs';
 
 async function run() {
-  const result = await ensureS3BucketExists()
+  const result = await ensureS3BucketExists();
   console.log(
     JSON.stringify(
       {
@@ -13,12 +13,12 @@ async function run() {
       null,
       2
     )
-  )
+  );
 }
 
 run().catch(error => {
   console.error(
     `[m7-s3-bootstrap] ${error instanceof Error ? error.message : String(error)}`
-  )
-  process.exitCode = 1
-})
+  );
+  process.exitCode = 1;
+});

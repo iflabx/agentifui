@@ -1,9 +1,12 @@
-import type { MutableRefObject } from 'react';
-
 import type { ChatResolvedAppConfig } from '@lib/hooks/chat-interface/app-config';
-import type { OnCreateConversationNodeEvent, UseCreateConversationReturn } from '@lib/hooks/create-conversation/types';
+import type {
+  OnCreateConversationNodeEvent,
+  UseCreateConversationReturn,
+} from '@lib/hooks/create-conversation/types';
 import type { ChatMessage } from '@lib/stores/chat-store';
 import type { PendingConversation } from '@lib/stores/pending-conversation-store';
+
+import type { MutableRefObject } from 'react';
 
 import {
   mapChatUploadFilesToDifyFiles,
@@ -14,22 +17,19 @@ import {
   syncChatStateAfterStreaming,
 } from './post-stream';
 import {
-  startExistingChatConversation,
-  startNewChatConversation,
-  prepareChatSubmitConversationState,
-} from './submit-start';
+  applyChatCompletionMetadata,
+  consumeChatAnswerStream,
+} from './stream-consume';
 import {
   finalizeChatSubmitStream,
   handleChatSubmitStreamError,
 } from './submit-recovery';
 import {
-  applyChatCompletionMetadata,
-  consumeChatAnswerStream,
-} from './stream-consume';
-import type {
-  ChatStreamCompletionData,
-  DifyLocalFile,
-} from './types';
+  prepareChatSubmitConversationState,
+  startExistingChatConversation,
+  startNewChatConversation,
+} from './submit-start';
+import type { ChatStreamCompletionData, DifyLocalFile } from './types';
 
 type ChatMessageUpdates = Partial<Omit<ChatMessage, 'id' | 'isUser'>>;
 
@@ -88,7 +88,9 @@ export async function executeChatSubmit(
   input.isSubmittingRef.current = true;
   input.setIsWaitingForResponse(true);
 
-  const messageAttachments = mapChatUploadFilesToMessageAttachments(input.files);
+  const messageAttachments = mapChatUploadFilesToMessageAttachments(
+    input.files
+  );
   const userMessage = input.addMessage({
     text: input.message,
     isUser: true,

@@ -45,7 +45,6 @@ export interface DifyLocalFile {
   upload_file_id: string;
 }
 
-
 export interface ChatStreamingCheckSnapshot {
   messageId: string;
   content: string;

@@ -1,32 +1,33 @@
 #!/usr/bin/env node
-import { Client } from 'pg'
+import { Client } from 'pg';
+
 import {
   assertSourceTargetIsolation,
   parseBooleanEnv,
   parsePositiveInt,
   resolveM7SourceDatabaseUrl,
   resolveM7TargetDatabaseUrl,
-} from './m7-shared.mjs'
+} from './m7-shared.mjs';
 
-const sourceDatabaseUrl = resolveM7SourceDatabaseUrl()
-const targetDatabaseUrl = resolveM7TargetDatabaseUrl()
+const sourceDatabaseUrl = resolveM7SourceDatabaseUrl();
+const targetDatabaseUrl = resolveM7TargetDatabaseUrl();
 const allowSameSourceTarget = parseBooleanEnv(
   process.env.M7_ALLOW_SAME_SOURCE_TARGET,
   false
-)
-const sampleUsers = parsePositiveInt(process.env.M7_DUAL_READ_SAMPLE_USERS, 30)
-const rowLimit = parsePositiveInt(process.env.M7_DUAL_READ_ROW_LIMIT, 50)
+);
+const sampleUsers = parsePositiveInt(process.env.M7_DUAL_READ_SAMPLE_USERS, 30);
+const rowLimit = parsePositiveInt(process.env.M7_DUAL_READ_ROW_LIMIT, 50);
 const sampleStrategyRaw =
-  process.env.M7_DUAL_READ_SAMPLE_STRATEGY?.trim().toLowerCase() || 'sample'
-const sampleStrategy = sampleStrategyRaw === 'all' ? 'all' : 'sample'
+  process.env.M7_DUAL_READ_SAMPLE_STRATEGY?.trim().toLowerCase() || 'sample';
+const sampleStrategy = sampleStrategyRaw === 'all' ? 'all' : 'sample';
 const requireFullCoverage = parseBooleanEnv(
   process.env.M7_DUAL_READ_REQUIRE_FULL_COVERAGE,
   false
-)
-const minCoverageRatioRaw = Number(process.env.M7_DUAL_READ_MIN_COVERAGE || 0)
+);
+const minCoverageRatioRaw = Number(process.env.M7_DUAL_READ_MIN_COVERAGE || 0);
 const minCoverageRatio = Number.isFinite(minCoverageRatioRaw)
   ? Math.min(1, Math.max(0, minCoverageRatioRaw))
-  : 0
+  : 0;
 
 const userScopedPaths = [
   {
@@ -111,7 +112,7 @@ const userScopedPaths = [
     `,
     params: userId => [userId],
   },
-]
+];
 
 const globalPaths = [
   {
@@ -159,7 +160,7 @@ const globalPaths = [
     `,
     params: () => [],
   },
-]
+];
 
 async function loadTableSet(client) {
   const { rows } = await client.query(
@@ -168,16 +169,16 @@ async function loadTableSet(client) {
       FROM information_schema.tables
       WHERE table_schema = 'public'
     `
-  )
-  return new Set(rows.map(row => row.table_name))
+  );
+  return new Set(rows.map(row => row.table_name));
 }
 
 async function queryReadHash(client, sql, params) {
-  const { rows } = await client.query(sql, params)
+  const { rows } = await client.query(sql, params);
   return {
     count: Number(rows[0]?.c || 0),
     checksum: rows[0]?.checksum || null,
-  }
+  };
 }
 
 async function run() {
@@ -186,34 +187,34 @@ async function run() {
     targetDatabaseUrl,
     allowSameSourceTarget,
     context: 'm7-dual-read-verify',
-  })
+  });
 
-  const sourceClient = new Client({ connectionString: sourceDatabaseUrl })
-  const targetClient = new Client({ connectionString: targetDatabaseUrl })
-  await sourceClient.connect()
-  await targetClient.connect()
+  const sourceClient = new Client({ connectionString: sourceDatabaseUrl });
+  const targetClient = new Client({ connectionString: targetDatabaseUrl });
+  await sourceClient.connect();
+  await targetClient.connect();
 
   try {
     const totalUsersResult = await sourceClient.query(`
       SELECT COUNT(*)::bigint AS c
       FROM profiles
-    `)
-    const totalUsers = Number(totalUsersResult.rows[0]?.c || 0)
+    `);
+    const totalUsers = Number(totalUsersResult.rows[0]?.c || 0);
 
     const [sourceTables, targetTables] = await Promise.all([
       loadTableSet(sourceClient),
       loadTableSet(targetClient),
-    ])
+    ]);
     const sharedTableNames = new Set(
       [...sourceTables].filter(tableName => targetTables.has(tableName))
-    )
+    );
 
     const activeUserPaths = userScopedPaths.filter(path =>
       sharedTableNames.has(path.table)
-    )
+    );
     const activeGlobalPaths = globalPaths.filter(path =>
       sharedTableNames.has(path.table)
-    )
+    );
     const skippedPaths = [
       ...userScopedPaths.filter(path => !sharedTableNames.has(path.table)),
       ...globalPaths.filter(path => !sharedTableNames.has(path.table)),
@@ -221,7 +222,7 @@ async function run() {
       id: path.id,
       table: path.table,
       reason: 'table_not_shared_between_source_target',
-    }))
+    }));
 
     const sampleUserRows =
       sampleStrategy === 'all'
@@ -238,31 +239,31 @@ async function run() {
               LIMIT $1
             `,
             [sampleUsers]
-          )
-    const sampledUserIds = sampleUserRows.rows.map(row => row.id)
+          );
+    const sampledUserIds = sampleUserRows.rows.map(row => row.id);
     const coverageRatio =
       totalUsers === 0
         ? 1
-        : Number((sampledUserIds.length / totalUsers).toFixed(6))
+        : Number((sampledUserIds.length / totalUsers).toFixed(6));
 
-    const pathSummary = []
-    const mismatches = []
+    const pathSummary = [];
+    const mismatches = [];
 
     for (const path of activeUserPaths) {
-      let comparedUsers = 0
-      let mismatchCount = 0
+      let comparedUsers = 0;
+      let mismatchCount = 0;
       for (const userId of sampledUserIds) {
         const [sourceResult, targetResult] = await Promise.all([
           queryReadHash(sourceClient, path.sql, path.params(userId)),
           queryReadHash(targetClient, path.sql, path.params(userId)),
-        ])
-        comparedUsers += 1
+        ]);
+        comparedUsers += 1;
 
         const matched =
           sourceResult.count === targetResult.count &&
-          sourceResult.checksum === targetResult.checksum
+          sourceResult.checksum === targetResult.checksum;
         if (!matched) {
-          mismatchCount += 1
+          mismatchCount += 1;
           if (mismatches.length < 100) {
             mismatches.push({
               pathId: path.id,
@@ -272,7 +273,7 @@ async function run() {
               targetCount: targetResult.count,
               sourceChecksum: sourceResult.checksum,
               targetChecksum: targetResult.checksum,
-            })
+            });
           }
         }
       }
@@ -283,17 +284,17 @@ async function run() {
         table: path.table,
         comparedUsers,
         mismatchCount,
-      })
+      });
     }
 
     for (const path of activeGlobalPaths) {
       const [sourceResult, targetResult] = await Promise.all([
         queryReadHash(sourceClient, path.sql, path.params()),
         queryReadHash(targetClient, path.sql, path.params()),
-      ])
+      ]);
       const matched =
         sourceResult.count === targetResult.count &&
-        sourceResult.checksum === targetResult.checksum
+        sourceResult.checksum === targetResult.checksum;
       if (!matched && mismatches.length < 100) {
         mismatches.push({
           pathId: path.id,
@@ -302,7 +303,7 @@ async function run() {
           targetCount: targetResult.count,
           sourceChecksum: sourceResult.checksum,
           targetChecksum: targetResult.checksum,
-        })
+        });
       }
 
       pathSummary.push({
@@ -311,7 +312,7 @@ async function run() {
         table: path.table,
         comparedUsers: 0,
         mismatchCount: matched ? 0 : 1,
-      })
+      });
     }
 
     const checks = {
@@ -328,7 +329,7 @@ async function run() {
       globalPathsMatch: pathSummary
         .filter(item => item.scope === 'global')
         .every(item => item.mismatchCount === 0),
-    }
+    };
 
     const payload = {
       ok: Object.values(checks).every(Boolean),
@@ -351,21 +352,21 @@ async function run() {
       paths: pathSummary,
       skippedPaths,
       mismatchSample: mismatches.slice(0, 20),
-    }
+    };
 
-    console.log(JSON.stringify(payload, null, 2))
+    console.log(JSON.stringify(payload, null, 2));
     if (!payload.ok) {
-      process.exitCode = 1
+      process.exitCode = 1;
     }
   } finally {
-    await sourceClient.end().catch(() => {})
-    await targetClient.end().catch(() => {})
+    await sourceClient.end().catch(() => {});
+    await targetClient.end().catch(() => {});
   }
 }
 
 run().catch(error => {
   console.error(
     `[m7-dual-read-verify] ${error instanceof Error ? error.message : String(error)}`
-  )
-  process.exitCode = 1
-})
+  );
+  process.exitCode = 1;
+});

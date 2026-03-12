@@ -1,13 +1,13 @@
 'use client';
 
 import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
+import { useChatWidth, useInputHeightReset } from '@lib/hooks';
 import {
   formatChatUiError,
   reportTraceableClientError,
 } from '@lib/hooks/chat-interface/error-utils';
 import { isChatSubmitResult } from '@lib/hooks/chat-interface/guards';
 import type { ChatSubmitResult } from '@lib/hooks/chat-interface/types';
-import { useChatWidth, useInputHeightReset } from '@lib/hooks';
 import { useChatInputRouteSync } from '@lib/hooks/use-chat-input-route-sync';
 import { useCurrentApp } from '@lib/hooks/use-current-app';
 import { uploadDifyFile } from '@lib/services/dify/file-service';
@@ -322,11 +322,9 @@ export const ChatInput = ({
           if (!submitResult.surfaced) {
             setMessage(savedMessage);
             useAttachmentStore.getState().setFiles(savedAttachments);
-            useNotificationStore.getState().showNotification(
-              submitFailureMessage,
-              'error',
-              5000
-            );
+            useNotificationStore
+              .getState()
+              .showNotification(submitFailureMessage, 'error', 5000);
           }
           return;
         }
@@ -355,7 +353,8 @@ export const ChatInput = ({
       void reportTraceableClientError({
         code: errorCode || 'CHAT_INPUT_SUBMIT_THROWN',
         userMessage: errorMessage,
-        developerMessage: error instanceof Error ? error.message : String(error),
+        developerMessage:
+          error instanceof Error ? error.message : String(error),
         requestId,
         context: {
           component: 'chat-input',

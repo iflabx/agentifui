@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 
-import { useChatStopHandler } from './stop-handler';
 import { executeChatStop } from './stop-flow';
+import { useChatStopHandler } from './stop-handler';
 
 jest.mock('./stop-flow', () => ({
   executeChatStop: jest.fn(),

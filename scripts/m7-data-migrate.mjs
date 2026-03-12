@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-import pg from 'pg'
-import { performance } from 'node:perf_hooks'
+import { performance } from 'node:perf_hooks';
+import pg from 'pg';
+
 import {
   assertSourceTargetIsolation,
   buildPublicTableRef,
@@ -10,93 +11,97 @@ import {
   resolveM7SourceDatabaseUrl,
   resolveM7TableList,
   resolveM7TargetDatabaseUrl,
-} from './m7-shared.mjs'
+} from './m7-shared.mjs';
 
-const { Client, types } = pg
+const { Client, types } = pg;
 // Preserve timestamp precision during migration; JS Date truncates microseconds.
-types.setTypeParser(1114, value => value)
-types.setTypeParser(1184, value => value)
+types.setTypeParser(1114, value => value);
+types.setTypeParser(1184, value => value);
 
-const sourceDatabaseUrl = resolveM7SourceDatabaseUrl()
-const targetDatabaseUrl = resolveM7TargetDatabaseUrl()
-const tableNames = resolveM7TableList()
-const dryRun = parseBooleanEnv(process.env.M7_DRY_RUN, true)
+const sourceDatabaseUrl = resolveM7SourceDatabaseUrl();
+const targetDatabaseUrl = resolveM7TargetDatabaseUrl();
+const tableNames = resolveM7TableList();
+const dryRun = parseBooleanEnv(process.env.M7_DRY_RUN, true);
 const allowSameSourceTarget = parseBooleanEnv(
   process.env.M7_ALLOW_SAME_SOURCE_TARGET,
   false
-)
-const batchSize = parsePositiveInt(process.env.M7_BATCH_SIZE, 1000)
+);
+const batchSize = parsePositiveInt(process.env.M7_BATCH_SIZE, 1000);
 
 function buildOrderExpressionByText(pkColumns) {
-  return pkColumns
-    .map(column => `${quoteIdent(column)}::text ASC`)
-    .join(', ')
+  return pkColumns.map(column => `${quoteIdent(column)}::text ASC`).join(', ');
 }
 
-function buildKeysetWhereClause(pkColumns, cursorPkValues, startParamIndex = 1) {
+function buildKeysetWhereClause(
+  pkColumns,
+  cursorPkValues,
+  startParamIndex = 1
+) {
   if (!cursorPkValues || cursorPkValues.length === 0) {
     return {
       sql: '',
       params: [],
-    }
+    };
   }
 
   const lhsTuple = `(${pkColumns
     .map(column => `${quoteIdent(column)}::text`)
-    .join(', ')})`
+    .join(', ')})`;
   const rhsTuple = `(${cursorPkValues
     .map((_, index) => `$${startParamIndex + index}::text`)
-    .join(', ')})`
+    .join(', ')})`;
   return {
     sql: `WHERE ${lhsTuple} > ${rhsTuple}`,
     params: cursorPkValues,
-  }
+  };
 }
 
 function buildUpsertSql(tableName, columns, pkColumns, rowCount) {
-  const tableRef = buildPublicTableRef(tableName)
-  const columnSql = columns.map(column => quoteIdent(column)).join(', ')
-  const pkSql = pkColumns.map(column => quoteIdent(column)).join(', ')
-  const nonPkColumns = columns.filter(column => !pkColumns.includes(column))
-  const targetTableName = quoteIdent(tableName)
+  const tableRef = buildPublicTableRef(tableName);
+  const columnSql = columns.map(column => quoteIdent(column)).join(', ');
+  const pkSql = pkColumns.map(column => quoteIdent(column)).join(', ');
+  const nonPkColumns = columns.filter(column => !pkColumns.includes(column));
+  const targetTableName = quoteIdent(tableName);
 
-  const placeholders = []
-  const values = []
+  const placeholders = [];
+  const values = [];
   for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
-    const rowPlaceholders = []
+    const rowPlaceholders = [];
     for (let columnIndex = 0; columnIndex < columns.length; columnIndex += 1) {
-      rowPlaceholders.push(`$${values.length + columnIndex + 1}`)
+      rowPlaceholders.push(`$${values.length + columnIndex + 1}`);
     }
-    placeholders.push(`(${rowPlaceholders.join(', ')})`)
-    values.push(...columns.map(column => ({ column, rowIndex })))
+    placeholders.push(`(${rowPlaceholders.join(', ')})`);
+    values.push(...columns.map(column => ({ column, rowIndex })));
   }
 
   const onConflictSql =
     nonPkColumns.length > 0
       ? `DO UPDATE SET ${nonPkColumns
-          .map(column => `${quoteIdent(column)} = EXCLUDED.${quoteIdent(column)}`)
+          .map(
+            column => `${quoteIdent(column)} = EXCLUDED.${quoteIdent(column)}`
+          )
           .join(', ')} WHERE ${nonPkColumns
           .map(
             column =>
               `${targetTableName}.${quoteIdent(column)} IS DISTINCT FROM EXCLUDED.${quoteIdent(column)}`
           )
           .join(' OR ')}`
-      : 'DO NOTHING'
+      : 'DO NOTHING';
 
   return {
     text: `INSERT INTO ${tableRef} (${columnSql}) VALUES ${placeholders.join(', ')} ON CONFLICT (${pkSql}) ${onConflictSql}`,
     columns,
-  }
+  };
 }
 
 function buildBatchValues(rows, columns) {
-  const values = []
+  const values = [];
   for (const row of rows) {
     for (const column of columns) {
-      values.push(row[column])
+      values.push(row[column]);
     }
   }
-  return values
+  return values;
 }
 
 async function getColumns(client, tableName) {
@@ -109,8 +114,8 @@ async function getColumns(client, tableName) {
       ORDER BY ordinal_position
     `,
     [tableName]
-  )
-  return rows.map(row => row.column_name)
+  );
+  return rows.map(row => row.column_name);
 }
 
 async function getPrimaryKeyColumns(client, tableName) {
@@ -127,8 +132,8 @@ async function getPrimaryKeyColumns(client, tableName) {
       ORDER BY kcu.ordinal_position
     `,
     [tableName]
-  )
-  return rows.map(row => row.column_name)
+  );
+  return rows.map(row => row.column_name);
 }
 
 async function migrateTable({
@@ -138,49 +143,55 @@ async function migrateTable({
   requestedBatchSize,
   dryRunMode,
 }) {
-  const sourceColumns = await getColumns(sourceClient, tableName)
-  const targetColumns = new Set(await getColumns(targetClient, tableName))
-  const primaryKeyColumns = await getPrimaryKeyColumns(targetClient, tableName)
+  const sourceColumns = await getColumns(sourceClient, tableName);
+  const targetColumns = new Set(await getColumns(targetClient, tableName));
+  const primaryKeyColumns = await getPrimaryKeyColumns(targetClient, tableName);
 
   if (sourceColumns.length === 0) {
-    throw new Error(`table ${tableName} not found in source database`)
+    throw new Error(`table ${tableName} not found in source database`);
   }
   if (primaryKeyColumns.length === 0) {
-    throw new Error(`table ${tableName} has no primary key in target database`)
+    throw new Error(`table ${tableName} has no primary key in target database`);
   }
 
-  const commonColumns = sourceColumns.filter(column => targetColumns.has(column))
+  const commonColumns = sourceColumns.filter(column =>
+    targetColumns.has(column)
+  );
   if (commonColumns.length === 0) {
-    throw new Error(`table ${tableName} has no common columns`)
+    throw new Error(`table ${tableName} has no common columns`);
   }
 
   for (const pkColumn of primaryKeyColumns) {
     if (!commonColumns.includes(pkColumn)) {
-      throw new Error(`table ${tableName} primary key ${pkColumn} missing in source`)
+      throw new Error(
+        `table ${tableName} primary key ${pkColumn} missing in source`
+      );
     }
   }
 
-  const tableRef = buildPublicTableRef(tableName)
+  const tableRef = buildPublicTableRef(tableName);
   const countResult = await sourceClient.query(
     `SELECT COUNT(*)::bigint AS c FROM ${tableRef}`
-  )
-  const sourceCount = Number(countResult.rows[0]?.c || 0)
-  const maxRowsByParams = Math.max(1, Math.floor(60000 / commonColumns.length))
+  );
+  const sourceCount = Number(countResult.rows[0]?.c || 0);
+  const maxRowsByParams = Math.max(1, Math.floor(60000 / commonColumns.length));
   const effectiveBatchSize = Math.max(
     1,
     Math.min(requestedBatchSize, maxRowsByParams)
-  )
+  );
 
-  const startedAt = performance.now()
-  let processedRows = 0
+  const startedAt = performance.now();
+  let processedRows = 0;
   if (!dryRunMode && sourceCount > 0) {
-    const columnSql = commonColumns.map(column => quoteIdent(column)).join(', ')
-    const orderSql = buildOrderExpressionByText(primaryKeyColumns)
-    let cursorPkValues = null
+    const columnSql = commonColumns
+      .map(column => quoteIdent(column))
+      .join(', ');
+    const orderSql = buildOrderExpressionByText(primaryKeyColumns);
+    let cursorPkValues = null;
 
     while (true) {
-      const keyset = buildKeysetWhereClause(primaryKeyColumns, cursorPkValues)
-      const limitParamIndex = keyset.params.length + 1
+      const keyset = buildKeysetWhereClause(primaryKeyColumns, cursorPkValues);
+      const limitParamIndex = keyset.params.length + 1;
       const sourceBatch = await sourceClient.query(
         `SELECT ${columnSql}
            FROM ${tableRef}
@@ -188,10 +199,10 @@ async function migrateTable({
           ORDER BY ${orderSql}
           LIMIT $${limitParamIndex}`,
         [...keyset.params, effectiveBatchSize]
-      )
-      const rows = sourceBatch.rows
+      );
+      const rows = sourceBatch.rows;
       if (rows.length === 0) {
-        break
+        break;
       }
 
       const upsert = buildUpsertSql(
@@ -199,22 +210,22 @@ async function migrateTable({
         commonColumns,
         primaryKeyColumns,
         rows.length
-      )
-      const values = buildBatchValues(rows, upsert.columns)
-      await targetClient.query('BEGIN')
+      );
+      const values = buildBatchValues(rows, upsert.columns);
+      await targetClient.query('BEGIN');
       try {
-        await targetClient.query(upsert.text, values)
-        await targetClient.query('COMMIT')
+        await targetClient.query(upsert.text, values);
+        await targetClient.query('COMMIT');
       } catch (error) {
-        await targetClient.query('ROLLBACK')
-        throw error
+        await targetClient.query('ROLLBACK');
+        throw error;
       }
 
-      processedRows += rows.length
-      const lastRow = rows[rows.length - 1]
+      processedRows += rows.length;
+      const lastRow = rows[rows.length - 1];
       cursorPkValues = primaryKeyColumns.map(column =>
         String(lastRow[column] ?? '')
-      )
+      );
     }
   }
 
@@ -227,7 +238,7 @@ async function migrateTable({
     primaryKeyColumns,
     batchSize: effectiveBatchSize,
     elapsedMs: Number((performance.now() - startedAt).toFixed(2)),
-  }
+  };
 }
 
 async function run() {
@@ -236,15 +247,15 @@ async function run() {
     targetDatabaseUrl,
     allowSameSourceTarget,
     context: 'm7-data-migrate',
-  })
+  });
 
-  const sourceClient = new Client({ connectionString: sourceDatabaseUrl })
-  const targetClient = new Client({ connectionString: targetDatabaseUrl })
-  await sourceClient.connect()
-  await targetClient.connect()
+  const sourceClient = new Client({ connectionString: sourceDatabaseUrl });
+  const targetClient = new Client({ connectionString: targetDatabaseUrl });
+  await sourceClient.connect();
+  await targetClient.connect();
 
-  const startedAt = performance.now()
-  const tableStats = []
+  const startedAt = performance.now();
+  const tableStats = [];
   try {
     for (const tableName of tableNames) {
       // Keep migration deterministic by table order to reduce FK surprises.
@@ -254,18 +265,18 @@ async function run() {
         tableName,
         requestedBatchSize: batchSize,
         dryRunMode: dryRun,
-      })
-      tableStats.push(tableResult)
+      });
+      tableStats.push(tableResult);
     }
 
     const totalSourceRows = tableStats.reduce(
       (sum, item) => sum + item.sourceCount,
       0
-    )
+    );
     const totalProcessedRows = tableStats.reduce(
       (sum, item) => sum + item.processedRows,
       0
-    )
+    );
 
     console.log(
       JSON.stringify(
@@ -284,16 +295,16 @@ async function run() {
         null,
         2
       )
-    )
+    );
   } finally {
-    await sourceClient.end().catch(() => {})
-    await targetClient.end().catch(() => {})
+    await sourceClient.end().catch(() => {});
+    await targetClient.end().catch(() => {});
   }
 }
 
 run().catch(error => {
   console.error(
     `[m7-data-migrate] ${error instanceof Error ? error.message : String(error)}`
-  )
-  process.exitCode = 1
-})
+  );
+  process.exitCode = 1;
+});

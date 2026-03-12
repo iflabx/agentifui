@@ -1,8 +1,8 @@
+import type { ChatMessage } from '@lib/stores/chat-store';
+import type { ServiceInstance } from '@lib/types/database';
+
 import { useCallback } from 'react';
 import type { MutableRefObject } from 'react';
-
-import type { ServiceInstance } from '@lib/types/database';
-import type { ChatMessage } from '@lib/stores/chat-store';
 
 import { executeChatStop } from './stop-flow';
 

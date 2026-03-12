@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -8,7 +7,10 @@ const nextSessionOptionsFile = path.join(
   rootDir,
   'lib/server/pg/session-options.ts'
 );
-const fastifyPgContextFile = path.join(rootDir, 'apps/api/src/lib/pg-context.ts');
+const fastifyPgContextFile = path.join(
+  rootDir,
+  'apps/api/src/lib/pg-context.ts'
+);
 
 function assertPattern({ source, pattern, message, filePath }) {
   if (pattern.test(source)) {

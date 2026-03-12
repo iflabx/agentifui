@@ -44,7 +44,8 @@ export function ClientErrorMonitor() {
       const error = event.error;
       void reportClientError({
         code: 'CLIENT_WINDOW_ERROR',
-        userMessage: event.message || error?.message || 'Unexpected client error',
+        userMessage:
+          event.message || error?.message || 'Unexpected client error',
         developerMessage:
           error instanceof Error
             ? error.stack || error.message
@@ -80,7 +81,10 @@ export function ClientErrorMonitor() {
 
     return () => {
       window.removeEventListener('error', handleWindowError);
-      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+      window.removeEventListener(
+        'unhandledrejection',
+        handleUnhandledRejection
+      );
     };
   }, []);
 

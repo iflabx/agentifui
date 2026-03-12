@@ -80,12 +80,14 @@ export function handleChatSubmitStreamError(
       console.log(
         `[handleSubmit] Save user message in error handler, ID=${input.userMessage.id}`
       );
-      void input.saveMessage(input.userMessage, input.finalDbConvUUID).catch(error => {
-        console.error(
-          '[handleSubmit] Failed to save user message in error handler:',
-          error
-        );
-      });
+      void input
+        .saveMessage(input.userMessage, input.finalDbConvUUID)
+        .catch(error => {
+          console.error(
+            '[handleSubmit] Failed to save user message in error handler:',
+            error
+          );
+        });
     }
 
     console.log(
@@ -179,7 +181,10 @@ export async function finalizeChatSubmitStream(
 
       if (latestMessage.wasManuallyStopped) {
         try {
-          await input.saveStoppedAssistantMessage(latestMessage, currentDbConvId);
+          await input.saveStoppedAssistantMessage(
+            latestMessage,
+            currentDbConvId
+          );
         } catch (error) {
           console.error(
             '[handleSubmit-finally] Failed to save stopped assistant message:',

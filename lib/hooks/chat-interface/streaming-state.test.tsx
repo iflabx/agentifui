@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 
-import { useChatStreamingState } from './streaming-state';
 import { runStreamingStateConsistencyCheck } from './streaming-check';
+import { useChatStreamingState } from './streaming-state';
 
 jest.mock('./streaming-check', () => ({
   runStreamingStateConsistencyCheck: jest.fn(),

@@ -1,8 +1,8 @@
-import type { MutableRefObject } from 'react';
-
 import type { ChatMessage } from '@lib/stores/chat-store';
 import { useChatStore } from '@lib/stores/chat-store';
 import type { PendingConversation } from '@lib/stores/pending-conversation-store';
+
+import type { MutableRefObject } from 'react';
 
 import type { ChatStreamCompletionData } from './types';
 

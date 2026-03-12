@@ -1,14 +1,14 @@
 'use client';
 
+import { FileUploadField } from '@components/workflow/workflow-input-form/file-upload-field';
+import { FormField } from '@components/workflow/workflow-input-form/form-field';
+import { validateFormData } from '@components/workflow/workflow-input-form/validation';
 import {
   formatChatUiError,
   reportTraceableClientError,
 } from '@lib/hooks/chat-interface/error-utils';
 import { isChatSubmitResult } from '@lib/hooks/chat-interface/guards';
 import type { ChatSubmitResult } from '@lib/hooks/chat-interface/types';
-import { FileUploadField } from '@components/workflow/workflow-input-form/file-upload-field';
-import { FormField } from '@components/workflow/workflow-input-form/form-field';
-import { validateFormData } from '@components/workflow/workflow-input-form/validation';
 import { useChatWidth } from '@lib/hooks/use-chat-width';
 import { useCurrentApp } from '@lib/hooks/use-current-app';
 import type { DifyUserInputFormItem } from '@lib/services/dify/types';
@@ -283,11 +283,9 @@ export function ChatflowInputArea({
           });
 
           if (!submitResult.surfaced) {
-            useNotificationStore.getState().showNotification(
-              submitFailureMessage,
-              'error',
-              5000
-            );
+            useNotificationStore
+              .getState()
+              .showNotification(submitFailureMessage, 'error', 5000);
           }
           return;
         }
@@ -305,7 +303,8 @@ export function ChatflowInputArea({
         void reportTraceableClientError({
           code: errorCode || 'CHATFLOW_SUBMIT_THROWN',
           userMessage: errorMessage,
-          developerMessage: error instanceof Error ? error.message : String(error),
+          developerMessage:
+            error instanceof Error ? error.message : String(error),
           requestId,
           context: {
             component: 'chatflow-input-area',
@@ -316,11 +315,9 @@ export function ChatflowInputArea({
             fileCount: files.length,
           },
         });
-        useNotificationStore.getState().showNotification(
-          errorMessage,
-          'error',
-          5000
-        );
+        useNotificationStore
+          .getState()
+          .showNotification(errorMessage, 'error', 5000);
       }
     },
     [

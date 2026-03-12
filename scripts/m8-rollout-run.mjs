@@ -1,73 +1,83 @@
 #!/usr/bin/env node
-import { open, unlink, writeFile } from 'node:fs/promises'
-import path from 'node:path'
-import { performance } from 'node:perf_hooks'
-import { parseBooleanEnv, parsePositiveInt } from './m7-shared.mjs'
+import { open, unlink, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { performance } from 'node:perf_hooks';
+
+import { parseBooleanEnv, parsePositiveInt } from './m7-shared.mjs';
+import { runStage } from './m8-rollout-stage.mjs';
 import {
   ensureDir,
   nowTimestamp,
   parseRolloutStages,
   writeJson,
   writeText,
-} from './m8-shared.mjs'
-import { runStage } from './m8-rollout-stage.mjs'
+} from './m8-shared.mjs';
 
 function renderSummaryMarkdown(summary) {
-  const lines = []
-  lines.push('# M8 Rollout Summary')
-  lines.push('')
-  lines.push(`- Timestamp: ${summary.timestamp}`)
-  lines.push(`- Report Dir: ${summary.reportDir}`)
-  lines.push(`- Overall: ${summary.ok ? 'PASS' : 'FAIL'}`)
+  const lines = [];
+  lines.push('# M8 Rollout Summary');
+  lines.push('');
+  lines.push(`- Timestamp: ${summary.timestamp}`);
+  lines.push(`- Report Dir: ${summary.reportDir}`);
+  lines.push(`- Overall: ${summary.ok ? 'PASS' : 'FAIL'}`);
   lines.push(
     `- Completed Stages: ${summary.completedStages.length}/${summary.plannedStages.length}`
-  )
-  lines.push('')
-  lines.push('| Stage | Observe(min) | Status | Outcome | Duration(ms) |')
-  lines.push('| --- | ---: | --- | --- | ---: |')
+  );
+  lines.push('');
+  lines.push('| Stage | Observe(min) | Status | Outcome | Duration(ms) |');
+  lines.push('| --- | ---: | --- | --- | ---: |');
   for (const stage of summary.stageResults) {
     lines.push(
       `| ${stage.stage.label} | ${stage.stage.observeMinutes} | ${stage.ok ? 'PASS' : 'FAIL'} | ${stage.stageOutcome} | ${stage.totalDurationMs} |`
-    )
+    );
   }
-  lines.push('')
+  lines.push('');
   if (summary.failedStage) {
-    lines.push('## Failed Stage')
-    lines.push('')
-    lines.push(`- ${summary.failedStage.stage.label}`)
-    lines.push(`- Stage Dir: ${summary.failedStage.stageDir}`)
-    lines.push('')
+    lines.push('## Failed Stage');
+    lines.push('');
+    lines.push(`- ${summary.failedStage.stage.label}`);
+    lines.push(`- Stage Dir: ${summary.failedStage.stageDir}`);
+    lines.push('');
   }
-  return lines.join('\n')
+  return lines.join('\n');
 }
 
 async function run() {
-  const plannedStages = parseRolloutStages(process.env.M8_ROLLOUT_STAGES)
-  const stopAfterPercent = parsePositiveInt(process.env.M8_STOP_AFTER_PERCENT, 0)
-  const startFromPercent = parsePositiveInt(process.env.M8_START_FROM_PERCENT, 0)
-  const dryRun = parseBooleanEnv(process.env.M8_DRY_RUN, false)
-  const approved = parseBooleanEnv(process.env.M8_APPROVED, false)
+  const plannedStages = parseRolloutStages(process.env.M8_ROLLOUT_STAGES);
+  const stopAfterPercent = parsePositiveInt(
+    process.env.M8_STOP_AFTER_PERCENT,
+    0
+  );
+  const startFromPercent = parsePositiveInt(
+    process.env.M8_START_FROM_PERCENT,
+    0
+  );
+  const dryRun = parseBooleanEnv(process.env.M8_DRY_RUN, false);
+  const approved = parseBooleanEnv(process.env.M8_APPROVED, false);
   const lockFilePath =
     process.env.M8_LOCK_FILE?.trim() ||
-    path.join(process.cwd(), '.m8-rollout.lock')
-  const allowDryRunPass = parseBooleanEnv(process.env.M8_ALLOW_DRY_RUN_PASS, false)
+    path.join(process.cwd(), '.m8-rollout.lock');
+  const allowDryRunPass = parseBooleanEnv(
+    process.env.M8_ALLOW_DRY_RUN_PASS,
+    false
+  );
 
   const reportDir =
     process.env.M8_REPORT_DIR?.trim() ||
-    path.join(process.cwd(), 'artifacts', 'm8', nowTimestamp())
-  await ensureDir(reportDir)
+    path.join(process.cwd(), 'artifacts', 'm8', nowTimestamp());
+  await ensureDir(reportDir);
 
   if (!dryRun && !approved) {
     throw new Error(
       'M8 rollout apply requires explicit approval: set M8_APPROVED=1'
-    )
+    );
   }
 
-  let lockHandle = null
+  let lockHandle = null;
   try {
-    lockHandle = await open(lockFilePath, 'wx')
+    lockHandle = await open(lockFilePath, 'wx');
   } catch {
-    throw new Error(`M8 rollout lock already held: ${lockFilePath}`)
+    throw new Error(`M8 rollout lock already held: ${lockFilePath}`);
   }
 
   await writeFile(
@@ -83,17 +93,17 @@ async function run() {
       2
     ),
     'utf8'
-  )
+  );
 
-  const startedAt = performance.now()
-  const stageResults = []
+  const startedAt = performance.now();
+  const stageResults = [];
   try {
     for (const stage of plannedStages) {
       if (startFromPercent > 0 && stage.percent < startFromPercent) {
-        continue
+        continue;
       }
       if (stopAfterPercent > 0 && stage.percent > stopAfterPercent) {
-        break
+        break;
       }
 
       const stageSummary = await runStage({
@@ -103,21 +113,21 @@ async function run() {
         stageSlug: `stage-${String(stage.percent).padStart(3, '0')}`,
         stageName: `${stage.percent}%`,
         allowDryRunPass,
-      })
+      });
 
-      stageResults.push(stageSummary)
+      stageResults.push(stageSummary);
       if (!stageSummary.ok) {
-        break
+        break;
       }
     }
   } finally {
     if (lockHandle) {
-      await lockHandle.close().catch(() => {})
+      await lockHandle.close().catch(() => {});
     }
-    await unlink(lockFilePath).catch(() => {})
+    await unlink(lockFilePath).catch(() => {});
   }
 
-  const failedStage = stageResults.find(stage => !stage.ok) || null
+  const failedStage = stageResults.find(stage => !stage.ok) || null;
   const summary = {
     ok: failedStage === null,
     timestamp: new Date().toISOString(),
@@ -144,20 +154,23 @@ async function run() {
       totalDurationMs: stage.totalDurationMs,
     })),
     totalDurationMs: Number((performance.now() - startedAt).toFixed(2)),
-  }
+  };
 
-  await writeJson(path.join(reportDir, 'summary.json'), summary)
-  await writeText(path.join(reportDir, 'summary.md'), renderSummaryMarkdown(summary))
+  await writeJson(path.join(reportDir, 'summary.json'), summary);
+  await writeText(
+    path.join(reportDir, 'summary.md'),
+    renderSummaryMarkdown(summary)
+  );
 
-  console.log(JSON.stringify(summary, null, 2))
+  console.log(JSON.stringify(summary, null, 2));
   if (!summary.ok) {
-    process.exitCode = 1
+    process.exitCode = 1;
   }
 }
 
 run().catch(error => {
   console.error(
     `[m8-rollout-run] ${error instanceof Error ? error.message : String(error)}`
-  )
-  process.exitCode = 1
-})
+  );
+  process.exitCode = 1;
+});

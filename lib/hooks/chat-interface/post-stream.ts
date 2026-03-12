@@ -33,7 +33,9 @@ export function syncChatStateAfterStreaming(
       input.setDifyConversationId(input.finalRealConvId);
     }
 
-    if (useChatStore.getState().currentConversationId !== input.finalRealConvId) {
+    if (
+      useChatStore.getState().currentConversationId !== input.finalRealConvId
+    ) {
       input.setCurrentConversationId(input.finalRealConvId);
     }
 
@@ -137,12 +139,14 @@ function persistAssistantMessageAfterStreaming(input: {
     persistenceStatus: 'pending',
   });
 
-  void input.saveMessage(latestAssistantMessage, input.conversationId).catch(error => {
-    console.error(input.errorLog, error);
-    input.updateMessage(input.assistantMessageId, {
-      persistenceStatus: 'error',
+  void input
+    .saveMessage(latestAssistantMessage, input.conversationId)
+    .catch(error => {
+      console.error(input.errorLog, error);
+      input.updateMessage(input.assistantMessageId, {
+        persistenceStatus: 'error',
+      });
     });
-  });
 }
 
 export async function persistChatMessagesAfterStreaming(
@@ -212,7 +216,8 @@ export async function persistChatMessagesAfterStreaming(
   currentDbConvId = await resolveDbConversationUuidByExternalId({
     externalId: input.finalRealConvId,
     setDbConversationUUID: input.setDbConversationUUID,
-    errorLog: '[handleSubmit] Failed to query db conversation ID after second try:',
+    errorLog:
+      '[handleSubmit] Failed to query db conversation ID after second try:',
     missingLog:
       '[handleSubmit] Still failed to get db conversation ID after final query, cannot save messages',
   });

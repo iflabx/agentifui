@@ -1,10 +1,10 @@
-import { useCallback } from 'react';
-import type { MutableRefObject } from 'react';
-
 import type { UseCreateConversationReturn } from '@lib/hooks/create-conversation/types';
 import type { ChatMessage } from '@lib/stores/chat-store';
 import { selectIsProcessing, useChatStore } from '@lib/stores/chat-store';
 import type { PendingConversation } from '@lib/stores/pending-conversation-store';
+
+import { useCallback } from 'react';
+import type { MutableRefObject } from 'react';
 
 import type { ChatResolvedAppConfig } from './app-config';
 import { resolveChatSubmitAppConfig } from './app-config';

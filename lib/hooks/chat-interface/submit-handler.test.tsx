@@ -1,8 +1,8 @@
 import { act, renderHook } from '@testing-library/react';
 
-import { useChatSubmitHandler } from './submit-handler';
 import { resolveChatSubmitAppConfig } from './app-config';
 import { executeChatSubmit } from './submit-flow';
+import { useChatSubmitHandler } from './submit-handler';
 
 const mockSelectIsProcessing = jest.fn();
 const mockGetChatStoreState = jest.fn();

@@ -6,10 +6,10 @@
  * Adapts to the new Result type system and unified data service.
  */
 import {
+  type MessageSavePayload,
   createPlaceholderAssistantMessageRecord,
   findDuplicateMessage,
   saveMessageRecord,
-  type MessageSavePayload,
 } from '@lib/services/client/messages-api';
 import { ChatMessage, useChatStore } from '@lib/stores/chat-store';
 

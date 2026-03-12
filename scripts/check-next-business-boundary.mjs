@@ -1,13 +1,16 @@
 #!/usr/bin/env node
-
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
 const rootDir = process.cwd();
 const nextApiDir = resolve(rootDir, 'app/api');
 const apiConfigFile = resolve(rootDir, 'apps/api/src/config.ts');
 
-const NEXT_AUTH_OWNED_PREFIXES = ['/api/auth', '/api/sso', '/api/internal/auth'];
+const NEXT_AUTH_OWNED_PREFIXES = [
+  '/api/auth',
+  '/api/sso',
+  '/api/internal/auth',
+];
 const NEXT_AUTH_OWNED_EXACT = new Set(['/api/internal/auth/profile-status']);
 
 function walkRouteFiles(dir) {
@@ -114,14 +117,18 @@ function main() {
   }
 
   if (ownershipViolations.length > 0) {
-    console.error('[next-business-boundary] non-auth Next API route is outside Fastify proxy ownership:');
+    console.error(
+      '[next-business-boundary] non-auth Next API route is outside Fastify proxy ownership:'
+    );
     for (const item of ownershipViolations) {
       console.error(`- ${item.routePath} (${item.routeFile})`);
     }
   }
 
   if (activeRouteViolations.length > 0) {
-    console.error('[next-business-boundary] non-auth Next API route must be a disabled stub:');
+    console.error(
+      '[next-business-boundary] non-auth Next API route must be a disabled stub:'
+    );
     for (const item of activeRouteViolations) {
       console.error(`- ${item.routePath} (${item.routeFile})`);
     }

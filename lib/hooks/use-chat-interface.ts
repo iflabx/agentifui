@@ -28,10 +28,9 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useChatConversationState } from './chat-interface/conversation-state';
 import { sendDirectChatMessage } from './chat-interface/direct-send';
 import { useChatStopHandler } from './chat-interface/stop-handler';
-import { useChatSubmitHandler } from './chat-interface/submit-handler';
 import { useChatStreamingState } from './chat-interface/streaming-state';
+import { useChatSubmitHandler } from './chat-interface/submit-handler';
 import type { ChatNodeEvent } from './chat-interface/types';
-
 import { useChatMessages } from './use-chat-messages';
 import { useCreateConversation } from './use-create-conversation';
 
@@ -51,9 +50,7 @@ const CHUNK_APPEND_INTERVAL = 30;
  * @param onNodeEvent - Optional node event callback function
  * @returns Various chat interface states and operation methods
  */
-export function useChatInterface(
-  onNodeEvent?: (event: ChatNodeEvent) => void
-) {
+export function useChatInterface(onNodeEvent?: (event: ChatNodeEvent) => void) {
   const router = useRouter();
   const currentPathname = usePathname();
   const { isWelcomeScreen, setIsWelcomeScreen } = useChatInputStore();
@@ -106,20 +103,16 @@ export function useChatInterface(
     clearConversationState,
   } = useChatConversationState(currentPathname);
 
-  const {
-    isSubmittingRef,
-    chunkBufferRef,
-    appendTimerRef,
-    flushChunkBuffer,
-  } = useChatStreamingState({
-    appendMessageChunk,
-    finalizeStreamingMessage,
-    setIsWaitingForResponse,
-    setCurrentTaskId,
-    dbConversationUUID,
-    updateMessage,
-    saveMessage,
-  });
+  const { isSubmittingRef, chunkBufferRef, appendTimerRef, flushChunkBuffer } =
+    useChatStreamingState({
+      appendMessageChunk,
+      finalizeStreamingMessage,
+      setIsWaitingForResponse,
+      setCurrentTaskId,
+      dbConversationUUID,
+      updateMessage,
+      saveMessage,
+    });
 
   const navigateToConversation = useCallback(
     (conversationId: string) => {

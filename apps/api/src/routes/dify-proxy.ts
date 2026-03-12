@@ -134,15 +134,11 @@ function isHostAllowed(hostname: string, allowedHosts: string[]): boolean {
     const rule = normalizeHost(entry);
     if (rule.startsWith('*.')) {
       const suffix = rule.slice(2);
-      return (
-        normalized === suffix || normalized.endsWith(`.${suffix}`)
-      );
+      return normalized === suffix || normalized.endsWith(`.${suffix}`);
     }
     if (rule.startsWith('.')) {
       const suffix = rule.slice(1);
-      return (
-        normalized === suffix || normalized.endsWith(`.${suffix}`)
-      );
+      return normalized === suffix || normalized.endsWith(`.${suffix}`);
     }
     return normalized === rule;
   });
@@ -612,12 +608,10 @@ async function validateTempConfig(
   routePath: string,
   actor: { userId: string; role: string },
   tempConfig: { apiUrl: string; apiKey: string }
-): Promise<{ ok: true; apiUrl: string } | { ok: false; status: number; payload: unknown }> {
-  const buildError = async (
-    status: number,
-    code: string,
-    message: string
-  ) => {
+): Promise<
+  { ok: true; apiUrl: string } | { ok: false; status: number; payload: unknown }
+> {
+  const buildError = async (status: number, code: string, message: string) => {
     return {
       ok: false as const,
       status,
@@ -635,18 +629,30 @@ async function validateTempConfig(
   };
 
   if (!config.difyTempConfigEnabled) {
-    return buildError(403, 'DIFY_TEMP_CONFIG_DISABLED', 'Temp config is disabled');
+    return buildError(
+      403,
+      'DIFY_TEMP_CONFIG_DISABLED',
+      'Temp config is disabled'
+    );
   }
 
   if (actor.role !== 'admin') {
-    return buildError(403, 'DIFY_TEMP_CONFIG_FORBIDDEN', 'Insufficient permissions');
+    return buildError(
+      403,
+      'DIFY_TEMP_CONFIG_FORBIDDEN',
+      'Insufficient permissions'
+    );
   }
 
   let parsed: URL;
   try {
     parsed = new URL(tempConfig.apiUrl);
   } catch {
-    return buildError(400, 'DIFY_TEMP_CONFIG_INVALID_URL', 'Invalid temp config URL');
+    return buildError(
+      400,
+      'DIFY_TEMP_CONFIG_INVALID_URL',
+      'Invalid temp config URL'
+    );
   }
 
   if (parsed.username || parsed.password) {
