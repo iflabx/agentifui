@@ -2,7 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 
-import { Sidebar } from './index';
+import { Sidebar } from './sidebar';
 
 /**
  * Conditional rendering Sidebar component

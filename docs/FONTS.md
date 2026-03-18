@@ -7,18 +7,21 @@ This document describes the font setup currently implemented in the codebase.
 The authoritative implementation lives in:
 
 - `app/layout.tsx`
+- `app/fonts/`
 - `tailwind.config.js`
 - `app/globals.css`
 
 ## Loaded Font Families
 
-The app currently loads these Google fonts with `next/font` in `app/layout.tsx`:
+The app currently loads these local font files with `next/font/local` in `app/layout.tsx`:
 
 - `Inter`
 - `Noto Sans SC`
 - `Crimson Pro`
 - `Noto Serif SC`
 - `Playfair Display`
+
+The actual font assets are committed under `app/fonts/`, so runtime does not depend on Google Fonts or other external font CDNs.
 
 ## Current Font Strategy
 
@@ -82,6 +85,10 @@ If you want a true sans-serif override, use the explicit `.font-sans` class from
 
 ## Notes
 
+- Latin fonts and CJK fonts are split intentionally:
+  - Latin-first UI typography uses local Inter / Crimson Pro / Playfair files.
+  - Simplified Chinese fallback uses local Noto Sans SC / Noto Serif SC files.
+- The Noto CJK files are larger, so they are configured as local fallback fonts instead of eager preloaded fonts.
 - Inputs, textareas, selects, and buttons are also normalized in `app/globals.css` so typography stays consistent.
 - Mixed English and CJK rendering is a first-class concern in the current setup.
-- If you change fonts, update all three places: `app/layout.tsx`, `tailwind.config.js`, and `app/globals.css`.
+- If you change fonts, update all four places: `app/layout.tsx`, `app/fonts/`, `tailwind.config.js`, and `app/globals.css`.

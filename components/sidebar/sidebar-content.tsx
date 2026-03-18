@@ -1,6 +1,6 @@
 'use client';
 
-import { useMobile } from '@lib/hooks';
+import { useMobile } from '@lib/hooks/use-mobile';
 import { useChatInputStore } from '@lib/stores/chat-input-store';
 import { useChatStore } from '@lib/stores/chat-store';
 import { useSidebarStore } from '@lib/stores/sidebar-store';

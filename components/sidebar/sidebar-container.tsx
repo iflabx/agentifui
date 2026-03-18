@@ -1,6 +1,6 @@
 'use client';
 
-import { useMobile } from '@lib/hooks';
+import { useMobile } from '@lib/hooks/use-mobile';
 import { useSidebarStore } from '@lib/stores/sidebar-store';
 import { cn } from '@lib/utils';
 

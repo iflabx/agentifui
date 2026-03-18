@@ -1,6 +1,6 @@
 'use client';
 
-import { useMobile } from '@lib/hooks';
+import { useMobile } from '@lib/hooks/use-mobile';
 import { useSettingsColors } from '@lib/hooks/use-settings-colors';
 import { useThemeColors } from '@lib/hooks/use-theme-colors';
 import { useSidebarStore } from '@lib/stores/sidebar-store';

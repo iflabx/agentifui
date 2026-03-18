@@ -159,11 +159,10 @@ function loadKyselyRuntime(): {
       Kysely: new (config: unknown) => unknown;
       PostgresDialect: new (config: unknown) => unknown;
     };
-  } catch {
-    return runtimeRequire('better-auth/node_modules/kysely') as {
-      Kysely: new (config: unknown) => unknown;
-      PostgresDialect: new (config: unknown) => unknown;
-    };
+  } catch (error) {
+    throw new Error(
+      `[better-auth] failed to load kysely runtime. Install "kysely" as a direct dependency. ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 }
 

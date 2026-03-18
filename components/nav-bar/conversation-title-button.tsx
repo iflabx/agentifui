@@ -1,6 +1,7 @@
 'use client';
 
-import { ConfirmDialog, InputDialog } from '@components/ui';
+import { ConfirmDialog } from '@components/ui/confirm-dialog';
+import { InputDialog } from '@components/ui/input-dialog';
 // 🎯 Add: import full conversation list hook, used to find historical conversations
 import { useAllConversations } from '@lib/hooks/use-all-conversations';
 // Import chat interface hook to get conversation associated application ID

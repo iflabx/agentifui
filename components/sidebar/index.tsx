@@ -1,16 +1,4 @@
-'use client';
-
-import { SidebarBackdrop } from './sidebar-backdrop';
-import { SidebarContainer } from './sidebar-container';
-
-export function Sidebar() {
-  return (
-    <>
-      <SidebarBackdrop />
-      <SidebarContainer />
-    </>
-  );
-}
+export { Sidebar } from './sidebar';
 
 // Export all components for use as needed
 export { SidebarButton } from './sidebar-button';

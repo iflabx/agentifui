@@ -1,6 +1,8 @@
 'use client';
 
-import { LogoutConfirmDialog, UserAvatar, VersionTag } from '@components/ui';
+import { LogoutConfirmDialog } from '@components/ui/logout-confirm-dialog';
+import { UserAvatar } from '@components/ui/user-avatar';
+import { VersionTag } from '@components/ui/version-tag';
 import { useProfile } from '@lib/hooks/use-profile';
 import { cn } from '@lib/utils';
 import { Clock, Info, LogOut, Sliders, UserCircle, Wrench } from 'lucide-react';

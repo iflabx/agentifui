@@ -1,6 +1,6 @@
 'use client';
 
-import { useMobile } from '@lib/hooks';
+import { useMobile } from '@lib/hooks/use-mobile';
 import { cn } from '@lib/utils';
 import { AlertTriangle, Edit, Trash, X } from 'lucide-react';
 import { createPortal } from 'react-dom';

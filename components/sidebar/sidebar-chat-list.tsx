@@ -1,7 +1,8 @@
 'use client';
 
-import { ConfirmDialog, InputDialog } from '@components/ui';
+import { ConfirmDialog } from '@components/ui/confirm-dialog';
 import { DropdownMenuV2 } from '@components/ui/dropdown-menu-v2';
+import { InputDialog } from '@components/ui/input-dialog';
 import { MoreButtonV2 } from '@components/ui/more-button-v2';
 import { TypeWriter } from '@components/ui/typewriter';
 import {

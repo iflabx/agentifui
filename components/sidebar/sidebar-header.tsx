@@ -1,8 +1,8 @@
 'use client';
 
-import { WidePanelLeft } from '@components/ui';
 import { KeyCombination } from '@components/ui/adaptive-key-badge';
 import { TooltipWrapper } from '@components/ui/tooltip-wrapper';
+import { WidePanelLeft } from '@components/ui/wide-panel-left';
 import { useChatInterface } from '@lib/hooks/use-chat-interface';
 import { useFormattedShortcut } from '@lib/hooks/use-platform-keys';
 import { useChatInputStore } from '@lib/stores/chat-input-store';

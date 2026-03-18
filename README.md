@@ -29,7 +29,7 @@ AgentifUI is a monorepo for an enterprise-oriented AI application frontend built
 | Shared package | `packages/shared` for cross-runtime helpers        |
 | Data           | PostgreSQL, Redis, MinIO / S3-compatible storage   |
 | Auth           | better-auth with SSO and local-password extensions |
-| Styling        | Tailwind CSS 4, Radix UI, next/font                |
+| Styling        | Tailwind CSS 4, Radix UI, next/font/local          |
 | Tooling        | pnpm 10, Jest, ESLint, Prettier, Husky, PM2        |
 
 ## Runtime Architecture
