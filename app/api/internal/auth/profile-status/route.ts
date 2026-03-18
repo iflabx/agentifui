@@ -1,4 +1,8 @@
-import { resolveSessionIdentityReadOnly } from '@lib/auth/better-auth/session-identity';
+import {
+  isRecoverableReadOnlyIdentityError,
+  resolveSessionIdentityReadOnly,
+  syncSessionIdentitySideEffects,
+} from '@lib/auth/better-auth/session-identity';
 import {
   REQUEST_ID_HEADER,
   buildAppErrorDetail,
@@ -44,9 +48,21 @@ function buildErrorResponse(
 
 export async function GET(request: Request) {
   try {
-    const resolvedIdentity = await resolveSessionIdentityReadOnly(
+    let resolvedIdentity = await resolveSessionIdentityReadOnly(
       request.headers
     );
+
+    if (
+      !resolvedIdentity.success &&
+      isRecoverableReadOnlyIdentityError(resolvedIdentity.error)
+    ) {
+      console.warn(
+        '[InternalAuthProfileStatus] read-only resolve hit recoverable gap, retrying with side effects:',
+        resolvedIdentity.error
+      );
+      resolvedIdentity = await syncSessionIdentitySideEffects(request.headers);
+    }
+
     if (!resolvedIdentity.success) {
       console.error(
         '[InternalAuthProfileStatus] failed to resolve session identity:',

@@ -205,4 +205,90 @@ describe('POST /api/auth/better/[...all]', () => {
       .calls[0][0] as Headers;
     expect(syncHeaders.get('cookie')).toContain('session_token=new-token');
   });
+
+  it('triggers post-login identity sync when email sign-up succeeds', async () => {
+    const { POST } = await import('./route');
+
+    mockedHandlerPost.mockResolvedValueOnce(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: {
+          'set-cookie': 'session_token=sign-up-token; Path=/; HttpOnly',
+        },
+      })
+    );
+
+    const response = await POST(
+      new Request('http://localhost/api/auth/better/sign-up/email', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: 'new.user@example.com',
+          password: 'x',
+          name: 'New User',
+        }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(syncSessionIdentitySideEffects).toHaveBeenCalledTimes(1);
+    const syncHeaders = (syncSessionIdentitySideEffects as jest.Mock).mock
+      .calls[0][0] as Headers;
+    expect(syncHeaders.get('cookie')).toContain('session_token=sign-up-token');
+  });
+
+  it('waits for identity sync completion before returning successful auth responses', async () => {
+    const { POST } = await import('./route');
+
+    let releaseSync!: () => void;
+    (syncSessionIdentitySideEffects as jest.Mock).mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          releaseSync = () => {
+            resolve({
+              success: true,
+              data: null,
+            });
+          };
+        })
+    );
+
+    mockedHandlerPost.mockResolvedValueOnce(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: {
+          'set-cookie': 'session_token=blocking-token; Path=/; HttpOnly',
+        },
+      })
+    );
+
+    let settled = false;
+    const responsePromise = POST(
+      new Request('http://localhost/api/auth/better/sign-up/email', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: 'new.user@example.com',
+          password: 'x',
+          name: 'New User',
+        }),
+      })
+    ).then(response => {
+      settled = true;
+      return response;
+    });
+
+    await new Promise(resolve => setImmediate(resolve));
+    expect(settled).toBe(false);
+
+    releaseSync();
+    const response = await responsePromise;
+
+    expect(response.status).toBe(200);
+    expect(settled).toBe(true);
+  });
 });

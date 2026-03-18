@@ -22,6 +22,8 @@ const LEGACY_MAPPING_LOCK_PREFIX = 'legacy-auth-user';
 const DEFAULT_EXTERNAL_ATTRIBUTES_SYNC_INTERVAL_MS = 15 * 60 * 1000;
 const MISSING_IDENTITY_MAPPING_ERROR_MESSAGE =
   'Missing identity mapping for non-UUID auth session user';
+const MISSING_PROFILE_ROW_ERROR_MESSAGE =
+  'Missing profile row for session user';
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -71,6 +73,16 @@ function shouldRecoverMissingMappingOnReadOnlyResolve(): boolean {
   return parseBooleanEnv(
     process.env.AUTH_IDENTITY_RECOVER_MISSING_MAPPING,
     true
+  );
+}
+
+export function isRecoverableReadOnlyIdentityError(
+  error: Error | null | undefined
+): boolean {
+  const message = error?.message || '';
+  return (
+    message.includes(MISSING_IDENTITY_MAPPING_ERROR_MESSAGE) ||
+    message.includes(MISSING_PROFILE_ROW_ERROR_MESSAGE)
   );
 }
 
@@ -932,7 +944,7 @@ async function loadProfileStatusReadOnly(userId: string): Promise<
     );
     const row = queryResult.rows[0];
     if (!row) {
-      return failure(new Error('Missing profile row for session user'));
+      return failure(new Error(MISSING_PROFILE_ROW_ERROR_MESSAGE));
     }
 
     return success({
@@ -1044,9 +1056,7 @@ export async function resolveSessionIdentity(
 
   if (
     !shouldRecoverMissingMappingOnReadOnlyResolve() ||
-    !readOnlyResolved.error.message.includes(
-      MISSING_IDENTITY_MAPPING_ERROR_MESSAGE
-    )
+    !isRecoverableReadOnlyIdentityError(readOnlyResolved.error)
   ) {
     return readOnlyResolved;
   }

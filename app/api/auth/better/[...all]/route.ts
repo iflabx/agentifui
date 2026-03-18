@@ -283,10 +283,10 @@ function shouldTriggerAuthIdentitySync(
   );
 }
 
-function triggerPostAuthIdentitySync(
+async function syncPostAuthIdentityIfNeeded(
   request: Request,
   response: Response
-): void {
+): Promise<void> {
   const setCookies = readSetCookies(response.headers);
   if (!shouldTriggerAuthIdentitySync(request, response, setCookies)) {
     return;
@@ -301,36 +301,36 @@ function triggerPostAuthIdentitySync(
     syncHeaders.set('cookie', mergedCookieHeader);
   }
 
-  void runPostAuthIdentitySyncWithRetry(syncHeaders)
-    .then(syncResult => {
-      if (syncResult.ok) {
-        return;
+  try {
+    const syncResult = await runPostAuthIdentitySyncWithRetry(syncHeaders);
+    if (syncResult.ok) {
+      return;
+    }
+
+    console.warn(
+      '[AuthIdentitySync] post-login identity sync exhausted retries:',
+      {
+        attempts: syncResult.attempts,
       }
-      console.warn(
-        '[AuthIdentitySync] post-login identity sync exhausted retries:',
-        {
-          attempts: syncResult.attempts,
-        }
-      );
-    })
-    .catch(error => {
-      console.warn(
-        '[AuthIdentitySync] unexpected post-login identity sync error:',
-        error
-      );
-    });
+    );
+  } catch (error) {
+    console.warn(
+      '[AuthIdentitySync] unexpected post-login identity sync error:',
+      error
+    );
+  }
 }
 
 export async function GET(request: Request) {
   const response = await handler.GET(request);
-  triggerPostAuthIdentitySync(request, response);
+  await syncPostAuthIdentityIfNeeded(request, response);
   return response;
 }
 
 export async function POST(request: Request) {
   if (!isEmailSignInRequest(request)) {
     const response = await handler.POST(request);
-    triggerPostAuthIdentitySync(request, response);
+    await syncPostAuthIdentityIfNeeded(request, response);
     return response;
   }
 
@@ -370,7 +370,7 @@ export async function POST(request: Request) {
   }
 
   const response = await handler.POST(request);
-  triggerPostAuthIdentitySync(request, response);
+  await syncPostAuthIdentityIfNeeded(request, response);
 
   await recordLocalLoginAudit({
     email: data.email,

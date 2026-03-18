@@ -147,7 +147,8 @@ Static provider / mock OAuth configuration:
 Session identity synchronization knobs:
 
 - `AUTH_IDENTITY_SYNC_INLINE`
-- `AUTH_IDENTITY_RECOVER_MISSING_MAPPING`
+- `AUTH_IDENTITY_RECOVER_MISSING_MAPPING`: allow one compensating sync when
+  read-only resolve finds a missing identity mapping or profile row
 - `AUTH_IDENTITY_SYNC_RETRY_ATTEMPTS`
 - `AUTH_IDENTITY_SYNC_RETRY_DELAY_MS`
 

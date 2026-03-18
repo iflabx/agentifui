@@ -257,6 +257,49 @@ describe('resolveSessionIdentity', () => {
     expect(mockedUpsertUserIdentity).toHaveBeenCalledTimes(1);
   });
 
+  it('recovers missing profile rows by running side-effect sync in read-only mode', async () => {
+    process.env.AUTH_IDENTITY_RECOVER_MISSING_MAPPING = '1';
+    mockedGetSession
+      .mockResolvedValueOnce({
+        session: {
+          id: 'session-id',
+        },
+        user: {
+          id: '00000000-0000-4000-8000-000000000012',
+          email: 'uuid.user@example.com',
+          name: 'UUID User',
+        },
+      } as never)
+      .mockResolvedValueOnce({
+        session: {
+          id: 'session-id',
+        },
+        user: {
+          id: '00000000-0000-4000-8000-000000000012',
+          email: 'uuid.user@example.com',
+          name: 'UUID User',
+        },
+      } as never);
+    queryMock
+      .mockResolvedValueOnce({
+        rows: [],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ role: 'user', status: 'active' }],
+      });
+
+    const result = await resolveSessionIdentity(new Headers());
+
+    expect(result.success).toBe(true);
+    if (!result.success || !result.data) {
+      throw new Error('Expected resolved identity data');
+    }
+    expect(result.data.userId).toBe('00000000-0000-4000-8000-000000000012');
+    expect(result.data.role).toBe('user');
+    expect(result.data.status).toBe('active');
+    expect(mockedUpsertUserIdentity).toHaveBeenCalledTimes(1);
+  });
+
   it('upserts primary identity in inline mode for UUID auth users', async () => {
     process.env.AUTH_IDENTITY_SYNC_INLINE = '1';
     mockedGetSession.mockResolvedValueOnce({

@@ -180,16 +180,6 @@ export async function middleware(request: NextRequest) {
     );
   }
 
-  // Highest priority: If the user directly accesses /chat, redirect to /chat/new
-  // This ensures that always starts from a clear new conversation state.
-  if (pathname === '/chat') {
-    const newChatUrl = new URL('/chat/new', request.url);
-    console.log(
-      `[Middleware] Exact /chat match. Redirecting to ${newChatUrl.toString()}`
-    );
-    return NextResponse.redirect(newChatUrl);
-  }
-
   // Auth API endpoints must remain free from profile/status checks to avoid auth loop.
   if (
     pathname.startsWith(BETTER_AUTH_BASE_PATH) ||
@@ -299,8 +289,9 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // When a logged-in user accesses the root directory or authentication page, redirect to the new chat page
-  if (user && (pathname === '/' || isAuthPage)) {
+  // When a logged-in user accesses the root directory, auth pages, or bare /chat,
+  // redirect to the canonical new-chat entrypoint.
+  if (user && (pathname === '/' || pathname === '/chat' || isAuthPage)) {
     console.log(
       `[Middleware] User logged in, redirecting ${pathname} to /chat/new`
     );
