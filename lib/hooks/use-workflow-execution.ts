@@ -1,4 +1,5 @@
 import { formatUiErrorMessage, toUiError } from '@lib/errors/ui-error';
+import { conversationEvents } from '@lib/hooks/use-combined-conversations';
 import { useProfile } from '@lib/hooks/use-profile';
 import { toUserFacingAgentError } from '@lib/services/agent-error/user-facing-error';
 import {
@@ -261,6 +262,7 @@ export function useWorkflowExecution(instanceId: string) {
 
         if (updateResult.success) {
           console.log('[Workflow Execution] ✅ Database update successful');
+          conversationEvents.emit();
 
           // Use the complete data returned from the database to update the store
           const completeExecution = updateResult.data;
@@ -590,6 +592,7 @@ export function useWorkflowExecution(instanceId: string) {
               task_id: taskId,
               metadata: errorMetadata,
             });
+            conversationEvents.emit();
 
             console.log('[Workflow Execution] ✅ Error status and data saved');
           } catch (updateError) {
@@ -675,6 +678,7 @@ export function useWorkflowExecution(instanceId: string) {
             error_message: 'Stopped by user',
             completed_at: new Date().toISOString(),
           });
+          conversationEvents.emit();
         } catch (updateError) {
           console.error(
             '[Workflow Execution] Error while updating stopped status:',

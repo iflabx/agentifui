@@ -1,4 +1,5 @@
 import { formatUiErrorMessage, toUiError } from '@lib/errors/ui-error';
+import { conversationEvents } from '@lib/hooks/use-combined-conversations';
 import { useProfile } from '@lib/hooks/use-profile';
 import { toUserFacingAgentError } from '@lib/services/agent-error/user-facing-error';
 import {
@@ -209,6 +210,8 @@ export function useTextGenerationExecution(instanceId: string) {
             '[Text Generation] ✅ Database update successful, final status:',
             finalStatus
           );
+
+          conversationEvents.emit();
 
           // Update store state
           const completeExecution = updateResult.data;
@@ -613,6 +616,8 @@ export function useTextGenerationExecution(instanceId: string) {
           if (updateResult.success) {
             console.log('[Text Generation] ✅ Partial text saved to database');
 
+            conversationEvents.emit();
+
             // Update execution record in store
             getActions().updateCurrentExecution(updateResult.data);
             getActions().addExecutionToHistory(updateResult.data);
@@ -644,6 +649,8 @@ export function useTextGenerationExecution(instanceId: string) {
               error_message: 'Stopped by user',
               completed_at: new Date().toISOString(),
             });
+
+            conversationEvents.emit();
 
             console.log(
               '[Text Generation] ✅ Execution status updated to stopped'

@@ -255,6 +255,7 @@ const LOCAL_MESSAGE_ACTIONS = new Set([
 ]);
 
 const LOCAL_APP_EXECUTION_ACTIONS = new Set([
+  'appExecutions.getUserExecutions',
   'appExecutions.getByServiceInstance',
   'appExecutions.getById',
   'appExecutions.create',
@@ -396,6 +397,7 @@ const AUTH_ACTIONS = new Set([
   'messages.findDuplicate',
   'messages.save',
   'messages.createPlaceholder',
+  'appExecutions.getUserExecutions',
   'appExecutions.getByServiceInstance',
   'appExecutions.getById',
   'appExecutions.create',
@@ -1854,6 +1856,66 @@ async function handleAppExecutionAction(
   }
 
   const resolvedUserId = (actorUserId || readString(payload?.userId)).trim();
+
+  if (action === 'appExecutions.getUserExecutions') {
+    const limit = Math.min(parsePositiveInt(payload?.limit, 20), 100);
+    const requestedExecutionType = payload?.executionType;
+    const executionType =
+      requestedExecutionType === undefined
+        ? null
+        : parseExecutionType(requestedExecutionType);
+
+    if (!resolvedUserId) {
+      return toErrorResponse('Missing required fields', 400);
+    }
+
+    if (requestedExecutionType !== undefined && !executionType) {
+      return toErrorResponse('Invalid execution type', 400);
+    }
+
+    const params: unknown[] = [resolvedUserId];
+    let executionTypeClause = '';
+
+    if (executionType) {
+      params.push(executionType);
+      executionTypeClause = `AND execution_type = $${params.length}`;
+    }
+
+    params.push(limit);
+
+    const rows = await queryRowsWithPgSystemContext<AppExecutionRow>(
+      `
+        SELECT
+          id::text,
+          user_id::text,
+          service_instance_id::text,
+          execution_type::text,
+          external_execution_id,
+          task_id,
+          title,
+          inputs,
+          outputs,
+          status::text,
+          error_message,
+          total_steps,
+          total_tokens,
+          elapsed_time,
+          metadata,
+          created_at::text,
+          updated_at::text,
+          completed_at::text
+        FROM app_executions
+        WHERE user_id = $1::uuid
+          AND status <> 'deleted'::execution_status
+          ${executionTypeClause}
+        ORDER BY updated_at DESC, created_at DESC
+        LIMIT $${params.length}
+      `,
+      params
+    );
+
+    return toSuccessResponse(rows.map(sanitizeExecution));
+  }
 
   if (action === 'appExecutions.getByServiceInstance') {
     const serviceInstanceId = readString(payload?.serviceInstanceId);

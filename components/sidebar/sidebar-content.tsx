@@ -1,6 +1,7 @@
 'use client';
 
 import { useMobile } from '@lib/hooks/use-mobile';
+import type { RecentTaskExecution } from '@lib/hooks/use-recent-task-executions';
 import { useChatInputStore } from '@lib/stores/chat-input-store';
 import { useChatStore } from '@lib/stores/chat-store';
 import { useSidebarStore } from '@lib/stores/sidebar-store';
@@ -72,6 +73,22 @@ export function SidebarContent() {
     [selectItem, router, setCurrentConversationId, setIsWelcomeScreen]
   );
 
+  const handleSelectTaskExecution = React.useCallback(
+    (execution: RecentTaskExecution) => {
+      try {
+        selectItem('chat', execution.id, true);
+        setCurrentConversationId(null);
+        setIsWelcomeScreen(false);
+        router.push(
+          `/apps/${execution.appType}/${execution.appInstanceId}?executionId=${execution.id}`
+        );
+      } catch (error) {
+        console.error('[ChatList] Failed to switch task execution:', error);
+      }
+    },
+    [router, selectItem, setCurrentConversationId, setIsWelcomeScreen]
+  );
+
   return (
     <div className="relative flex-1 overflow-hidden">
       {/* Removed top divider: no horizontal line separation in dark mode */}
@@ -107,6 +124,7 @@ export function SidebarContent() {
             contentVisible={contentVisible}
             selectedId={selectedType === 'chat' ? String(selectedId) : null}
             onSelectChat={handleSelectChat}
+            onSelectTaskExecution={handleSelectTaskExecution}
           />
         </div>
       </div>

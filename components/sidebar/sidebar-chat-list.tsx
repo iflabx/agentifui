@@ -11,12 +11,16 @@ import {
   useCombinedConversations,
 } from '@lib/hooks/use-combined-conversations';
 import {
+  type RecentTaskExecution,
+  useRecentTaskExecutions,
+} from '@lib/hooks/use-recent-task-executions';
+import {
   deleteConversation,
   renameConversation,
 } from '@lib/services/client/conversations-api';
 import { usePendingConversationStore } from '@lib/stores/pending-conversation-store';
 import { cn } from '@lib/utils';
-import { Pen, Trash } from 'lucide-react';
+import { FileText, MessageSquare, Pen, Trash, Workflow } from 'lucide-react';
 
 import * as React from 'react';
 
@@ -29,12 +33,34 @@ interface SidebarChatListProps {
   contentVisible: boolean;
   selectedId: string | null;
   onSelectChat: (chatId: string) => void;
+  onSelectTaskExecution: (execution: RecentTaskExecution) => void;
+}
+
+type SidebarRecentItem = CombinedConversation | RecentTaskExecution;
+
+function isRecentTaskExecution(
+  item: SidebarRecentItem
+): item is RecentTaskExecution {
+  return 'kind' in item && item.kind === 'execution';
+}
+
+function getRecentItemIcon(item: SidebarRecentItem) {
+  if (!isRecentTaskExecution(item)) {
+    return <MessageSquare className="h-3.5 w-3.5" />;
+  }
+
+  if (item.appType === 'workflow') {
+    return <Workflow className="h-3.5 w-3.5" />;
+  }
+
+  return <FileText className="h-3.5 w-3.5" />;
 }
 
 export function SidebarChatList({
   contentVisible,
   selectedId,
   onSelectChat,
+  onSelectTaskExecution,
 }: SidebarChatListProps) {
   const t = useTranslations('sidebar');
   const {
@@ -42,6 +68,10 @@ export function SidebarChatList({
     isLoading: isLoadingConversations,
     refresh,
   } = useCombinedConversations();
+  const {
+    executions: recentTaskExecutions,
+    isLoading: isLoadingTaskExecutions,
+  } = useRecentTaskExecutions();
 
   const completeTitleTypewriter = usePendingConversationStore(
     state => state.completeTitleTypewriter
@@ -110,6 +140,15 @@ export function SidebarChatList({
   // Use historical conversations in the database, which is already limited to 20 by default
   // The conversation list obtained using useSidebarConversations is already limited to 20
   const visibleUnpinnedChats = unpinnedChats;
+  const savedRecentItems = React.useMemo(() => {
+    return [...visibleUnpinnedChats, ...recentTaskExecutions]
+      .sort((left, right) => {
+        const leftTime = new Date(left.updated_at).getTime();
+        const rightTime = new Date(right.updated_at).getTime();
+        return rightTime - leftTime;
+      })
+      .slice(0, 20);
+  }, [recentTaskExecutions, visibleUnpinnedChats]);
 
   const handleRename = React.useCallback(
     async (chatId: string) => {
@@ -213,8 +252,23 @@ export function SidebarChatList({
   // 1. Check if the current route is a chat page
   // 2. Check if the ID matches (direct ID or temporary ID)
   // This ensures that when switching from the chat page to other pages, the chat item will not remain selected
-  const isChatActive = React.useCallback(
-    (chat: CombinedConversation) => {
+  const isRecentItemActive = React.useCallback(
+    (chat: SidebarRecentItem) => {
+      if (typeof window === 'undefined') {
+        return false;
+      }
+
+      if (isRecentTaskExecution(chat)) {
+        const currentUrl = new URL(window.location.href);
+        const currentExecutionId = currentUrl.searchParams.get('executionId');
+        const expectedPath = `/apps/${chat.appType}/${chat.appInstanceId}`;
+
+        return (
+          currentExecutionId === chat.id &&
+          window.location.pathname === expectedPath
+        );
+      }
+
       // First check if there is a selected ID
       if (!selectedId) return false;
 
@@ -262,13 +316,14 @@ export function SidebarChatList({
   // Use a unified structure and height to avoid layout jumps when switching
   // Considering the space occupied by the more button on the right, ensure the skeleton screen width is appropriate
   const renderChatItemContent = (
-    chat: CombinedConversation,
+    chat: SidebarRecentItem,
     isItemLoading: boolean
   ) => {
     const title = chat.title || t('untitled');
 
     // 🎯 Check if typewriter effect is needed
     const shouldUseTypewriter =
+      !isRecentTaskExecution(chat) &&
       chat.isPending &&
       chat.titleTypewriterState?.shouldStartTyping &&
       chat.titleTypewriterState?.targetTitle;
@@ -326,9 +381,19 @@ export function SidebarChatList({
   // Optimize dropdown menu style, make it more consistent with the overall theme
   // 🎯 New: Integrate dropdown menu state management, implement structural effect
   const createMoreActions = (
-    chat: CombinedConversation,
+    chat: SidebarRecentItem,
     itemIsLoading: boolean
   ) => {
+    if (isRecentTaskExecution(chat)) {
+      return (
+        <MoreButtonV2
+          aria-label={t('moreOptions')}
+          disabled={true}
+          className="opacity-50"
+        />
+      );
+    }
+
     const canPerformActions = !!chat.db_pk;
     const isTempChat = !chat.id || chat.id.startsWith('temp-');
     const isMenuOpen = openDropdownId === chat.id;
@@ -380,9 +445,13 @@ export function SidebarChatList({
 
   // 🎯 Fix: completely hide when there are no conversations, consistent with common applications
   const hasAnyConversations =
-    pendingChats.length > 0 || visibleUnpinnedChats.length > 0;
+    pendingChats.length > 0 || savedRecentItems.length > 0;
 
-  if (!isLoadingConversations && !hasAnyConversations) {
+  if (
+    !isLoadingConversations &&
+    !isLoadingTaskExecutions &&
+    !hasAnyConversations
+  ) {
     return null;
   }
 
@@ -407,7 +476,7 @@ export function SidebarChatList({
                 'text-stone-500 dark:text-stone-400'
               )}
             >
-              {t('recentChats')}
+              {t('recentRecords')}
             </span>
           </div>
         )}
@@ -427,12 +496,13 @@ export function SidebarChatList({
                   chat.pendingStatus === 'streaming_message';
                 // Use auxiliary function to determine whether the item should be selected
                 // Handle the conversion between temporary ID and official ID
-                const isActive = isChatActive(chat);
+                const isActive = isRecentItemActive(chat);
 
                 return (
                   <div className="group relative" key={chat.tempId || chat.id}>
                     {/* Use new SidebarListButton instead of SidebarButton */}
                     <SidebarListButton
+                      icon={getRecentItemIcon(chat)}
                       active={isActive}
                       onClick={() => onSelectChat(chat.id)}
                       isLoading={itemIsLoading}
@@ -474,18 +544,34 @@ export function SidebarChatList({
           <div className="space-y-0.5 px-3">
             {' '}
             {/* Decrease the spacing between list items */}
-            {visibleUnpinnedChats.map(chat => {
+            {savedRecentItems.map(chat => {
               // Use auxiliary function to determine whether the item should be selected
               // Handle the selection logic of saved conversations, ensure precise matching
-              const isActive = isChatActive(chat);
+              const isActive = isRecentItemActive(chat);
               const itemIsLoading = false;
+              const handleClick = () => {
+                if (isRecentTaskExecution(chat)) {
+                  onSelectTaskExecution(chat);
+                  return;
+                }
+
+                onSelectChat(chat.id);
+              };
 
               return (
-                <div className="group relative" key={chat.id}>
+                <div
+                  className="group relative"
+                  key={
+                    isRecentTaskExecution(chat)
+                      ? `execution-${chat.id}`
+                      : chat.id
+                  }
+                >
                   {/* Use new SidebarListButton instead of SidebarButton */}
                   <SidebarListButton
+                    icon={getRecentItemIcon(chat)}
                     active={isActive}
-                    onClick={() => onSelectChat(chat.id)}
+                    onClick={handleClick}
                     isLoading={false}
                     hasOpenDropdown={openDropdownId === chat.id}
                     disableHover={!!openDropdownId}

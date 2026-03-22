@@ -1,5 +1,9 @@
 import { callInternalDataAction } from '@lib/db/internal-data-api';
-import type { AppExecution, ExecutionStatus } from '@lib/types/database';
+import type {
+  AppExecution,
+  ExecutionStatus,
+  ExecutionType,
+} from '@lib/types/database';
 import type { Result } from '@lib/types/result';
 
 type AppExecutionInput = Omit<AppExecution, 'id' | 'created_at' | 'updated_at'>;
@@ -58,6 +62,19 @@ export function getExecutionsByServiceInstance(
     {
       serviceInstanceId,
       limit,
+    }
+  );
+}
+
+export function getUserExecutions(
+  limit: number = 20,
+  executionType?: ExecutionType
+): Promise<Result<AppExecution[]>> {
+  return callInternalDataAction<AppExecution[]>(
+    'appExecutions.getUserExecutions',
+    {
+      limit,
+      ...(executionType ? { executionType } : {}),
     }
   );
 }
