@@ -14,15 +14,16 @@ import {
 import { cn } from '@lib/utils';
 import 'katex/dist/katex.min.css';
 import { Check, Copy, Download, X } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
 import type { Components } from 'react-markdown';
-import rehypeKatex from 'rehype-katex';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
 
 import React, { useEffect, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
+
+import {
+  ThinkAwareMarkdown,
+  extractMainTextFromThinkAwareContent,
+} from './think-aware-markdown';
 
 interface TextGenerationResultViewerProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Dynamic result data structure from API
@@ -145,6 +146,11 @@ export function TextGenerationResultViewer({
     },
   };
 
+  const getCopyableContent = (content: string): string => {
+    const extracted = extractMainTextFromThinkAwareContent(content);
+    return extracted || content;
+  };
+
   // --- Format content ---
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Dynamic API response structure
   const formatContent = (data: any): string => {
@@ -198,11 +204,12 @@ export function TextGenerationResultViewer({
   };
 
   const formattedContent = formatContent(result);
+  const copyableContent = getCopyableContent(formattedContent);
 
   // --- Copy function ---
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(formattedContent);
+      await navigator.clipboard.writeText(copyableContent);
       setIsCopied(true);
 
       // Reset state after 2 seconds
@@ -216,7 +223,7 @@ export function TextGenerationResultViewer({
 
   // --- Download function ---
   const handleDownload = () => {
-    const blob = new Blob([formattedContent], {
+    const blob = new Blob([copyableContent], {
       type: 'text/plain;charset=utf-8',
     });
     const url = URL.createObjectURL(blob);
@@ -470,13 +477,10 @@ export function TextGenerationResultViewer({
                     'border-stone-200 bg-white text-stone-900 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-200'
                   )}
                 >
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm, remarkMath]}
-                    rehypePlugins={[rehypeKatex]}
-                    components={markdownComponents}
-                  >
-                    {formattedContent}
-                  </ReactMarkdown>
+                  <ThinkAwareMarkdown
+                    content={formattedContent}
+                    markdownComponents={markdownComponents}
+                  />
                 </div>
               </div>
             </div>

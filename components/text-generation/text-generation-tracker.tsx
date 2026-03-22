@@ -12,15 +12,16 @@ import type { AppExecution } from '@lib/types/database';
 import { cn } from '@lib/utils';
 import 'katex/dist/katex.min.css';
 import { Check, Copy, Download, FileText, Loader2 } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
 import type { Components } from 'react-markdown';
-import rehypeKatex from 'rehype-katex';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
 
 import React, { useEffect, useRef, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
+
+import {
+  ThinkAwareMarkdown,
+  extractMainTextFromThinkAwareContent,
+} from './think-aware-markdown';
 
 interface TextGenerationTrackerProps {
   isExecuting: boolean;
@@ -54,6 +55,7 @@ export function TextGenerationTracker({
   const markdownContainerRef = useRef<HTMLDivElement>(null);
   const [isCopied, setIsCopied] = useState(false);
   const t = useTranslations('pages.textGeneration');
+  const copyableText = extractMainTextFromThinkAwareContent(generatedText);
 
   // --- Auto scroll to the bottom ---
   useEffect(() => {
@@ -113,9 +115,9 @@ export function TextGenerationTracker({
 
   // --- Copy text ---
   const handleCopyText = async () => {
-    if (generatedText) {
+    if (copyableText) {
       try {
-        await navigator.clipboard.writeText(generatedText);
+        await navigator.clipboard.writeText(copyableText);
         setIsCopied(true);
 
         // Reset state after 2 seconds
@@ -130,8 +132,8 @@ export function TextGenerationTracker({
 
   // --- Download text ---
   const handleDownloadText = () => {
-    if (generatedText) {
-      const blob = new Blob([generatedText], {
+    if (copyableText) {
+      const blob = new Blob([copyableText], {
         type: 'text/plain;charset=utf-8',
       });
       const url = URL.createObjectURL(blob);
@@ -330,13 +332,11 @@ export function TextGenerationTracker({
                   }}
                 >
                   {generatedText ? (
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm, remarkMath]}
-                      rehypePlugins={[rehypeKatex]}
-                      components={markdownComponents}
-                    >
-                      {generatedText}
-                    </ReactMarkdown>
+                    <ThinkAwareMarkdown
+                      content={generatedText}
+                      markdownComponents={markdownComponents}
+                      isStreaming={isStreaming}
+                    />
                   ) : (
                     <div
                       className={cn(
