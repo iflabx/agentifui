@@ -274,7 +274,7 @@ export function migrateAboutTranslationData(
   legacy: AboutTranslationData
 ): AboutTranslationData {
   // If it's already in the dynamic format, return directly
-  if (legacy.sections && legacy.sections.length > 0) {
+  if (Array.isArray(legacy.sections) && legacy.sections.length > 0) {
     return legacy;
   }
 

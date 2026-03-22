@@ -148,7 +148,24 @@ export function useDynamicTranslations(config: UseDynamicTranslationsConfig) {
           return dynamicValue as T;
         }
       }
-      // Fallback to static translation
+
+      // Fallback to raw static translation for structured data like arrays/objects.
+      // next-intl's `t()` is string-oriented, but home/about dynamic content stores
+      // section schemas as JSON-like arrays.
+      try {
+        const rawValue = staticT.raw(`${section}.${key}`);
+        if (
+          rawValue !== undefined &&
+          rawValue !== null &&
+          typeof rawValue !== 'string'
+        ) {
+          return rawValue as T;
+        }
+      } catch {
+        // Ignore and continue to string-based fallback below.
+      }
+
+      // Fallback to static translation for string content
       return staticT(`${section}.${key}`, params) as T;
     },
     [dynamicData, staticT]

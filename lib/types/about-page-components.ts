@@ -234,13 +234,15 @@ export interface AboutTranslationData {
 
 // Checks if the data is in the new dynamic format
 export function isDynamicFormat(data: AboutTranslationData): boolean {
-  return Boolean(data && data.sections && data.sections.length > 0);
+  return Boolean(
+    data && Array.isArray(data.sections) && data.sections.length > 0
+  );
 }
 
 // Checks if the data is in the old legacy format
 export function isLegacyFormat(data: AboutTranslationData): boolean {
   return Boolean(
-    !data.sections &&
+    !Array.isArray(data.sections) &&
       (data.title ||
         data.subtitle ||
         data.mission ||

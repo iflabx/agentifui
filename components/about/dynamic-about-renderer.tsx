@@ -45,7 +45,7 @@ export function DynamicAboutRenderer({
   // Create page content from translation data
   const pageContent: PageContent = React.useMemo(() => {
     return {
-      sections: dynamicData.sections || [],
+      sections: Array.isArray(dynamicData.sections) ? dynamicData.sections : [],
       metadata: dynamicData.metadata || {
         version: '1.0.0',
         lastModified: new Date().toISOString(),

@@ -66,9 +66,12 @@ export default function AboutPage() {
   }
 
   // Create translation data object for the dynamic renderer
+  const resolvedSections = dynamicT<unknown>('sections', 'pages.about');
   const translationData: AboutTranslationData = {
     // Try to get dynamic sections first
-    sections: dynamicT<PageSection[]>('sections', 'pages.about') || undefined,
+    sections: Array.isArray(resolvedSections)
+      ? (resolvedSections as PageSection[])
+      : undefined,
 
     // Fallback to legacy format for backward compatibility
     title: t('title'),
