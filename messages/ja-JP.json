@@ -451,7 +451,10 @@
         "noData": "結果データなし",
         "copy": "結果をコピー",
         "copied": "コピー済み",
-        "download": "結果をダウンロード"
+        "download": "結果をダウンロード",
+        "copyButton": "結果をコピー",
+        "downloadButton": "結果をダウンロード",
+        "closeButton": "結果を閉じる"
       }
     },
     "textGeneration": {
@@ -2405,6 +2408,7 @@
     "appsMarket": "アプリマーケット",
     "settings": "設定",
     "recentChats": "最近のチャット",
+    "recentRecords": "最近の記録",
     "moreOptions": "その他のオプション",
     "rename": "名前を変更",
     "delete": "チャットを削除",

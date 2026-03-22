@@ -451,7 +451,10 @@
         "noData": "无结果数据",
         "copy": "复制结果",
         "copied": "已复制",
-        "download": "下载结果"
+        "download": "下载结果",
+        "copyButton": "复制结果",
+        "downloadButton": "下载结果",
+        "closeButton": "关闭结果"
       }
     },
     "textGeneration": {
@@ -2130,39 +2133,140 @@
     "about": {
       "sections": [
         {
-          "id": "section-1771431512384-2k7g078xn",
+          "id": "section-1754655785515-zhcn-hero",
           "layout": "single-column",
           "columns": [
             [
               {
-                "id": "comp-1771431513435-v5hlo825j",
+                "id": "comp-1754655785515-zhcn-heading",
                 "type": "heading",
                 "props": {
-                  "content": "New Heading",
+                  "content": "关于 AgentifUI",
+                  "level": 1,
+                  "textAlign": "center"
+                }
+              },
+              {
+                "id": "comp-1754655785515-zhcn-subtitle",
+                "type": "paragraph",
+                "props": {
+                  "content": "连接 AI 与企业，打造大模型应用新体验",
+                  "textAlign": "center"
+                }
+              }
+            ]
+          ]
+        },
+        {
+          "id": "section-1754655785515-zhcn-mission",
+          "layout": "single-column",
+          "columns": [
+            [
+              {
+                "id": "comp-1754655785515-zhcn-mission-title",
+                "type": "heading",
+                "props": {
+                  "content": "我们的使命",
                   "level": 2,
+                  "textAlign": "left"
+                }
+              },
+              {
+                "id": "comp-1754655785515-zhcn-mission-body",
+                "type": "paragraph",
+                "props": {
+                  "content": "AgentifUI 致力于利用大型语言模型的能力，为企业提供创新的应用解决方案。我们整合多种模型提供商的能力，并基于 Dify 后端提供稳定、可靠的服务，帮助组织充分释放 AI 技术的价值。",
                   "textAlign": "left"
                 }
               }
             ]
-          ],
-          "commonProps": {
-            "theme": "auto",
-            "spacing": "normal",
-            "textAlign": "left",
-            "animation": "none",
-            "interactive": true,
-            "dragBehavior": "inherit"
-          }
+          ]
+        },
+        {
+          "id": "section-1754655785515-zhcn-values",
+          "layout": "single-column",
+          "columns": [
+            [
+              {
+                "id": "comp-1754655785515-zhcn-values-title",
+                "type": "heading",
+                "props": {
+                  "content": "我们的价值观",
+                  "level": 2,
+                  "textAlign": "left"
+                }
+              },
+              {
+                "id": "comp-1754655785515-zhcn-values-cards",
+                "type": "cards",
+                "props": {
+                  "layout": "grid",
+                  "items": [
+                    {
+                      "title": "技术创新",
+                      "description": "持续整合前沿大模型技术，为企业提供领先的 AI 解决方案"
+                    },
+                    {
+                      "title": "数据安全",
+                      "description": "支持私有化部署和严格的数据保护措施，确保企业数据的安全与隐私"
+                    },
+                    {
+                      "title": "灵活定制",
+                      "description": "提供高度可定制的解决方案，满足不同行业和场景的具体需求"
+                    },
+                    {
+                      "title": "知识增强",
+                      "description": "通过 RAG 技术集成私有知识库，增强模型的上下文感知能力"
+                    }
+                  ]
+                }
+              }
+            ]
+          ]
+        },
+        {
+          "id": "section-1754655785515-zhcn-cta",
+          "layout": "single-column",
+          "columns": [
+            [
+              {
+                "id": "comp-1754655785515-zhcn-cta-button",
+                "type": "button",
+                "props": {
+                  "text": "开始探索",
+                  "variant": "solid",
+                  "action": "link",
+                  "url": "/chat",
+                  "textAlign": "center"
+                }
+              }
+            ]
+          ]
+        },
+        {
+          "id": "section-1754655785515-zhcn-footer",
+          "layout": "single-column",
+          "columns": [
+            [
+              {
+                "id": "comp-1754655785515-zhcn-footer-text",
+                "type": "paragraph",
+                "props": {
+                  "content": "© {year} AgentifUI. 探索大模型应用的未来。",
+                  "textAlign": "center"
+                }
+              }
+            ]
+          ]
         }
       ],
       "metadata": {
         "version": "1.0.0",
-        "lastModified": "2026-02-18T16:18:34.992Z",
+        "lastModified": "2026-03-22T00:00:00.000Z",
         "author": "system-migration",
         "migratedFrom": "legacy-format",
         "migrationTimestamp": "2025-08-08T12:23:05.513Z",
-        "locale": "zh-CN",
-        "migrated": true
+        "locale": "zh-CN"
       }
     }
   },
@@ -2304,6 +2408,7 @@
     "appsMarket": "应用市场",
     "settings": "设置",
     "recentChats": "近期对话",
+    "recentRecords": "最近记录",
     "moreOptions": "更多选项",
     "rename": "重命名",
     "delete": "删除对话",

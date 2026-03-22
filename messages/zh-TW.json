@@ -451,7 +451,10 @@
         "noData": "無結果資料",
         "copy": "複製結果",
         "copied": "已複製",
-        "download": "下載結果"
+        "download": "下載結果",
+        "copyButton": "複製結果",
+        "downloadButton": "下載結果",
+        "closeButton": "關閉結果"
       }
     },
     "textGeneration": {
@@ -2405,6 +2408,7 @@
     "appsMarket": "應用程式市場",
     "settings": "設定",
     "recentChats": "近期對話",
+    "recentRecords": "最近記錄",
     "moreOptions": "更多選項",
     "rename": "重新命名",
     "delete": "刪除對話",

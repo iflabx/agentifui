@@ -451,7 +451,10 @@
         "noData": "Nessun dato di risultato",
         "copy": "Copia risultato",
         "copied": "Copiato",
-        "download": "Scarica risultato"
+        "download": "Scarica risultato",
+        "copyButton": "Copia risultato",
+        "downloadButton": "Scarica risultato",
+        "closeButton": "Chiudi risultato"
       }
     },
     "textGeneration": {
@@ -2405,6 +2408,7 @@
     "appsMarket": "Mercato App",
     "settings": "Impostazioni",
     "recentChats": "Chat Recenti",
+    "recentRecords": "Record recenti",
     "moreOptions": "Altre Opzioni",
     "rename": "Rinomina",
     "delete": "Elimina Chat",

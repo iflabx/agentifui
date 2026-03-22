@@ -451,7 +451,10 @@
         "noData": "No result data",
         "copy": "Copy result",
         "copied": "Copied",
-        "download": "Download result"
+        "download": "Download result",
+        "copyButton": "Copy result",
+        "downloadButton": "Download result",
+        "closeButton": "Close result"
       }
     },
     "textGeneration": {
@@ -2405,6 +2408,7 @@
     "appsMarket": "App Market",
     "settings": "Settings",
     "recentChats": "Recent Chats",
+    "recentRecords": "Recent Records",
     "moreOptions": "More Options",
     "rename": "Rename",
     "delete": "Delete Chat",

@@ -11,6 +11,10 @@ echo "🎨 Running lint-staged on staged files..."
 pnpm run format:staged || exit 1
 echo "✅ Linting and formatting completed!"
 
+echo "🌍 Running i18n consistency check..."
+pnpm run i18n:check || exit 1
+echo "✅ i18n consistency check passed!"
+
 # Check if any test files are in staging area
 test_files=$(echo "$files" | grep -E '\.(test|spec)\.(ts|tsx|js|jsx)$' || true)
 

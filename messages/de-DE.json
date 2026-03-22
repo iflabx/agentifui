@@ -451,7 +451,10 @@
         "noData": "Keine Ergebnisdaten",
         "copy": "Ergebnis kopieren",
         "copied": "Kopiert",
-        "download": "Ergebnis herunterladen"
+        "download": "Ergebnis herunterladen",
+        "copyButton": "Ergebnis kopieren",
+        "downloadButton": "Ergebnis herunterladen",
+        "closeButton": "Ergebnis schließen"
       }
     },
     "textGeneration": {
@@ -2405,6 +2408,7 @@
     "appsMarket": "App-Markt",
     "settings": "Einstellungen",
     "recentChats": "Letzte Chats",
+    "recentRecords": "Letzte Einträge",
     "moreOptions": "Weitere Optionen",
     "rename": "Umbenennen",
     "delete": "Chat löschen",
