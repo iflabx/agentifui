@@ -1,5 +1,6 @@
 'use client';
 
+import { conversationEvents } from '@lib/hooks/use-combined-conversations';
 import { useProfile } from '@lib/hooks/use-profile';
 import {
   deleteExecution,
@@ -21,6 +22,7 @@ interface ExecutionHistoryProps {
   instanceId: string;
   onClose: () => void;
   isMobile: boolean;
+  onDeleteExecutions?: (executionIds: string[]) => void;
   onViewResult: (
     result: Record<string, unknown>,
     execution: AppExecution
@@ -43,6 +45,7 @@ export function ExecutionHistory({
   onClose,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   isMobile,
+  onDeleteExecutions,
   onViewResult,
 }: ExecutionHistoryProps) {
   const { profile } = useProfile();
@@ -170,12 +173,17 @@ export function ExecutionHistory({
       });
 
       const results = await Promise.all(deletePromises);
-      const successCount = results.filter(Boolean).length;
+      const successfulIds = Array.from(selectedIds).filter(
+        (_id, index) => results[index]
+      );
+      const successCount = successfulIds.length;
       const failCount = results.length - successCount;
 
       if (successCount > 0) {
         // Refresh history record list
         await loadHistory();
+        conversationEvents.emit();
+        onDeleteExecutions?.(successfulIds);
         console.log(`Successfully deleted ${successCount} records`);
       }
 

@@ -4,24 +4,49 @@ import { ResizableSplitPane } from '@components/ui/resizable-split-pane';
 import { MobileTabSwitcher } from '@components/workflow/mobile-tab-switcher';
 import { useMobile } from '@lib/hooks/use-mobile';
 import { useWorkflowExecution } from '@lib/hooks/use-workflow-execution';
+import { getExecutionById } from '@lib/services/client/app-executions-api';
+import { useAppListStore } from '@lib/stores/app-list-store';
 import { useWorkflowHistoryStore } from '@lib/stores/workflow-history-store';
+import type { AppExecution } from '@lib/types/database';
 import { cn } from '@lib/utils';
 import { AlertCircle, RefreshCw, X } from 'lucide-react';
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 import { ExecutionHistory } from './execution-history';
 import { WorkflowInputForm, WorkflowInputFormRef } from './workflow-input-form';
 import { WorkflowTracker } from './workflow-tracker';
-import { ResultViewer } from './workflow-tracker/result-viewer';
 
 interface WorkflowLayoutProps {
   instanceId: string;
 }
 
 type MobileTab = 'form' | 'tracker' | 'history';
+
+function buildExecutionViewerResult(
+  execution: AppExecution
+): Record<string, unknown> {
+  if (execution.outputs && Object.keys(execution.outputs).length > 0) {
+    return execution.outputs;
+  }
+
+  return {
+    message: 'No detail data available.',
+    status: execution.status,
+    executionId: execution.id,
+    title: execution.title,
+    inputs: execution.inputs,
+    createdAt: execution.created_at,
+    completedAt: execution.completed_at,
+    elapsedTime: execution.elapsed_time,
+    totalSteps: execution.total_steps,
+    totalTokens: execution.total_tokens,
+    errorMessage: execution.error_message,
+  };
+}
 
 /**
  * Workflow main layout component
@@ -35,6 +60,10 @@ type MobileTab = 'form' | 'tracker' | 'history';
 export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
   const isMobile = useMobile();
   const t = useTranslations('pages.workflow.buttons');
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const requestedExecutionId = searchParams.get('executionId');
 
   // --- New workflow execution system ---
   const {
@@ -52,16 +81,64 @@ export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
   // --- Keep the original status management ---
   const { showHistory, setShowHistory } = useWorkflowHistoryStore();
   const [mobileActiveTab, setMobileActiveTab] = useState<MobileTab>('form');
-
-  // --- ResultViewer status management ---
-  const [showResultViewer, setShowResultViewer] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [selectedExecution, setSelectedExecution] = useState<any>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [executionResult, setExecutionResult] = useState<any>(null);
+  const [restoredExecution, setRestoredExecution] =
+    useState<AppExecution | null>(null);
+  const [restoredExecutionResult, setRestoredExecutionResult] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
+  const [resultOpenSignal, setResultOpenSignal] = useState(0);
 
   // --- Form reset reference ---
   const formResetRef = React.useRef<WorkflowInputFormRef>(null);
+  const handledExecutionIdRef = React.useRef<string | null>(null);
+
+  const clearRequestedExecutionId = useCallback(() => {
+    if (!requestedExecutionId) {
+      return;
+    }
+
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.delete('executionId');
+    const nextQuery = nextParams.toString();
+    const nextUrl = nextQuery ? `${pathname}?${nextQuery}` : pathname;
+
+    router.replace(nextUrl, { scroll: false });
+  }, [pathname, requestedExecutionId, router, searchParams]);
+
+  const setRequestedExecutionId = useCallback(
+    (executionId: string) => {
+      const nextParams = new URLSearchParams(searchParams.toString());
+      nextParams.set('executionId', executionId);
+      const nextQuery = nextParams.toString();
+      const nextUrl = nextQuery ? `${pathname}?${nextQuery}` : pathname;
+
+      router.replace(nextUrl, { scroll: false });
+    },
+    [pathname, router, searchParams]
+  );
+
+  const clearHistoricalExecutionState = useCallback(() => {
+    setRestoredExecution(null);
+    setRestoredExecutionResult(null);
+  }, []);
+
+  const closeHistoricalExecution = useCallback(() => {
+    clearHistoricalExecutionState();
+    clearRequestedExecutionId();
+  }, [clearHistoricalExecutionState, clearRequestedExecutionId]);
+
+  const resolveCurrentApp = useCallback(async () => {
+    const appListState = useAppListStore.getState();
+
+    if (appListState.apps.length === 0) {
+      await appListState.fetchApps();
+    }
+
+    return useAppListStore
+      .getState()
+      .apps.find(app => app.instance_id === instanceId);
+  }, [instanceId]);
 
   // --- Workflow execution callback, now using the real hook ---
   const handleExecuteWorkflow = useCallback(
@@ -73,12 +150,15 @@ export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
       );
 
       try {
+        handledExecutionIdRef.current = null;
+        clearHistoricalExecutionState();
+        clearRequestedExecutionId();
         await executeWorkflow(formData);
       } catch (error) {
         console.error('[Workflow layout] Execution failed:', error);
       }
     },
-    [executeWorkflow]
+    [clearHistoricalExecutionState, clearRequestedExecutionId, executeWorkflow]
   );
 
   // --- Stop execution ---
@@ -107,12 +187,14 @@ export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
 
     // Reset execution state (keep history)
     resetExecution();
+    handledExecutionIdRef.current = null;
+    closeHistoricalExecution();
 
     // Reset form
     if (formResetRef.current?.resetForm) {
       formResetRef.current.resetForm();
     }
-  }, [resetExecution]);
+  }, [closeHistoricalExecution, resetExecution]);
 
   // --- Clear error ---
   const handleClearError = useCallback(() => {
@@ -121,13 +203,117 @@ export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
   }, [clearExecutionState]);
 
   // --- Handle view result ---
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const handleViewResult = useCallback((result: any, execution: any) => {
-    console.log('[Workflow layout] View execution result:', execution);
-    setExecutionResult(result);
-    setSelectedExecution(execution);
-    setShowResultViewer(true);
-  }, []);
+  const handleViewResult = useCallback(
+    (result: Record<string, unknown>, execution: AppExecution) => {
+      console.log('[Workflow layout] View execution result:', execution);
+      handledExecutionIdRef.current = execution.id;
+      setRestoredExecution(execution);
+      setRestoredExecutionResult(result);
+      setMobileActiveTab('tracker');
+      setResultOpenSignal(signal => signal + 1);
+      setRequestedExecutionId(execution.id);
+    },
+    [setRequestedExecutionId]
+  );
+
+  const handleDeletedExecutions = useCallback(
+    (deletedExecutionIds: string[]) => {
+      const activeExecutionId = requestedExecutionId || restoredExecution?.id;
+
+      if (
+        !activeExecutionId ||
+        !deletedExecutionIds.includes(activeExecutionId)
+      ) {
+        return;
+      }
+
+      handledExecutionIdRef.current = null;
+      closeHistoricalExecution();
+      setMobileActiveTab('form');
+    },
+    [closeHistoricalExecution, requestedExecutionId, restoredExecution?.id]
+  );
+
+  const isShowingRestoredExecution = !!restoredExecution && !isExecuting;
+  const activeExecution = isShowingRestoredExecution
+    ? restoredExecution
+    : currentExecution;
+  const activeExecutionResult = isShowingRestoredExecution
+    ? restoredExecutionResult
+    : currentExecution?.outputs || null;
+
+  useEffect(() => {
+    if (!requestedExecutionId) {
+      handledExecutionIdRef.current = null;
+      return;
+    }
+
+    if (handledExecutionIdRef.current === requestedExecutionId) {
+      return;
+    }
+
+    handledExecutionIdRef.current = requestedExecutionId;
+
+    let isCancelled = false;
+
+    const openRequestedExecution = async () => {
+      try {
+        const currentApp = await resolveCurrentApp();
+        if (!currentApp) {
+          if (!isCancelled) {
+            handledExecutionIdRef.current = null;
+            closeHistoricalExecution();
+          }
+          return;
+        }
+
+        const result = await getExecutionById(requestedExecutionId);
+        if (!result.success || !result.data) {
+          if (!isCancelled) {
+            handledExecutionIdRef.current = null;
+            closeHistoricalExecution();
+          }
+          return;
+        }
+
+        if (
+          result.data.execution_type !== 'workflow' ||
+          result.data.service_instance_id !== currentApp.id
+        ) {
+          if (!isCancelled) {
+            handledExecutionIdRef.current = null;
+            closeHistoricalExecution();
+          }
+          return;
+        }
+
+        if (isCancelled) {
+          return;
+        }
+
+        const restoredResult = buildExecutionViewerResult(result.data);
+        setRestoredExecution(result.data);
+        setRestoredExecutionResult(restoredResult);
+        setMobileActiveTab('tracker');
+        setResultOpenSignal(signal => signal + 1);
+      } catch (error) {
+        console.error(
+          '[Workflow layout] Failed to open requested execution:',
+          error
+        );
+        if (!isCancelled) {
+          handledExecutionIdRef.current = null;
+          closeHistoricalExecution();
+        }
+      }
+    };
+
+    void openRequestedExecution();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [closeHistoricalExecution, requestedExecutionId, resolveCurrentApp]);
 
   // --- Error banner component ---
   const ErrorBanner = ({
@@ -215,11 +401,21 @@ export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
             <div className="h-full">
               <WorkflowTracker
                 isExecuting={isExecuting}
-                executionResult={currentExecution?.outputs || null}
-                currentExecution={currentExecution}
+                executionResult={activeExecutionResult}
+                currentExecution={activeExecution}
+                autoOpenResult={true}
+                openResultSignal={resultOpenSignal}
+                forceShowResult={
+                  isShowingRestoredExecution && !!activeExecutionResult
+                }
                 onStop={handleStopExecution}
                 onRetry={handleRetryExecution}
                 onReset={handleCompleteReset}
+                onCloseResult={
+                  isShowingRestoredExecution
+                    ? closeHistoricalExecution
+                    : undefined
+                }
               />
             </div>
           )}
@@ -230,6 +426,7 @@ export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
                 instanceId={instanceId}
                 onClose={() => setMobileActiveTab('form')}
                 isMobile={true}
+                onDeleteExecutions={handleDeletedExecutions}
                 onViewResult={handleViewResult}
               />
             </div>
@@ -282,11 +479,21 @@ export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
                 <div className="no-scrollbar flex-1 overflow-x-hidden overflow-y-auto">
                   <WorkflowTracker
                     isExecuting={isExecuting}
-                    executionResult={currentExecution?.outputs || null}
-                    currentExecution={currentExecution}
+                    executionResult={activeExecutionResult}
+                    currentExecution={activeExecution}
+                    autoOpenResult={true}
+                    openResultSignal={resultOpenSignal}
+                    forceShowResult={
+                      isShowingRestoredExecution && !!activeExecutionResult
+                    }
                     onStop={handleStopExecution}
                     onRetry={handleRetryExecution}
                     onReset={handleCompleteReset}
+                    onCloseResult={
+                      isShowingRestoredExecution
+                        ? closeHistoricalExecution
+                        : undefined
+                    }
                   />
                 </div>
               </div>
@@ -308,24 +515,12 @@ export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
               instanceId={instanceId}
               onClose={() => setShowHistory(false)}
               isMobile={false}
+              onDeleteExecutions={handleDeletedExecutions}
               onViewResult={handleViewResult}
             />
           </div>
         )}
       </div>
-
-      {/* --- Result viewer (page level, with blurred background) --- */}
-      {showResultViewer && executionResult && selectedExecution && (
-        <ResultViewer
-          result={executionResult}
-          execution={selectedExecution}
-          onClose={() => {
-            setShowResultViewer(false);
-            setSelectedExecution(null);
-            setExecutionResult(null);
-          }}
-        />
-      )}
     </div>
   );
 }

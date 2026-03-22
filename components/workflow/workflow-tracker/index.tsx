@@ -19,9 +19,13 @@ interface WorkflowTrackerProps {
   executionResult: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Dynamic execution object structure
   currentExecution: any;
+  autoOpenResult?: boolean;
+  openResultSignal?: number;
+  forceShowResult?: boolean;
   onStop?: () => void;
   onRetry?: () => void;
   onReset?: () => void;
+  onCloseResult?: () => void;
 }
 
 /**
@@ -38,9 +42,13 @@ export function WorkflowTracker({
   isExecuting,
   executionResult,
   currentExecution,
+  autoOpenResult = true,
+  openResultSignal = 0,
+  forceShowResult = false,
   onStop,
   onRetry,
   onReset,
+  onCloseResult,
 }: WorkflowTrackerProps) {
   const tStatus = useTranslations('pages.workflow.status');
   const tForm = useTranslations('pages.workflow.form');
@@ -113,13 +121,16 @@ export function WorkflowTracker({
   const prevExecutionRef = useRef<string | null>(null);
 
   useEffect(() => {
-    // When execution is completed and there is a result, automatically open (only triggered when a new execution is completed)
+    if (!autoOpenResult) {
+      return;
+    }
+
     const currentExecutionId =
       currentExecution?.id || currentExecution?.task_id;
 
     if (
       !isExecuting &&
-      currentExecution?.status === 'completed' &&
+      currentExecution &&
       executionResult &&
       currentExecutionId &&
       prevExecutionRef.current !== currentExecutionId
@@ -129,11 +140,22 @@ export function WorkflowTracker({
     }
   }, [
     isExecuting,
-    currentExecution?.status,
+    currentExecution,
     currentExecution?.id,
     currentExecution?.task_id,
     executionResult,
+    autoOpenResult,
   ]);
+
+  useEffect(() => {
+    if (!openResultSignal || !currentExecution || !executionResult) {
+      return;
+    }
+
+    setShowResult(true);
+  }, [currentExecution, executionResult, openResultSignal]);
+
+  const shouldShowResult = forceShowResult || showResult;
 
   return (
     <div className="flex h-full flex-col">
@@ -257,11 +279,18 @@ export function WorkflowTracker({
       </div>
 
       {/* --- Result viewer --- */}
-      {showResult && executionResult && (
+      {shouldShowResult && executionResult && (
         <ResultViewer
           result={executionResult}
           execution={currentExecution}
-          onClose={() => setShowResult(false)}
+          onClose={() => {
+            if (forceShowResult && onCloseResult) {
+              onCloseResult();
+              return;
+            }
+
+            setShowResult(false);
+          }}
         />
       )}
     </div>
