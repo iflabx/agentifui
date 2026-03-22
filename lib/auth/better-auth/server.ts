@@ -18,6 +18,25 @@ const BETTER_AUTH_KYSELY_KEY = '__agentifui_better_auth_kysely__';
 const INTERNAL_AUTH_PROXY_HEADER = 'x-agentifui-internal-auth-proxy';
 type KyselyDb = unknown;
 
+function splitEnvList(value: string | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+
+  return value
+    .split(',')
+    .map(entry => entry.trim())
+    .filter(Boolean);
+}
+
+function normalizeOrigin(value: string): string | null {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
 function getBaseUrl(): string {
   if (process.env.BETTER_AUTH_URL) {
     return process.env.BETTER_AUTH_URL;
@@ -28,6 +47,34 @@ function getBaseUrl(): string {
   }
 
   return 'http://localhost:3000';
+}
+
+function getTrustedOrigins(): string[] {
+  const values = [
+    getBaseUrl(),
+    process.env.NEXT_PUBLIC_APP_URL,
+    ...splitEnvList(process.env.BETTER_AUTH_TRUSTED_ORIGINS),
+    ...splitEnvList(process.env.CORS_ALLOWED_ORIGINS),
+    ...(process.env.NODE_ENV === 'development'
+      ? splitEnvList(process.env.DEV_ALLOWED_ORIGINS)
+      : []),
+  ];
+
+  const trustedOrigins = values
+    .map(value => value?.trim())
+    .filter((value): value is string => Boolean(value))
+    .map(value => {
+      const normalized = normalizeOrigin(value);
+      if (!normalized) {
+        console.warn(
+          `[better-auth] ignoring invalid trusted origin entry: ${value}`
+        );
+      }
+      return normalized;
+    })
+    .filter((value): value is string => Boolean(value));
+
+  return [...new Set(trustedOrigins)];
 }
 
 function getSecret(): string {
@@ -466,6 +513,7 @@ export function getAuthProviderIssuer(providerId: string): string | null {
 export const auth = betterAuth({
   baseURL: getBaseUrl(),
   basePath: BETTER_AUTH_BASE_PATH,
+  trustedOrigins: getTrustedOrigins(),
   secret: getSecret(),
   database: getAuthDatabaseConfig(),
   secondaryStorage: getAuthSecondaryStorage(),

@@ -1,7 +1,42 @@
-import { useChatInterface } from '@lib/hooks/use-chat-interface';
-import { useChatflowInterface } from '@lib/hooks/use-chatflow-interface';
+import type { ChatMessage } from '@lib/stores/chat-store';
 
 import React from 'react';
+
+type ChatInterfaceLike = {
+  messages: ChatMessage[];
+  handleSubmit: (
+    message: string,
+    files?: unknown[],
+    inputs?: Record<string, unknown>
+  ) => Promise<unknown>;
+  isProcessing: boolean;
+  handleStopProcessing: () => Promise<unknown> | unknown;
+  sendDirectMessage: (messageText: string, files?: unknown[]) => Promise<void>;
+};
+
+type ChatflowNodeLike = {
+  status?: string;
+  startTime?: number | null;
+};
+
+type ChatflowInterfaceLike = ChatInterfaceLike & {
+  nodeTracker: {
+    nodes: ChatflowNodeLike[];
+    isExecuting: boolean;
+    executionProgress: {
+      current: number;
+      total: number;
+      percentage: number;
+    };
+    error: string | null;
+  };
+};
+
+interface UseChatflowStateInput {
+  isChatflowApp: boolean;
+  chatflowInterface: ChatflowInterfaceLike;
+  regularInterface: ChatInterfaceLike;
+}
 
 /**
  * Chatflow state management hook
@@ -12,10 +47,11 @@ import React from 'react';
  * - Automatically responds to node execution state
  * - Supports not auto-opening tracker if user manually closed it
  */
-export function useChatflowState(isChatflowApp: boolean) {
-  const chatflowInterface = useChatflowInterface();
-  const regularInterface = useChatInterface();
-
+export function useChatflowState({
+  isChatflowApp,
+  chatflowInterface,
+  regularInterface,
+}: UseChatflowStateInput) {
   // Select the correct chat interface based on app type
   const chatInterface = isChatflowApp ? chatflowInterface : regularInterface;
 

@@ -8,6 +8,8 @@ import { Edit, Trash2 } from 'lucide-react';
 
 import { useTranslations } from 'next-intl';
 
+import { getAuthTypeLabel, getProviderTypeLabel } from './provider-labels';
+
 interface ProviderCardProps {
   provider: Provider;
   onEdit: (provider: Provider) => void;
@@ -60,7 +62,7 @@ export function ProviderCard({
                   : 'bg-stone-200 text-stone-700'
               )}
             >
-              {t(`providerTypes.${provider.type}`)}
+              {getProviderTypeLabel(t, provider.type)}
             </span>
 
             <span
@@ -109,7 +111,7 @@ export function ProviderCard({
               )}
             >
               <span className="font-medium">{t('form.authMethod')}:</span>
-              <span>{t(`authTypes.${provider.auth_type}`)}</span>
+              <span>{getAuthTypeLabel(t, provider.auth_type)}</span>
             </div>
           </div>
         </div>

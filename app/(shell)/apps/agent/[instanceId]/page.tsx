@@ -36,6 +36,7 @@ export default function AppDetailPage() {
   const pathname = usePathname();
   const instanceId = params.instanceId as string;
   const t = useTranslations('pages.apps');
+  const chatInterface = useChatInterface();
 
   // get user profile, used for welcome interface display
   const { profile } = useProfile();
@@ -48,7 +49,8 @@ export default function AppDetailPage() {
     isWaitingForResponse,
     handleStopProcessing,
     sendDirectMessage,
-  } = useChatInterface();
+    clearConversationState,
+  } = chatInterface;
 
   // use unified welcome interface logic, now support app detail page
   const { isWelcomeScreen, setIsWelcomeScreen } = useWelcomeScreen();
@@ -99,8 +101,6 @@ export default function AppDetailPage() {
 
   // useLayoutEffect ensures immediate cleanup of state when switching routes
   // this executes earlier than useEffect, allowing state to be cleared before rendering, avoiding display of incorrect content
-  const { clearConversationState } = useChatInterface();
-
   useLayoutEffect(() => {
     // correctly determine if the current page is an agent page
     if (pathname === `/apps/agent/${instanceId}`) {

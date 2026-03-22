@@ -12,9 +12,11 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 const BETTER_AUTH_BASE_PATH = '/api/auth/better';
+const INTERNAL_DATA_BASE_PATH = '/api/internal/data';
 const INTERNAL_PROFILE_STATUS_PATH = '/api/internal/auth/profile-status';
 const INTERNAL_STORAGE_BASE_PATH = '/api/internal/storage';
 const INTERNAL_REALTIME_BASE_PATH = '/api/internal/realtime';
+const ADMIN_API_BASE_PATH = '/api/admin';
 const INTERNAL_AUTH_PROXY_HEADER = 'x-agentifui-internal-auth-proxy';
 const INTERNAL_FETCH_TIMEOUT_MS_FALLBACK = 3000;
 
@@ -181,10 +183,15 @@ export async function middleware(request: NextRequest) {
   }
 
   // Auth API endpoints must remain free from profile/status checks to avoid auth loop.
+  // Fastify-owned business APIs also enforce auth internally, so skipping the
+  // middleware session/profile round-trip keeps page protection intact without
+  // duplicating API auth work on the edge.
   if (
     pathname.startsWith(BETTER_AUTH_BASE_PATH) ||
+    pathname.startsWith(INTERNAL_DATA_BASE_PATH) ||
     pathname.startsWith(INTERNAL_PROFILE_STATUS_PATH) ||
     pathname.startsWith('/api/auth/sso/providers') ||
+    pathname.startsWith(ADMIN_API_BASE_PATH) ||
     pathname.startsWith(INTERNAL_STORAGE_BASE_PATH) ||
     pathname.startsWith(INTERNAL_REALTIME_BASE_PATH)
   ) {

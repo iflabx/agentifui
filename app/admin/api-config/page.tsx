@@ -409,8 +409,10 @@ const InstanceForm = ({
           const { getDifyAppInfo, getDifyAppParameters } = await import(
             '@lib/services/dify/app-browser-service'
           );
-          appInfo = await getDifyAppInfo(formData.instance_id);
-          difyParams = await getDifyAppParameters(formData.instance_id);
+          [appInfo, difyParams] = await Promise.all([
+            getDifyAppInfo(formData.instance_id),
+            getDifyAppParameters(formData.instance_id),
+          ]);
         } catch (dbError) {
           console.log(
             '[sync config] database config failed, try to use form config:',
@@ -436,17 +438,16 @@ const InstanceForm = ({
             await import('@lib/services/dify/app-browser-service');
 
           // get basic info and parameters
-          appInfo = await getDifyAppInfoWithConfig(formData.instance_id, {
-            apiUrl: formData.config.api_url,
-            apiKey: formData.apiKey,
-          });
-          difyParams = await getDifyAppParametersWithConfig(
-            formData.instance_id,
-            {
+          [appInfo, difyParams] = await Promise.all([
+            getDifyAppInfoWithConfig(formData.instance_id, {
               apiUrl: formData.config.api_url,
               apiKey: formData.apiKey,
-            }
-          );
+            }),
+            getDifyAppParametersWithConfig(formData.instance_id, {
+              apiUrl: formData.config.api_url,
+              apiKey: formData.apiKey,
+            }),
+          ]);
         }
       } else {
         // add mode: use form config directly
@@ -474,14 +475,16 @@ const InstanceForm = ({
           await import('@lib/services/dify/app-browser-service');
 
         // get basic info and parameters
-        appInfo = await getDifyAppInfoWithConfig(actualInstanceId, {
-          apiUrl: formData.config.api_url,
-          apiKey: formData.apiKey,
-        });
-        difyParams = await getDifyAppParametersWithConfig(actualInstanceId, {
-          apiUrl: formData.config.api_url,
-          apiKey: formData.apiKey,
-        });
+        [appInfo, difyParams] = await Promise.all([
+          getDifyAppInfoWithConfig(actualInstanceId, {
+            apiUrl: formData.config.api_url,
+            apiKey: formData.apiKey,
+          }),
+          getDifyAppParametersWithConfig(actualInstanceId, {
+            apiUrl: formData.config.api_url,
+            apiKey: formData.apiKey,
+          }),
+        ]);
       }
 
       // sync basic info

@@ -36,6 +36,7 @@ export default function AppDetailPage() {
   const pathname = usePathname();
   const instanceId = params.instanceId as string;
   const t = useTranslations('pages.apps');
+  const chatInterface = useChatInterface();
 
   // get user profile, used for welcome interface display
   const { profile } = useProfile();
@@ -48,7 +49,8 @@ export default function AppDetailPage() {
     isWaitingForResponse,
     handleStopProcessing,
     sendDirectMessage,
-  } = useChatInterface();
+    clearConversationState,
+  } = chatInterface;
 
   // use unified welcome interface logic, now support app detail page
   const { isWelcomeScreen, setIsWelcomeScreen } = useWelcomeScreen();
@@ -96,8 +98,6 @@ export default function AppDetailPage() {
 
   // get current app instance data
   const currentApp = apps.find(app => app.instance_id === instanceId);
-
-  const { clearConversationState } = useChatInterface();
 
   useLayoutEffect(() => {
     if (pathname === `/apps/chatbot/${instanceId}`) {

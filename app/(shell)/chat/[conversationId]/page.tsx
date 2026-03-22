@@ -13,9 +13,11 @@ import { DynamicSuggestedQuestions } from '@components/chat/dynamic-suggested-qu
 import { ChatflowFloatingController } from '@components/chatflow/chatflow-floating-controller';
 import { ChatflowNodeTracker } from '@components/chatflow/chatflow-node-tracker';
 import { FilePreviewCanvas } from '@components/file-preview/file-preview-canvas';
+import { useChatInterface } from '@lib/hooks/use-chat-interface';
 import { useChatPageState } from '@lib/hooks/use-chat-page-state';
 import { useChatScroll } from '@lib/hooks/use-chat-scroll';
 import { useChatflowDetection } from '@lib/hooks/use-chatflow-detection';
+import { useChatflowInterface } from '@lib/hooks/use-chatflow-interface';
 import { useChatflowState } from '@lib/hooks/use-chatflow-state';
 import { useConversationMessages } from '@lib/hooks/use-conversation-messages';
 import { useProfile } from '@lib/hooks/use-profile';
@@ -51,6 +53,8 @@ export default function ChatPage() {
 
   const { inputHeight } = useChatLayoutStore();
   const isPreviewOpen = useFilePreviewStore(state => state.isPreviewOpen);
+  const chatflowInterface = useChatflowInterface();
+  const regularInterface = useChatInterface();
 
   // Use the wrapped hook to detect chatflow apps
   const { isChatflowApp } = useChatflowDetection();
@@ -65,7 +69,11 @@ export default function ChatPage() {
     showNodeTracker,
     setShowNodeTracker,
     showFloatingController,
-  } = useChatflowState(isChatflowApp);
+  } = useChatflowState({
+    isChatflowApp,
+    chatflowInterface,
+    regularInterface,
+  });
 
   // Critical fix: Clean up chatflow execution state when switching routes
   // Ensure that when switching to historical conversations, previous node data is not displayed

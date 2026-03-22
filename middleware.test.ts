@@ -80,4 +80,17 @@ describe('middleware /chat redirects', () => {
     expect(response.status).toBe(307);
     expect(response.headers.get('location')).toBe('http://localhost/login');
   });
+
+  it.each([
+    'http://localhost/api/internal/data',
+    'http://localhost/api/admin/encrypt',
+  ])('skips middleware auth proxy checks for %s', async url => {
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock as typeof fetch;
+
+    const response = await middleware(new NextRequest(url));
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(response.headers.get('location')).toBeNull();
+  });
 });

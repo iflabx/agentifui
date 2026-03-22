@@ -61,6 +61,32 @@ function isFastifyProxyEnabled(value: string | undefined): boolean {
   return normalized === '1' || normalized === 'true' || normalized === 'yes';
 }
 
+function parseAllowedDevOrigins(raw: string | undefined): string[] {
+  if (!raw) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  return raw
+    .split(',')
+    .map(value => value.trim())
+    .filter(Boolean)
+    .map(value => {
+      try {
+        return new URL(value).hostname;
+      } catch {
+        return value;
+      }
+    })
+    .filter(value => {
+      if (seen.has(value)) {
+        return false;
+      }
+      seen.add(value);
+      return true;
+    });
+}
+
 const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_APP_VERSION: pkg.version,
@@ -69,9 +95,7 @@ const nextConfig: NextConfig = {
   output:
     process.env.NEXT_OUTPUT_MODE === 'standalone' ? 'standalone' : undefined,
 
-  allowedDevOrigins: process.env.DEV_ALLOWED_ORIGINS
-    ? process.env.DEV_ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
-    : [],
+  allowedDevOrigins: parseAllowedDevOrigins(process.env.DEV_ALLOWED_ORIGINS),
 
   async rewrites() {
     if (!isFastifyProxyEnabled(process.env.FASTIFY_PROXY_ENABLED)) {

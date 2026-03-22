@@ -9,7 +9,7 @@ import { ChatInput } from '@components/chat-input';
 import { ChatflowFloatingController } from '@components/chatflow/chatflow-floating-controller';
 import { ChatflowInputArea } from '@components/chatflow/chatflow-input-area';
 import { ChatflowNodeTracker } from '@components/chatflow/chatflow-node-tracker';
-import { useChatInterface, useChatScroll, useWelcomeScreen } from '@lib/hooks';
+import { useChatScroll, useWelcomeScreen } from '@lib/hooks';
 import { useChatflowInterface } from '@lib/hooks/use-chatflow-interface';
 import { useChatflowState } from '@lib/hooks/use-chatflow-state';
 import { useCurrentApp } from '@lib/hooks/use-current-app';
@@ -33,6 +33,7 @@ export default function AppDetailPage() {
   const pathname = usePathname();
   const instanceId = params.instanceId as string;
   const t = useTranslations('pages.apps');
+  const chatflowInterface = useChatflowInterface();
 
   // get chatflow execution state cleanup method
   const { resetExecution } = useChatflowExecutionStore();
@@ -40,16 +41,24 @@ export default function AppDetailPage() {
   // use unified chatflow state management, support intelligent popup control
   const {
     messages,
-    handleSubmit: originalHandleSubmit,
     isProcessing,
     handleStopProcessing,
     showNodeTracker,
     setShowNodeTracker,
     showFloatingController,
-  } = useChatflowState(true); // chatflow page is always a chatflow application
+  } = useChatflowState({
+    isChatflowApp: true,
+    chatflowInterface,
+    regularInterface: chatflowInterface,
+  }); // chatflow page is always a chatflow application
 
   // get chatflow-specific submission function
-  const { handleChatflowSubmit, isWaitingForResponse } = useChatflowInterface();
+  const {
+    handleSubmit: originalHandleSubmit,
+    handleChatflowSubmit,
+    isWaitingForResponse,
+    clearConversationState,
+  } = chatflowInterface;
 
   // use unified welcome interface logic, now support app detail page
   const { isWelcomeScreen, setIsWelcomeScreen } = useWelcomeScreen();
@@ -104,8 +113,6 @@ export default function AppDetailPage() {
 
   // useLayoutEffect ensures immediate cleanup of state when switching routes
   // this executes earlier than useEffect, allowing state to be cleared before rendering, avoiding display of incorrect content
-  const { clearConversationState } = useChatInterface();
-
   useLayoutEffect(() => {
     // correctly determine if the current page is a chatflow page
     if (pathname === `/apps/chatflow/${instanceId}`) {

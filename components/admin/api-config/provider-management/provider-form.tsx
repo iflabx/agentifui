@@ -20,22 +20,36 @@ import React from 'react';
 
 import { useTranslations } from 'next-intl';
 
+import { getAuthTypeLabel, getProviderTypeLabel } from './provider-labels';
+
 const PROVIDER_TYPES = [
-  { value: 'llm', label: 'LLM (Large Language Model)' },
-  { value: 'platform', label: 'Platform (Aggregation Platform)' },
-  { value: 'embedding', label: 'Embedding (Vectorization)' },
-  { value: 'tts', label: 'TTS (Text-to-Speech)' },
-  { value: 'stt', label: 'STT (Speech-to-Text)' },
-  { value: 'vision', label: 'Vision (Image Recognition)' },
-  { value: 'multimodal', label: 'Multimodal (Multimodal)' },
+  'llm',
+  'platform',
+  'embedding',
+  'tts',
+  'stt',
+  'vision',
+  'multimodal',
 ] as const;
 
 const AUTH_TYPES = [
-  { value: 'api_key', label: 'API Key' },
-  { value: 'bearer_token', label: 'Bearer Token' },
-  { value: 'oauth2', label: 'OAuth 2.0' },
-  { value: 'basic_auth', label: 'Basic Auth' },
+  'api_key',
+  'bearer_token',
+  'oauth2',
+  'basic_auth',
+  'none',
 ] as const;
+
+function buildSelectOptions(
+  defaultValues: readonly string[],
+  currentValue: string
+) {
+  if (!currentValue || defaultValues.includes(currentValue)) {
+    return [...defaultValues];
+  }
+
+  return [...defaultValues, currentValue];
+}
 
 interface ProviderFormData {
   name: string;
@@ -81,6 +95,16 @@ export function ProviderForm({
   ) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
+
+  const providerTypeOptions = React.useMemo(
+    () => buildSelectOptions(PROVIDER_TYPES, formData.type),
+    [formData.type]
+  );
+
+  const authTypeOptions = React.useMemo(
+    () => buildSelectOptions(AUTH_TYPES, formData.auth_type),
+    [formData.auth_type]
+  );
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -140,9 +164,9 @@ export function ProviderForm({
                 <SelectValue placeholder={t('form.type.placeholder')} />
               </SelectTrigger>
               <SelectContent>
-                {PROVIDER_TYPES.map(type => (
-                  <SelectItem key={type.value} value={type.value}>
-                    {t(`providerTypes.${type.value}`)}
+                {providerTypeOptions.map(type => (
+                  <SelectItem key={type} value={type}>
+                    {getProviderTypeLabel(t, type)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -192,9 +216,9 @@ export function ProviderForm({
                 <SelectValue placeholder={t('form.authType.placeholder')} />
               </SelectTrigger>
               <SelectContent>
-                {AUTH_TYPES.map(auth => (
-                  <SelectItem key={auth.value} value={auth.value}>
-                    {t(`authTypes.${auth.value}`)}
+                {authTypeOptions.map(auth => (
+                  <SelectItem key={auth} value={auth}>
+                    {getAuthTypeLabel(t, auth)}
                   </SelectItem>
                 ))}
               </SelectContent>
