@@ -20,7 +20,7 @@ type SettingsNavItem = {
 };
 
 export function SettingsMobileNav() {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
   const router = useRouter();
   const { colors } = useSettingsColors();
   const t = useTranslations('pages.settings');

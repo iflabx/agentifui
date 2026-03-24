@@ -33,8 +33,9 @@ export default function AppDetailPage() {
   const { widthClass, paddingClass } = useChatWidth();
   const router = useRouter();
   const params = useParams();
-  const pathname = usePathname();
-  const instanceId = params.instanceId as string;
+  const pathname = usePathname() ?? '';
+  const instanceId =
+    typeof params?.instanceId === 'string' ? params.instanceId : '';
   const t = useTranslations('pages.apps');
   const chatInterface = useChatInterface();
 

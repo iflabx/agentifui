@@ -35,8 +35,9 @@ import { useParams, usePathname } from 'next/navigation';
 
 export default function ChatPage() {
   const params = useParams<{ conversationId: string }>();
-  const conversationIdFromUrl = params.conversationId;
-  const pathname = usePathname();
+  const conversationIdFromUrl =
+    typeof params?.conversationId === 'string' ? params.conversationId : '';
+  const pathname = usePathname() ?? '';
   const t = useTranslations('pages.chat.input');
 
   // Get chatflow execution state cleanup method

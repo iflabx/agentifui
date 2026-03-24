@@ -22,4 +22,8 @@ set -a
 source "${ENV_FILE}"
 set +a
 
+if [[ -n "${AGENTIF_FORCE_NODE_ENV:-}" ]]; then
+  export NODE_ENV="${AGENTIF_FORCE_NODE_ENV}"
+fi
+
 exec "$@"

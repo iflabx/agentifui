@@ -27,7 +27,7 @@ export function DynamicTitle() {
   const t = useTranslations('dynamicTitle');
 
   // --- State Acquisition ---
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
   const currentConversationId = useChatStore(
     state => state.currentConversationId
   );

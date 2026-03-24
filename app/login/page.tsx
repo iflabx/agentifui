@@ -11,9 +11,9 @@ import { Alert, AlertDescription } from '../../components/ui/alert';
 
 export default function LoginPage() {
   const searchParams = useSearchParams();
-  const registered = searchParams.get('registered');
-  const resetSuccess = searchParams.get('reset');
-  const oauthError = searchParams.get('error');
+  const registered = searchParams?.get('registered');
+  const resetSuccess = searchParams?.get('reset');
+  const oauthError = searchParams?.get('error');
   const t = useTranslations('pages.auth.login');
 
   // get error message

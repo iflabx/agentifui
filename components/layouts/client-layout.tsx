@@ -27,7 +27,7 @@ const LayoutSmartShortcuts = dynamic(
  */
 export function ClientLayout({ children }: ClientLayoutProps) {
   const [mounted, setMounted] = useState(false);
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
   const isChatPage = pathname?.startsWith('/chat');
 
   useEffect(() => {

@@ -15,7 +15,7 @@ import { SidebarButton } from './sidebar-button';
 export function SidebarFooter() {
   const isMobile = useMobile();
   const router = useRouter();
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
   const { isExpanded, selectItem } = useSidebarStore();
   const t = useTranslations('sidebar');
 

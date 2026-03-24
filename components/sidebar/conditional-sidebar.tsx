@@ -14,7 +14,7 @@ import { Sidebar } from './sidebar';
  * - "/login", "/register" and other authentication pages
  */
 export function ConditionalSidebar() {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
 
   // Routes that need to isolate Sidebar
   const shouldHideSidebar =

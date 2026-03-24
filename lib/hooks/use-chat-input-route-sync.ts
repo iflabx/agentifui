@@ -10,7 +10,7 @@ import { usePathname } from 'next/navigation';
  * ensuring input content is isolated per route.
  */
 export function useChatInputRouteSync() {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
   const setCurrentRoute = useChatInputStore(state => state.setCurrentRoute);
 
   useEffect(() => {

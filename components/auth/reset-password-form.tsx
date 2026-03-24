@@ -32,9 +32,9 @@ export function ResetPasswordForm() {
     const checkUserSession = async () => {
       try {
         const token =
-          searchParams.get('token') ||
-          searchParams.get('token_hash') ||
-          searchParams.get('reset_token');
+          searchParams?.get('token') ||
+          searchParams?.get('token_hash') ||
+          searchParams?.get('reset_token');
 
         if (token) {
           setIsTokenValid(true);
@@ -97,9 +97,9 @@ export function ResetPasswordForm() {
 
     try {
       const token =
-        searchParams.get('token') ||
-        searchParams.get('token_hash') ||
-        searchParams.get('reset_token') ||
+        searchParams?.get('token') ||
+        searchParams?.get('token_hash') ||
+        searchParams?.get('reset_token') ||
         undefined;
       await resetPasswordWithToken(formData.password, token);
 

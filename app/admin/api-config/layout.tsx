@@ -57,7 +57,7 @@ const getAppTypeIcon = (difyAppType?: string) => {
 export default function ApiConfigLayout({ children }: ApiConfigLayoutProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
   const t = useTranslations('pages.admin.apiConfig.layout');
   const tDebug = useTranslations('debug');
 
@@ -84,7 +84,7 @@ export default function ApiConfigLayout({ children }: ApiConfigLayoutProps) {
   // get filter state from URL query params
   const [filterProviderId, setFilterProviderId] = useState<string | null>(
     () => {
-      return searchParams.get('provider') || null;
+      return searchParams?.get('provider') || null;
     }
   );
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -106,7 +106,7 @@ export default function ApiConfigLayout({ children }: ApiConfigLayoutProps) {
     setFilterProviderId(providerId);
 
     // immediately update URL query params, avoid delay
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(searchParams?.toString() ?? '');
     if (providerId) {
       params.set('provider', providerId);
     } else {
@@ -126,7 +126,7 @@ export default function ApiConfigLayout({ children }: ApiConfigLayoutProps) {
 
   // listen to URL change and sync filter state (optimized to avoid loop)
   useEffect(() => {
-    const urlProviderId = searchParams.get('provider');
+    const urlProviderId = searchParams?.get('provider') || null;
     // only update when truly different, avoid loop
     if (urlProviderId !== filterProviderId) {
       setFilterProviderId(urlProviderId);

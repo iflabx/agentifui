@@ -130,7 +130,7 @@ export default function ContentManagementPage() {
   }, [activeTab, supportedLocales.length, t]);
 
   useEffect(() => {
-    const tab = searchParams.get('tab');
+    const tab = searchParams?.get('tab');
     if (tab === 'about' || tab === 'home') {
       setActiveTab(tab);
     }
@@ -153,7 +153,7 @@ export default function ContentManagementPage() {
 
   const handleTabChange = (tab: 'about' | 'home') => {
     setActiveTab(tab);
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(searchParams?.toString() ?? '');
     params.set('tab', tab);
     router.push(`?${params.toString()}`, { scroll: false });
   };

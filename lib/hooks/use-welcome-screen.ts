@@ -19,7 +19,7 @@ export function useWelcomeScreen() {
   const { isWelcomeScreen, setIsWelcomeScreen: setStoreWelcomeScreen } =
     useChatInputStore();
   const { messages } = useChatInterface();
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
 
   // Logic for determining welcome screen:
   // 1. If path is /chat/new, always show welcome screen

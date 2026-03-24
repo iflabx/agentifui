@@ -30,8 +30,9 @@ import { useParams, usePathname, useRouter } from 'next/navigation';
 export default function AppDetailPage() {
   const router = useRouter();
   const params = useParams();
-  const pathname = usePathname();
-  const instanceId = params.instanceId as string;
+  const pathname = usePathname() ?? '';
+  const instanceId =
+    typeof params?.instanceId === 'string' ? params.instanceId : '';
   const t = useTranslations('pages.apps');
   const chatflowInterface = useChatflowInterface();
 

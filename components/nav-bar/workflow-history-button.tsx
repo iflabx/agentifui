@@ -17,7 +17,7 @@ import { usePathname } from 'next/navigation';
  */
 export function WorkflowHistoryButton() {
   const { isDark } = useTheme();
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
   const { showHistory, toggleHistory } = useWorkflowHistoryStore();
   const t = useTranslations('navbar.workflow');
 

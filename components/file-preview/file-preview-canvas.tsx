@@ -257,7 +257,7 @@ const FileContentViewer: React.FC<{
 export const FilePreviewCanvas = () => {
   const { isPreviewOpen, currentPreviewFile, closePreview } =
     useFilePreviewStore();
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
   const t = useTranslations('filePreview');
 
   // Auto-close preview when route changes (best practice for modal state management)

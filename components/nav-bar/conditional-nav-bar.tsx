@@ -16,7 +16,7 @@ import { NavBar } from './nav-bar';
  * - "/about" About page
  */
 export function ConditionalNavBar() {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
 
   // Routes that need to hide NavBar
   // Same route judgment logic as ConditionalSidebar

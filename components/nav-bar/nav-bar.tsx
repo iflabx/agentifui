@@ -26,7 +26,7 @@ import { WorkflowHistoryButton } from './workflow-history-button';
  */
 export function NavBar() {
   const isMobile = useMobile();
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
   const { colors: themeColors } = useThemeColors();
   const { colors: settingsColors } = useSettingsColors();
   const { isExpanded } = useSidebarStore();

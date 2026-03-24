@@ -58,9 +58,9 @@ export function TextGenerationLayout({
   const isMobile = useMobile();
   const t = useTranslations('pages.textGeneration.buttons');
   const router = useRouter();
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
   const searchParams = useSearchParams();
-  const requestedExecutionId = searchParams.get('executionId');
+  const requestedExecutionId = searchParams?.get('executionId');
 
   // --- Text generation execution system ---
   const {
@@ -96,7 +96,7 @@ export function TextGenerationLayout({
       return;
     }
 
-    const nextParams = new URLSearchParams(searchParams.toString());
+    const nextParams = new URLSearchParams(searchParams?.toString() ?? '');
     nextParams.delete('executionId');
     const nextQuery = nextParams.toString();
 
@@ -107,7 +107,7 @@ export function TextGenerationLayout({
 
   const setRequestedExecutionId = useCallback(
     (executionId: string) => {
-      const nextParams = new URLSearchParams(searchParams.toString());
+      const nextParams = new URLSearchParams(searchParams?.toString() ?? '');
       nextParams.set('executionId', executionId);
       const nextQuery = nextParams.toString();
       const nextUrl = nextQuery ? `${pathname}?${nextQuery}` : pathname;

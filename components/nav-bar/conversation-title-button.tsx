@@ -35,8 +35,10 @@ export function ConversationTitleButton({
   className,
 }: ConversationTitleButtonProps) {
   const router = useRouter();
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
   const params = useParams();
+  const routeInstanceId =
+    typeof params?.instanceId === 'string' ? params.instanceId : undefined;
   const { currentConversationId } = useChatStore();
   const { selectItem } = useSidebarStore();
   const { conversations, refresh } = useCombinedConversations();
@@ -78,9 +80,9 @@ export function ConversationTitleButton({
 
   // Get current application information (only in application detail page)
   const currentApp = useMemo(() => {
-    if (!isAppDetailPage || !params.instanceId) return null;
-    return apps.find(app => app.instance_id === params.instanceId);
-  }, [isAppDetailPage, params.instanceId, apps]);
+    if (!isAppDetailPage || !routeInstanceId) return null;
+    return apps.find(app => app.instance_id === routeInstanceId);
+  }, [isAppDetailPage, routeInstanceId, apps]);
 
   // 🎯 Fix: use the same data source as sidebar, remove complex backup mechanism
   // This ensures that the navigation bar can correctly display the typewriter effect and real-time title update

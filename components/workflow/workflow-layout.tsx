@@ -61,9 +61,9 @@ export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
   const isMobile = useMobile();
   const t = useTranslations('pages.workflow.buttons');
   const router = useRouter();
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
   const searchParams = useSearchParams();
-  const requestedExecutionId = searchParams.get('executionId');
+  const requestedExecutionId = searchParams?.get('executionId');
 
   // --- New workflow execution system ---
   const {
@@ -98,7 +98,7 @@ export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
       return;
     }
 
-    const nextParams = new URLSearchParams(searchParams.toString());
+    const nextParams = new URLSearchParams(searchParams?.toString() ?? '');
     nextParams.delete('executionId');
     const nextQuery = nextParams.toString();
     const nextUrl = nextQuery ? `${pathname}?${nextQuery}` : pathname;
@@ -108,7 +108,7 @@ export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
 
   const setRequestedExecutionId = useCallback(
     (executionId: string) => {
-      const nextParams = new URLSearchParams(searchParams.toString());
+      const nextParams = new URLSearchParams(searchParams?.toString() ?? '');
       nextParams.set('executionId', executionId);
       const nextQuery = nextParams.toString();
       const nextUrl = nextQuery ? `${pathname}?${nextQuery}` : pathname;

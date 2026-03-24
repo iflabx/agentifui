@@ -35,8 +35,8 @@ export default function AppsPage() {
   }, [selectItem]);
 
   useEffect(() => {
-    const categoryParam = searchParams.get('category');
-    const searchParam = searchParams.get('search');
+    const categoryParam = searchParams?.get('category');
+    const searchParam = searchParams?.get('search');
 
     if (categoryParam) {
       setSelectedCategory(decodeURIComponent(categoryParam));

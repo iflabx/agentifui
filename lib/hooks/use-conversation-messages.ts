@@ -94,7 +94,7 @@ function dbMessageToChatMessage(dbMessage: Message): ChatMessage {
  * Provides paginated message loading functionality
  */
 export function useConversationMessages() {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
 
   // Use unified loading state object for state management
   // Merge multiple state variables into one structured state object

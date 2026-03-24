@@ -33,7 +33,7 @@ interface MenuItem {
 }
 
 export default function AdminLayout({ children }: AdminLayoutProps) {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
   const t = useTranslations('pages.admin.layout');
 
   const [isExpanded, setIsExpanded] = useState(false);

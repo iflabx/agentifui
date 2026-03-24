@@ -32,7 +32,7 @@ interface SidebarHeaderProps {
 export function SidebarHeader({ isHovering = false }: SidebarHeaderProps) {
   const { isExpanded, toggleSidebar } = useSidebarStore();
   const router = useRouter();
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
   const t = useTranslations('sidebar');
 
   const { selectedType, selectedId, selectItem } = useSidebarStore();

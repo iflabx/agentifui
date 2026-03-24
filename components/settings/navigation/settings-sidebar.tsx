@@ -43,7 +43,7 @@ export const getSettingsNavItems = (t: SettingsTranslator) => [
 // Static export removed, use getSettingsNavItems(t) to get internationalized navigation items
 // If you need to use it in other files, import the translation hooks and call getSettingsNavItems(t)
 export function SettingsSidebar() {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
   const { colors } = useSettingsColors();
   const t = useTranslations('pages.settings');
 
