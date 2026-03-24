@@ -399,6 +399,15 @@ function getChunkByteLength(chunk: unknown): number {
   return 0;
 }
 
+function isReplyCommitted(reply: FastifyReply): boolean {
+  return (
+    reply.sent ||
+    reply.raw.headersSent ||
+    reply.raw.writableEnded ||
+    reply.raw.destroyed
+  );
+}
+
 async function sendUpstreamStream(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -505,6 +514,19 @@ async function sendUpstreamStream(
       },
       '[FastifyDifyProxy] upstream stream failed'
     );
+
+    // Once the raw reply has been hijacked/committed, we cannot safely send a
+    // second JSON error payload. Closing or already-closed downstream streams
+    // should end the request quietly after logging.
+    if (isReplyCommitted(reply)) {
+      if (!reply.raw.destroyed && !reply.raw.writableEnded) {
+        reply.raw.destroy(
+          error instanceof Error ? error : new Error(String(error))
+        );
+      }
+      return;
+    }
+
     throw error;
   } finally {
     reply.raw.removeListener('close', handleResponseClose);
@@ -1137,6 +1159,19 @@ async function handleDifyProxy(
       level: 'error',
       error,
     });
+
+    if (isReplyCommitted(reply)) {
+      request.log.warn(
+        {
+          appId,
+          route: routePath,
+          slugPath,
+          err: error,
+        },
+        '[FastifyDifyProxy] reply already committed, skip fallback error payload'
+      );
+      return;
+    }
 
     const payload = await withAgentErrorEnvelope(
       {
