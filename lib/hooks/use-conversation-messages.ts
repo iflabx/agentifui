@@ -13,81 +13,28 @@
 import { getConversationByExternalId } from '@lib/services/client/conversations-api';
 import { getLatestMessages } from '@lib/services/client/messages-api';
 import { useChatScrollStore } from '@lib/stores/chat-scroll-store';
-import {
-  ChatMessage,
-  MessageAttachment,
-  useChatStore,
-} from '@lib/stores/chat-store';
-import { Message } from '@lib/types/database';
+import { useChatStore } from '@lib/stores/chat-store';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { usePathname } from 'next/navigation';
 
-// Number of messages to load per page
-const MESSAGES_PER_PAGE = 20;
+import {
+  dbMessageToChatMessage,
+  getConversationIdFromPath,
+  organizeMessages,
+  shouldHandleScrollLoad,
+  shouldLoadMoreMessages,
+  shouldPreserveMessagesOnRouteTransition,
+} from './use-conversation-messages/helpers';
+import {
+  type LoadingStatus,
+  MESSAGES_PER_PAGE,
+  createConversationLoaderState,
+  createIdleLoadingStatus,
+} from './use-conversation-messages/types';
 
-function isMessageAttachmentArray(
-  value: unknown
-): value is MessageAttachment[] {
-  return (
-    Array.isArray(value) &&
-    value.every(item => {
-      if (!item || typeof item !== 'object') {
-        return false;
-      }
-      const record = item as Record<string, unknown>;
-      return (
-        typeof record.id === 'string' &&
-        typeof record.name === 'string' &&
-        typeof record.size === 'number' &&
-        typeof record.type === 'string' &&
-        typeof record.upload_file_id === 'string'
-      );
-    })
-  );
-}
-
-// Unified loading state type
-// Contains state, type and lock flag
-export type LoadingState =
-  | 'idle'
-  | 'loading'
-  | 'success'
-  | 'error'
-  | 'complete';
-
-// Loading status object type
-type LoadingStatus = {
-  state: LoadingState;
-  type: 'initial' | 'more' | 'none';
-  isLocked: boolean;
-};
-
-/**
- * Convert database message to frontend message object
- */
-function dbMessageToChatMessage(dbMessage: Message): ChatMessage {
-  // Extract attachment information from metadata
-  const rawAttachments = dbMessage.metadata?.attachments;
-  const attachments = isMessageAttachmentArray(rawAttachments)
-    ? rawAttachments
-    : [];
-  return {
-    id: `db-${dbMessage.id}`,
-    text: dbMessage.content,
-    isUser: dbMessage.role === 'user',
-    role: dbMessage.role,
-    persistenceStatus: 'saved',
-    db_id: dbMessage.id,
-    dify_message_id: dbMessage.external_id || undefined,
-    metadata: dbMessage.metadata || {},
-    wasManuallyStopped: dbMessage.metadata?.stopped_manually === true,
-    token_count: dbMessage.token_count || undefined,
-    attachments: attachments.length > 0 ? attachments : undefined,
-    sequence_index: dbMessage.sequence_index,
-  };
-}
+export type { LoadingState } from './use-conversation-messages/types';
 
 /**
  * Conversation messages loading hook
@@ -102,31 +49,15 @@ export function useConversationMessages() {
   const [difyConversationId, setDifyConversationId] = useState<string | null>(
     null
   );
-  const [loading, setLoading] = useState<LoadingStatus>({
-    state: 'idle',
-    type: 'none',
-    isLocked: false,
-  });
+  const [loading, setLoading] = useState<LoadingStatus>(
+    createIdleLoadingStatus()
+  );
   const [hasMoreMessages, setHasMoreMessages] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Combine multiple refs into a single object for better maintainability
-  const loaderState = useRef<{
-    page: number;
-    currentId: string | null;
-    totalMessages: number;
-    loadedConversations: Set<string>;
-    abortController: AbortController | null;
-    previousPath: string | null;
-  }>({
-    page: 1,
-    currentId: null,
-    totalMessages: 0,
-    loadedConversations: new Set(),
-    abortController: null,
-    previousPath: null,
-  });
+  const loaderState = useRef(createConversationLoaderState());
 
   // Get current message state and actions from chatStore
   const { clearMessages } = useChatStore();
@@ -158,59 +89,9 @@ export function useConversationMessages() {
     loaderState.current.page = 1;
     loaderState.current.totalMessages = 0;
     loaderState.current.currentId = null;
-    setLoading({ state: 'idle', type: 'none', isLocked: false });
+    setLoading(createIdleLoadingStatus());
     setError(null);
   }, [cancelCurrentRequest]);
-
-  /**
-   * Get conversation ID from current route
-   */
-  const getConversationIdFromPath = useCallback(() => {
-    if (!pathname) return null;
-    if (
-      pathname.startsWith('/chat/') &&
-      !pathname.includes('/chat/new') &&
-      !pathname.includes('/chat/temp-')
-    ) {
-      return pathname.replace('/chat/', '');
-    }
-    return null;
-  }, [pathname]);
-
-  /**
-   * Remove frontend sorting logic, rely directly on database order
-   */
-  const sortMessagesByTime = useCallback((messages: Message[]): Message[] => {
-    return [...messages].sort((a, b) => {
-      // Get the creation time of the chat window
-      const timeA = new Date(a.created_at).getTime();
-      const timeB = new Date(b.created_at).getTime();
-
-      // If the time difference is within one second, consider as same message in the same conversation
-      // Use sequence_index to sort first in this case
-      if (timeA !== timeB) {
-        return timeA - timeB;
-      }
-
-      // Finally, sort by ID to ensure stability
-      return a.id.localeCompare(b.id);
-    });
-  }, []);
-
-  /**
-   * Ensure messages are organized in the correct order and user-assistant message pairs maintain a reasonable order
-   */
-  const organizeMessages = useCallback(
-    (messages: Message[]): Message[] => {
-      // First sort by creation time
-      const sortedMessages = sortMessagesByTime(messages);
-
-      // sortedMessages already considers sequence_index for messages close in time
-      // So we can directly return the sorted result
-      return sortedMessages;
-    },
-    [sortMessagesByTime]
-  );
 
   /**
    * Get the database conversation ID from the Dify conversation ID (using the new optimized interface)
@@ -372,7 +253,7 @@ export function useConversationMessages() {
               loaderState.current.loadedConversations.add(dbConvId);
 
               // Get the conversation ID in the current path
-              const pathConversationId = getConversationIdFromPath();
+              const pathConversationId = getConversationIdFromPath(pathname);
               if (
                 pathConversationId &&
                 pathConversationId !== 'new' &&
@@ -400,8 +281,8 @@ export function useConversationMessages() {
       organizeMessages,
       cancelCurrentRequest,
       finishLoading,
-      getConversationIdFromPath,
       loading.isLocked,
+      pathname,
       startLoading,
     ]
   );
@@ -410,16 +291,17 @@ export function useConversationMessages() {
    * Load more historical messages (using the new messageService)
    */
   const loadMoreMessages = useCallback(async () => {
-    // Use the unified state object to check if more messages can be loaded
-    // Avoid triggering load more during initial loading to prevent the skeleton screen from flickering
     if (
-      !dbConversationId ||
-      loading.isLocked ||
-      loading.state === 'loading' ||
-      loading.state === 'complete' ||
-      !hasMoreMessages ||
-      loading.type === 'initial'
+      !shouldLoadMoreMessages({
+        dbConversationId,
+        hasMoreMessages,
+        loading,
+      })
     ) {
+      return;
+    }
+    const activeConversationId = dbConversationId;
+    if (!activeConversationId) {
       return;
     }
 
@@ -448,12 +330,12 @@ export function useConversationMessages() {
 
       // Use the new messageService to get all messages, then manually paginate
       // This is a temporary solution, and the real cursor pagination can be optimized later
-      const result = await getLatestMessages(dbConversationId, 1000);
+      const result = await getLatestMessages(activeConversationId, 1000);
 
       // If the request has been cancelled or the conversation ID has changed, discard the result
       if (
         signal.aborted ||
-        loaderState.current.currentId !== dbConversationId
+        loaderState.current.currentId !== activeConversationId
       ) {
         console.log(
           `[useConversationMessages] Request cancelled or conversation ID changed, discard loading more result`
@@ -590,10 +472,13 @@ export function useConversationMessages() {
       return;
     }
 
-    const { scrollTop } = messagesContainerRef.current;
-    const scrollThreshold = 50; // Scroll to within 50px of the top to trigger loading
-
-    if (scrollTop < scrollThreshold) {
+    if (
+      shouldHandleScrollLoad({
+        hasMoreMessages,
+        loading,
+        scrollTop: messagesContainerRef.current.scrollTop,
+      })
+    ) {
       loadMoreMessages();
     }
   }, [hasMoreMessages, loading, loadMoreMessages]);
@@ -605,39 +490,19 @@ export function useConversationMessages() {
    * Load messages when route changes
    */
   useEffect(() => {
-    const externalId = getConversationIdFromPath();
+    const externalId = getConversationIdFromPath(pathname);
     const currentMessages = useChatStore.getState().messages;
-
-    // Check if the route change is caused by the first message sent
-    // 1. Switch from the /chat/new path or paths starting with /chat/temp- to the normal conversation path
-    // 2. In this case, the message should not be cleared or the loading state should not be displayed
-    // 3. Enhanced detection: If there are unsaved user messages and assistant messages that are streaming, it should also be considered a first message scenario
+    const isFirstMessageTransition = shouldPreserveMessagesOnRouteTransition({
+      currentMessages,
+      externalId,
+      previousPath: loaderState.current.previousPath,
+    });
     const isFromNewChat =
       loaderState.current.previousPath === '/chat/new' ||
       (loaderState.current.previousPath?.includes('/chat/temp-') ?? false);
     const isToExistingChat =
       externalId && externalId !== 'new' && !externalId.includes('temp-');
     const hasExistingMessages = currentMessages.length > 0;
-
-    // Check if there are assistant messages that are streaming
-    const hasStreamingMessage = currentMessages.some(
-      msg => msg.isStreaming === true
-    );
-
-    // Check if there are unsaved user messages (in the sending state)
-    const hasPendingUserMessage = currentMessages.some(
-      msg =>
-        msg.isUser === true &&
-        (msg.persistenceStatus === 'pending' ||
-          msg.persistenceStatus === 'saving')
-    );
-
-    // The conditions for the first message sent:
-    // 1. Traditional condition: Switch from the new conversation path to the existing conversation path, and there are existing messages
-    // 2. Enhanced condition: There are streaming assistant messages or unsaved user messages, indicating that this is the first message
-    const isFirstMessageTransition =
-      (isFromNewChat && isToExistingChat && hasExistingMessages) ||
-      (hasExistingMessages && (hasStreamingMessage || hasPendingUserMessage));
 
     // Record the current path for next judgment
     loaderState.current.previousPath = pathname;
@@ -742,7 +607,6 @@ export function useConversationMessages() {
     pathname,
     fetchDbConversationId,
     loadInitialMessages,
-    getConversationIdFromPath,
     resetLoader,
     clearMessages,
     cancelCurrentRequest,
