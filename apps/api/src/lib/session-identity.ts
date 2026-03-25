@@ -24,11 +24,75 @@ export type {
 } from './session-identity/types';
 export { getSessionResolverMetricsSnapshot, resetSessionResolverMetrics };
 
-async function resolveProfileStatusLocally(
-  request: FastifyRequest,
-  config: ApiRuntimeConfig
+const SESSION_RESOLVER_CACHE_KEY =
+  '__agentifui_fastify_session_resolver_cache__';
+const DEFAULT_SESSION_RESOLVER_CACHE_TTL_MS = 1000;
+const DEFAULT_SESSION_RESOLVER_CACHE_MAX_ENTRIES = 256;
+
+type SessionResolverCacheEntry = {
+  expiresAt: number;
+  result: ResolveProfileStatusResult;
+};
+
+type SessionResolverCacheState = {
+  cache: Map<string, SessionResolverCacheEntry>;
+  inflight: Map<string, Promise<ResolveProfileStatusResult>>;
+};
+
+function getSessionResolverCacheState(): SessionResolverCacheState {
+  const globalState = globalThis as unknown as Record<string, unknown>;
+  const existing = globalState[SESSION_RESOLVER_CACHE_KEY] as
+    | SessionResolverCacheState
+    | undefined;
+  if (existing) {
+    return existing;
+  }
+
+  const created: SessionResolverCacheState = {
+    cache: new Map(),
+    inflight: new Map(),
+  };
+  globalState[SESSION_RESOLVER_CACHE_KEY] = created;
+  return created;
+}
+
+function getSessionResolverCacheTtlMs(): number {
+  const parsed = Number(
+    process.env.FASTIFY_SESSION_IDENTITY_CACHE_TTL_MS ||
+      DEFAULT_SESSION_RESOLVER_CACHE_TTL_MS
+  );
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return DEFAULT_SESSION_RESOLVER_CACHE_TTL_MS;
+  }
+  return Math.floor(parsed);
+}
+
+function pruneSessionResolverCache(
+  state: SessionResolverCacheState,
+  now: number
+): void {
+  for (const [key, entry] of state.cache.entries()) {
+    if (entry.expiresAt <= now) {
+      state.cache.delete(key);
+    }
+  }
+
+  while (state.cache.size > DEFAULT_SESSION_RESOLVER_CACHE_MAX_ENTRIES) {
+    const oldestKey = state.cache.keys().next().value;
+    if (!oldestKey) {
+      return;
+    }
+    state.cache.delete(oldestKey);
+  }
+}
+
+function buildSessionResolverCacheKey(tokens: string[]): string {
+  return tokens.join('\u0001');
+}
+
+async function resolveProfileStatusLocallyByTokens(
+  tokens: string[]
 ): Promise<ResolveProfileStatusResult> {
-  const tokens = extractCandidateSessionTokens(request, config);
   if (tokens.length === 0) {
     return { kind: 'unauthorized' };
   }
@@ -83,6 +147,51 @@ async function resolveProfileStatusLocally(
           : 'Unknown local profile-status resolve error',
     };
   }
+}
+
+async function resolveProfileStatusLocally(
+  request: FastifyRequest,
+  config: ApiRuntimeConfig
+): Promise<ResolveProfileStatusResult> {
+  const tokens = extractCandidateSessionTokens(request, config);
+  if (tokens.length === 0) {
+    return { kind: 'unauthorized' };
+  }
+
+  const cacheKey = buildSessionResolverCacheKey(tokens);
+  const state = getSessionResolverCacheState();
+  const now = Date.now();
+
+  pruneSessionResolverCache(state, now);
+
+  const cached = state.cache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.result;
+  }
+
+  const existing = state.inflight.get(cacheKey);
+  if (existing) {
+    return existing;
+  }
+
+  const promise = resolveProfileStatusLocallyByTokens(tokens)
+    .then(result => {
+      const ttlMs = getSessionResolverCacheTtlMs();
+      if (result.kind === 'ok' && ttlMs > 0) {
+        state.cache.set(cacheKey, {
+          result,
+          expiresAt: Date.now() + ttlMs,
+        });
+        pruneSessionResolverCache(state, Date.now());
+      }
+      return result;
+    })
+    .finally(() => {
+      state.inflight.delete(cacheKey);
+    });
+
+  state.inflight.set(cacheKey, promise);
+  return promise;
 }
 
 export async function resolveProfileStatusFromSession(

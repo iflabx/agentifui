@@ -12,6 +12,9 @@ jest.mock('./pg-context', () => ({
   queryRowsWithPgSystemContext: jest.fn(),
 }));
 
+const SESSION_RESOLVER_CACHE_KEY =
+  '__agentifui_fastify_session_resolver_cache__';
+
 function createConfig(
   overrides: Partial<ApiRuntimeConfig> = {}
 ): ApiRuntimeConfig {
@@ -46,6 +49,7 @@ describe('session-identity resolver', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     resetSessionResolverMetrics();
+    delete (globalThis as Record<string, unknown>)[SESSION_RESOLVER_CACHE_KEY];
   });
 
   it('resolves active identity locally from session cookie', async () => {
@@ -161,6 +165,55 @@ describe('session-identity resolver', () => {
       identity: {
         userId: '00000000-0000-4000-8000-000000000013',
         role: 'admin',
+      },
+    });
+  });
+
+  it('deduplicates concurrent local session lookups for the same token', async () => {
+    let resolveQuery:
+      | ((value: Array<Record<string, unknown>>) => void)
+      | undefined;
+
+    mockedQueryRowsWithPgSystemContext.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolveQuery = resolve;
+        }) as ReturnType<typeof queryRowsWithPgSystemContext>
+    );
+
+    const request = createRequest({ cookie: 'session_token=shared-token' });
+    const config = createConfig();
+
+    const firstPromise = resolveProfileStatusFromSession(request, config);
+    const secondPromise = resolveProfileStatusFromSession(request, config);
+    const thirdPromise = resolveProfileStatusFromSession(request, config);
+
+    expect(mockedQueryRowsWithPgSystemContext).toHaveBeenCalledTimes(1);
+
+    resolveQuery?.([
+      {
+        auth_user_id: '00000000-0000-4000-8000-000000000099',
+        user_id: '00000000-0000-4000-8000-000000000099',
+        role: 'user',
+        status: 'active',
+      },
+    ]);
+
+    const [first, second, third] = await Promise.all([
+      firstPromise,
+      secondPromise,
+      thirdPromise,
+    ]);
+
+    expect(first).toEqual(second);
+    expect(second).toEqual(third);
+    expect(first).toEqual({
+      kind: 'ok',
+      identity: {
+        userId: '00000000-0000-4000-8000-000000000099',
+        authUserId: '00000000-0000-4000-8000-000000000099',
+        role: 'user',
+        status: 'active',
       },
     });
   });
