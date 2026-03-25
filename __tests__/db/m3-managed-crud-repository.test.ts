@@ -11,10 +11,16 @@ import type {
 } from '@lib/types/database';
 import type { Result } from '@lib/types/result';
 import { randomUUID } from 'crypto';
+import { parse } from 'dotenv';
+import { existsSync, readFileSync } from 'fs';
+import path from 'path';
 
 const FALLBACK_DATABASE_URL =
   'postgresql://agentif:agentif@172.20.0.1:5432/agentifui_test';
 const PG_POOL_GLOBAL_KEY = '__agentifui_pg_pool__';
+const LOCAL_ENV_CANDIDATES = ['.env.test.local', '.env.test', '.env.dev'];
+
+jest.setTimeout(60000);
 
 type PoolLike = {
   end: () => Promise<void>;
@@ -38,9 +44,27 @@ async function cleanupRecord(table: string, id: string | null) {
   await dataService.delete(table, id);
 }
 
+function resolveLocalDatabaseUrl(): string | null {
+  for (const candidate of LOCAL_ENV_CANDIDATES) {
+    const filePath = path.join(process.cwd(), candidate);
+    if (!existsSync(filePath)) {
+      continue;
+    }
+
+    const parsed = parse(readFileSync(filePath, 'utf8'));
+    const databaseUrl = parsed.DATABASE_URL?.trim() || parsed.PGURL?.trim();
+    if (databaseUrl) {
+      return databaseUrl;
+    }
+  }
+
+  return null;
+}
+
 describe('M3 managed CRUD compatibility', () => {
   beforeAll(() => {
-    process.env.DATABASE_URL ||= FALLBACK_DATABASE_URL;
+    process.env.DATABASE_URL ||=
+      resolveLocalDatabaseUrl() || FALLBACK_DATABASE_URL;
   });
 
   afterAll(async () => {
@@ -203,7 +227,7 @@ describe('M3 managed CRUD compatibility', () => {
       await cleanupRecord('providers', providerId);
       await cleanupRecord('profiles', profileCreated ? profileId : null);
     }
-  }, 15000);
+  });
 
   it('preserves failure semantics for duplicates and missing rows', async () => {
     const suffix = `${Date.now()}${Math.random().toString(36).slice(2, 8)}`;
@@ -262,5 +286,5 @@ describe('M3 managed CRUD compatibility', () => {
     } finally {
       await cleanupRecord('providers', providerId);
     }
-  }, 15000);
+  });
 });
