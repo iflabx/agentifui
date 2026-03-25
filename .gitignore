@@ -17,6 +17,8 @@
 
 # next.js
 /.next/
+/.next-dev/
+/.next-build/
 /out/
 
 # production
@@ -65,6 +67,7 @@ pm2-logs/
 # local tooling artifacts
 .dev-env.local
 .playwright-cli/
+test-results/
 output/
 local-scripts/
 local_scripts/

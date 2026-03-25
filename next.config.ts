@@ -92,6 +92,8 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_APP_VERSION: pkg.version,
   },
 
+  distDir: process.env.NEXT_DIST_DIR?.trim() || '.next',
+
   output:
     process.env.NEXT_OUTPUT_MODE === 'standalone' ? 'standalone' : undefined,
 
