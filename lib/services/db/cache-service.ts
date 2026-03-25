@@ -4,121 +4,25 @@
  * L1: in-process cache
  * L2 (optional, server runtime only): Redis
  */
+import {
+  escapeRegexPattern,
+  parseBooleanEnv,
+  resolveInvalidationOrigin,
+  toSeconds,
+} from './cache-service/helpers';
+import {
+  createRedisClient,
+  resolveRedisUrl,
+} from './cache-service/redis-runtime';
+import {
+  CacheInvalidationMessage,
+  CacheInvalidationOperation,
+  CacheItem,
+  CacheMetricsSnapshot,
+  RedisClientLike,
+} from './cache-service/types';
 
-interface CacheItem<T> {
-  data: T;
-  timestamp: number;
-  ttl: number;
-}
-
-interface CacheMetricsSnapshot {
-  l1Hits: number;
-  l1Misses: number;
-  l2Hits: number;
-  l2Misses: number;
-  l2ReadErrors: number;
-  l2WriteErrors: number;
-}
-
-interface RedisSetCommandOptions {
-  EX?: number;
-}
-
-interface RedisClientLike {
-  isOpen: boolean;
-  connect: () => Promise<void>;
-  duplicate?: () => RedisClientLike;
-  get: (key: string) => Promise<string | null>;
-  set: (
-    key: string,
-    value: string,
-    options?: RedisSetCommandOptions
-  ) => Promise<unknown>;
-  del: (keys: string | string[]) => Promise<number>;
-  publish?: (channel: string, message: string) => Promise<number>;
-  subscribe?: (
-    channel: string,
-    listener: (message: string) => void
-  ) => Promise<void>;
-  quit?: () => Promise<void>;
-  scanIterator: (options: {
-    MATCH: string;
-    COUNT?: number;
-  }) => AsyncIterable<string | string[]>;
-  on: (event: string, listener: (error: unknown) => void) => void;
-}
-
-type RedisModule = {
-  createClient: (options: {
-    url: string;
-    socket?: { connectTimeout?: number };
-    pingInterval?: number;
-  }) => RedisClientLike;
-};
-
-function parseBooleanEnv(
-  value: string | undefined,
-  fallback: boolean
-): boolean {
-  if (!value) {
-    return fallback;
-  }
-  const normalized = value.trim().toLowerCase();
-  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
-    return true;
-  }
-  if (['0', 'false', 'no', 'off'].includes(normalized)) {
-    return false;
-  }
-  return fallback;
-}
-
-function toSeconds(ms: number): number {
-  if (!Number.isFinite(ms) || ms <= 0) {
-    return 1;
-  }
-  return Math.max(1, Math.ceil(ms / 1000));
-}
-
-function toPositiveNumber(value: string | undefined, fallback: number): number {
-  if (!value) {
-    return fallback;
-  }
-  const parsed = Number(value.trim());
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return fallback;
-  }
-  return Math.floor(parsed);
-}
-
-function escapeRegexPattern(value: string): string {
-  return value.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
-}
-
-type CacheInvalidationOperation = 'set' | 'delete' | 'delete-pattern' | 'clear';
-
-interface CacheInvalidationMessage {
-  origin: string;
-  operation: CacheInvalidationOperation;
-  key?: string;
-  pattern?: string;
-}
-
-const CACHE_INVALIDATION_ORIGIN_GLOBAL_KEY =
-  '__agentifui_cache_invalidation_origin__';
-
-function resolveInvalidationOrigin(): string {
-  const globalState = globalThis as unknown as Record<string, unknown>;
-  const existing = globalState[CACHE_INVALIDATION_ORIGIN_GLOBAL_KEY];
-  if (typeof existing === 'string' && existing.length > 0) {
-    return existing;
-  }
-  const created = `${Date.now().toString(36)}${Math.random()
-    .toString(36)
-    .slice(2, 10)}`;
-  globalState[CACHE_INVALIDATION_ORIGIN_GLOBAL_KEY] = created;
-  return created;
-}
+export { CacheKeys } from './cache-service/keys';
 
 export class CacheService {
   private static instance: CacheService;
@@ -355,55 +259,12 @@ export class CacheService {
     }
   }
 
-  private resolveRedisUrl(): string | null {
-    const fromPrimary = process.env.REDIS_URL?.trim();
-    if (fromPrimary) {
-      return fromPrimary;
-    }
-
-    const host = process.env.REDIS_HOST?.trim();
-    if (!host) {
-      return null;
-    }
-
-    const port = process.env.REDIS_PORT?.trim() || '6379';
-    const db = process.env.REDIS_DB?.trim() || '0';
-    const password = process.env.REDIS_PASSWORD?.trim();
-
-    if (password) {
-      return `redis://:${encodeURIComponent(password)}@${host}:${port}/${db}`;
-    }
-
-    return `redis://${host}:${port}/${db}`;
-  }
-
-  private createRedisClient(redisUrl: string): RedisClientLike {
-    const runtimeRequire = eval('require') as (id: string) => unknown;
-    const redisModule = runtimeRequire('redis') as RedisModule;
-    const client = redisModule.createClient({
-      url: redisUrl,
-      socket: {
-        connectTimeout: toPositiveNumber(
-          process.env.REDIS_CONNECT_TIMEOUT_MS,
-          5000
-        ),
-      },
-      pingInterval: toPositiveNumber(process.env.REDIS_PING_INTERVAL_MS, 10000),
-    });
-
-    client.on('error', error => {
-      console.error('[CacheService] Redis client error:', error);
-    });
-
-    return client;
-  }
-
   private async getRedisClient(): Promise<RedisClientLike | null> {
     if (!this.isServerRuntime() || !this.redisL2Enabled) {
       return null;
     }
 
-    const redisUrl = this.resolveRedisUrl();
+    const redisUrl = resolveRedisUrl();
     if (!redisUrl) {
       this.redisClient = null;
       return null;
@@ -425,7 +286,7 @@ export class CacheService {
     }
 
     try {
-      const client = this.createRedisClient(redisUrl);
+      const client = createRedisClient(redisUrl);
       if (!client.isOpen) {
         await client.connect();
       }
@@ -730,25 +591,3 @@ export class CacheService {
 
 // Export singleton instance
 export const cacheService = CacheService.getInstance();
-
-// Common cache key generators
-export const CacheKeys = {
-  userProfile: (userId: string) => `user:profile:${userId}`,
-  userConversations: (userId: string, page: number = 0) =>
-    `user:conversations:${userId}:${page}`,
-  conversation: (conversationId: string) => `conversation:${conversationId}`,
-  conversationMessages: (conversationId: string, page: number = 0) =>
-    `conversation:messages:${conversationId}:${page}`,
-  providers: () => 'providers:active',
-  serviceInstances: (providerId: string) => `service:instances:${providerId}`,
-  apiKey: (serviceInstanceId: string) => `api:key:${serviceInstanceId}`,
-  conversationByExternalId: (externalId: string) =>
-    `conversation:external:${externalId}`,
-
-  // App Executions cache keys (for one-off workflow and text generation tasks)
-  // These are for history queries, suitable for longer cache times
-  userExecutions: (userId: string, page: number = 0) =>
-    `user:executions:${userId}:${page}`,
-  execution: (executionId: string) => `execution:${executionId}`,
-  // Note: Real-time subscription is not added for now, as execution records are mainly for history viewing. Can be added later if needed.
-};
