@@ -5,7 +5,6 @@ import { toUserFacingAgentError } from '@lib/services/agent-error/user-facing-er
 import {
   createExecution,
   getExecutionsByServiceInstance,
-  updateCompleteExecutionData,
   updateExecutionStatus,
 } from '@lib/services/client/app-executions-api';
 import type {
@@ -14,20 +13,22 @@ import type {
 } from '@lib/services/dify/types';
 import { useAutoAddFavoriteApp } from '@lib/stores/favorite-apps-store';
 import { useWorkflowExecutionStore } from '@lib/stores/workflow-execution-store';
-import type { AppExecution, ExecutionStatus } from '@lib/types/database';
+import type { AppExecution } from '@lib/types/database';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useDateFormatter } from './use-date-formatter';
-
-type CompletionFinalResult = Awaited<
-  DifyCompletionStreamResponse['completionPromise']
-> & {
-  error?: string;
-  created_at?: number | null;
-  conversation_id?: string | null;
-  elapsed_time?: number | null;
-};
+import { resolveTextGenerationTargetApp } from './use-text-generation-execution/app-instance';
+import {
+  saveCompleteTextGenerationData,
+  saveStoppedTextGenerationData,
+} from './use-text-generation-execution/persistence';
+import { cleanupTextGenerationResources } from './use-text-generation-execution/resource-cleanup';
+import {
+  calculateTextGenerationProgress,
+  createCompletionFallbackResult,
+} from './use-text-generation-execution/stream-helpers';
+import type { CompletionFinalResult } from './use-text-generation-execution/types';
 
 /**
  * Text generation execution hook - reuses workflow architecture
@@ -42,11 +43,8 @@ export function useTextGenerationExecution(instanceId: string) {
   const { profile } = useProfile();
   const userId = profile?.id;
   const { formatDate } = useDateFormatter();
-
-  // --- Favorite app management hook ---
   const { addToFavorites } = useAutoAddFavoriteApp();
 
-  // --- Reuse workflow state management ---
   const isExecuting = useWorkflowExecutionStore(state => state.isExecuting);
   const progress = useWorkflowExecutionStore(state => state.executionProgress);
   const error = useWorkflowExecutionStore(state => state.error);
@@ -60,17 +58,13 @@ export function useTextGenerationExecution(instanceId: string) {
   const formData = useWorkflowExecutionStore(state => state.formData);
   const formLocked = useWorkflowExecutionStore(state => state.formLocked);
 
-  // --- Text generation specific state ---
-  const [generatedText, setGeneratedText] = useState<string>('');
-  const [isStreaming, setIsStreaming] = useState<boolean>(false);
+  const [generatedText, setGeneratedText] = useState('');
+  const [isStreaming, setIsStreaming] = useState(false);
 
-  // --- Get store actions via ref ---
   const getActions = useCallback(
     () => useWorkflowExecutionStore.getState(),
     []
   );
-
-  // --- Streaming response ref ---
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const createTitle = useCallback(
@@ -79,172 +73,8 @@ export function useTextGenerationExecution(instanceId: string) {
     [formatDate]
   );
 
-  /**
-   * Save complete text generation data
-   */
-  const saveCompleteGenerationData = useCallback(
-    async (
-      executionId: string,
-      finalResult: CompletionFinalResult,
-      taskId: string | null,
-      messageId: string | null,
-      generatedText: string
-    ) => {
-      console.log(
-        '[Text Generation] Start saving complete data, executionId:',
-        executionId
-      );
-
-      try {
-        const finalRawError = finalResult?.error || null;
-        const normalizedFinalError = finalRawError
-          ? toUserFacingAgentError({
-              source: 'dify-completion',
-              message: finalRawError,
-              locale:
-                typeof navigator !== 'undefined' ? navigator.language : 'en-US',
-            })
-          : null;
-
-        // --- More strict status determination ---
-        let finalStatus: ExecutionStatus;
-
-        if (generatedText && generatedText.length > 0) {
-          // If there is generated content, consider as completed
-          finalStatus = 'completed';
-          console.log(
-            '[Text Generation] Detected generated content, status set to completed'
-          );
-        } else if (finalResult?.error) {
-          // If there is error info, consider as failed
-          finalStatus = 'failed';
-          console.log(
-            '[Text Generation] Detected error info, status set to failed'
-          );
-        } else {
-          // Otherwise, determine by messageId
-          finalStatus = messageId ? 'completed' : 'failed';
-          console.log(
-            '[Text Generation] Status determined by messageId:',
-            finalStatus
-          );
-        }
-
-        const completedAt = new Date().toISOString();
-
-        // --- Build metadata for text generation ---
-        const completeMetadata = {
-          // Dify original response data
-          dify_response: {
-            message_id: messageId,
-            created_at: finalResult?.created_at || null,
-            conversation_id: finalResult?.conversation_id || null,
-          },
-
-          // Generation content
-          generation_data: {
-            generated_text: generatedText,
-            text_length: generatedText.length,
-            word_count: generatedText
-              .split(/\s+/)
-              .filter(word => word.length > 0).length,
-            has_content: generatedText.length > 0,
-          },
-
-          // Execution environment info
-          execution_context: {
-            user_agent:
-              typeof window !== 'undefined' ? window.navigator.userAgent : null,
-            timestamp: new Date().toISOString(),
-            instance_id: instanceId,
-            execution_mode: 'streaming',
-            api_type: 'completion',
-            final_status: finalStatus,
-          },
-
-          // Error info (if any)
-          ...(finalRawError && {
-            error_details: {
-              message: normalizedFinalError?.userMessage || finalRawError,
-              raw_message: finalRawError,
-              code: normalizedFinalError?.code || null,
-              kind: normalizedFinalError?.kind || null,
-              suggestion: normalizedFinalError?.suggestion || null,
-              timestamp: completedAt,
-            },
-          }),
-
-          ...(normalizedFinalError && {
-            agent_error: {
-              code: normalizedFinalError.code,
-              kind: normalizedFinalError.kind,
-              source: normalizedFinalError.source,
-              retryable: normalizedFinalError.retryable,
-              suggestion: normalizedFinalError.suggestion,
-              raw_message: normalizedFinalError.rawMessage,
-            },
-          }),
-        };
-
-        // --- Update database ---
-        const updateResult = await updateCompleteExecutionData(executionId, {
-          status: finalStatus,
-          external_execution_id: messageId,
-          task_id: taskId,
-          outputs: { generated_text: generatedText },
-          total_steps: 1, // Text generation is usually single step
-          total_tokens: finalResult?.usage?.total_tokens || 0,
-          elapsed_time: finalResult?.elapsed_time || null,
-          error_message:
-            finalStatus === 'failed'
-              ? normalizedFinalError?.userMessage ||
-                finalRawError ||
-                'Text generation failed'
-              : null,
-          completed_at: completedAt,
-          metadata: completeMetadata,
-        });
-
-        if (updateResult.success) {
-          console.log(
-            '[Text Generation] ✅ Database update successful, final status:',
-            finalStatus
-          );
-
-          conversationEvents.emit();
-
-          // Update store state
-          const completeExecution = updateResult.data;
-          getActions().updateCurrentExecution(completeExecution);
-          getActions().addExecutionToHistory(completeExecution);
-
-          return { success: true, data: completeExecution };
-        } else {
-          console.error(
-            '[Text Generation] ❌ Database update failed:',
-            updateResult.error
-          );
-          return { success: false, error: updateResult.error };
-        }
-      } catch (error) {
-        console.error(
-          '[Text Generation] ❌ Error occurred while saving complete data:',
-          error
-        );
-        return {
-          success: false,
-          error: error instanceof Error ? error : new Error(String(error)),
-        };
-      }
-    },
-    [instanceId, getActions]
-  );
-
-  /**
-   * Core execution process: text generation
-   */
   const executeTextGeneration = useCallback(
-    async (formData: Record<string, unknown>) => {
+    async (nextFormData: Record<string, unknown>) => {
       if (!userId) {
         getActions().setError('User not logged in, please log in first');
         return;
@@ -258,30 +88,19 @@ export function useTextGenerationExecution(instanceId: string) {
       let streamResponse: DifyCompletionStreamResponse | null = null;
 
       try {
-        // --- Step 1: Set initial execution state ---
-        getActions().startExecution(formData);
+        getActions().startExecution(nextFormData);
         getActions().clearError();
         setGeneratedText('');
         setIsStreaming(true);
 
-        // --- Step 2: Get app info ---
-        const { useAppListStore } = await import('@lib/stores/app-list-store');
-        const appListState = useAppListStore.getState();
-
-        if (appListState.apps.length === 0) {
-          await appListState.fetchApps();
-        }
-
-        const currentApps = useAppListStore.getState().apps;
-        const targetApp = currentApps.find(
-          app => app.instance_id === instanceId
+        const targetApp = await resolveTextGenerationTargetApp(
+          instanceId,
+          'execution'
         );
-
         if (!targetApp) {
           throw new Error(`App record not found: ${instanceId}`);
         }
 
-        // --- Step 3: Create database record ---
         const executionData: Omit<
           AppExecution,
           'id' | 'created_at' | 'updated_at'
@@ -292,7 +111,7 @@ export function useTextGenerationExecution(instanceId: string) {
           external_execution_id: null,
           task_id: null,
           title: createTitle(),
-          inputs: formData,
+          inputs: nextFormData,
           outputs: null,
           status: 'pending',
           error_message: null,
@@ -302,7 +121,7 @@ export function useTextGenerationExecution(instanceId: string) {
           completed_at: null,
           metadata: {
             execution_started_at: new Date().toISOString(),
-            initial_form_data: formData,
+            initial_form_data: nextFormData,
           },
         };
 
@@ -316,24 +135,20 @@ export function useTextGenerationExecution(instanceId: string) {
         const dbExecution = createResult.data;
         getActions().setCurrentExecution(dbExecution);
 
-        // --- Step 4: Update status to running ---
         await updateExecutionStatus(dbExecution.id, 'running');
         getActions().updateCurrentExecution({ status: 'running' });
 
-        // --- Step 5: Prepare Dify API payload ---
         const difyPayload: DifyCompletionRequestPayload = {
-          inputs: formData,
-          response_mode: 'streaming' as const,
+          inputs: nextFormData,
+          response_mode: 'streaming',
           user: userId,
         };
 
-        // --- Step 6: Call Dify streaming API ---
         const { streamDifyCompletion } = await import(
           '@lib/services/dify/completion-service'
         );
 
         abortControllerRef.current = new AbortController();
-
         streamResponse = await streamDifyCompletion(
           targetApp.instance_id,
           difyPayload
@@ -344,7 +159,6 @@ export function useTextGenerationExecution(instanceId: string) {
         let taskId: string | null = null;
         let completionResult: CompletionFinalResult = {};
 
-        // --- Step 7: Handle streaming response ---
         for await (const textChunk of streamResponse.answerStream) {
           if (abortControllerRef.current?.signal.aborted) {
             console.log(
@@ -355,15 +169,10 @@ export function useTextGenerationExecution(instanceId: string) {
 
           accumulatedText += textChunk;
           setGeneratedText(accumulatedText);
-
-          // Update progress (estimate based on text length)
-          const estimatedProgress = Math.min(
-            (accumulatedText.length / 1000) * 100,
-            90
+          getActions().setExecutionProgress(
+            calculateTextGenerationProgress(accumulatedText)
           );
-          getActions().setExecutionProgress(estimatedProgress);
 
-          // --- Set taskId for stop usage ---
           const currentTaskId = streamResponse.getTaskId();
           if (currentTaskId && !getActions().difyTaskId) {
             getActions().setDifyTaskId(currentTaskId);
@@ -371,7 +180,6 @@ export function useTextGenerationExecution(instanceId: string) {
           }
         }
 
-        // --- Step 8: Wait for completion and get final result ---
         try {
           completionResult = await streamResponse.completionPromise;
           messageId = streamResponse.getMessageId();
@@ -383,7 +191,7 @@ export function useTextGenerationExecution(instanceId: string) {
               messageId,
               taskId,
               textLength: accumulatedText.length,
-              usage: completionResult?.usage,
+              usage: completionResult.usage,
             }
           );
         } catch (completionError) {
@@ -391,52 +199,47 @@ export function useTextGenerationExecution(instanceId: string) {
             '[Text Generation] Error while waiting for completion:',
             completionError
           );
-          // Even if completionPromise fails, if there is generated text, still try to save
+
           if (accumulatedText.length > 0) {
             console.log(
               '[Text Generation] Error on completion, but generated content exists, continue saving'
             );
-            completionResult = { usage: undefined, metadata: {} };
+            completionResult = createCompletionFallbackResult();
           } else {
             throw completionError;
           }
         }
 
-        // --- Step 9: Save complete data ---
-        const saveResult = await saveCompleteGenerationData(
-          dbExecution.id,
-          completionResult,
+        const saveResult = await saveCompleteTextGenerationData({
+          executionId: dbExecution.id,
+          finalResult: completionResult,
           taskId,
           messageId,
-          accumulatedText
-        );
+          generatedText: accumulatedText,
+          instanceId,
+          updateCurrentExecution: getActions().updateCurrentExecution,
+          addExecutionToHistory: getActions().addExecutionToHistory,
+        });
 
         if (!saveResult.success) {
           console.error(
             '[Text Generation] Failed to save complete data:',
             saveResult.error
           );
-          throw new Error(`Failed to save data: ${saveResult.error}`);
+          throw new Error(
+            `Failed to save data: ${saveResult.error.message || String(saveResult.error)}`
+          );
         }
 
-        // --- Step 10: Update final status ---
         console.log('[Text Generation] Start updating final status');
-
-        // Update progress to 100%
         getActions().setExecutionProgress(100);
-
-        // Stop streaming state
         setIsStreaming(false);
-
-        // Ensure execution state is properly stopped
         getActions().stopExecution();
 
-        // Update current execution record to latest complete data
         if (saveResult.data) {
           getActions().updateCurrentExecution(saveResult.data);
         }
 
-        // --- Auto add to favorite apps ---
         addToFavorites(targetApp.instance_id);
 
         console.log(
@@ -444,8 +247,6 @@ export function useTextGenerationExecution(instanceId: string) {
         );
       } catch (error) {
         console.error('[Text Generation] ❌ Execution failed:', error);
-
-        // Clean up streaming state
         setIsStreaming(false);
 
         const rawErrorMessage =
@@ -463,19 +264,17 @@ export function useTextGenerationExecution(instanceId: string) {
         );
         const friendlyErrorMessage = formatUiErrorMessage(uiError);
 
-        // Set error state
         getActions().setError(friendlyErrorMessage, true);
 
-        // Update database status to failed
-        if (currentExecution?.id) {
+        const currentState = useWorkflowExecutionStore.getState();
+        if (currentState.currentExecution?.id) {
           try {
             await updateExecutionStatus(
-              currentExecution.id,
+              currentState.currentExecution.id,
               'failed',
               friendlyErrorMessage
             );
 
-            // Update execution status in store
             getActions().updateCurrentExecution({
               status: 'failed',
               error_message: friendlyErrorMessage,
@@ -488,47 +287,30 @@ export function useTextGenerationExecution(instanceId: string) {
           }
         }
       } finally {
-        // Clean up resources
-        abortControllerRef.current = null;
+        cleanupTextGenerationResources(abortControllerRef, false);
       }
     },
-    [
-      userId,
-      instanceId,
-      getActions,
-      saveCompleteGenerationData,
-      addToFavorites,
-      currentExecution,
-      createTitle,
-    ]
+    [addToFavorites, createTitle, getActions, instanceId, userId]
   );
 
-  /**
-   * Stop text generation
-   */
   const stopTextGeneration = useCallback(async () => {
     console.log('[Text Generation] Stop execution');
 
     try {
-      // Get current state
       const state = useWorkflowExecutionStore.getState();
-      const currentText = generatedText; // Get current generated text
+      const currentText = generatedText;
 
-      // 1. Abort streaming response
       if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
+        cleanupTextGenerationResources(abortControllerRef, true);
         console.log('[Text Generation] Streaming response aborted');
       }
 
-      // 2. If taskId exists, call Dify stop API
       if (state.difyTaskId && userId) {
         try {
-          const { useAppListStore } = await import(
-            '@lib/stores/app-list-store'
+          const targetApp = await resolveTextGenerationTargetApp(
+            instanceId,
+            'stop'
           );
-          const apps = useAppListStore.getState().apps;
-          const targetApp = apps.find(app => app.instance_id === instanceId);
-
           if (targetApp) {
             const { stopDifyCompletion } = await import(
               '@lib/services/dify/completion-service'
@@ -545,82 +327,30 @@ export function useTextGenerationExecution(instanceId: string) {
             '[Text Generation] Failed to stop Dify task:',
             stopError
           );
-          // Even if stop API fails, continue to save data
         }
       }
 
-      // 3. Update store state
       getActions().stopExecution();
       setIsStreaming(false);
 
-      // 4. Save partial text to database (if any)
-      if (currentExecution?.id && currentText && currentText.length > 0) {
+      if (state.currentExecution?.id && currentText.length > 0) {
         try {
           console.log(
             '[Text Generation] Saving partial text on stop, length:',
             currentText.length
           );
 
-          // Build complete data for stop
-          const stopMetadata = {
-            // Dify original response data
-            dify_response: {
-              message_id: null, // May not have messageId on stop
-              task_id: state.difyTaskId,
-              stopped_by_user: true,
-            },
-
-            // Generation content
-            generation_data: {
-              generated_text: currentText,
-              text_length: currentText.length,
-              word_count: currentText
-                .split(/\s+/)
-                .filter(word => word.length > 0).length,
-              has_content: true,
-              is_partial: true, // Mark as partial content
-            },
-
-            // Execution environment info
-            execution_context: {
-              user_agent:
-                typeof window !== 'undefined'
-                  ? window.navigator.userAgent
-                  : null,
-              timestamp: new Date().toISOString(),
-              instance_id: instanceId,
-              execution_mode: 'streaming',
-              api_type: 'completion',
-              final_status: 'stopped',
-              stop_reason: 'user_manual',
-            },
-          };
-
-          // Update database record
-          const updateResult = await updateCompleteExecutionData(
-            currentExecution.id,
-            {
-              status: 'stopped',
-              external_execution_id: null,
-              task_id: state.difyTaskId,
-              outputs: { generated_text: currentText },
-              total_steps: 1,
-              total_tokens: 0, // May not have token count on stop
-              elapsed_time: null,
-              error_message: 'Stopped by user',
-              completed_at: new Date().toISOString(),
-              metadata: stopMetadata,
-            }
-          );
+          const updateResult = await saveStoppedTextGenerationData({
+            executionId: state.currentExecution.id,
+            taskId: state.difyTaskId,
+            generatedText: currentText,
+            instanceId,
+            updateCurrentExecution: getActions().updateCurrentExecution,
+            addExecutionToHistory: getActions().addExecutionToHistory,
+          });
 
           if (updateResult.success) {
             console.log('[Text Generation] ✅ Partial text saved to database');
-
-            conversationEvents.emit();
-
-            // Update execution record in store
-            getActions().updateCurrentExecution(updateResult.data);
-            getActions().addExecutionToHistory(updateResult.data);
           } else {
             console.error(
               '[Text Generation] ❌ Failed to save partial text:',
@@ -633,48 +363,41 @@ export function useTextGenerationExecution(instanceId: string) {
             saveError
           );
         }
-      } else {
-        // No generated content, just update status
-        if (currentExecution?.id) {
-          try {
-            await updateExecutionStatus(
-              currentExecution.id,
-              'stopped',
-              'Stopped by user',
-              new Date().toISOString()
-            );
+      } else if (state.currentExecution?.id) {
+        try {
+          const completedAt = new Date().toISOString();
+          await updateExecutionStatus(
+            state.currentExecution.id,
+            'stopped',
+            'Stopped by user',
+            completedAt
+          );
 
-            getActions().updateCurrentExecution({
-              status: 'stopped',
-              error_message: 'Stopped by user',
-              completed_at: new Date().toISOString(),
-            });
+          getActions().updateCurrentExecution({
+            status: 'stopped',
+            error_message: 'Stopped by user',
+            completed_at: completedAt,
+          });
+          conversationEvents.emit();
 
-            conversationEvents.emit();
-
-            console.log(
-              '[Text Generation] ✅ Execution status updated to stopped'
-            );
-          } catch (updateError) {
-            console.error(
-              '[Text Generation] Error updating stop status:',
-              updateError
-            );
-          }
+          console.log(
+            '[Text Generation] ✅ Execution status updated to stopped'
+          );
+        } catch (updateError) {
+          console.error(
+            '[Text Generation] Error updating stop status:',
+            updateError
+          );
         }
       }
     } catch (error) {
       console.error('[Text Generation] Failed to stop execution:', error);
       getActions().setError('Failed to stop execution');
     } finally {
-      // Clean up resources
-      abortControllerRef.current = null;
+      cleanupTextGenerationResources(abortControllerRef, false);
     }
-  }, [instanceId, userId, currentExecution, getActions, generatedText]);
+  }, [generatedText, getActions, instanceId, userId]);
 
-  /**
-   * Retry text generation
-   */
   const retryTextGeneration = useCallback(async () => {
     console.log('[Text Generation] Retry execution');
 
@@ -682,47 +405,30 @@ export function useTextGenerationExecution(instanceId: string) {
       getActions().clearError();
       await executeTextGeneration(formData);
     }
-  }, [formData, executeTextGeneration, getActions]);
+  }, [executeTextGeneration, formData, getActions]);
 
   const clearError = useCallback(() => {
     getActions().clearError();
   }, [getActions]);
 
-  /**
-   * Reset state
-   */
   const resetTextGeneration = useCallback(() => {
     console.log('[Text Generation] Reset state');
+    cleanupTextGenerationResources(abortControllerRef, true);
     getActions().reset();
     setGeneratedText('');
     setIsStreaming(false);
   }, [getActions]);
 
-  /**
-   * Load history - consistent with workflow logic
-   */
   const loadTextGenerationHistory = useCallback(async () => {
     if (!userId) return;
 
     console.log('[Text Generation] Load history, instanceId:', instanceId);
 
     try {
-      // --- Get correct app UUID ---
-      const { useAppListStore } = await import('@lib/stores/app-list-store');
-      const appListState = useAppListStore.getState();
-
-      // If app list is empty, fetch app list first
-      if (appListState.apps.length === 0) {
-        console.log(
-          '[Text Generation] History load: app list empty, fetching app list'
-        );
-        await appListState.fetchApps();
-      }
-
-      // Find corresponding app record
-      const currentApps = useAppListStore.getState().apps;
-      const targetApp = currentApps.find(app => app.instance_id === instanceId);
-
+      const targetApp = await resolveTextGenerationTargetApp(
+        instanceId,
+        'history'
+      );
       if (!targetApp) {
         console.warn(
           '[Text Generation] App record not found, instanceId:',
@@ -734,8 +440,7 @@ export function useTextGenerationExecution(instanceId: string) {
 
       console.log('[Text Generation] History query using UUID:', targetApp.id);
 
-      const result = await getExecutionsByServiceInstance(targetApp.id, 20); // Use UUID as primary key, add userId filter
-
+      const result = await getExecutionsByServiceInstance(targetApp.id, 20);
       if (result.success) {
         console.log(
           '[Text Generation] History loaded successfully, count:',
@@ -751,15 +456,19 @@ export function useTextGenerationExecution(instanceId: string) {
     } catch (error) {
       console.error('[Text Generation] Error loading history:', error);
     }
-  }, [instanceId, userId, getActions]);
+  }, [getActions, instanceId, userId]);
 
-  // --- Load history on mount ---
   useEffect(() => {
     loadTextGenerationHistory();
   }, [loadTextGenerationHistory]);
 
+  useEffect(() => {
+    return () => {
+      cleanupTextGenerationResources(abortControllerRef, true);
+    };
+  }, []);
+
   return {
-    // State
     isExecuting,
     isStreaming,
     progress,
@@ -770,8 +479,6 @@ export function useTextGenerationExecution(instanceId: string) {
     formData,
     formLocked,
     generatedText,
-
-    // Actions
     executeTextGeneration,
     stopTextGeneration,
     retryTextGeneration,
