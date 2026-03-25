@@ -366,7 +366,7 @@ async function run() {
     const steps = [
       {
         id: 'incremental-apply',
-        command: ['node', 'scripts/m7-incremental-migrate.mjs'],
+        command: ['node', 'local_scripts/m7-incremental-migrate.mjs'],
         env: {
           M7_DRY_RUN: '0',
           M7_DISABLE_LOCK: '1',
@@ -375,12 +375,12 @@ async function run() {
       },
       {
         id: 'db-reconcile',
-        command: ['node', 'scripts/m7-reconcile-verify.mjs'],
+        command: ['node', 'local_scripts/m7-reconcile-verify.mjs'],
         env: {},
       },
       {
         id: 'dual-read',
-        command: ['node', 'scripts/m7-dual-read-verify.mjs'],
+        command: ['node', 'local_scripts/m7-dual-read-verify.mjs'],
         env: {
           M7_DUAL_READ_SAMPLE_STRATEGY: batchDualReadStrategy,
           M7_DUAL_READ_REQUIRE_FULL_COVERAGE:
@@ -389,7 +389,7 @@ async function run() {
       },
       {
         id: 'storage-reconcile',
-        command: ['node', 'scripts/m7-storage-reconcile-verify.mjs'],
+        command: ['node', 'local_scripts/m7-storage-reconcile-verify.mjs'],
         env: {
           M7_STORAGE_SCAN_STRATEGY: batchStorageScanStrategy,
           M7_STORAGE_REQUIRE_FULL_COVERAGE:
@@ -398,7 +398,7 @@ async function run() {
       },
       {
         id: 'lag-verify',
-        command: ['node', 'scripts/m7-lag-verify.mjs'],
+        command: ['node', 'local_scripts/m7-lag-verify.mjs'],
         env: {},
       },
     ]

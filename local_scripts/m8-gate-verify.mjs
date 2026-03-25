@@ -46,7 +46,7 @@ async function run() {
   if (runRollout) {
     checks.push({
       id: 'rollout-run',
-      command: 'node scripts/m8-rollout-run.mjs',
+      command: 'node local_scripts/m8-rollout-run.mjs',
       env: {
         M8_REPORT_DIR: path.join(reportDir, 'rollout'),
         M8_DRY_RUN:
@@ -75,7 +75,7 @@ async function run() {
   if (runRollbackDrill) {
     checks.push({
       id: 'rollback-drill',
-      command: 'node scripts/m8-rollback-drill.mjs',
+      command: 'node local_scripts/m8-rollback-drill.mjs',
       env: {
         M8_REPORT_DIR: path.join(reportDir, 'rollback-drill'),
         M8_DRY_RUN:

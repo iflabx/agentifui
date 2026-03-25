@@ -189,7 +189,7 @@ run_step "ensure S3 bucket" env \
   S3_SECRET_ACCESS_KEY="${S3_SECRET_ACCESS_KEY}" \
   S3_BUCKET="${S3_BUCKET}" \
   S3_ENABLE_PATH_STYLE="${S3_ENABLE_PATH_STYLE}" \
-  node "${ROOT_DIR}/scripts/m7-s3-bootstrap.mjs"
+  node "${ROOT_DIR}/local_scripts/m7-s3-bootstrap.mjs"
 
 echo "[m7-ci-runtime] running full + incremental apply..."
 run_step "full apply" env \
@@ -197,14 +197,14 @@ run_step "full apply" env \
   M7_TARGET_DATABASE_URL="${M7_TARGET_DATABASE_URL}" \
   M7_STORAGE_DATABASE_URL="${M7_STORAGE_DATABASE_URL}" \
   M7_DRY_RUN=0 \
-  pnpm -s m7:migrate:run
+  node local_scripts/m7-data-migrate.mjs
 
 run_step "incremental apply" env \
   M7_SOURCE_DATABASE_URL="${M7_SOURCE_DATABASE_URL}" \
   M7_TARGET_DATABASE_URL="${M7_TARGET_DATABASE_URL}" \
   M7_STORAGE_DATABASE_URL="${M7_STORAGE_DATABASE_URL}" \
   M7_DRY_RUN=0 \
-  pnpm -s m7:migrate:incremental:run
+  node local_scripts/m7-incremental-migrate.mjs
 
 echo "[m7-ci-runtime] running gate..."
 run_step "gate verify" env \
@@ -216,6 +216,6 @@ run_step "gate verify" env \
   S3_SECRET_ACCESS_KEY="${S3_SECRET_ACCESS_KEY}" \
   S3_BUCKET="${S3_BUCKET}" \
   S3_ENABLE_PATH_STYLE="${S3_ENABLE_PATH_STYLE}" \
-  pnpm -s m7:gate:verify
+  bash local_scripts/m7-gate-verify.sh
 
 echo '{"ok":true,"mode":"runtime-smoke","source":"m7-ci-runtime-verify.sh"}'

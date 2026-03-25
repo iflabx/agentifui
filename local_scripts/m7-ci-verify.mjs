@@ -6,38 +6,20 @@ import { promisify } from 'node:util'
 const execFileAsync = promisify(execFile)
 
 const scriptChecks = [
-  ['node', ['--check', 'scripts/m7-shared.mjs']],
-  ['node', ['--check', 'scripts/m7-s3-bootstrap.mjs']],
-  ['node', ['--check', 'scripts/m7-data-migrate.mjs']],
-  ['node', ['--check', 'scripts/m7-incremental-migrate.mjs']],
-  ['node', ['--check', 'scripts/m7-reconcile-verify.mjs']],
-  ['node', ['--check', 'scripts/m7-dual-read-verify.mjs']],
-  ['node', ['--check', 'scripts/m7-storage-reconcile-verify.mjs']],
-  ['node', ['--check', 'scripts/m7-lag-verify.mjs']],
-  ['node', ['--check', 'scripts/m7-gate-verify.mjs']],
-  ['node', ['--check', 'scripts/m7-batch-apply.mjs']],
-  ['node', ['--check', 'scripts/m7-batch-rollback.mjs']],
-  ['node', ['--check', 'scripts/m7-alert-notify.mjs']],
-  ['bash', ['-n', 'scripts/m7-ci-runtime-verify.sh']],
-  ['bash', ['-n', 'scripts/m7-gate-verify.sh']],
-]
-
-const requiredPackageScripts = [
-  'm7:migrate:dry-run',
-  'm7:migrate:run',
-  'm7:migrate:incremental:dry-run',
-  'm7:migrate:incremental:run',
-  'm7:reconcile:verify',
-  'm7:dual-read:verify',
-  'm7:storage:verify',
-  'm7:s3:bootstrap',
-  'm7:lag:verify',
-  'm7:batch:apply',
-  'm7:batch:rollback',
-  'm7:gate:report',
-  'm7:gate:verify',
-  'm7:alert:notify',
-  'm7:ci:runtime:verify',
+  ['node', ['--check', 'local_scripts/m7-shared.mjs']],
+  ['node', ['--check', 'local_scripts/m7-s3-bootstrap.mjs']],
+  ['node', ['--check', 'local_scripts/m7-data-migrate.mjs']],
+  ['node', ['--check', 'local_scripts/m7-incremental-migrate.mjs']],
+  ['node', ['--check', 'local_scripts/m7-reconcile-verify.mjs']],
+  ['node', ['--check', 'local_scripts/m7-dual-read-verify.mjs']],
+  ['node', ['--check', 'local_scripts/m7-storage-reconcile-verify.mjs']],
+  ['node', ['--check', 'local_scripts/m7-lag-verify.mjs']],
+  ['node', ['--check', 'local_scripts/m7-gate-verify.mjs']],
+  ['node', ['--check', 'local_scripts/m7-batch-apply.mjs']],
+  ['node', ['--check', 'local_scripts/m7-batch-rollback.mjs']],
+  ['node', ['--check', 'local_scripts/m7-alert-notify.mjs']],
+  ['bash', ['-n', 'local_scripts/m7-ci-runtime-verify.sh']],
+  ['bash', ['-n', 'local_scripts/m7-gate-verify.sh']],
 ]
 
 function parseBoolean(value, fallbackValue) {
@@ -79,20 +61,13 @@ async function run() {
 
   const packageJson = JSON.parse(await readFile('package.json', 'utf8'))
   const scripts = packageJson.scripts || {}
-  const missingScripts = requiredPackageScripts.filter(name => !scripts[name])
-
-  const docsContent = await readFile(
-    'docs/m7-data-migration-reconciliation.md',
-    'utf8'
-  )
-  const missingDocMentions = requiredPackageScripts.filter(
-    name => !docsContent.includes(name)
+  const forbiddenPublicScripts = Object.keys(scripts).filter(
+    name => name.startsWith('m7:') || name.startsWith('m8:')
   )
 
   const checks = {
     syntaxChecksPassed: true,
-    packageScriptsPresent: missingScripts.length === 0,
-    docsMentionsPresent: missingDocMentions.length === 0,
+    publicPackageScriptsRemoved: forbiddenPublicScripts.length === 0,
   }
 
   const runtimeSmokeEnabled = parseBoolean(
@@ -105,7 +80,7 @@ async function run() {
     command: null,
   }
   if (runtimeSmokeEnabled) {
-    const runtimeCommand = ['pnpm', 'm7:ci:runtime:verify']
+    const runtimeCommand = ['bash', 'local_scripts/m7-ci-runtime-verify.sh']
     await runCommand(runtimeCommand[0], runtimeCommand.slice(1))
     runtimeSmoke = {
       enabled: true,
@@ -118,8 +93,7 @@ async function run() {
     ok: Object.values(checks).every(Boolean) && runtimeSmoke.ok,
     checks,
     syntaxCommands: commandResults,
-    missingScripts,
-    missingDocMentions,
+    forbiddenPublicScripts,
     runtimeSmoke,
   }
 

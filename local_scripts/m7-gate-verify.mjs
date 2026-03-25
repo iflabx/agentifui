@@ -106,7 +106,7 @@ async function run() {
   if (parseBooleanEnv(process.env.M7_GATE_RUN_MIGRATION_DRY_RUN, true)) {
     checks.push({
       id: 'full-migrate-dry-run',
-      command: ['node', 'scripts/m7-data-migrate.mjs'],
+      command: ['node', 'local_scripts/m7-data-migrate.mjs'],
       env: { M7_DRY_RUN: '1' },
     })
   }
@@ -114,7 +114,7 @@ async function run() {
   if (parseBooleanEnv(process.env.M7_GATE_RUN_INCREMENTAL_DRY_RUN, true)) {
     checks.push({
       id: 'incremental-migrate-dry-run',
-      command: ['node', 'scripts/m7-incremental-migrate.mjs'],
+      command: ['node', 'local_scripts/m7-incremental-migrate.mjs'],
       env: { M7_DRY_RUN: '1' },
     })
   }
@@ -122,7 +122,7 @@ async function run() {
   if (parseBooleanEnv(process.env.M7_GATE_RUN_DB_RECONCILE, true)) {
     checks.push({
       id: 'db-reconcile',
-      command: ['node', 'scripts/m7-reconcile-verify.mjs'],
+      command: ['node', 'local_scripts/m7-reconcile-verify.mjs'],
       env: {},
     })
   }
@@ -130,7 +130,7 @@ async function run() {
   if (parseBooleanEnv(process.env.M7_GATE_RUN_DUAL_READ, true)) {
     checks.push({
       id: 'dual-read-sampling',
-      command: ['node', 'scripts/m7-dual-read-verify.mjs'],
+      command: ['node', 'local_scripts/m7-dual-read-verify.mjs'],
       env: {},
     })
   }
@@ -138,7 +138,7 @@ async function run() {
   if (parseBooleanEnv(process.env.M7_GATE_RUN_STORAGE_RECONCILE, true)) {
     checks.push({
       id: 'storage-reconcile',
-      command: ['node', 'scripts/m7-storage-reconcile-verify.mjs'],
+      command: ['node', 'local_scripts/m7-storage-reconcile-verify.mjs'],
       env: {},
     })
   }
@@ -146,7 +146,7 @@ async function run() {
   if (parseBooleanEnv(process.env.M7_GATE_RUN_LAG_VERIFY, true)) {
     checks.push({
       id: 'lag-verify',
-      command: ['node', 'scripts/m7-lag-verify.mjs'],
+      command: ['node', 'local_scripts/m7-lag-verify.mjs'],
       env: {},
     })
   }

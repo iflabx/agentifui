@@ -17,4 +17,4 @@ export M8_REQUIRE_100_STABILITY="${M8_REQUIRE_100_STABILITY:-1}"
 export M8_REQUIRED_100_STABILITY_MINUTES="${M8_REQUIRED_100_STABILITY_MINUTES:-1440}"
 
 pnpm gate:quality:verify
-node scripts/m8-gate-verify.mjs
+node local_scripts/m8-gate-verify.mjs

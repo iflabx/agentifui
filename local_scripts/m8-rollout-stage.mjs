@@ -186,7 +186,7 @@ export async function runStage(overrides = {}) {
   const smokeCommand = resolveString(
     overrides.smokeCommand,
     process.env.M8_SMOKE_COMMAND,
-    'bash local-scripts/m8-smoke-verify.sh'
+    'bash local_scripts/m8-smoke-verify.sh'
   )
   const reconcileCommand = resolveString(
     overrides.reconcileCommand,
@@ -195,7 +195,7 @@ export async function runStage(overrides = {}) {
   const metricsCommand = resolveString(
     overrides.metricsCommand,
     process.env.M8_METRICS_VERIFY_COMMAND,
-    'node scripts/m8-metrics-verify.mjs'
+    'node local_scripts/m8-metrics-verify.mjs'
   )
   const rollbackCommand = resolveString(
     overrides.rollbackCommand,
