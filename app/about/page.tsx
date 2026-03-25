@@ -67,31 +67,34 @@ export default function AboutPage() {
 
   // Create translation data object for the dynamic renderer
   const resolvedSections = dynamicT<unknown>('sections', 'pages.about');
-  const translationData: AboutTranslationData = {
-    // Try to get dynamic sections first
-    sections: Array.isArray(resolvedSections)
-      ? (resolvedSections as PageSection[])
-      : undefined,
+  const resolvedDynamicSections = Array.isArray(resolvedSections)
+    ? (resolvedSections as PageSection[])
+    : undefined;
 
-    // Fallback to legacy format for backward compatibility
-    title: t('title'),
-    subtitle: t('subtitle'),
-    mission: {
-      description: t('mission.description'),
-    },
-    values: {
-      items: staticT.raw('values.items') as Array<{
-        title: string;
-        description: string;
-      }>,
-    },
-    buttonText: t('buttonText'),
-    copyright: {
-      prefix: t('copyright.prefix'),
-      linkText: t('copyright.linkText'),
-      suffix: t('copyright.suffix'),
-    },
-  };
+  const translationData: AboutTranslationData = resolvedDynamicSections
+    ? {
+        sections: resolvedDynamicSections,
+      }
+    : {
+        // Fallback to legacy format only when dynamic sections are unavailable.
+        title: t('title'),
+        subtitle: t('subtitle'),
+        mission: {
+          description: t('mission.description'),
+        },
+        values: {
+          items: staticT.raw('values.items') as Array<{
+            title: string;
+            description: string;
+          }>,
+        },
+        buttonText: t('buttonText'),
+        copyright: {
+          prefix: t('copyright.prefix'),
+          linkText: t('copyright.linkText'),
+          suffix: t('copyright.suffix'),
+        },
+      };
 
   return (
     <div

@@ -23,6 +23,7 @@ interface CacheEntry {
 interface UseDynamicTranslationsConfig {
   sections: string[]; // Translation sections to load (e.g., ['pages.about', 'pages.home'])
   cacheTTL?: number; // Cache TTL in milliseconds (default: 5 minutes)
+  requestTimeoutMs?: number; // API request timeout in milliseconds
 }
 
 // In-memory cache for translation data to avoid redundant API calls
@@ -54,7 +55,11 @@ export function clearTranslationCache(locale?: string): void {
  * @returns Object containing translation function and loading state
  */
 export function useDynamicTranslations(config: UseDynamicTranslationsConfig) {
-  const { sections, cacheTTL = 5 * 60 * 1000 } = config;
+  const {
+    sections,
+    cacheTTL = 5 * 60 * 1000,
+    requestTimeoutMs = 3000,
+  } = config;
   const [dynamicData, setDynamicData] = useState<Record<
     string,
     unknown
@@ -64,6 +69,10 @@ export function useDynamicTranslations(config: UseDynamicTranslationsConfig) {
 
   useEffect(() => {
     let isCurrent = true;
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      controller.abort();
+    }, requestTimeoutMs);
 
     const loadDynamicTranslations = async () => {
       try {
@@ -82,7 +91,11 @@ export function useDynamicTranslations(config: UseDynamicTranslationsConfig) {
 
         // Fetch from API if not cached or cache expired
         const response = await fetch(
-          `/api/translations/${locale}?sections=${sections.join(',')}`
+          `/api/translations/${locale}?sections=${sections.join(',')}`,
+          {
+            cache: 'no-store',
+            signal: controller.signal,
+          }
         );
 
         if (response.ok) {
@@ -103,13 +116,22 @@ export function useDynamicTranslations(config: UseDynamicTranslationsConfig) {
           console.warn('Dynamic translation API failed, using static fallback');
           if (isCurrent) {
             setDynamicData(null);
-            setIsLoading(false);
           }
         }
       } catch (error) {
-        console.error('Failed to load dynamic translations:', error);
+        if (error instanceof Error && error.name === 'AbortError') {
+          console.warn(
+            'Dynamic translation request timed out, using static fallback'
+          );
+        } else {
+          console.error('Failed to load dynamic translations:', error);
+        }
         if (isCurrent) {
           setDynamicData(null);
+        }
+      } finally {
+        window.clearTimeout(timeoutId);
+        if (isCurrent) {
           setIsLoading(false);
         }
       }
@@ -120,8 +142,10 @@ export function useDynamicTranslations(config: UseDynamicTranslationsConfig) {
     // Cleanup to prevent state updates on unmounted component
     return () => {
       isCurrent = false;
+      window.clearTimeout(timeoutId);
+      controller.abort();
     };
-  }, [sections.join(','), cacheTTL]);
+  }, [cacheTTL, requestTimeoutMs, sections.join(',')]);
 
   /**
    * Translation function with dynamic/static fallback
