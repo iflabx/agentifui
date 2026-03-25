@@ -9,28 +9,27 @@ import type { EnhancedUser } from '@lib/db/users';
 import { useProfile } from '@lib/hooks/use-profile';
 import { useUserManagementStore } from '@lib/stores/user-management-store';
 import { cn } from '@lib/utils';
-import {
-  CheckSquare,
-  Crown,
-  Plus,
-  RefreshCw,
-  Shield,
-  UserCheck,
-  UserIcon,
-  UserX,
-  Users,
-} from 'lucide-react';
 import { toast } from 'sonner';
 
 import React, { useEffect } from 'react';
 
 import { useTranslations } from 'next-intl';
 
+import { BatchActionsBar } from '@/admin/users/batch-actions-bar';
+import { UsersPageHeader } from '@/admin/users/page-header';
+import {
+  createBatchActionValue,
+  evaluateBatchRoleChangePermission,
+  evaluateDeletePermission,
+  evaluateRoleChangePermission,
+  getUserDisplayName,
+} from '@/admin/users/page-helpers';
+import { PaginationControls } from '@/admin/users/pagination-controls';
+
 export default function UsersManagementPage() {
   const { profile: currentUserProfile } = useProfile();
   const t = useTranslations('pages.admin.users');
 
-  // Dialog state for delete confirmation
   const [showDeleteDialog, setShowDeleteDialog] = React.useState(false);
   const [userToDelete, setUserToDelete] = React.useState<EnhancedUser | null>(
     null
@@ -47,7 +46,6 @@ export default function UsersManagementPage() {
   const [editingUserId, setEditingUserId] = React.useState<string | null>(null);
   const [isSavingEdit, setIsSavingEdit] = React.useState(false);
 
-  // get status and operations from user management store
   const {
     users,
     stats,
@@ -61,7 +59,6 @@ export default function UsersManagementPage() {
     loadStats,
     loadFilterOptions,
     loadUserDetail,
-
     updateFilters,
     setPage,
     toggleUserSelection,
@@ -76,102 +73,25 @@ export default function UsersManagementPage() {
     clearError,
   } = useUserManagementStore();
 
+  const currentUserId = currentUserProfile?.id;
+  const currentUserRole = currentUserProfile?.role;
   const editingUser =
     (editingUserId && selectedUser?.id === editingUserId
       ? selectedUser
       : null) ||
     users.find(user => user.id === editingUserId) ||
     null;
+  const isRefreshing = loading.users || loading.stats;
 
-  const getUserDisplayName = (user?: Partial<EnhancedUser> | null) =>
-    user?.full_name || user?.email || t('actions.defaultUser');
+  const getDisplayName = (user?: Partial<EnhancedUser> | null) =>
+    getUserDisplayName(user, t('actions.defaultUser'));
 
-  // check if can change user role (prevent admin from downgrading other admins)
-  const canChangeUserRole = (
-    targetUser: EnhancedUser,
-    newRole: 'admin' | 'manager' | 'user'
-  ) => {
-    // if current user is not admin, do not allow any role change
-    if (currentUserProfile?.role !== 'admin') {
-      return false;
-    }
-
-    // prevent admin from modifying their own role
-    if (targetUser.id === currentUserProfile?.id) {
-      toast.error(t('messages.cannotChangeOwnRole'));
-      return false;
-    }
-
-    // prevent non-super admin from downgrading other admins
-    if (targetUser.role === 'admin' && newRole !== 'admin') {
-      toast.error(t('messages.cannotDowngradeOtherAdmin'));
-      return false;
-    }
-
-    return true;
-  };
-
-  // check if can delete user (prevent deleting admin account)
-  const canDeleteUser = (targetUser: EnhancedUser) => {
-    // if current user is not admin, do not allow delete
-    if (currentUserProfile?.role !== 'admin') {
-      return false;
-    }
-
-    // prevent deleting self
-    if (targetUser.id === currentUserProfile?.id) {
-      toast.error(t('messages.cannotDeleteSelf'));
-      return false;
-    }
-
-    // prevent deleting other admins
-    if (targetUser.role === 'admin') {
-      toast.error(t('messages.cannotDeleteOtherAdmin'));
-      return false;
-    }
-
-    return true;
-  };
-
-  // check if batch operation contains protected users
-  const canBatchChangeRole = (newRole: 'admin' | 'manager' | 'user') => {
-    if (currentUserProfile?.role !== 'admin') {
-      return false;
-    }
-
-    const selectedUsers = users.filter(user =>
-      selectedUserIds.includes(user.id)
-    );
-
-    // check if contains current user
-    const includesSelf = selectedUsers.some(
-      user => user.id === currentUserProfile?.id
-    );
-    if (includesSelf) {
-      toast.error(t('messages.cannotIncludeSelf'));
-      return false;
-    }
-
-    // check if trying to downgrade other admins
-    const hasAdminBeingDowngraded = selectedUsers.some(
-      user => user.role === 'admin' && newRole !== 'admin'
-    );
-    if (hasAdminBeingDowngraded) {
-      toast.error(t('messages.cannotDowngradeAdmin'));
-      return false;
-    }
-
-    return true;
-  };
-
-  // load data when page initializes
   useEffect(() => {
     loadUsers();
     loadStats();
     loadFilterOptions();
   }, [loadUsers, loadStats, loadFilterOptions]);
 
-  // handle error prompt
   useEffect(() => {
     if (error) {
       toast.error(error);
@@ -179,7 +99,15 @@ export default function UsersManagementPage() {
     }
   }, [error, clearError]);
 
-  // handle filter reset
+  const handleRefresh = () => {
+    loadUsers();
+    loadStats();
+  };
+
+  const handleAddUser = () => {
+    toast.success(t('actions.addUserInDevelopment'));
+  };
+
   const handleResetFilters = () => {
     updateFilters({
       role: undefined,
@@ -189,61 +117,72 @@ export default function UsersManagementPage() {
     });
   };
 
-  // handle user selection
   const handleSelectUser = (userId: string) => {
     toggleUserSelection(userId);
   };
 
-  // handle select all/cancel all
   const handleSelectAll = (selected: boolean) => {
     if (selected) {
       selectUsers(users.map(user => user.id));
-    } else {
-      clearSelection();
+      return;
     }
+
+    clearSelection();
   };
 
-  // handle user role change (with safety check)
   const handleChangeRole = async (
     user: EnhancedUser,
     role: 'admin' | 'manager' | 'user'
   ) => {
-    if (!canChangeUserRole(user, role)) {
+    const permission = evaluateRoleChangePermission({
+      currentUserId,
+      currentUserRole,
+      targetUser: user,
+      newRole: role,
+    });
+    if (!permission.allowed) {
+      if (permission.reasonKey) {
+        toast.error(t(permission.reasonKey));
+      }
       return;
     }
 
     const success = await changeUserRole(user.id, role);
     if (success) {
-      const roleText = t(`messages.roles.${role}`);
       toast.success(
         t('messages.roleChangeSuccess', {
-          name: getUserDisplayName(user),
-          role: roleText,
+          name: getDisplayName(user),
+          role: t(`messages.roles.${role}`),
         })
       );
     }
   };
 
-  // handle user status change
   const handleChangeStatus = async (
     user: EnhancedUser,
     status: 'active' | 'suspended' | 'pending'
   ) => {
     const success = await changeUserStatus(user.id, status);
     if (success) {
-      const statusText = t(`messages.statuses.${status}`);
       toast.success(
         t('messages.statusChangeSuccess', {
-          name: getUserDisplayName(user),
-          status: statusText,
+          name: getDisplayName(user),
+          status: t(`messages.statuses.${status}`),
         })
       );
     }
   };
 
-  // handle user delete (with safety check)
   const handleDeleteUser = (user: EnhancedUser) => {
-    if (!canDeleteUser(user)) {
+    const permission = evaluateDeletePermission({
+      currentUserId,
+      currentUserRole,
+      targetUser: user,
+    });
+    if (!permission.allowed) {
+      if (permission.reasonKey) {
+        toast.error(t(permission.reasonKey));
+      }
       return;
     }
 
@@ -251,16 +190,17 @@ export default function UsersManagementPage() {
     setShowDeleteDialog(true);
   };
 
-  // confirm delete user
   const handleConfirmDeleteUser = async () => {
-    if (!userToDelete) return;
+    if (!userToDelete) {
+      return;
+    }
 
     setIsDeleting(true);
     const success = await removeUser(userToDelete.id);
     if (success) {
       toast.success(
         t('messages.deleteSuccess', {
-          name: getUserDisplayName(userToDelete),
+          name: getDisplayName(userToDelete),
         })
       );
       setShowDeleteDialog(false);
@@ -270,22 +210,34 @@ export default function UsersManagementPage() {
   };
 
   const handleBatchChangeRole = (role: 'admin' | 'manager' | 'user') => {
-    if (!canBatchChangeRole(role)) {
+    const permission = evaluateBatchRoleChangePermission({
+      currentUserId,
+      currentUserRole,
+      newRole: role,
+      selectedUsers: users.filter(user => selectedUserIds.includes(user.id)),
+    });
+    if (!permission.allowed) {
+      if (permission.reasonKey) {
+        toast.error(t(permission.reasonKey));
+      }
       return;
     }
-    setBatchAction({ type: 'role', value: role });
+
+    setBatchAction(createBatchActionValue('role', role));
     setShowBatchDialog(true);
   };
 
   const handleBatchChangeStatus = (
     status: 'active' | 'suspended' | 'pending'
   ) => {
-    setBatchAction({ type: 'status', value: status });
+    setBatchAction(createBatchActionValue('status', status));
     setShowBatchDialog(true);
   };
 
   const handleConfirmBatchAction = async () => {
-    if (!batchAction) return;
+    if (!batchAction) {
+      return;
+    }
 
     setIsBatchUpdating(true);
     try {
@@ -319,17 +271,15 @@ export default function UsersManagementPage() {
     }
   };
 
-  // handle view user (use toast temporarily)
   const handleViewUser = async (user: EnhancedUser) => {
     await loadUserDetail(user.id);
     toast.success(
       t('actions.viewUser', {
-        name: getUserDisplayName(user),
+        name: getDisplayName(user),
       })
     );
   };
 
-  // handle edit user
   const handleEditUser = async (user: EnhancedUser) => {
     setEditingUserId(user.id);
     setShowEditModal(true);
@@ -372,68 +322,6 @@ export default function UsersManagementPage() {
     setEditingUserId(null);
   };
 
-  // pagination control
-  const PaginationControls = () => {
-    if (pagination.totalPages <= 1) return null;
-
-    return (
-      <div className="mt-6 flex items-center justify-between">
-        <div
-          className={cn(
-            'font-serif text-sm',
-            'text-stone-600 dark:text-stone-400'
-          )}
-        >
-          {t('pagination.showing', {
-            start: (pagination.page - 1) * pagination.pageSize + 1,
-            end: Math.min(
-              pagination.page * pagination.pageSize,
-              pagination.total
-            ),
-            total: pagination.total,
-          })}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setPage(pagination.page - 1)}
-            disabled={pagination.page <= 1}
-            className={cn(
-              'rounded-lg border px-3 py-1.5 font-serif text-sm transition-colors',
-              pagination.page <= 1
-                ? 'cursor-not-allowed opacity-50'
-                : 'border-stone-300 text-stone-700 hover:bg-stone-50 dark:border-stone-600 dark:text-stone-300 dark:hover:bg-stone-700'
-            )}
-          >
-            {t('pagination.previous')}
-          </button>
-
-          <span
-            className={cn(
-              'px-3 py-1.5 font-serif text-sm',
-              'text-stone-700 dark:text-stone-300'
-            )}
-          >
-            {pagination.page} / {pagination.totalPages}
-          </span>
-
-          <button
-            onClick={() => setPage(pagination.page + 1)}
-            disabled={pagination.page >= pagination.totalPages}
-            className={cn(
-              'rounded-lg border px-3 py-1.5 font-serif text-sm transition-colors',
-              pagination.page >= pagination.totalPages
-                ? 'cursor-not-allowed opacity-50'
-                : 'border-stone-300 text-stone-700 hover:bg-stone-50 dark:border-stone-600 dark:text-stone-300 dark:hover:bg-stone-700'
-            )}
-          >
-            {t('pagination.next')}
-          </button>
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div
       className={cn(
@@ -441,177 +329,30 @@ export default function UsersManagementPage() {
       )}
     >
       <div className="mx-auto max-w-7xl p-6">
-        {/* Page title and action bar */}
-        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1
-              className={cn(
-                'mb-3 bg-gradient-to-r from-stone-800 to-stone-600 bg-clip-text font-serif text-4xl leading-relaxed font-bold text-transparent dark:from-stone-100 dark:to-stone-300'
-              )}
-            >
-              {t('title')}
-            </h1>
-            <p
-              className={cn(
-                'flex items-center gap-2 font-serif text-base',
-                'text-stone-600 dark:text-stone-400'
-              )}
-            >
-              <Users className="h-4 w-4" />
-              {t('subtitle')}
-            </p>
-          </div>
+        <UsersPageHeader
+          isRefreshing={isRefreshing}
+          onAddUser={handleAddUser}
+          onRefresh={handleRefresh}
+        />
 
-          <div className="flex items-center gap-3">
-            {/* Refresh button */}
-            <button
-              onClick={() => {
-                loadUsers();
-                loadStats();
-              }}
-              disabled={loading.users || loading.stats}
-              className={cn(
-                'flex items-center gap-2 rounded-xl border px-4 py-2.5 font-serif shadow-sm transition-all duration-200',
-                loading.users || loading.stats
-                  ? 'cursor-not-allowed opacity-50'
-                  : 'border-stone-300/50 text-stone-700 backdrop-blur-sm hover:border-stone-400 hover:bg-stone-50/80 hover:shadow-md dark:border-stone-600/50 dark:text-stone-300 dark:hover:border-stone-500 dark:hover:bg-stone-700/50 dark:hover:shadow-md'
-              )}
-            >
-              <RefreshCw
-                className={cn(
-                  'h-4 w-4',
-                  (loading.users || loading.stats) && 'animate-spin'
-                )}
-              />
-              <span className="hidden sm:inline">
-                {t('actions.refreshData')}
-              </span>
-            </button>
-
-            {/* Add user button */}
-            <button
-              onClick={() => toast.success(t('actions.addUserInDevelopment'))}
-              className={cn(
-                'flex items-center gap-2 rounded-xl bg-gradient-to-r from-stone-700 to-stone-800 px-4 py-2.5 font-serif text-white shadow-sm transition-all duration-200 hover:from-stone-600 hover:to-stone-700 hover:shadow-md dark:from-stone-600 dark:to-stone-700 dark:hover:from-stone-500 dark:hover:to-stone-600'
-              )}
-            >
-              <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">{t('actions.addUser')}</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Statistics cards */}
         <UserStatsCards stats={stats} isLoading={loading.stats} />
 
-        {/* Filter component */}
         <UserFiltersComponent
           filters={filters}
           onFiltersChange={updateFilters}
           onReset={handleResetFilters}
         />
 
-        {/* Batch operation bar */}
         {selectedUserIds.length > 0 && (
-          <div
-            className={cn(
-              'mb-6 rounded-xl border border-stone-200/50 bg-white/80 p-5 shadow-lg shadow-stone-200/50 backdrop-blur-sm dark:border-stone-700/50 dark:bg-stone-800/60 dark:shadow-stone-900/20'
-            )}
-          >
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-3">
-                <div
-                  className={cn(
-                    'flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400'
-                  )}
-                >
-                  <CheckSquare className="h-4 w-4" />
-                </div>
-                <div>
-                  <span
-                    className={cn(
-                      'font-serif text-sm font-semibold',
-                      'text-stone-800 dark:text-stone-200'
-                    )}
-                  >
-                    {t('batchOperations.selected', {
-                      count: selectedUserIds.length,
-                    })}
-                  </span>
-                  <button
-                    onClick={clearSelection}
-                    className={cn(
-                      'ml-3 rounded-lg px-2 py-1 font-serif text-xs text-stone-600 transition-colors hover:bg-stone-100 hover:text-stone-700 dark:text-stone-400 dark:hover:bg-stone-700/50 dark:hover:text-stone-300'
-                    )}
-                  >
-                    {t('batchOperations.cancelSelection')}
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                {/* Batch role operations */}
-                <button
-                  onClick={() => handleBatchChangeRole('admin')}
-                  disabled={loading.batchOperating}
-                  className={cn(
-                    'flex items-center gap-1.5 rounded-lg bg-purple-600 px-3 py-1.5 font-serif text-sm text-white transition-colors hover:bg-purple-700'
-                  )}
-                >
-                  <Shield className="h-3 w-3" />
-                  {t('batchOperations.setAsAdmin')}
-                </button>
-
-                <button
-                  onClick={() => handleBatchChangeRole('manager')}
-                  disabled={loading.batchOperating}
-                  className={cn(
-                    'flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 font-serif text-sm text-white transition-colors hover:bg-amber-700'
-                  )}
-                >
-                  <Crown className="h-3 w-3" />
-                  {t('batchOperations.setAsManager')}
-                </button>
-
-                <button
-                  onClick={() => handleBatchChangeRole('user')}
-                  disabled={loading.batchOperating}
-                  className={cn(
-                    'flex items-center gap-1.5 rounded-lg bg-stone-600 px-3 py-1.5 font-serif text-sm text-white transition-colors hover:bg-stone-700'
-                  )}
-                >
-                  <UserIcon className="h-3 w-3" />
-                  {t('batchOperations.setAsUser')}
-                </button>
-
-                {/* Batch status operations */}
-                <button
-                  onClick={() => handleBatchChangeStatus('active')}
-                  disabled={loading.batchOperating}
-                  className={cn(
-                    'flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 font-serif text-sm text-white transition-colors hover:bg-green-700'
-                  )}
-                >
-                  <UserCheck className="h-3 w-3" />
-                  {t('batchOperations.activate')}
-                </button>
-
-                <button
-                  onClick={() => handleBatchChangeStatus('suspended')}
-                  disabled={loading.batchOperating}
-                  className={cn(
-                    'flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 font-serif text-sm text-white transition-colors hover:bg-red-700'
-                  )}
-                >
-                  <UserX className="h-3 w-3" />
-                  {t('batchOperations.suspend')}
-                </button>
-              </div>
-            </div>
-          </div>
+          <BatchActionsBar
+            isLoading={loading.batchOperating}
+            selectedCount={selectedUserIds.length}
+            onClearSelection={clearSelection}
+            onChangeRole={handleBatchChangeRole}
+            onChangeStatus={handleBatchChangeStatus}
+          />
         )}
 
-        {/* User table */}
         <UserTable
           users={users}
           selectedUserIds={selectedUserIds}
@@ -625,17 +366,15 @@ export default function UsersManagementPage() {
           onChangeStatus={handleChangeStatus}
         />
 
-        {/* Pagination controls */}
-        <PaginationControls />
+        <PaginationControls pagination={pagination} onPageChange={setPage} />
 
-        {/* Delete confirmation dialog */}
         <ConfirmDialog
           isOpen={showDeleteDialog}
           onClose={() => !isDeleting && setShowDeleteDialog(false)}
           onConfirm={handleConfirmDeleteUser}
           title={t('actions.deleteUser')}
           message={t('messages.deleteConfirm', {
-            name: getUserDisplayName(userToDelete),
+            name: getDisplayName(userToDelete),
           })}
           confirmText={t('actions.deleteUser')}
           variant="danger"
@@ -678,7 +417,7 @@ export default function UsersManagementPage() {
           user={editingUser}
           isLoading={loading.userDetail}
           isSubmitting={isSavingEdit}
-          canEditRoleStatus={currentUserProfile?.role === 'admin'}
+          canEditRoleStatus={currentUserRole === 'admin'}
           onClose={handleCloseEditModal}
           onSave={handleSaveEdit}
         />
