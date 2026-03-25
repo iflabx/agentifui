@@ -4,8 +4,6 @@
  * PostgreSQL-based implementation with cache, retries, and Result wrappers.
  * Keeps the same API surface used by legacy callers.
  */
-import { getManagedCrudRepository } from '@lib/server/db/repositories';
-import { resolvePgSessionOptionsFromEnv } from '@lib/server/pg/session-options';
 import {
   DatabaseError,
   Result,
@@ -15,135 +13,32 @@ import {
 } from '@lib/types/result';
 
 import { cacheService } from './cache-service';
+import {
+  REALTIME_BRIDGE_ENSURER_GLOBAL_KEY,
+  REALTIME_ENABLED_TABLES,
+  REALTIME_PUBLISHER_GLOBAL_KEY,
+} from './data-service/constants';
+import { assertIdentifier, quoteIdentifier } from './data-service/identifiers';
+import { normalizeRow } from './data-service/normalize';
+import { getOrCreateSqlPool } from './data-service/pool';
+import {
+  buildOrderByClause,
+  buildPaginationClause,
+  buildWhereClause,
+  toSqlValue,
+} from './data-service/query-helpers';
+import { resolveManagedRepositoryForOwnedTable } from './data-service/repository';
+import type {
+  OrderByOption,
+  PaginationOption,
+  QueryOptions,
+  QueryResultRow,
+  RealtimeOptions,
+  RealtimePublisher,
+  SqlClient,
+  SqlPool,
+} from './data-service/types';
 import { type RealtimeRow, realtimeService } from './realtime-service';
-
-interface QueryOptions {
-  cache?: boolean;
-  cacheTTL?: number;
-  retries?: number;
-  retryDelay?: number;
-}
-
-interface RealtimeOptions {
-  subscribe?: boolean;
-  subscriptionKey?: string;
-  onUpdate?: (payload: unknown) => void;
-}
-
-type OrderByOption = { column: string; ascending?: boolean };
-type PaginationOption = { offset: number; limit: number };
-type WhereClause = {
-  clause: string;
-  params: unknown[];
-};
-
-type QueryResultRow = object;
-type QueryResult<T extends QueryResultRow = QueryResultRow> = {
-  rows: T[];
-  rowCount: number | null;
-};
-type SqlClient = {
-  query<T extends QueryResultRow = QueryResultRow>(
-    sql: string,
-    params?: unknown[]
-  ): Promise<QueryResult<T>>;
-  release: () => void;
-};
-type SqlPool = {
-  query<T extends QueryResultRow = QueryResultRow>(
-    sql: string,
-    params?: unknown[]
-  ): Promise<QueryResult<T>>;
-  connect: () => Promise<SqlClient>;
-};
-
-type RealtimePublisher = (input: {
-  table: string;
-  eventType: 'INSERT' | 'UPDATE' | 'DELETE';
-  newRow: RealtimeRow | null;
-  oldRow: RealtimeRow | null;
-  schema?: string;
-  commitTimestamp?: string;
-}) => Promise<void>;
-
-const IDENTIFIER_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
-const PG_POOL_GLOBAL_KEY = '__agentifui_pg_pool__';
-const REALTIME_BRIDGE_ENSURER_GLOBAL_KEY =
-  '__agentifui_realtime_bridge_ensurer__';
-const REALTIME_PUBLISHER_GLOBAL_KEY = '__agentifui_realtime_publisher__';
-const TABLE_ACCESS_OWNERS = {
-  profiles: 'managed',
-  conversations: 'managed',
-  messages: 'managed',
-  providers: 'managed',
-  service_instances: 'managed',
-  api_keys: 'raw',
-  app_executions: 'raw',
-  user_identities: 'raw',
-  profile_external_attributes: 'raw',
-  sso_providers: 'raw',
-  groups: 'raw',
-  group_members: 'raw',
-  group_app_permissions: 'raw',
-  user_preferences: 'raw',
-  auth_settings: 'raw',
-  domain_sso_mappings: 'raw',
-  auth_users: 'raw',
-  auth_sessions: 'raw',
-  auth_accounts: 'raw',
-  auth_verifications: 'raw',
-  auth_password_accounts: 'raw',
-} as const;
-const REALTIME_ENABLED_TABLES = new Set([
-  'profiles',
-  'conversations',
-  'messages',
-  'providers',
-  'service_instances',
-  'api_keys',
-]);
-type TableAccessOwner =
-  (typeof TABLE_ACCESS_OWNERS)[keyof typeof TABLE_ACCESS_OWNERS];
-
-function assertIdentifier(identifier: string, label: string): string {
-  if (!IDENTIFIER_PATTERN.test(identifier)) {
-    throw new DatabaseError(`Invalid ${label}: ${identifier}`, 'sql_guard');
-  }
-  return identifier;
-}
-
-function quoteIdentifier(identifier: string): string {
-  return `"${identifier}"`;
-}
-
-function resolveTableAccessOwner(table: string): TableAccessOwner {
-  const owner = (
-    TABLE_ACCESS_OWNERS as Record<string, TableAccessOwner | undefined>
-  )[table];
-  if (!owner) {
-    throw new DatabaseError(
-      `Table owner is not declared for table: ${table}`,
-      'sql_guard'
-    );
-  }
-  return owner;
-}
-
-function resolveManagedRepositoryForOwnedTable(table: string, pool: SqlPool) {
-  const owner = resolveTableAccessOwner(table);
-  if (owner !== 'managed') {
-    return null;
-  }
-
-  const repository = getManagedCrudRepository(table, pool);
-  if (!repository) {
-    throw new DatabaseError(
-      `Managed repository is missing for table: ${table}`,
-      'drizzle'
-    );
-  }
-  return repository;
-}
 
 export class DataService {
   private static instance: DataService;
@@ -171,58 +66,7 @@ export class DataService {
   }
 
   private getPool(): SqlPool {
-    if (typeof window !== 'undefined') {
-      throw new DatabaseError(
-        'PostgreSQL pool is not available in browser runtime',
-        'pg_pool'
-      );
-    }
-
-    const globalState = globalThis as unknown as Record<string, unknown>;
-    const existing = globalState[PG_POOL_GLOBAL_KEY] as SqlPool | undefined;
-    if (existing) {
-      return existing;
-    }
-
-    // Dynamic runtime require prevents client bundle from resolving node-only deps.
-    const runtimeRequire = eval('require') as (id: string) => unknown;
-    const pgModule = runtimeRequire('pg') as {
-      Pool: new (config: {
-        connectionString: string;
-        max: number;
-        idleTimeoutMillis: number;
-        connectionTimeoutMillis: number;
-        options?: string;
-      }) => SqlPool;
-    };
-
-    const sessionOptions = resolvePgSessionOptionsFromEnv({
-      systemActor: true,
-    });
-    const pool = new pgModule.Pool({
-      connectionString: this.resolveDatabaseUrl(),
-      max: Number(process.env.PG_POOL_MAX || 10),
-      idleTimeoutMillis: Number(process.env.PG_POOL_IDLE_MS || 30000),
-      connectionTimeoutMillis: Number(process.env.PG_POOL_CONNECT_MS || 5000),
-      ...(sessionOptions ? { options: sessionOptions } : {}),
-    });
-
-    globalState[PG_POOL_GLOBAL_KEY] = pool;
-    return pool;
-  }
-
-  private resolveDatabaseUrl(): string {
-    const fromPrimary = process.env.DATABASE_URL?.trim();
-    if (fromPrimary) {
-      return fromPrimary;
-    }
-
-    const fallback = process.env.PGURL?.trim();
-    if (fallback) {
-      return fallback;
-    }
-
-    throw new DatabaseError('DATABASE_URL (or PGURL) is required', 'pg_pool');
+    return getOrCreateSqlPool();
   }
 
   private loadGlobalRealtimeBridgeEnsurer(): (() => void) | null {
@@ -406,7 +250,7 @@ export class DataService {
       return null;
     }
 
-    return this.normalizeRow<RealtimeRow>(value);
+    return normalizeRow<RealtimeRow>(value);
   }
 
   private async loadRowById(
@@ -418,13 +262,13 @@ export class DataService {
     const repository = resolveManagedRepositoryForOwnedTable(safeTable, pool);
     if (repository) {
       const row = await repository.findOne({ id });
-      return row ? this.normalizeRow<RealtimeRow>(row) : null;
+      return row ? normalizeRow<RealtimeRow>(row) : null;
     }
 
     const sql = `SELECT * FROM ${quoteIdentifier(safeTable)} WHERE id = $1 LIMIT 1`;
     const queryResult = await pool.query(sql, [id]);
     const row = queryResult.rows[0];
-    return row ? this.normalizeRow<RealtimeRow>(row) : null;
+    return row ? normalizeRow<RealtimeRow>(row) : null;
   }
 
   private async publishRealtimeTableChange(input: {
@@ -548,14 +392,14 @@ export class DataService {
         );
         if (repository) {
           const row = await repository.findOne(filters);
-          return row ? this.normalizeRow<T>(row) : null;
+          return row ? normalizeRow<T>(row) : null;
         }
 
-        const { clause, params } = this.buildWhereClause(filters, 1);
+        const { clause, params } = buildWhereClause(filters, 1);
         const sql = `SELECT * FROM ${quoteIdentifier(safeTable)} ${clause} LIMIT 1`;
         const queryResult = await pool.query(sql, params);
         const row = queryResult.rows[0];
-        return row ? this.normalizeRow<T>(row) : null;
+        return row ? normalizeRow<T>(row) : null;
       },
       cacheKey,
       options
@@ -602,12 +446,12 @@ export class DataService {
         );
         if (repository) {
           const rows = await repository.findMany(filters, orderBy, pagination);
-          return rows.map(row => this.normalizeRow<T>(row));
+          return rows.map(row => normalizeRow<T>(row));
         }
 
-        const { clause, params } = this.buildWhereClause(filters, 1);
-        const orderClause = this.buildOrderByClause(orderBy);
-        const paginationClause = this.buildPaginationClause(pagination);
+        const { clause, params } = buildWhereClause(filters, 1);
+        const orderClause = buildOrderByClause(orderBy);
+        const paginationClause = buildPaginationClause(pagination);
         const sql = [
           `SELECT * FROM ${quoteIdentifier(safeTable)}`,
           clause,
@@ -618,7 +462,7 @@ export class DataService {
           .join(' ');
 
         const queryResult = await pool.query(sql, params);
-        return queryResult.rows.map(row => this.normalizeRow<T>(row));
+        return queryResult.rows.map(row => normalizeRow<T>(row));
       },
       cacheKey,
       options
@@ -651,7 +495,7 @@ export class DataService {
         );
         if (repository) {
           const row = await repository.create(data as Record<string, unknown>);
-          return this.normalizeRow<T>(row);
+          return normalizeRow<T>(row);
         }
 
         const keys = Object.keys(data as Record<string, unknown>).filter(
@@ -664,7 +508,7 @@ export class DataService {
         keys.forEach(key => assertIdentifier(key, 'column'));
         const columnsSql = keys.map(key => quoteIdentifier(key)).join(', ');
         const values = keys.map(key =>
-          this.toSqlValue((data as Record<string, unknown>)[key])
+          toSqlValue((data as Record<string, unknown>)[key])
         );
         const placeholders = values
           .map((_, index) => `$${index + 1}`)
@@ -676,7 +520,7 @@ export class DataService {
         if (!row) {
           throw new DatabaseError('Create returned no row', 'create');
         }
-        return this.normalizeRow<T>(row);
+        return normalizeRow<T>(row);
       },
       undefined,
       options
@@ -723,7 +567,7 @@ export class DataService {
             throw new DatabaseError(`Record not found: ${id}`, 'update');
           }
 
-          return this.normalizeRow<T>(row);
+          return normalizeRow<T>(row);
         }
 
         const keys = Object.keys(data as Record<string, unknown>).filter(
@@ -738,7 +582,7 @@ export class DataService {
           (key, index) => `${quoteIdentifier(key)} = $${index + 1}`
         );
         const values = keys.map(key =>
-          this.toSqlValue((data as Record<string, unknown>)[key])
+          toSqlValue((data as Record<string, unknown>)[key])
         );
         values.push(id);
 
@@ -750,7 +594,7 @@ export class DataService {
           throw new DatabaseError(`Record not found: ${id}`, 'update');
         }
 
-        return this.normalizeRow<T>(row);
+        return normalizeRow<T>(row);
       },
       undefined,
       options
@@ -846,7 +690,7 @@ export class DataService {
           return repository.count(filters);
         }
 
-        const { clause, params } = this.buildWhereClause(filters, 1);
+        const { clause, params } = buildWhereClause(filters, 1);
         const sql = `SELECT COUNT(*)::int AS total FROM ${quoteIdentifier(safeTable)} ${clause}`;
         const queryResult = await pool.query<{ total: number }>(sql, params);
         return Number(queryResult.rows[0]?.total || 0);
@@ -865,7 +709,7 @@ export class DataService {
       async () => {
         const pool = this.getPool();
         const queryResult = await pool.query<T>(sql, params);
-        return queryResult.rows.map(row => this.normalizeRow<T>(row));
+        return queryResult.rows.map(row => normalizeRow<T>(row));
       },
       undefined,
       options
@@ -924,100 +768,6 @@ export class DataService {
   destroy(): void {
     cacheService.destroy();
     realtimeService.destroy();
-  }
-
-  private buildWhereClause(
-    filters: Record<string, unknown>,
-    startIndex: number
-  ): WhereClause {
-    const whereClauses: string[] = [];
-    const params: unknown[] = [];
-    let index = startIndex;
-
-    Object.entries(filters).forEach(([key, rawValue]) => {
-      if (rawValue === undefined) {
-        return;
-      }
-
-      const safeColumn = assertIdentifier(key, 'column');
-      if (rawValue === null) {
-        whereClauses.push(`${quoteIdentifier(safeColumn)} IS NULL`);
-        return;
-      }
-
-      whereClauses.push(`${quoteIdentifier(safeColumn)} = $${index}`);
-      params.push(this.toSqlValue(rawValue));
-      index += 1;
-    });
-
-    if (whereClauses.length === 0) {
-      return { clause: '', params: [] };
-    }
-
-    return {
-      clause: `WHERE ${whereClauses.join(' AND ')}`,
-      params,
-    };
-  }
-
-  private buildOrderByClause(orderBy?: OrderByOption): string {
-    if (!orderBy) {
-      return '';
-    }
-
-    const safeColumn = assertIdentifier(orderBy.column, 'column');
-    return `ORDER BY ${quoteIdentifier(safeColumn)} ${orderBy.ascending ? 'ASC' : 'DESC'}`;
-  }
-
-  private buildPaginationClause(pagination?: PaginationOption): string {
-    if (!pagination) {
-      return '';
-    }
-
-    const offset = Math.max(0, Number(pagination.offset || 0));
-    const limit = Math.max(0, Number(pagination.limit || 0));
-    return `LIMIT ${limit} OFFSET ${offset}`;
-  }
-
-  private toSqlValue(value: unknown): unknown {
-    if (value === undefined) {
-      return null;
-    }
-
-    if (value instanceof Date) {
-      return value;
-    }
-
-    if (value && typeof value === 'object') {
-      return JSON.stringify(value);
-    }
-
-    return value;
-  }
-
-  private normalizeRow<T>(row: unknown): T {
-    return this.normalizeValue(row) as T;
-  }
-
-  private normalizeValue(value: unknown): unknown {
-    if (value instanceof Date) {
-      return value.toISOString();
-    }
-
-    if (Array.isArray(value)) {
-      return value.map(item => this.normalizeValue(item));
-    }
-
-    if (value && typeof value === 'object') {
-      const record = value as Record<string, unknown>;
-      const normalized: Record<string, unknown> = {};
-      Object.entries(record).forEach(([key, entryValue]) => {
-        normalized[key] = this.normalizeValue(entryValue);
-      });
-      return normalized;
-    }
-
-    return value;
   }
 }
 
