@@ -439,7 +439,9 @@
         "maxFiles": "最大{maxFiles}個のファイルをアップロード（残り{remaining}個）",
         "maxFileSize": "最大ファイルサイズ{size}MB",
         "maxFilesReached": "最大ファイル数制限に達しました（{current}/{max}）",
-        "selectedFiles": "選択されたファイル"
+        "selectedFiles": "選択されたファイル",
+        "removeFile": "ファイルを削除",
+        "retryUpload": "アップロードを再試行"
       },
       "tabs": {
         "inputForm": "入力フォーム",

@@ -11,6 +11,7 @@ import {
   type DragEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
@@ -83,7 +84,7 @@ export function FileUploadField({
     }
   }, [value]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const payload = getSuccessfulFilesPayload(uploadFiles, isSingleFileMode);
     if (lastSuccessIdsRef.current !== payload.successIds) {
       lastSuccessIdsRef.current = payload.successIds;

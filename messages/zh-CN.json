@@ -439,7 +439,9 @@
         "maxFiles": "最多上传 {maxFiles} 个文件 (剩余 {remaining} 个)",
         "maxFileSize": "单个文件最大 {size}MB",
         "maxFilesReached": "已达到最大文件数量限制 ({current}/{max})",
-        "selectedFiles": "已选文件"
+        "selectedFiles": "已选文件",
+        "removeFile": "移除文件",
+        "retryUpload": "重新上传"
       },
       "tabs": {
         "inputForm": "输入表单",

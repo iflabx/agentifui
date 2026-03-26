@@ -439,7 +439,9 @@
         "maxFiles": "Subir hasta {maxFiles} archivos ({remaining} restantes)",
         "maxFileSize": "Tamaño máximo de archivo {size}MB",
         "maxFilesReached": "Límite máximo de archivos alcanzado ({current}/{max})",
-        "selectedFiles": "Archivos seleccionados"
+        "selectedFiles": "Archivos seleccionados",
+        "removeFile": "Eliminar archivo",
+        "retryUpload": "Reintentar subida"
       },
       "tabs": {
         "inputForm": "Formulario de Entrada",

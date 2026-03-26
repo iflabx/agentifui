@@ -439,7 +439,9 @@
         "maxFiles": "Upload up to {maxFiles} files ({remaining} remaining)",
         "maxFileSize": "Maximum file size {size}MB",
         "maxFilesReached": "Maximum file limit reached ({current}/{max})",
-        "selectedFiles": "Selected files"
+        "selectedFiles": "Selected files",
+        "removeFile": "Remove file",
+        "retryUpload": "Retry upload"
       },
       "tabs": {
         "inputForm": "Input Form",

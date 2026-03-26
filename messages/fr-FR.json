@@ -439,7 +439,9 @@
         "maxFiles": "Téléversez jusqu'à {maxFiles} fichiers ({remaining} restants)",
         "maxFileSize": "Taille maximale du fichier {size} Mo",
         "maxFilesReached": "Limite maximale de fichiers atteinte ({current}/{max})",
-        "selectedFiles": "Fichiers sélectionnés"
+        "selectedFiles": "Fichiers sélectionnés",
+        "removeFile": "Supprimer le fichier",
+        "retryUpload": "Réessayer le téléversement"
       },
       "tabs": {
         "inputForm": "Formulaire d'entrée",

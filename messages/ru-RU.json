@@ -439,7 +439,9 @@
         "maxFiles": "Загрузите до {maxFiles} файлов (осталось {remaining})",
         "maxFileSize": "Максимальный размер файла {size}МБ",
         "maxFilesReached": "Достигнут максимальный лимит файлов ({current}/{max})",
-        "selectedFiles": "Выбранные файлы"
+        "selectedFiles": "Выбранные файлы",
+        "removeFile": "Удалить файл",
+        "retryUpload": "Повторить загрузку"
       },
       "tabs": {
         "inputForm": "Форма ввода",

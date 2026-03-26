@@ -439,7 +439,9 @@
         "maxFiles": "Carregar até {maxFiles} ficheiros ({remaining} restantes)",
         "maxFileSize": "Tamanho máximo do ficheiro {size}MB",
         "maxFilesReached": "Limite máximo de ficheiros atingido ({current}/{max})",
-        "selectedFiles": "Ficheiros selecionados"
+        "selectedFiles": "Ficheiros selecionados",
+        "removeFile": "Remover ficheiro",
+        "retryUpload": "Tentar carregar novamente"
       },
       "tabs": {
         "inputForm": "Formulário de Entrada",
