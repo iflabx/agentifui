@@ -81,6 +81,49 @@ describe('ThinkBlockHeader', () => {
         screen.getByText('components.chat.thinkBlock.completed')
       ).toBeInTheDocument();
     });
+
+    it('should show preview text when thinking and collapsed', () => {
+      render(
+        <ThinkBlockHeader
+          {...defaultProps}
+          status="thinking"
+          previewText="current reasoning preview"
+        />
+      );
+
+      const preview = screen.getByTestId('think-block-preview');
+      expect(preview).toHaveTextContent('current reasoning preview');
+      expect(preview).toHaveClass('truncate');
+    });
+
+    it('should hide preview text when expanded', () => {
+      render(
+        <ThinkBlockHeader
+          {...defaultProps}
+          status="thinking"
+          isOpen={true}
+          previewText="current reasoning preview"
+        />
+      );
+
+      expect(
+        screen.queryByTestId('think-block-preview')
+      ).not.toBeInTheDocument();
+    });
+
+    it('should hide preview text for non-thinking status', () => {
+      render(
+        <ThinkBlockHeader
+          {...defaultProps}
+          status="completed"
+          previewText="current reasoning preview"
+        />
+      );
+
+      expect(
+        screen.queryByTestId('think-block-preview')
+      ).not.toBeInTheDocument();
+    });
   });
 
   describe('Expand/Collapse Icon', () => {
@@ -124,6 +167,41 @@ describe('ThinkBlockHeader', () => {
       expect(button).toHaveClass('min-w-[22%]');
       expect(button).toHaveClass('max-w-[50%]');
       expect(button).not.toHaveClass('w-full');
+    });
+
+    it('should apply shorter preview width on mobile', () => {
+      mockUseMobile.mockReturnValue(true);
+      render(
+        <ThinkBlockHeader
+          {...defaultProps}
+          status="thinking"
+          previewText="preview"
+        />
+      );
+
+      expect(screen.getByTestId('think-block-preview')).toHaveClass('max-w-32');
+    });
+
+    it('should apply longer preview width on desktop', () => {
+      mockUseMobile.mockReturnValue(false);
+      render(
+        <ThinkBlockHeader
+          {...defaultProps}
+          status="thinking"
+          previewText="preview"
+        />
+      );
+
+      expect(screen.getByTestId('think-block-preview')).toHaveClass('max-w-32');
+      expect(screen.getByTestId('think-block-preview')).toHaveClass(
+        'sm:max-w-40'
+      );
+      expect(screen.getByTestId('think-block-preview')).toHaveClass(
+        'md:max-w-56'
+      );
+      expect(screen.getByTestId('think-block-preview')).toHaveClass(
+        'lg:max-w-72'
+      );
     });
   });
 

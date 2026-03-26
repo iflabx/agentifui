@@ -21,6 +21,8 @@ interface ThinkBlockHeaderProps {
   status: ThinkBlockStatus;
   /** Whether the content area is expanded */
   isOpen: boolean;
+  /** Optional single-line preview shown while thinking and collapsed */
+  previewText?: string;
   /** Callback function triggered when header is clicked */
   onToggle: () => void;
 }
@@ -32,11 +34,13 @@ interface ThinkBlockHeaderProps {
 export const ThinkBlockHeader: React.FC<ThinkBlockHeaderProps> = ({
   status,
   isOpen,
+  previewText,
   onToggle,
 }) => {
   const isMobile = useMobile();
   const t = useTranslations('components.chat.thinkBlock');
   const isThinking = status === 'thinking';
+  const showPreview = isThinking && !isOpen && Boolean(previewText);
 
   const getStatusText = () => {
     switch (status) {
@@ -112,14 +116,36 @@ export const ThinkBlockHeader: React.FC<ThinkBlockHeaderProps> = ({
         </span>
       </div>
 
-      <div className="h-4 w-4 flex-shrink-0">
-        {isThinking && (
-          <Spinner
-            size="md"
-            className="text-current"
-            aria-label={t('thinking')}
-          />
+      <div
+        className={cn(
+          'flex min-w-0 items-center justify-end gap-2',
+          showPreview && 'max-w-[60%] sm:max-w-[62%] md:max-w-[58%]'
         )}
+      >
+        {showPreview && (
+          <span
+            data-testid="think-block-preview"
+            className={cn(
+              'min-w-0 truncate text-right text-xs leading-5 opacity-80',
+              isMobile
+                ? 'max-w-32'
+                : 'max-w-32 sm:max-w-40 md:max-w-56 lg:max-w-72'
+            )}
+            title={previewText}
+          >
+            {previewText}
+          </span>
+        )}
+
+        <div className="h-4 w-4 flex-shrink-0">
+          {isThinking && (
+            <Spinner
+              size="md"
+              className="text-current"
+              aria-label={t('thinking')}
+            />
+          )}
+        </div>
       </div>
     </button>
   );

@@ -8,6 +8,7 @@ import {
 import { extractMainContentForPreview } from '@lib/utils';
 import { cn } from '@lib/utils';
 import { type MessageBlock, parseThinkBlocks } from '@lib/utils/think-parser';
+import { buildThinkPreviewText } from '@lib/utils/think-preview';
 import 'katex/dist/katex.min.css';
 import ReactMarkdown from 'react-markdown';
 import type { Components } from 'react-markdown';
@@ -15,7 +16,7 @@ import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 
 interface ThinkAwareMarkdownProps {
   content: string;
@@ -109,27 +110,16 @@ function ThinkBlockItem({
   isStreaming: boolean;
   isLast: boolean;
 }) {
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(false);
   const currentStatus = getThinkBlockStatus(block, isStreaming, isLast);
-  const previousStatusRef = useRef<ThinkBlockStatus>(currentStatus);
-
-  useEffect(() => {
-    const previousStatus = previousStatusRef.current;
-
-    if (previousStatus === 'thinking' && currentStatus === 'completed') {
-      setIsOpen(false);
-    } else if (previousStatus !== 'thinking' && currentStatus === 'thinking') {
-      setIsOpen(true);
-    }
-
-    previousStatusRef.current = currentStatus;
-  }, [currentStatus]);
+  const previewText = buildThinkPreviewText(block.content);
 
   return (
     <div className="mb-4 last:mb-0">
       <ThinkBlockHeader
         status={currentStatus}
         isOpen={isOpen}
+        previewText={previewText}
         onToggle={() => setIsOpen(prev => !prev)}
       />
       <ThinkBlockContent markdownContent={block.content} isOpen={isOpen} />

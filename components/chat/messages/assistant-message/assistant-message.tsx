@@ -37,6 +37,7 @@ import { AssistantMessageActions } from '@components/chat/message-actions';
 import { ReferenceSources } from '@components/chat/reference-sources';
 import { cn } from '@lib/utils';
 import { MessageBlock, parseThinkBlocks } from '@lib/utils/think-parser';
+import { buildThinkPreviewText } from '@lib/utils/think-preview';
 import 'katex/dist/katex.min.css';
 import ReactMarkdown from 'react-markdown';
 import type { Components } from 'react-markdown';
@@ -45,7 +46,7 @@ import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 
@@ -79,7 +80,7 @@ const ThinkBlockItem = ({
   isLast,
   wasManuallyStopped,
 }: ThinkBlockItemProps) => {
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(false);
 
   // Calculate the current think block status
   const calculateStatus = (): ThinkBlockStatus => {
@@ -98,19 +99,7 @@ const ThinkBlockItem = ({
   };
 
   const currentStatus = calculateStatus();
-  const prevStatusRef = useRef<ThinkBlockStatus>(currentStatus);
-
-  useEffect(() => {
-    const previousStatus = prevStatusRef.current;
-
-    if (previousStatus === 'thinking' && currentStatus === 'completed') {
-      setIsOpen(false);
-    } else if (previousStatus !== 'thinking' && currentStatus === 'thinking') {
-      setIsOpen(true);
-    }
-
-    prevStatusRef.current = currentStatus;
-  }, [currentStatus]);
+  const previewText = buildThinkPreviewText(block.content);
 
   // Determine if this specific block is currently streaming (animating)
   // It animates if it is the last block and the global stream is active.
@@ -123,6 +112,7 @@ const ThinkBlockItem = ({
       <ThinkBlockHeader
         status={currentStatus}
         isOpen={isOpen}
+        previewText={previewText}
         onToggle={() => setIsOpen(prev => !prev)}
       />
       <StreamingText
