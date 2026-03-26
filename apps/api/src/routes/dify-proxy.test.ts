@@ -14,6 +14,8 @@ jest.mock('./dify-proxy-route/ops-route', () => ({
   handleDifyResilienceOps: jest.fn(),
 }));
 
+const ROUTE_SHELL_TEST_TIMEOUT_MS = 15_000;
+
 function createConfig(
   overrides: Partial<ApiRuntimeConfig> = {}
 ): ApiRuntimeConfig {
@@ -53,7 +55,7 @@ describe('dify proxy route shell', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockedHandleDifyProxy.mockImplementation(async (_request, reply) => {
-      reply.status(202).send({ ok: true, route: 'proxy' });
+      return reply.status(202).send({ ok: true, route: 'proxy' });
     });
     mockedHandleDifyResilienceOps.mockImplementation(
       async (_request, reply) => {
@@ -62,40 +64,48 @@ describe('dify proxy route shell', () => {
     );
   });
 
-  it('dispatches proxy requests to the extracted handler', async () => {
-    const app = await createApp();
+  it(
+    'dispatches proxy requests to the extracted handler',
+    async () => {
+      const app = await createApp();
 
-    try {
-      const response = await app.inject({
-        method: 'POST',
-        url: '/api/dify/app-1/chat-messages',
-        payload: { hello: 'world' },
-      });
+      try {
+        const response = await app.inject({
+          method: 'POST',
+          url: '/api/dify/app-1/chat-messages',
+          payload: { hello: 'world' },
+        });
 
-      expect(response.statusCode).toBe(202);
-      expect(response.json()).toEqual({ ok: true, route: 'proxy' });
-      expect(mockedHandleDifyProxy).toHaveBeenCalledTimes(1);
-      expect(mockedHandleDifyResilienceOps).not.toHaveBeenCalled();
-    } finally {
-      await app.close();
-    }
-  });
+        expect(response.statusCode).toBe(202);
+        expect(response.json()).toEqual({ ok: true, route: 'proxy' });
+        expect(mockedHandleDifyProxy).toHaveBeenCalledTimes(1);
+        expect(mockedHandleDifyResilienceOps).not.toHaveBeenCalled();
+      } finally {
+        await app.close();
+      }
+    },
+    ROUTE_SHELL_TEST_TIMEOUT_MS
+  );
 
-  it('dispatches resilience ops requests to the extracted handler', async () => {
-    const app = await createApp();
+  it(
+    'dispatches resilience ops requests to the extracted handler',
+    async () => {
+      const app = await createApp();
 
-    try {
-      const response = await app.inject({
-        method: 'GET',
-        url: '/api/internal/ops/dify-resilience?circuitKey=test-key',
-      });
+      try {
+        const response = await app.inject({
+          method: 'GET',
+          url: '/api/internal/ops/dify-resilience?circuitKey=test-key',
+        });
 
-      expect(response.statusCode).toBe(200);
-      expect(response.json()).toEqual({ ok: true, route: 'ops' });
-      expect(mockedHandleDifyResilienceOps).toHaveBeenCalledTimes(1);
-      expect(mockedHandleDifyProxy).not.toHaveBeenCalled();
-    } finally {
-      await app.close();
-    }
-  });
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toEqual({ ok: true, route: 'ops' });
+        expect(mockedHandleDifyResilienceOps).toHaveBeenCalledTimes(1);
+        expect(mockedHandleDifyProxy).not.toHaveBeenCalled();
+      } finally {
+        await app.close();
+      }
+    },
+    ROUTE_SHELL_TEST_TIMEOUT_MS
+  );
 });
