@@ -83,6 +83,7 @@ Use the public runbooks:
 
 - `docs/CONFIGURATION.md`
 - `docs/QUICK-DEPLOYMENT.md`
+- `docs/SINGLE-HOST-HIGH-CONCURRENCY.md`
 - `docs/TEST-ENV.md`
 
 ## Common Commands
@@ -116,6 +117,7 @@ pnpm smoke:prod
 - `docs/architecture.md`
 - `docs/DATABASE-DESIGN.md`
 - `docs/FONTS.md`
+- `docs/SINGLE-HOST-HIGH-CONCURRENCY.md`
 
 ## Contributing and Support
 
