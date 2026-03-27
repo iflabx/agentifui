@@ -37,7 +37,9 @@ export default function AppDetailPage() {
   const instanceId =
     typeof params?.instanceId === 'string' ? params.instanceId : '';
   const t = useTranslations('pages.apps');
-  const chatInterface = useChatInterface();
+  const chatInterface = useChatInterface(undefined, {
+    preferredRouteAppId: instanceId,
+  });
 
   // get user profile, used for welcome interface display
   const { profile } = useProfile();

@@ -1,10 +1,10 @@
-import { useCallback } from 'react';
-import type { MutableRefObject } from 'react';
-
 import type { UseCreateConversationReturn } from '@lib/hooks/create-conversation/types';
 import type { ChatMessage } from '@lib/stores/chat-store';
 import { selectIsProcessing, useChatStore } from '@lib/stores/chat-store';
 import type { PendingConversation } from '@lib/stores/pending-conversation-store';
+
+import { useCallback } from 'react';
+import type { MutableRefObject } from 'react';
 
 import type { ChatResolvedAppConfig } from './app-config';
 import { resolveChatSubmitAppConfig } from './app-config';
@@ -16,6 +16,7 @@ type ChatMessageUpdates = Partial<Omit<ChatMessage, 'id' | 'isUser'>>;
 interface UseChatSubmitHandlerInput {
   currentUserId: string | undefined;
   conversationAppId: string | null;
+  preferredRouteAppId?: string | null;
   ensureAppReady: () => Promise<ChatResolvedAppConfig>;
   validateConfig: (
     appId?: string,
@@ -67,6 +68,7 @@ interface UseChatSubmitHandlerInput {
 export function useChatSubmitHandler({
   currentUserId,
   conversationAppId,
+  preferredRouteAppId,
   ensureAppReady,
   validateConfig,
   addMessage,
@@ -121,6 +123,7 @@ export function useChatSubmitHandler({
 
       const appConfig = await resolveChatSubmitAppConfig({
         conversationAppId,
+        preferredRouteAppId,
         ensureAppReady,
         validateConfig,
         onErrorMessage: errorMessage => {
@@ -175,6 +178,7 @@ export function useChatSubmitHandler({
     [
       currentUserId,
       conversationAppId,
+      preferredRouteAppId,
       ensureAppReady,
       validateConfig,
       addMessage,

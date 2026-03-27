@@ -28,10 +28,9 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useChatConversationState } from './chat-interface/conversation-state';
 import { sendDirectChatMessage } from './chat-interface/direct-send';
 import { useChatStopHandler } from './chat-interface/stop-handler';
-import { useChatSubmitHandler } from './chat-interface/submit-handler';
 import { useChatStreamingState } from './chat-interface/streaming-state';
+import { useChatSubmitHandler } from './chat-interface/submit-handler';
 import type { ChatNodeEvent } from './chat-interface/types';
-
 import { useChatMessages } from './use-chat-messages';
 import { useCreateConversation } from './use-create-conversation';
 
@@ -40,6 +39,10 @@ import { useCreateConversation } from './use-create-conversation';
 // Streaming experience optimization: reduce batch update interval for better responsiveness
 // Lowered from 100ms to 30ms for smoother streaming effect
 const CHUNK_APPEND_INTERVAL = 30;
+
+interface UseChatInterfaceOptions {
+  preferredRouteAppId?: string | null;
+}
 
 // Multi-provider support: chat interface now supports multi-provider environments
 // ensureAppReady and validateConfig have been updated to use default provider fallback
@@ -52,7 +55,8 @@ const CHUNK_APPEND_INTERVAL = 30;
  * @returns Various chat interface states and operation methods
  */
 export function useChatInterface(
-  onNodeEvent?: (event: ChatNodeEvent) => void
+  onNodeEvent?: (event: ChatNodeEvent) => void,
+  options: UseChatInterfaceOptions = {}
 ) {
   const router = useRouter();
   const currentPathname = usePathname();
@@ -106,20 +110,16 @@ export function useChatInterface(
     clearConversationState,
   } = useChatConversationState(currentPathname);
 
-  const {
-    isSubmittingRef,
-    chunkBufferRef,
-    appendTimerRef,
-    flushChunkBuffer,
-  } = useChatStreamingState({
-    appendMessageChunk,
-    finalizeStreamingMessage,
-    setIsWaitingForResponse,
-    setCurrentTaskId,
-    dbConversationUUID,
-    updateMessage,
-    saveMessage,
-  });
+  const { isSubmittingRef, chunkBufferRef, appendTimerRef, flushChunkBuffer } =
+    useChatStreamingState({
+      appendMessageChunk,
+      finalizeStreamingMessage,
+      setIsWaitingForResponse,
+      setCurrentTaskId,
+      dbConversationUUID,
+      updateMessage,
+      saveMessage,
+    });
 
   const navigateToConversation = useCallback(
     (conversationId: string) => {
@@ -131,6 +131,7 @@ export function useChatInterface(
   const handleSubmit = useChatSubmitHandler({
     currentUserId,
     conversationAppId,
+    preferredRouteAppId: options.preferredRouteAppId ?? null,
     ensureAppReady,
     validateConfig,
     addMessage,

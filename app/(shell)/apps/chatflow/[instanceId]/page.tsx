@@ -34,7 +34,7 @@ export default function AppDetailPage() {
   const instanceId =
     typeof params?.instanceId === 'string' ? params.instanceId : '';
   const t = useTranslations('pages.apps');
-  const chatflowInterface = useChatflowInterface();
+  const chatflowInterface = useChatflowInterface(instanceId);
 
   // get chatflow execution state cleanup method
   const { resetExecution } = useChatflowExecutionStore();

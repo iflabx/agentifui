@@ -1,8 +1,8 @@
 import { act, renderHook } from '@testing-library/react';
 
-import { useChatSubmitHandler } from './submit-handler';
 import { resolveChatSubmitAppConfig } from './app-config';
 import { executeChatSubmit } from './submit-flow';
+import { useChatSubmitHandler } from './submit-handler';
 
 const mockSelectIsProcessing = jest.fn();
 const mockGetChatStoreState = jest.fn();
@@ -26,6 +26,7 @@ describe('useChatSubmitHandler', () => {
   const createInput = (): Parameters<typeof useChatSubmitHandler>[0] => ({
     currentUserId: 'user-1',
     conversationAppId: 'app-1',
+    preferredRouteAppId: null,
     ensureAppReady: jest.fn(),
     validateConfig: jest.fn(),
     addMessage: jest.fn(),
@@ -121,6 +122,7 @@ describe('useChatSubmitHandler', () => {
     expect(resolveChatSubmitAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         conversationAppId: 'app-1',
+        preferredRouteAppId: null,
         ensureAppReady: input.ensureAppReady,
         validateConfig: input.validateConfig,
         onErrorMessage: expect.any(Function),

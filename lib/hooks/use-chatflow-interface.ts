@@ -17,13 +17,15 @@ import { useChatInterface } from './use-chat-interface';
  * - Supports structured processing of form data
  * - Integrates node execution tracking
  */
-export function useChatflowInterface() {
+export function useChatflowInterface(preferredRouteAppId?: string | null) {
   // Get node tracking related methods
   const { startExecution, handleNodeEvent, resetExecution } =
     useChatflowExecutionStore();
 
   // Use the base chat interface, passing the node event handler
-  const chatInterface = useChatInterface(handleNodeEvent);
+  const chatInterface = useChatInterface(handleNodeEvent, {
+    preferredRouteAppId,
+  });
 
   /**
    * Handle Chatflow submission

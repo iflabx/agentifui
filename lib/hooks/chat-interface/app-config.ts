@@ -11,6 +11,7 @@ export interface ChatResolvedAppConfig {
 
 interface ResolveChatSubmitAppConfigInput {
   conversationAppId: string | null;
+  preferredRouteAppId?: string | null;
   ensureAppReady: () => Promise<ChatResolvedAppConfig>;
   validateConfig: (
     appId?: string,
@@ -34,6 +35,7 @@ export async function resolveChatSubmitAppConfig(
       note: 'before resolveChatSubmitAppConfig',
       extra: {
         conversationAppId: input.conversationAppId,
+        preferredRouteAppId: input.preferredRouteAppId ?? null,
       },
     });
     console.log('[handleSubmit] Start determining app to use...');
@@ -62,6 +64,46 @@ export async function resolveChatSubmitAppConfig(
           extra: {
             expectedConversationAppId: input.conversationAppId,
           },
+        }
+      );
+      console.log(`[handleSubmit] Final app used: ${appConfig.appId}`);
+      return appConfig;
+    }
+
+    if (input.preferredRouteAppId) {
+      console.log(
+        `[handleSubmit] App detail route detected, preferring route appId: ${input.preferredRouteAppId}`
+      );
+      await input.validateConfig(input.preferredRouteAppId, 'message');
+      const appConfig = await input.ensureAppReady();
+
+      if (appConfig.appId !== input.preferredRouteAppId) {
+        const errorMessage = `Current app did not match page target app. Expected ${input.preferredRouteAppId}, got ${appConfig.appId}. Submission blocked to avoid falling back to the default app.`;
+        console.error(`[handleSubmit] ${errorMessage}`);
+        logCurrentAppDebugSnapshot(
+          '[CurrentAppDebug] handleSubmit blocked route app mismatch',
+          {
+            source: 'lib/hooks/chat-interface/app-config.ts',
+            currentAppId: appConfig.appId,
+            currentAppInstanceId: appConfig.instance.instance_id,
+            currentAppDisplayName: appConfig.instance.display_name ?? null,
+            routeInstanceId: input.preferredRouteAppId,
+            note: errorMessage,
+          }
+        );
+        input.onErrorMessage(errorMessage);
+        return null;
+      }
+
+      logCurrentAppDebugSnapshot(
+        '[CurrentAppDebug] handleSubmit resolved route app',
+        {
+          source: 'lib/hooks/chat-interface/app-config.ts',
+          currentAppId: appConfig.appId,
+          currentAppInstanceId: appConfig.instance.instance_id,
+          currentAppDisplayName: appConfig.instance.display_name ?? null,
+          routeInstanceId: input.preferredRouteAppId,
+          note: 'detail page resolved app from route target',
         }
       );
       console.log(`[handleSubmit] Final app used: ${appConfig.appId}`);
