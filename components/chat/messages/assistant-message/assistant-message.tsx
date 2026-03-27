@@ -35,6 +35,7 @@ import {
 } from '@components/chat/markdown-block/think-block-header';
 import { AssistantMessageActions } from '@components/chat/message-actions';
 import { ReferenceSources } from '@components/chat/reference-sources';
+import { useThrottledThinkPreview } from '@lib/hooks/use-throttled-think-preview';
 import { cn } from '@lib/utils';
 import { MessageBlock, parseThinkBlocks } from '@lib/utils/think-parser';
 import { buildThinkPreviewText } from '@lib/utils/think-preview';
@@ -100,6 +101,10 @@ const ThinkBlockItem = ({
 
   const currentStatus = calculateStatus();
   const previewText = buildThinkPreviewText(block.content);
+  const displayPreviewText = useThrottledThinkPreview(
+    previewText,
+    currentStatus === 'thinking' && !isOpen
+  );
 
   // Determine if this specific block is currently streaming (animating)
   // It animates if it is the last block and the global stream is active.
@@ -112,7 +117,7 @@ const ThinkBlockItem = ({
       <ThinkBlockHeader
         status={currentStatus}
         isOpen={isOpen}
-        previewText={previewText}
+        previewText={displayPreviewText}
         onToggle={() => setIsOpen(prev => !prev)}
       />
       <StreamingText

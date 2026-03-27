@@ -10,6 +10,132 @@ import {
 import type { SendUpstreamStreamOptions } from './types';
 
 const pipelineAsync = promisify(pipeline);
+const SSE_DEBUG_ENABLED = process.env.DIFY_PROXY_SSE_DEBUG === '1';
+const SSE_DEBUG_SAMPLE_LIMIT = 20;
+
+interface SseDebugState {
+  enabled: boolean;
+  sampleCount: number;
+  buffer: string;
+  eventCounts: Record<string, number>;
+}
+
+function createSseDebugState(): SseDebugState {
+  return {
+    enabled: SSE_DEBUG_ENABLED,
+    sampleCount: 0,
+    buffer: '',
+    eventCounts: {},
+  };
+}
+
+function recordSseDebugEvent(
+  request: FastifyRequest,
+  options: SendUpstreamStreamOptions,
+  upstream: Response,
+  state: SseDebugState,
+  payload: string
+) {
+  if (!state.enabled || !payload.trim()) {
+    return;
+  }
+
+  try {
+    const parsed = JSON.parse(payload) as Record<string, unknown>;
+    const eventName =
+      typeof parsed.event === 'string' ? parsed.event : 'unknown';
+
+    state.eventCounts[eventName] = (state.eventCounts[eventName] || 0) + 1;
+
+    if (state.sampleCount >= SSE_DEBUG_SAMPLE_LIMIT) {
+      return;
+    }
+
+    state.sampleCount += 1;
+
+    request.log.info(
+      {
+        appId: options.appId,
+        route: options.routePath,
+        slugPath: options.slugPath,
+        streamKind: options.streamKind,
+        upstreamStatus: upstream.status,
+        upstreamContentType: upstream.headers.get('content-type') || '',
+        sampleIndex: state.sampleCount,
+        sseEvent: eventName,
+        taskId: typeof parsed.task_id === 'string' ? parsed.task_id : null,
+        conversationId:
+          typeof parsed.conversation_id === 'string'
+            ? parsed.conversation_id
+            : null,
+        messageId:
+          typeof parsed.message_id === 'string' ? parsed.message_id : null,
+        position: typeof parsed.position === 'number' ? parsed.position : null,
+        answerLength:
+          typeof parsed.answer === 'string' ? parsed.answer.length : null,
+        thoughtLength:
+          typeof parsed.thought === 'string' ? parsed.thought.length : null,
+      },
+      '[FastifyDifyProxy] SSE event sample'
+    );
+  } catch {
+    request.log.info(
+      {
+        appId: options.appId,
+        route: options.routePath,
+        slugPath: options.slugPath,
+        streamKind: options.streamKind,
+        sampleIndex: state.sampleCount + 1,
+        rawLength: payload.length,
+      },
+      '[FastifyDifyProxy] SSE sample parse skipped'
+    );
+  }
+}
+
+function inspectSseChunk(
+  request: FastifyRequest,
+  options: SendUpstreamStreamOptions,
+  upstream: Response,
+  state: SseDebugState,
+  chunk: unknown
+) {
+  if (!state.enabled) {
+    return;
+  }
+
+  const chunkText =
+    typeof chunk === 'string'
+      ? chunk
+      : Buffer.isBuffer(chunk)
+        ? chunk.toString('utf8')
+        : String(chunk);
+
+  state.buffer += chunkText;
+
+  let boundaryIndex = state.buffer.indexOf('\n\n');
+  while (boundaryIndex >= 0) {
+    const rawEvent = state.buffer.slice(0, boundaryIndex);
+    state.buffer = state.buffer.slice(boundaryIndex + 2);
+
+    const dataLines = rawEvent
+      .split('\n')
+      .filter(line => line.startsWith('data:'))
+      .map(line => line.slice(5).trimStart());
+
+    if (dataLines.length > 0) {
+      recordSseDebugEvent(
+        request,
+        options,
+        upstream,
+        state,
+        dataLines.join('\n')
+      );
+    }
+
+    boundaryIndex = state.buffer.indexOf('\n\n');
+  }
+}
 
 export async function sendUpstreamStream(
   request: FastifyRequest,
@@ -24,10 +150,15 @@ export async function sendUpstreamStream(
   let chunkCount = 0;
   let closeLogged = false;
   let firstChunkLogged = false;
+  const sseDebugState = createSseDebugState();
 
   upstreamNodeStream.on('data', chunk => {
     byteCount += getChunkByteLength(chunk);
     chunkCount += 1;
+
+    if (options.streamKind === 'sse') {
+      inspectSseChunk(request, options, upstream, sseDebugState, chunk);
+    }
 
     if (!firstChunkLogged) {
       firstChunkLogged = true;
@@ -70,6 +201,10 @@ export async function sendUpstreamStream(
         responseHeaderElapsedMs: options.responseHeaderElapsedMs,
         byteCount,
         chunkCount,
+        sseEventCounts:
+          options.streamKind === 'sse' && sseDebugState.enabled
+            ? sseDebugState.eventCounts
+            : undefined,
         durationMs: Date.now() - startedAt,
         totalElapsedMs: Date.now() - options.requestStartedAt,
       },
@@ -123,6 +258,10 @@ export async function sendUpstreamStream(
         responseHeaderElapsedMs: options.responseHeaderElapsedMs,
         byteCount,
         chunkCount,
+        sseEventCounts:
+          options.streamKind === 'sse' && sseDebugState.enabled
+            ? sseDebugState.eventCounts
+            : undefined,
         durationMs: Date.now() - startedAt,
         totalElapsedMs: Date.now() - options.requestStartedAt,
       },
@@ -143,6 +282,10 @@ export async function sendUpstreamStream(
         responseHeaderElapsedMs: options.responseHeaderElapsedMs,
         byteCount,
         chunkCount,
+        sseEventCounts:
+          options.streamKind === 'sse' && sseDebugState.enabled
+            ? sseDebugState.eventCounts
+            : undefined,
         durationMs: Date.now() - startedAt,
         totalElapsedMs: Date.now() - options.requestStartedAt,
       },

@@ -5,6 +5,7 @@ import {
   ThinkBlockHeader,
   type ThinkBlockStatus,
 } from '@components/chat/markdown-block/think-block-header';
+import { useThrottledThinkPreview } from '@lib/hooks/use-throttled-think-preview';
 import { extractMainContentForPreview } from '@lib/utils';
 import { cn } from '@lib/utils';
 import { type MessageBlock, parseThinkBlocks } from '@lib/utils/think-parser';
@@ -113,13 +114,17 @@ function ThinkBlockItem({
   const [isOpen, setIsOpen] = useState(false);
   const currentStatus = getThinkBlockStatus(block, isStreaming, isLast);
   const previewText = buildThinkPreviewText(block.content);
+  const displayPreviewText = useThrottledThinkPreview(
+    previewText,
+    currentStatus === 'thinking' && !isOpen
+  );
 
   return (
     <div className="mb-4 last:mb-0">
       <ThinkBlockHeader
         status={currentStatus}
         isOpen={isOpen}
-        previewText={previewText}
+        previewText={displayPreviewText}
         onToggle={() => setIsOpen(prev => !prev)}
       />
       <ThinkBlockContent markdownContent={block.content} isOpen={isOpen} />

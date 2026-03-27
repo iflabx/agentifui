@@ -1,5 +1,6 @@
 // lib/stores/current-app-store.ts
 import type { ServiceInstance } from '@lib/types/database';
+import { logCurrentAppDebugSnapshot } from '@lib/utils/current-app-debug';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
@@ -121,6 +122,16 @@ export const useCurrentAppStore = create<CurrentAppState>()(
           errorLoadingAppId: null,
           lastValidatedAt: Date.now(), // Update validation timestamp
         });
+        logCurrentAppDebugSnapshot(
+          '[CurrentAppDebug] CurrentAppStore setCurrentAppId',
+          {
+            source: 'lib/stores/current-app-store.ts',
+            currentAppId: appId,
+            currentAppInstanceId: instance.instance_id,
+            currentAppDisplayName: instance.display_name ?? null,
+            note: 'setCurrentAppId called',
+          }
+        );
         // @future When appId changes, may need to trigger reload of related data
         // For example, useConversations may need to refresh based on new appId.
         // This can be done by subscribing to currentAppId in useConversations,
@@ -142,6 +153,22 @@ export const useCurrentAppStore = create<CurrentAppState>()(
       initializeDefaultAppId: async () => {
         // Prevent re-initialization or loading if already loaded
         if (get().currentAppId || get().isLoadingAppId) {
+          const existingState = get();
+          logCurrentAppDebugSnapshot(
+            '[CurrentAppDebug] CurrentAppStore initialize skipped',
+            {
+              source: 'lib/stores/current-app-store.ts',
+              currentAppId: existingState.currentAppId,
+              currentAppInstanceId:
+                existingState.currentAppInstance?.instance_id ?? null,
+              currentAppDisplayName:
+                existingState.currentAppInstance?.display_name ?? null,
+              note: 'initializeDefaultAppId skipped because currentAppId or loading already exists',
+              extra: {
+                isLoadingAppId: existingState.isLoadingAppId,
+              },
+            }
+          );
           return;
         }
 
@@ -190,6 +217,16 @@ export const useCurrentAppStore = create<CurrentAppState>()(
               lastValidatedAt: Date.now(), // Set validation timestamp
               errorLoadingAppId: null,
             });
+            logCurrentAppDebugSnapshot(
+              '[CurrentAppDebug] CurrentAppStore default app initialized',
+              {
+                source: 'lib/stores/current-app-store.ts',
+                currentAppId: defaultInstance.instance_id,
+                currentAppInstanceId: defaultInstance.instance_id,
+                currentAppDisplayName: defaultInstance.display_name ?? null,
+                note: 'initializeDefaultAppId resolved default instance',
+              }
+            );
           } else {
             set({
               currentAppId: null,
@@ -197,6 +234,16 @@ export const useCurrentAppStore = create<CurrentAppState>()(
               isLoadingAppId: false,
               errorLoadingAppId: NO_DEFAULT_APP_MESSAGE,
             });
+            logCurrentAppDebugSnapshot(
+              '[CurrentAppDebug] CurrentAppStore default app missing',
+              {
+                source: 'lib/stores/current-app-store.ts',
+                currentAppId: null,
+                currentAppInstanceId: null,
+                currentAppDisplayName: null,
+                note: NO_DEFAULT_APP_MESSAGE,
+              }
+            );
           }
         } catch (error) {
           const errorMessage =
@@ -320,6 +367,18 @@ export const useCurrentAppStore = create<CurrentAppState>()(
 
             if (!currentInstance) {
               // Current app does not exist, fallback to default provider's default app
+              logCurrentAppDebugSnapshot(
+                '[CurrentAppDebug] CurrentAppStore validation fallback to default',
+                {
+                  source: 'lib/stores/current-app-store.ts',
+                  currentAppId: currentState.currentAppId,
+                  currentAppInstanceId:
+                    currentState.currentAppInstance?.instance_id ?? null,
+                  currentAppDisplayName:
+                    currentState.currentAppInstance?.display_name ?? null,
+                  note: 'current app instance missing during validation; falling back to default app',
+                }
+              );
               const defaultInstance = await fetchDefaultAppInstance();
 
               if (!defaultInstance) {
@@ -428,10 +487,41 @@ export const useCurrentAppStore = create<CurrentAppState>()(
           console.log(
             `[switchToApp] Successfully switched to app: ${appId}, provider: ${targetInstance.provider?.name}`
           );
+          logCurrentAppDebugSnapshot(
+            '[CurrentAppDebug] CurrentAppStore switchToApp success',
+            {
+              source: 'lib/stores/current-app-store.ts',
+              currentAppId: targetInstance.instance_id,
+              currentAppInstanceId: targetInstance.instance_id,
+              currentAppDisplayName: targetInstance.display_name ?? null,
+              note: 'switchToApp succeeded',
+              extra: {
+                requestedAppId: appId,
+                providerName: targetInstance.provider?.name ?? null,
+              },
+            }
+          );
         } catch (error) {
           const errorMessage =
             error instanceof Error ? error.message : String(error);
           console.error(`[switchToApp] Failed to switch app:`, error);
+          const currentState = get();
+          logCurrentAppDebugSnapshot(
+            '[CurrentAppDebug] CurrentAppStore switchToApp failed',
+            {
+              source: 'lib/stores/current-app-store.ts',
+              currentAppId: currentState.currentAppId,
+              currentAppInstanceId:
+                currentState.currentAppInstance?.instance_id ?? null,
+              currentAppDisplayName:
+                currentState.currentAppInstance?.display_name ?? null,
+              note: 'switchToApp failed',
+              extra: {
+                requestedAppId: appId,
+                error: errorMessage,
+              },
+            }
+          );
           set({
             isLoadingAppId: false,
             errorLoadingAppId: `Failed to switch app: ${errorMessage}`,
@@ -443,6 +533,27 @@ export const useCurrentAppStore = create<CurrentAppState>()(
     {
       name: 'current-app-storage', // Key in localStorage
       storage: createJSONStorage(() => localStorage),
+      onRehydrateStorage: () => (state, error) => {
+        logCurrentAppDebugSnapshot(
+          '[CurrentAppDebug] CurrentAppStore rehydrated',
+          {
+            source: 'lib/stores/current-app-store.ts',
+            currentAppId: state?.currentAppId ?? null,
+            currentAppInstanceId:
+              state?.currentAppInstance?.instance_id ?? null,
+            currentAppDisplayName:
+              state?.currentAppInstance?.display_name ?? null,
+            note: error
+              ? 'persist rehydrate failed'
+              : 'persist rehydrate completed',
+            extra: error
+              ? {
+                  error: error instanceof Error ? error.message : String(error),
+                }
+              : undefined,
+          }
+        );
+      },
       // Only persist appId and instance, other states are temporary
       partialize: state => ({
         currentAppId: state.currentAppId,

@@ -374,6 +374,15 @@ async function getDifyConfigFromDatabase(
     return null;
   }
 
+  console.log('[Get Dify Config] Resolved service instance', {
+    requestedAppId: appId,
+    resolvedInstanceId: serviceInstance.instance_id,
+    resolvedDisplayName: serviceInstance.display_name,
+    providerName: serviceInstance.provider_name,
+    actorUserId: actorUserId ?? null,
+    usedFallback: serviceInstance.instance_id !== appId,
+  });
+
   const instanceId = serviceInstance.id;
   if (!instanceId) {
     console.error(`No valid instance ID for Dify app "${appId}"`);

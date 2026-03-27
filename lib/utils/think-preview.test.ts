@@ -19,10 +19,21 @@ describe('buildThinkPreviewText', () => {
     expect(buildThinkPreviewText(' \n\t ` ` ')).toBeUndefined();
   });
 
-  it('should truncate very long previews', () => {
+  it('should keep the most recent tail for very long previews', () => {
     const preview = buildThinkPreviewText('a'.repeat(140));
 
-    expect(preview).toHaveLength(123);
-    expect(preview).toBe(`${'a'.repeat(120)}...`);
+    expect(preview).toHaveLength(120);
+    expect(preview).toBe(`...${'a'.repeat(117)}`);
+  });
+
+  it('should refresh when new thought content is appended at the end', () => {
+    const baseContent = `stable prefix ${'a'.repeat(140)}`;
+    const initialPreview = buildThinkPreviewText(baseContent);
+    const updatedPreview = buildThinkPreviewText(
+      `${baseContent} latest progress chunk`
+    );
+
+    expect(initialPreview).not.toBe(updatedPreview);
+    expect(updatedPreview).toContain('latest progress chunk');
   });
 });

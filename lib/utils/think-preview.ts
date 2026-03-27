@@ -1,7 +1,8 @@
 const THINK_PREVIEW_MAX_CHARS = 120;
+const THINK_PREVIEW_ELLIPSIS = '...';
 
-export function buildThinkPreviewText(content: string): string | undefined {
-  const previewText = content
+function normalizeThinkPreviewText(content: string): string {
+  return content
     .replace(/```/g, ' ')
     .replace(/`/g, '')
     .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
@@ -9,6 +10,10 @@ export function buildThinkPreviewText(content: string): string | undefined {
     .replace(/[*_~>#]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+export function buildThinkPreviewText(content: string): string | undefined {
+  const previewText = normalizeThinkPreviewText(content);
 
   if (!previewText) {
     return undefined;
@@ -18,5 +23,10 @@ export function buildThinkPreviewText(content: string): string | undefined {
     return previewText;
   }
 
-  return `${previewText.slice(0, THINK_PREVIEW_MAX_CHARS).trimEnd()}...`;
+  const previewTailLength =
+    THINK_PREVIEW_MAX_CHARS - THINK_PREVIEW_ELLIPSIS.length;
+
+  return `${THINK_PREVIEW_ELLIPSIS}${previewText
+    .slice(-previewTailLength)
+    .trimStart()}`;
 }

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 
 import type { ReactNode } from 'react';
 
@@ -93,5 +93,47 @@ describe('ThinkAwareMarkdown', () => {
       'data-preview',
       'first line ts const a = 1'
     );
+  });
+
+  it('should throttle the collapsed preview while think content grows', () => {
+    jest.useFakeTimers();
+    try {
+      const baseContent = `<think>${'stable prefix '.repeat(12)}phase one`;
+      const { rerender } = render(
+        <ThinkAwareMarkdown
+          content={baseContent}
+          markdownComponents={markdownComponents}
+          isStreaming={true}
+        />
+      );
+
+      const initialPreview =
+        screen.getByTestId('think-header').getAttribute('data-preview') || '';
+
+      rerender(
+        <ThinkAwareMarkdown
+          content={`${baseContent} and now phase two is arriving`}
+          markdownComponents={markdownComponents}
+          isStreaming={true}
+        />
+      );
+
+      const updatedPreview =
+        screen.getByTestId('think-header').getAttribute('data-preview') || '';
+
+      expect(updatedPreview).toBe(initialPreview);
+
+      act(() => {
+        jest.advanceTimersByTime(700);
+      });
+
+      const flushedPreview =
+        screen.getByTestId('think-header').getAttribute('data-preview') || '';
+
+      expect(flushedPreview).not.toBe(initialPreview);
+      expect(flushedPreview).toContain('phase two is arriving');
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

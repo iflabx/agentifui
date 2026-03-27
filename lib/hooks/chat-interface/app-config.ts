@@ -1,4 +1,6 @@
+import { useCurrentAppStore } from '@lib/stores/current-app-store';
 import type { ServiceInstance } from '@lib/types/database';
+import { logCurrentAppDebugSnapshot } from '@lib/utils/current-app-debug';
 
 import { formatChatUiError } from './error-utils';
 
@@ -21,6 +23,19 @@ export async function resolveChatSubmitAppConfig(
   input: ResolveChatSubmitAppConfigInput
 ): Promise<ChatResolvedAppConfig | null> {
   try {
+    const currentAppState = useCurrentAppStore.getState();
+    logCurrentAppDebugSnapshot('[CurrentAppDebug] handleSubmit start', {
+      source: 'lib/hooks/chat-interface/app-config.ts',
+      currentAppId: currentAppState.currentAppId,
+      currentAppInstanceId:
+        currentAppState.currentAppInstance?.instance_id ?? null,
+      currentAppDisplayName:
+        currentAppState.currentAppInstance?.display_name ?? null,
+      note: 'before resolveChatSubmitAppConfig',
+      extra: {
+        conversationAppId: input.conversationAppId,
+      },
+    });
     console.log('[handleSubmit] Start determining app to use...');
 
     if (input.conversationAppId) {
@@ -36,6 +51,19 @@ export async function resolveChatSubmitAppConfig(
         );
       }
 
+      logCurrentAppDebugSnapshot(
+        '[CurrentAppDebug] handleSubmit resolved historical app',
+        {
+          source: 'lib/hooks/chat-interface/app-config.ts',
+          currentAppId: appConfig.appId,
+          currentAppInstanceId: appConfig.instance.instance_id,
+          currentAppDisplayName: appConfig.instance.display_name ?? null,
+          note: 'historical conversation resolved app',
+          extra: {
+            expectedConversationAppId: input.conversationAppId,
+          },
+        }
+      );
       console.log(`[handleSubmit] Final app used: ${appConfig.appId}`);
       return appConfig;
     }
@@ -44,6 +72,16 @@ export async function resolveChatSubmitAppConfig(
       '[handleSubmit] New conversation or no original appId, using current selected app'
     );
     const appConfig = await input.ensureAppReady();
+    logCurrentAppDebugSnapshot(
+      '[CurrentAppDebug] handleSubmit resolved current app',
+      {
+        source: 'lib/hooks/chat-interface/app-config.ts',
+        currentAppId: appConfig.appId,
+        currentAppInstanceId: appConfig.instance.instance_id,
+        currentAppDisplayName: appConfig.instance.display_name ?? null,
+        note: 'new conversation resolved app',
+      }
+    );
     console.log(`[handleSubmit] Final app used: ${appConfig.appId}`);
     return appConfig;
   } catch (error) {

@@ -22,6 +22,7 @@ import { useChatLayoutStore } from '@lib/stores/chat-layout-store';
 import { useChatStore } from '@lib/stores/chat-store';
 import { useSidebarStore } from '@lib/stores/sidebar-store';
 import { cn } from '@lib/utils';
+import { logCurrentAppDebugSnapshot } from '@lib/utils/current-app-debug';
 import { Blocks, Loader2 } from 'lucide-react';
 
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
@@ -92,6 +93,7 @@ export default function AppDetailPage() {
   const { apps, fetchApps } = useAppListStore();
   const {
     currentAppId,
+    currentAppInstance,
     isValidating,
     isValidatingForMessage,
     switchToSpecificApp,
@@ -150,6 +152,17 @@ export default function AppDetailPage() {
           '[AppDetail] Starting to initialize application:',
           instanceId
         );
+        logCurrentAppDebugSnapshot(
+          '[CurrentAppDebug] Agent page initialize start',
+          {
+            source: 'app/(shell)/apps/agent/[instanceId]/page.tsx',
+            routeInstanceId: instanceId,
+            currentAppId,
+            currentAppInstanceId: currentAppInstance?.instance_id ?? null,
+            currentAppDisplayName: currentAppInstance?.display_name ?? null,
+            note: 'initialize start',
+          }
+        );
 
         // simplify loading state check
         // only display loading state when truly needed
@@ -186,6 +199,17 @@ export default function AppDetailPage() {
           '[AppDetail] Found target application:',
           targetApp.display_name
         );
+        logCurrentAppDebugSnapshot(
+          '[CurrentAppDebug] Agent page found target app',
+          {
+            source: 'app/(shell)/apps/agent/[instanceId]/page.tsx',
+            routeInstanceId: instanceId,
+            currentAppId,
+            currentAppInstanceId: currentAppInstance?.instance_id ?? null,
+            currentAppDisplayName: targetApp.display_name ?? null,
+            note: 'target app resolved from app list',
+          }
+        );
 
         // immediately set sidebar selected state
         selectItem('app', instanceId);
@@ -205,10 +229,42 @@ export default function AppDetailPage() {
           try {
             await switchToSpecificApp(instanceId);
             console.log('[AppDetail] Application switched successfully');
+            const postSwitchState = useAppListStore.getState();
+            const switchedApp = postSwitchState.apps.find(
+              app => app.instance_id === instanceId
+            );
+            logCurrentAppDebugSnapshot(
+              '[CurrentAppDebug] Agent page switch success',
+              {
+                source: 'app/(shell)/apps/agent/[instanceId]/page.tsx',
+                routeInstanceId: instanceId,
+                currentAppId: instanceId,
+                currentAppInstanceId: switchedApp?.instance_id ?? null,
+                currentAppDisplayName: switchedApp?.display_name ?? null,
+                note: 'switchToSpecificApp succeeded',
+              }
+            );
           } catch (switchError) {
             console.warn(
               '[AppDetail] Application switching failed, but continue to load page:',
               switchError
+            );
+            logCurrentAppDebugSnapshot(
+              '[CurrentAppDebug] Agent page switch failed',
+              {
+                source: 'app/(shell)/apps/agent/[instanceId]/page.tsx',
+                routeInstanceId: instanceId,
+                currentAppId,
+                currentAppInstanceId: currentAppInstance?.instance_id ?? null,
+                currentAppDisplayName: currentAppInstance?.display_name ?? null,
+                note: 'switchToSpecificApp failed but page continued',
+                extra: {
+                  error:
+                    switchError instanceof Error
+                      ? switchError.message
+                      : String(switchError),
+                },
+              }
             );
             // even if switching fails, do not block page loading
             // the page can still be displayed normally, and the user can still use it
@@ -269,6 +325,21 @@ export default function AppDetailPage() {
         setIsWelcomeScreen(false);
 
         console.log('[AppDetail] UI state updated, starting to send message');
+        logCurrentAppDebugSnapshot(
+          '[CurrentAppDebug] Agent page before submit',
+          {
+            source: 'app/(shell)/apps/agent/[instanceId]/page.tsx',
+            routeInstanceId: instanceId,
+            currentAppId,
+            currentAppInstanceId: currentAppInstance?.instance_id ?? null,
+            currentAppDisplayName: currentAppInstance?.display_name ?? null,
+            note: 'before originalHandleSubmit',
+            extra: {
+              messageLength: message.length,
+              fileCount: files?.length ?? 0,
+            },
+          }
+        );
 
         // call the original handleSubmit, it will create a conversation and send a message
         await originalHandleSubmit(message, files);
@@ -284,7 +355,13 @@ export default function AppDetailPage() {
         setIsWelcomeScreen(true);
       }
     },
-    [originalHandleSubmit, setIsWelcomeScreen]
+    [
+      currentAppId,
+      currentAppInstance,
+      instanceId,
+      originalHandleSubmit,
+      setIsWelcomeScreen,
+    ]
   );
 
   // error state

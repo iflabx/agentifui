@@ -12,7 +12,7 @@ import {
   persistUserMessageIfNeeded,
   resolveDbConversationUuidByExternalId,
 } from './conversation-db';
-import type { DifyLocalFile, ChatStreamCompletionData } from './types';
+import type { ChatStreamCompletionData, DifyLocalFile } from './types';
 
 export interface ChatSubmitStartResult {
   answerStream?: AsyncGenerator<string, void, undefined>;
@@ -120,13 +120,14 @@ export async function startNewChatConversation(
       input.navigateToConversation(finalRealConvId);
     }
 
-    finalDbConvUUID = await resolveDbConversationUuidByExternalId({
-      externalId: finalRealConvId,
-      setDbConversationUUID: input.setDbConversationUUID,
-      errorLog: '[handleSubmit] Failed to query db ID for new conversation:',
-      missingLog:
-        `[handleSubmit] No db record found for new conversation, Dify conversation ID=${finalRealConvId}`,
-    });
+    if (!finalDbConvUUID) {
+      finalDbConvUUID = await resolveDbConversationUuidByExternalId({
+        externalId: finalRealConvId,
+        setDbConversationUUID: input.setDbConversationUUID,
+        errorLog: '[handleSubmit] Failed to query db ID for new conversation:',
+        missingLog: `[handleSubmit] No db record found for new conversation, Dify conversation ID=${finalRealConvId}`,
+      });
+    }
   }
 
   if (finalTaskId) {
@@ -176,8 +177,7 @@ export async function startExistingChatConversation(
       setDbConversationUUID: input.setDbConversationUUID,
       errorLog:
         '[handleSubmit] Failed to query db ID for existing conversation:',
-      missingLog:
-        `[handleSubmit] No db record found for existing conversation, Dify conversation ID=${input.difyConversationId}`,
+      missingLog: `[handleSubmit] No db record found for existing conversation, Dify conversation ID=${input.difyConversationId}`,
     });
   }
 
@@ -230,8 +230,7 @@ export async function startExistingChatConversation(
             successLog: '[handleSubmit] Found db conversation ID: ',
             errorLog:
               '[handleSubmit] Failed to query db conversation ID in callback:',
-            missingLog:
-              `[handleSubmit] No db record found, Dify conversation ID=${newlyFetchedConvId}`,
+            missingLog: `[handleSubmit] No db record found, Dify conversation ID=${newlyFetchedConvId}`,
           }).then(dbConversationId => {
             finalDbConvUUID = dbConversationId;
           });
@@ -257,8 +256,7 @@ export async function startExistingChatConversation(
         setDbConversationUUID: input.setDbConversationUUID,
         successLog: '[handleSubmit] Found db conversation ID: ',
         errorLog: '[handleSubmit] Failed to query db conversation ID:',
-        missingLog:
-          `[handleSubmit] No db record found, Dify conversation ID=${finalRealConvId}`,
+        missingLog: `[handleSubmit] No db record found, Dify conversation ID=${finalRealConvId}`,
       });
     }
   }

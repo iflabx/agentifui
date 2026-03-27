@@ -7,6 +7,57 @@ type ConversationUpdates = Partial<
   Omit<Conversation, 'id' | 'created_at' | 'updated_at' | 'user_id'>
 >;
 
+const CONVERSATION_LOOKUP_CACHE_TTL_MS = 15_000;
+
+type ConversationLookupCacheEntry = {
+  expiresAt: number;
+  value: Conversation | null;
+};
+
+const conversationLookupCache = new Map<string, ConversationLookupCacheEntry>();
+const conversationLookupInflight = new Map<
+  string,
+  Promise<Result<Conversation | null>>
+>();
+
+function pruneConversationLookupCache(now: number): void {
+  for (const [key, entry] of conversationLookupCache.entries()) {
+    if (entry.expiresAt <= now) {
+      conversationLookupCache.delete(key);
+    }
+  }
+}
+
+function readConversationLookupCache(
+  externalId: string
+): Result<Conversation | null> | null {
+  const now = Date.now();
+  pruneConversationLookupCache(now);
+
+  const cached = conversationLookupCache.get(externalId);
+  if (!cached || cached.expiresAt <= now) {
+    return null;
+  }
+
+  return success(cached.value);
+}
+
+function writeConversationLookupCache(
+  externalId: string | null | undefined,
+  conversation: Conversation | null
+): void {
+  const normalizedExternalId = externalId?.trim();
+  if (!normalizedExternalId) {
+    return;
+  }
+
+  conversationLookupCache.set(normalizedExternalId, {
+    value: conversation,
+    expiresAt: Date.now() + CONVERSATION_LOOKUP_CACHE_TTL_MS,
+  });
+  pruneConversationLookupCache(Date.now());
+}
+
 export async function getConversationByExternalId(
   externalId: string
 ): Promise<Result<Conversation | null>> {
@@ -15,32 +66,59 @@ export async function getConversationByExternalId(
     return { success: true, data: null };
   }
 
-  const result = await callInternalDataAction<Conversation | null>(
+  const cached = readConversationLookupCache(normalizedExternalId);
+  if (cached) {
+    return cached;
+  }
+
+  const existing = conversationLookupInflight.get(normalizedExternalId);
+  if (existing) {
+    return existing;
+  }
+
+  const requestPromise = callInternalDataAction<Conversation | null>(
     'conversations.getConversationByExternalId',
     {
       externalId: normalizedExternalId,
     }
-  );
+  )
+    .then(result => {
+      if (
+        !result.success &&
+        /(Unauthorized|Forbidden)/i.test(result.error.message)
+      ) {
+        return success(null);
+      }
 
-  if (
-    !result.success &&
-    /(Unauthorized|Forbidden)/i.test(result.error.message)
-  ) {
-    return success(null);
-  }
+      if (result.success) {
+        writeConversationLookupCache(normalizedExternalId, result.data);
+      }
 
-  return result;
+      return result;
+    })
+    .finally(() => {
+      conversationLookupInflight.delete(normalizedExternalId);
+    });
+
+  conversationLookupInflight.set(normalizedExternalId, requestPromise);
+  return requestPromise;
 }
 
 export async function createConversation(
   conversation: ConversationInput
 ): Promise<Result<Conversation>> {
-  return callInternalDataAction<Conversation>(
+  const result = await callInternalDataAction<Conversation>(
     'conversations.createConversation',
     {
       conversation,
     }
   );
+
+  if (result.success) {
+    writeConversationLookupCache(result.data.external_id, result.data);
+  }
+
+  return result;
 }
 
 export async function updateConversation(
