@@ -169,39 +169,42 @@ describe('ThinkBlockHeader', () => {
       expect(button).not.toHaveClass('w-full');
     });
 
-    it('should apply shorter preview width on mobile', () => {
-      mockUseMobile.mockReturnValue(true);
-      render(
+    it('should use wider responsive width on desktop only while thinking with preview', () => {
+      mockUseMobile.mockReturnValue(false);
+      const { container } = render(
         <ThinkBlockHeader
           {...defaultProps}
           status="thinking"
           previewText="preview"
         />
       );
+      const button = container.firstChild as HTMLElement;
 
-      expect(screen.getByTestId('think-block-preview')).toHaveClass('max-w-32');
+      expect(button).toHaveClass('w-full');
+      expect(button).toHaveClass('sm:w-[90%]');
+      expect(button).toHaveClass('md:w-[76%]');
+      expect(button).toHaveClass('lg:w-[60%]');
+      expect(button).not.toHaveClass('min-w-[22%]');
+      expect(button).not.toHaveClass('max-w-[50%]');
     });
 
-    it('should apply longer preview width on desktop', () => {
+    it('should keep completed and stopped desktop widths unchanged', () => {
       mockUseMobile.mockReturnValue(false);
-      render(
-        <ThinkBlockHeader
-          {...defaultProps}
-          status="thinking"
-          previewText="preview"
-        />
+      const { container, rerender } = render(
+        <ThinkBlockHeader {...defaultProps} status="completed" />
       );
+      let button = container.firstChild as HTMLElement;
 
-      expect(screen.getByTestId('think-block-preview')).toHaveClass('max-w-32');
-      expect(screen.getByTestId('think-block-preview')).toHaveClass(
-        'sm:max-w-40'
-      );
-      expect(screen.getByTestId('think-block-preview')).toHaveClass(
-        'md:max-w-56'
-      );
-      expect(screen.getByTestId('think-block-preview')).toHaveClass(
-        'lg:max-w-72'
-      );
+      expect(button).toHaveClass('min-w-[22%]');
+      expect(button).toHaveClass('max-w-[50%]');
+      expect(button).not.toHaveClass('sm:w-[90%]');
+
+      rerender(<ThinkBlockHeader {...defaultProps} status="stopped" />);
+      button = container.firstChild as HTMLElement;
+
+      expect(button).toHaveClass('min-w-[22%]');
+      expect(button).toHaveClass('max-w-[50%]');
+      expect(button).not.toHaveClass('sm:w-[90%]');
     });
   });
 
@@ -233,6 +236,60 @@ describe('ThinkBlockHeader', () => {
       // Right section should prevent shrinking
       const rightSection = button.querySelector('.flex-shrink-0');
       expect(rightSection).toBeInTheDocument();
+    });
+
+    it('should let collapsed thinking preview take the added width', () => {
+      const { container } = render(
+        <ThinkBlockHeader
+          {...defaultProps}
+          status="thinking"
+          previewText="preview"
+        />
+      );
+      const button = container.firstChild as HTMLElement;
+      const leftSection = button.children[0] as HTMLElement;
+      const rightSection = button.children[1] as HTMLElement;
+      const preview = screen.getByTestId('think-block-preview');
+      const statusText = screen.getByText(
+        'components.chat.thinkBlock.thinking'
+      );
+
+      expect(leftSection).toHaveClass('shrink-0');
+      expect(leftSection).not.toHaveClass('flex-1');
+      expect(statusText).toHaveClass('shrink-0');
+      expect(statusText).not.toHaveClass('flex-1');
+      expect(rightSection).toHaveClass('flex-1');
+      expect(rightSection).toHaveClass('min-w-0');
+      expect(preview).toHaveClass('flex-1');
+      expect(preview).toHaveClass('min-w-0');
+      expect(preview).toHaveClass('truncate');
+      expect(preview).not.toHaveClass('max-w-32');
+      expect(preview).not.toHaveClass('sm:max-w-40');
+    });
+
+    it('should keep completed layout unchanged when preview text exists', () => {
+      const { container } = render(
+        <ThinkBlockHeader
+          {...defaultProps}
+          status="completed"
+          previewText="preview"
+        />
+      );
+      const button = container.firstChild as HTMLElement;
+      const leftSection = button.children[0] as HTMLElement;
+      const rightSection = button.children[1] as HTMLElement;
+      const statusText = screen.getByText(
+        'components.chat.thinkBlock.completed'
+      );
+
+      expect(leftSection).toHaveClass('flex-1');
+      expect(leftSection).not.toHaveClass('shrink-0');
+      expect(statusText).toHaveClass('flex-1');
+      expect(statusText).not.toHaveClass('shrink-0');
+      expect(rightSection).not.toHaveClass('flex-1');
+      expect(
+        screen.queryByTestId('think-block-preview')
+      ).not.toBeInTheDocument();
     });
 
     it('should maintain consistent spacing between text and spinner', () => {

@@ -60,7 +60,11 @@ export const ThinkBlockHeader: React.FC<ThinkBlockHeaderProps> = ({
     <button
       className={cn(
         'flex items-center justify-between gap-2',
-        isMobile ? 'w-full' : 'max-w-[50%] min-w-[22%]',
+        isMobile
+          ? 'w-full'
+          : showPreview
+            ? 'w-full sm:w-[90%] md:w-[76%] lg:w-[60%]'
+            : 'max-w-[50%] min-w-[22%]',
         'mb-1 cursor-pointer rounded-md border px-3 py-1.5 text-sm',
         'focus:outline-none'
       )}
@@ -80,7 +84,12 @@ export const ThinkBlockHeader: React.FC<ThinkBlockHeaderProps> = ({
           : 'var(--md-think-header-text)',
       }}
     >
-      <div className="flex min-w-0 flex-1 items-center gap-2">
+      <div
+        className={cn(
+          'flex min-w-0 items-center gap-2',
+          showPreview ? 'shrink-0' : 'flex-1'
+        )}
+      >
         <svg
           className={cn(
             'h-4 w-4 flex-shrink-0',
@@ -104,7 +113,10 @@ export const ThinkBlockHeader: React.FC<ThinkBlockHeaderProps> = ({
           />
         </svg>
         <span
-          className={cn('min-w-0 flex-1 truncate font-medium')}
+          className={cn(
+            'min-w-0 truncate font-medium',
+            showPreview ? 'shrink-0' : 'flex-1'
+          )}
           title={statusText}
           style={{
             color: isThinking
@@ -119,18 +131,13 @@ export const ThinkBlockHeader: React.FC<ThinkBlockHeaderProps> = ({
       <div
         className={cn(
           'flex min-w-0 items-center justify-end gap-2',
-          showPreview && 'max-w-[60%] sm:max-w-[62%] md:max-w-[58%]'
+          showPreview && 'flex-1'
         )}
       >
         {showPreview && (
           <span
             data-testid="think-block-preview"
-            className={cn(
-              'min-w-0 truncate text-right text-xs leading-5 opacity-80',
-              isMobile
-                ? 'max-w-32'
-                : 'max-w-32 sm:max-w-40 md:max-w-56 lg:max-w-72'
-            )}
+            className="min-w-0 flex-1 truncate text-right text-xs leading-5 opacity-80"
             title={previewText}
           >
             {previewText}
