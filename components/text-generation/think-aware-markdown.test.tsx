@@ -2,7 +2,10 @@ import { act, render, screen } from '@testing-library/react';
 
 import type { ReactNode } from 'react';
 
-import { ThinkAwareMarkdown } from './think-aware-markdown';
+import {
+  ThinkAwareMarkdown,
+  extractMainTextFromThinkAwareContent,
+} from './think-aware-markdown';
 
 jest.mock('react-markdown', () => ({
   __esModule: true,
@@ -53,6 +56,14 @@ jest.mock('@components/chat/markdown-block/think-block-content', () => ({
 
 describe('ThinkAwareMarkdown', () => {
   const markdownComponents = {};
+
+  it('extracts main text from think-aware content', () => {
+    expect(
+      extractMainTextFromThinkAwareContent(
+        '<think>internal reasoning</think>\n\nVisible result'
+      )
+    ).toBe('Visible result');
+  });
 
   it('should keep think blocks collapsed by default', () => {
     render(

@@ -6,7 +6,6 @@ import {
   type ThinkBlockStatus,
 } from '@components/chat/markdown-block/think-block-header';
 import { useThrottledThinkPreview } from '@lib/hooks/use-throttled-think-preview';
-import { extractMainContentForPreview } from '@lib/utils';
 import { cn } from '@lib/utils';
 import { type MessageBlock, parseThinkBlocks } from '@lib/utils/think-parser';
 import { buildThinkPreviewText } from '@lib/utils/think-preview';
@@ -25,6 +24,8 @@ interface ThinkAwareMarkdownProps {
   isStreaming?: boolean;
   className?: string;
 }
+
+export { extractMainTextFromThinkAwareContent } from '@lib/utils';
 
 function getThinkBlockStatus(
   block: MessageBlock,
@@ -130,20 +131,6 @@ function ThinkBlockItem({
       <ThinkBlockContent markdownContent={block.content} isOpen={isOpen} />
     </div>
   );
-}
-
-export function extractMainTextFromThinkAwareContent(content: string): string {
-  const extracted = extractMainContentForPreview(content);
-  if (extracted) {
-    return extracted;
-  }
-
-  return parseThinkBlocks(content)
-    .filter(block => block.type === 'text')
-    .map(block => block.content)
-    .join('')
-    .replace(/\n\s*\n/g, '\n')
-    .trim();
 }
 
 export function ThinkAwareMarkdown({

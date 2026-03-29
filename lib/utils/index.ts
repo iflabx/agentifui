@@ -1,6 +1,8 @@
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
+import { parseThinkBlocks } from './think-parser';
+
 /**
  * Utility function to merge className values.
  */
@@ -63,4 +65,24 @@ export function extractMainContentForPreview(rawContent: string): string {
 
   // Clean up extra whitespace
   return cleanContent.replace(/\n\s*\n/g, '\n').trim();
+}
+
+export function hasThinkAwareContent(rawContent: string): boolean {
+  return /<(think|details)(?:\s[^>]*)?>/i.test(rawContent);
+}
+
+export function extractMainTextFromThinkAwareContent(
+  rawContent: string
+): string {
+  const extracted = extractMainContentForPreview(rawContent);
+  if (extracted) {
+    return extracted;
+  }
+
+  return parseThinkBlocks(rawContent)
+    .filter(block => block.type === 'text')
+    .map(block => block.content)
+    .join('')
+    .replace(/\n\s*\n/g, '\n')
+    .trim();
 }

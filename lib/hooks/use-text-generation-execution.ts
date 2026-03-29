@@ -86,6 +86,7 @@ export function useTextGenerationExecution(instanceId: string) {
       );
 
       let streamResponse: DifyCompletionStreamResponse | null = null;
+      let currentExecutionId: string | null = null;
 
       try {
         getActions().startExecution(nextFormData);
@@ -133,6 +134,7 @@ export function useTextGenerationExecution(instanceId: string) {
         }
 
         const dbExecution = createResult.data;
+        currentExecutionId = dbExecution.id;
         getActions().setCurrentExecution(dbExecution);
 
         await updateExecutionStatus(dbExecution.id, 'running');
@@ -266,19 +268,22 @@ export function useTextGenerationExecution(instanceId: string) {
 
         getActions().setError(friendlyErrorMessage, true);
 
-        const currentState = useWorkflowExecutionStore.getState();
-        if (currentState.currentExecution?.id) {
+        if (currentExecutionId) {
           try {
+            const completedAt = new Date().toISOString();
             await updateExecutionStatus(
-              currentState.currentExecution.id,
+              currentExecutionId,
               'failed',
-              friendlyErrorMessage
+              friendlyErrorMessage,
+              completedAt
             );
 
             getActions().updateCurrentExecution({
               status: 'failed',
               error_message: friendlyErrorMessage,
+              completed_at: completedAt,
             });
+            conversationEvents.emit();
           } catch (updateError) {
             console.error(
               '[Text Generation] Error updating failed status:',
