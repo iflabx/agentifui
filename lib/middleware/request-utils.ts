@@ -1,7 +1,6 @@
 import type { NextRequest } from 'next/server';
 
 import {
-  BETTER_AUTH_BASE_PATH,
   INTERNAL_AUTH_PROXY_HEADER,
   INTERNAL_FETCH_TIMEOUT_MS_FALLBACK,
 } from './constants';
@@ -55,6 +54,10 @@ export function resolveInternalOrigins(request: NextRequest): string[] {
     }
   };
 
+  const upstreamOrigin = normalizeOrigin(process.env.NEXT_UPSTREAM_BASE_URL);
+
+  pushUnique(upstreamOrigin);
+  pushUnique(swapLoopbackOrigin(upstreamOrigin || ''));
   pushUnique(request.nextUrl.origin);
   pushUnique(swapLoopbackOrigin(request.nextUrl.origin));
   pushUnique(normalizeOrigin(process.env.BETTER_AUTH_URL));
