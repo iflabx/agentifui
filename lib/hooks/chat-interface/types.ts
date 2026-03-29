@@ -45,6 +45,18 @@ export interface DifyLocalFile {
   upload_file_id: string;
 }
 
+export interface ChatAnswerStreamResult {
+  assistantMessageId: string | null;
+  assistantText: string;
+}
+
+export interface AssistantMessagePersistenceFallback {
+  id?: string | null;
+  text: string;
+  metadata?: Record<string, unknown>;
+  tokenCount?: number;
+  wasManuallyStopped?: boolean;
+}
 
 export interface ChatStreamingCheckSnapshot {
   messageId: string;

@@ -1,9 +1,12 @@
-import type { MutableRefObject } from 'react';
-
 import type { ChatResolvedAppConfig } from '@lib/hooks/chat-interface/app-config';
-import type { OnCreateConversationNodeEvent, UseCreateConversationReturn } from '@lib/hooks/create-conversation/types';
+import type {
+  OnCreateConversationNodeEvent,
+  UseCreateConversationReturn,
+} from '@lib/hooks/create-conversation/types';
 import type { ChatMessage } from '@lib/stores/chat-store';
 import type { PendingConversation } from '@lib/stores/pending-conversation-store';
+
+import type { MutableRefObject } from 'react';
 
 import {
   mapChatUploadFilesToDifyFiles,
@@ -14,24 +17,53 @@ import {
   syncChatStateAfterStreaming,
 } from './post-stream';
 import {
-  startExistingChatConversation,
-  startNewChatConversation,
-  prepareChatSubmitConversationState,
-} from './submit-start';
+  applyChatCompletionMetadata,
+  consumeChatAnswerStream,
+} from './stream-consume';
 import {
   finalizeChatSubmitStream,
   handleChatSubmitStreamError,
 } from './submit-recovery';
 import {
-  applyChatCompletionMetadata,
-  consumeChatAnswerStream,
-} from './stream-consume';
+  prepareChatSubmitConversationState,
+  startExistingChatConversation,
+  startNewChatConversation,
+} from './submit-start';
 import type {
+  AssistantMessagePersistenceFallback,
   ChatStreamCompletionData,
   DifyLocalFile,
 } from './types';
 
 type ChatMessageUpdates = Partial<Omit<ChatMessage, 'id' | 'isUser'>>;
+
+function buildAssistantPersistenceFallback(input: {
+  assistantMessageId: string | null;
+  assistantText: string;
+  completionData: ChatStreamCompletionData | null;
+}): AssistantMessagePersistenceFallback | null {
+  if (!input.assistantText.trim()) {
+    return null;
+  }
+
+  const completionMetadata = input.completionData
+    ? {
+        dify_metadata: input.completionData.metadata || {},
+        dify_usage: input.completionData.usage || {},
+        dify_retriever_resources: input.completionData.retrieverResources || [],
+        frontend_metadata: {
+          sequence_index: 1,
+        },
+      }
+    : undefined;
+
+  return {
+    id: input.assistantMessageId,
+    text: input.assistantText,
+    tokenCount: input.completionData?.usage?.total_tokens,
+    metadata: completionMetadata,
+  };
+}
 
 interface ExecuteChatSubmitInput {
   message: string;
@@ -88,7 +120,9 @@ export async function executeChatSubmit(
   input.isSubmittingRef.current = true;
   input.setIsWaitingForResponse(true);
 
-  const messageAttachments = mapChatUploadFilesToMessageAttachments(input.files);
+  const messageAttachments = mapChatUploadFilesToMessageAttachments(
+    input.files
+  );
   const userMessage = input.addMessage({
     text: input.message,
     isUser: true,
@@ -110,6 +144,7 @@ export async function executeChatSubmit(
   let finalDbConvUUID: string | null = null;
   let completionPromise: Promise<ChatStreamCompletionData> | undefined;
   let answerStream: AsyncGenerator<string, void, undefined> | undefined;
+  let assistantFallback: AssistantMessagePersistenceFallback | null = null;
 
   const urlIndicatesNew =
     window.location.pathname === '/chat/new' ||
@@ -175,7 +210,7 @@ export async function executeChatSubmit(
       throw new Error('Answer stream is undefined after API call.');
     }
 
-    assistantMessageId = await consumeChatAnswerStream({
+    const answerStreamResult = await consumeChatAnswerStream({
       answerStream,
       assistantMessageId,
       isNewConversationFlow,
@@ -189,11 +224,31 @@ export async function executeChatSubmit(
       markAsManuallyStopped: input.markAsManuallyStopped,
       chunkAppendInterval: input.chunkAppendInterval,
     });
+    assistantMessageId = answerStreamResult.assistantMessageId;
 
-    await applyChatCompletionMetadata({
+    const completionData = await applyChatCompletionMetadata({
       completionPromise,
       assistantMessageId,
       updateMessage: input.updateMessage,
+    });
+
+    assistantFallback = buildAssistantPersistenceFallback({
+      assistantMessageId,
+      assistantText: answerStreamResult.assistantText,
+      completionData,
+    });
+
+    finalDbConvUUID = await persistChatMessagesAfterStreaming({
+      finalDbConvUUID,
+      dbConversationUUID: input.dbConversationUUID,
+      finalRealConvId,
+      userMessage,
+      assistantMessageId,
+      assistantFallback,
+      setDbConversationUUID: input.setDbConversationUUID,
+      finalizeStreamingMessage: input.finalizeStreamingMessage,
+      updateMessage: input.updateMessage,
+      saveMessage: input.saveMessage,
     });
 
     syncChatStateAfterStreaming({
@@ -207,18 +262,6 @@ export async function executeChatSubmit(
       setCurrentTaskId: input.setCurrentTaskId,
       updatePendingStatus: input.updatePendingStatus,
       navigateToConversation: input.navigateToConversation,
-    });
-
-    finalDbConvUUID = await persistChatMessagesAfterStreaming({
-      finalDbConvUUID,
-      dbConversationUUID: input.dbConversationUUID,
-      finalRealConvId,
-      userMessage,
-      assistantMessageId,
-      setDbConversationUUID: input.setDbConversationUUID,
-      finalizeStreamingMessage: input.finalizeStreamingMessage,
-      updateMessage: input.updateMessage,
-      saveMessage: input.saveMessage,
     });
   } catch (error) {
     handleChatSubmitStreamError({

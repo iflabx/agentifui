@@ -1,12 +1,13 @@
-import type { MutableRefObject } from 'react';
-
 import type { ChatMessage } from '@lib/stores/chat-store';
 import { useChatStore } from '@lib/stores/chat-store';
 import type { PendingConversation } from '@lib/stores/pending-conversation-store';
 
-import type { ChatStreamCompletionData } from './types';
+import type { MutableRefObject } from 'react';
+
+import type { ChatAnswerStreamResult, ChatStreamCompletionData } from './types';
 
 type ChatMessageUpdates = Partial<Omit<ChatMessage, 'id' | 'isUser'>>;
+const COMPLETION_METADATA_WAIT_TIMEOUT_MS = 1500;
 
 interface ConsumeChatAnswerStreamInput {
   answerStream: AsyncGenerator<string, void, undefined>;
@@ -28,11 +29,14 @@ interface ConsumeChatAnswerStreamInput {
 
 export async function consumeChatAnswerStream(
   input: ConsumeChatAnswerStreamInput
-): Promise<string | null> {
+): Promise<ChatAnswerStreamResult> {
   let assistantMessageId = input.assistantMessageId;
+  let assistantText = '';
   let lastAppendTime = Date.now();
 
   for await (const answerChunk of input.answerStream) {
+    assistantText += answerChunk;
+
     if (
       useChatStore.getState().streamingMessageId === null &&
       assistantMessageId === null
@@ -85,62 +89,110 @@ export async function consumeChatAnswerStream(
   }
 
   input.flushChunkBuffer(assistantMessageId);
-  return assistantMessageId;
+  return {
+    assistantMessageId,
+    assistantText,
+  };
 }
 
 interface ApplyChatCompletionMetadataInput {
   completionPromise?: Promise<ChatStreamCompletionData>;
   assistantMessageId: string | null;
   updateMessage: (id: string, updates: ChatMessageUpdates) => void;
+  waitTimeoutMs?: number;
+}
+
+function applyCompletionDataToAssistantMessage(input: {
+  assistantMessageId: string;
+  completionData: ChatStreamCompletionData;
+  updateMessage: (id: string, updates: ChatMessageUpdates) => void;
+}) {
+  const existingMessage = useChatStore
+    .getState()
+    .messages.find(message => message.id === input.assistantMessageId);
+
+  const enhancedMetadata = {
+    ...(existingMessage?.metadata || {}),
+    dify_metadata: input.completionData.metadata || {},
+    dify_usage: input.completionData.usage || {},
+    dify_retriever_resources: input.completionData.retrieverResources || [],
+    frontend_metadata: {
+      stopped_manually: existingMessage?.metadata?.stopped_manually,
+      stopped_at: existingMessage?.metadata?.stopped_at,
+      attachments: existingMessage?.metadata?.attachments,
+      sequence_index: existingMessage?.sequence_index || 1,
+    },
+  };
+
+  input.updateMessage(input.assistantMessageId, {
+    metadata: enhancedMetadata,
+    token_count:
+      input.completionData.usage?.total_tokens || existingMessage?.token_count,
+    persistenceStatus: 'pending',
+  });
+
+  console.log('[handleSubmit] Updated assistant message Dify metadata:', {
+    messageId: input.assistantMessageId,
+    difyMetadata: input.completionData.metadata,
+    usage: input.completionData.usage,
+    retrieverResources: input.completionData.retrieverResources?.length || 0,
+  });
 }
 
 export async function applyChatCompletionMetadata(
   input: ApplyChatCompletionMetadataInput
-): Promise<void> {
+): Promise<ChatStreamCompletionData | null> {
   if (!input.completionPromise) {
     console.log('[handleSubmit] No completionPromise, skip metadata handling');
-    return;
+    return null;
   }
 
-  try {
-    console.log('[handleSubmit] Waiting for Dify streaming completion info...');
-    const completionData = await input.completionPromise;
+  const waitTimeoutMs =
+    input.waitTimeoutMs ?? COMPLETION_METADATA_WAIT_TIMEOUT_MS;
 
-    if (!input.assistantMessageId || !completionData) {
-      return;
+  console.log('[handleSubmit] Waiting for Dify streaming completion info...');
+
+  const completionWork = input.completionPromise
+    .then(completionData => {
+      if (!input.assistantMessageId || !completionData) {
+        return completionData || null;
+      }
+
+      applyCompletionDataToAssistantMessage({
+        assistantMessageId: input.assistantMessageId,
+        completionData,
+        updateMessage: input.updateMessage,
+      });
+
+      return completionData;
+    })
+    .catch(metadataError => {
+      console.error(
+        '[handleSubmit] Failed to get Dify metadata:',
+        metadataError
+      );
+      return null;
+    });
+
+  let timeoutId: NodeJS.Timeout | null = null;
+  try {
+    const raceResult = await Promise.race([
+      completionWork,
+      new Promise<null>(resolve => {
+        timeoutId = setTimeout(() => resolve(null), waitTimeoutMs);
+      }),
+    ]);
+
+    if (raceResult === null) {
+      console.warn(
+        `[handleSubmit] completionPromise still pending after ${waitTimeoutMs}ms, continue persisting assistant message without blocking`
+      );
     }
 
-    const existingMessage = useChatStore
-      .getState()
-      .messages.find(message => message.id === input.assistantMessageId);
-
-    const enhancedMetadata = {
-      ...(existingMessage?.metadata || {}),
-      dify_metadata: completionData.metadata || {},
-      dify_usage: completionData.usage || {},
-      dify_retriever_resources: completionData.retrieverResources || [],
-      frontend_metadata: {
-        stopped_manually: existingMessage?.metadata?.stopped_manually,
-        stopped_at: existingMessage?.metadata?.stopped_at,
-        attachments: existingMessage?.metadata?.attachments,
-        sequence_index: existingMessage?.sequence_index || 1,
-      },
-    };
-
-    input.updateMessage(input.assistantMessageId, {
-      metadata: enhancedMetadata,
-      token_count:
-        completionData.usage?.total_tokens || existingMessage?.token_count,
-      persistenceStatus: 'pending',
-    });
-
-    console.log('[handleSubmit] Updated assistant message Dify metadata:', {
-      messageId: input.assistantMessageId,
-      difyMetadata: completionData.metadata,
-      usage: completionData.usage,
-      retrieverResources: completionData.retrieverResources?.length || 0,
-    });
-  } catch (metadataError) {
-    console.error('[handleSubmit] Failed to get Dify metadata:', metadataError);
+    return raceResult;
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
   }
 }
