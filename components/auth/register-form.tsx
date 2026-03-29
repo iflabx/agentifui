@@ -2,6 +2,7 @@
 
 import { Button } from '@components/ui/button';
 import { signUpWithEmail } from '@lib/auth/better-auth/http-client';
+import { isGitHubSocialLoginEnabled } from '@lib/config/auth-provider-flags';
 import { cn } from '@lib/utils';
 import { Eye, EyeOff } from 'lucide-react';
 
@@ -16,6 +17,7 @@ import { SocialAuthButtons } from './social-auth-buttons';
 export function RegisterForm() {
   const router = useRouter();
   const t = useTranslations('pages.auth.register');
+  const githubSocialLoginEnabled = isGitHubSocialLoginEnabled();
 
   const [formData, setFormData] = useState({
     name: '',
@@ -143,28 +145,32 @@ export function RegisterForm() {
         </div>
       )}
 
-      <SocialAuthButtons type="register" redirectTo="/chat" />
+      {githubSocialLoginEnabled && (
+        <>
+          <SocialAuthButtons type="register" redirectTo="/chat" />
 
-      <div className="relative">
-        <div className="absolute inset-0 flex items-center">
-          <div
-            className={cn(
-              'w-full border-t',
-              'border-stone-300 dark:border-stone-700'
-            )}
-          />
-        </div>
-        <div className="relative flex justify-center text-sm">
-          <span
-            className={cn(
-              'px-2 font-serif',
-              'bg-stone-50 text-gray-500 dark:bg-stone-900 dark:text-gray-400'
-            )}
-          >
-            {t('orSeparator')}
-          </span>
-        </div>
-      </div>
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <div
+                className={cn(
+                  'w-full border-t',
+                  'border-stone-300 dark:border-stone-700'
+                )}
+              />
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span
+                className={cn(
+                  'px-2 font-serif',
+                  'bg-stone-50 text-gray-500 dark:bg-stone-900 dark:text-gray-400'
+                )}
+              >
+                {t('orSeparator')}
+              </span>
+            </div>
+          </div>
+        </>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="space-y-5">

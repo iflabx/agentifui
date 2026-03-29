@@ -135,6 +135,8 @@ Core switches:
 - `BETTER_AUTH_ENABLED`
 - `AUTH_BACKEND`
 - `BETTER_AUTH_SECRET`
+- `NEXT_PUBLIC_GITHUB_LOGIN_ENABLED`: set `false` to hide GitHub social-login
+  entry points while keeping the generic capability available in mainline
 - `NEXT_PUBLIC_SSO_ONLY_MODE`
 - `DEFAULT_SSO_EMAIL_DOMAIN`
 

@@ -2,6 +2,7 @@
 
 import { Button } from '@components/ui/button';
 import { signInWithSocialProvider } from '@lib/auth/better-auth/http-client';
+import { isGitHubSocialLoginEnabled } from '@lib/config/auth-provider-flags';
 import { cn } from '@lib/utils';
 
 import { useState } from 'react';
@@ -26,11 +27,16 @@ export function SocialAuthButtons({
   className,
 }: SocialAuthButtonsProps) {
   const t = useTranslations('pages.auth.social.github');
+  const githubSocialLoginEnabled = isGitHubSocialLoginEnabled();
 
   const [isLoading, setIsLoading] = useState({
     github: false,
   });
   const [error, setError] = useState('');
+
+  if (!githubSocialLoginEnabled) {
+    return null;
+  }
 
   const handleSocialAuth = async (provider: 'github') => {
     setIsLoading(prev => ({ ...prev, [provider]: true }));
