@@ -4,11 +4,13 @@ import {
   DifyWorkflowCompletionResponse,
   DifyWorkflowFinishedData,
   DifyWorkflowRequestPayload,
+  DifyWorkflowRunDetailResponse,
   DifyWorkflowSseEvent,
   DifyWorkflowStreamResponse,
 } from '../types';
 import { DIFY_API_BASE_URL } from './constants';
 import { handleWorkflowApiError } from './errors';
+import { getDifyWorkflowRunDetail } from './query';
 
 function emitProgressUpdate(
   onProgressUpdate: ((event: DifyWorkflowSseEvent) => void) | undefined,
@@ -27,6 +29,35 @@ function emitProgressUpdate(
       callbackError
     );
   }
+}
+
+const WORKFLOW_RUN_DETAIL_RETRY_DELAYS_MS = [0, 400, 1200] as const;
+
+function isTerminalWorkflowStatus(
+  status: DifyWorkflowFinishedData['status']
+): boolean {
+  return status === 'succeeded' || status === 'failed' || status === 'stopped';
+}
+
+function toWorkflowFinishedData(
+  runDetail: DifyWorkflowRunDetailResponse
+): DifyWorkflowFinishedData {
+  return {
+    id: runDetail.id,
+    workflow_id: runDetail.workflow_id,
+    status: runDetail.status,
+    outputs: runDetail.outputs,
+    error: runDetail.error,
+    elapsed_time: runDetail.elapsed_time,
+    total_tokens: runDetail.total_tokens,
+    total_steps: runDetail.total_steps,
+    created_at: runDetail.created_at,
+    finished_at: runDetail.finished_at ?? runDetail.created_at,
+  };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 export async function executeDifyWorkflow(
@@ -128,6 +159,7 @@ export async function streamDifyWorkflow(
     const stream = response.body;
     let workflowRunId: string | null = null;
     let taskId: string | null = null;
+    let completionSettled = false;
     let completionResolve: (value: DifyWorkflowFinishedData) => void;
     let completionReject: (reason: unknown) => void;
 
@@ -137,6 +169,72 @@ export async function streamDifyWorkflow(
         completionReject = reject;
       }
     );
+
+    const resolveCompletion = (value: DifyWorkflowFinishedData) => {
+      if (completionSettled) {
+        return;
+      }
+      completionSettled = true;
+      completionResolve(value);
+    };
+
+    const rejectCompletion = (reason: unknown) => {
+      if (completionSettled) {
+        return;
+      }
+      completionSettled = true;
+      completionReject(reason);
+    };
+
+    let recoveryPromise: Promise<DifyWorkflowFinishedData | null> | null = null;
+
+    const recoverTerminalResult =
+      async (): Promise<DifyWorkflowFinishedData | null> => {
+        if (!workflowRunId) {
+          return null;
+        }
+
+        if (recoveryPromise) {
+          return recoveryPromise;
+        }
+
+        recoveryPromise = (async () => {
+          for (const delayMs of WORKFLOW_RUN_DETAIL_RETRY_DELAYS_MS) {
+            if (delayMs > 0) {
+              await sleep(delayMs);
+            }
+
+            try {
+              const runDetail = await getDifyWorkflowRunDetail(
+                appId,
+                workflowRunId
+              );
+
+              if (isTerminalWorkflowStatus(runDetail.status)) {
+                console.warn(
+                  '[Dify Workflow Service] Recovered terminal workflow status from run detail:',
+                  runDetail.status
+                );
+                return toWorkflowFinishedData(runDetail);
+              }
+
+              console.warn(
+                '[Dify Workflow Service] Workflow run detail still not terminal during recovery:',
+                runDetail.status
+              );
+            } catch (recoveryError) {
+              console.warn(
+                '[Dify Workflow Service] Failed to recover workflow run detail:',
+                recoveryError
+              );
+            }
+          }
+
+          return null;
+        })();
+
+        return recoveryPromise;
+      };
 
     async function* processProgressStream(): AsyncGenerator<
       DifyWorkflowSseEvent,
@@ -150,7 +248,7 @@ export async function streamDifyWorkflow(
               '[Dify Workflow Service] SSE Parser Error:',
               result.error
             );
-            completionReject(new Error('Error parsing SSE stream.'));
+            rejectCompletion(new Error('Error parsing SSE stream.'));
             throw new Error('Error parsing SSE stream.');
           }
 
@@ -194,7 +292,7 @@ export async function streamDifyWorkflow(
                 '[Dify Workflow Service] Workflow finished:',
                 event.data.status
               );
-              completionResolve(event.data);
+              resolveCompletion(event.data);
               return;
             case 'error':
               console.error(
@@ -204,7 +302,7 @@ export async function streamDifyWorkflow(
               const error = new Error(
                 `Dify Workflow error: ${event.code} - ${event.message}`
               );
-              completionReject(error);
+              rejectCompletion(error);
               throw error;
             default:
               console.log(
@@ -213,12 +311,35 @@ export async function streamDifyWorkflow(
               break;
           }
         }
+
+        if (!completionSettled) {
+          const recoveredResult = await recoverTerminalResult();
+
+          if (recoveredResult) {
+            resolveCompletion(recoveredResult);
+            return;
+          }
+
+          const streamEndedError = new Error(
+            'Workflow stream ended before workflow_finished.'
+          );
+          rejectCompletion(streamEndedError);
+          throw streamEndedError;
+        }
       } catch (error) {
+        if (!completionSettled) {
+          const recoveredResult = await recoverTerminalResult();
+          if (recoveredResult) {
+            resolveCompletion(recoveredResult);
+            return;
+          }
+        }
+
         console.error(
           '[Dify Workflow Service] Error in processProgressStream:',
           error
         );
-        completionReject(error);
+        rejectCompletion(error);
         throw error;
       }
     }

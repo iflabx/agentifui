@@ -1,6 +1,9 @@
 import { conversationEvents } from '@lib/hooks/use-combined-conversations';
 import { toUserFacingAgentError } from '@lib/services/agent-error/user-facing-error';
-import { updateCompleteExecutionData } from '@lib/services/client/app-executions-api';
+import {
+  updateCompleteExecutionData,
+  updateExecutionStatus,
+} from '@lib/services/client/app-executions-api';
 import type {
   DifyWorkflowFinishedData,
   DifyWorkflowStreamResponse,
@@ -142,6 +145,82 @@ function buildFailedWorkflowMetadata({
   };
 }
 
+function buildWorkflowNodeSummary(
+  nodeExecutionData: WorkflowNodeSnapshot[]
+): Array<Record<string, unknown>> {
+  return nodeExecutionData.map(node => ({
+    node_id: node.node_id,
+    node_type: node.node_type || null,
+    title: node.title || null,
+    status: node.status,
+    error: node.error || null,
+    elapsed_time: node.elapsed_time || null,
+    total_tokens: node.total_tokens || null,
+    index: node.index || null,
+  }));
+}
+
+function buildCompactFailedWorkflowMetadata({
+  errorMessage,
+  rawErrorMessage,
+  errorCode,
+  errorKind,
+  suggestion,
+  requestId,
+  nodeExecutionData,
+  instanceId,
+}: Omit<
+  SaveFailedWorkflowExecutionDataParams,
+  'currentExecutionId' | 'streamResponse' | 'updateCurrentExecution'
+>): Record<string, unknown> {
+  const nodeSummary = buildWorkflowNodeSummary(nodeExecutionData);
+  const lastNode = nodeSummary.at(-1) || null;
+
+  return {
+    error_details: {
+      message: errorMessage,
+      raw_message: rawErrorMessage,
+      code: errorCode,
+      kind: errorKind,
+      suggestion,
+      request_id: requestId,
+      timestamp: new Date().toISOString(),
+      total_node_count: nodeExecutionData.length,
+      collected_node_summary: nodeSummary,
+      last_node: lastNode,
+    },
+    execution_context: {
+      user_agent: getWorkflowUserAgent(),
+      instance_id: instanceId,
+      execution_mode: 'streaming',
+    },
+  };
+}
+
+async function persistFailedWorkflowUpdate(
+  currentExecutionId: string,
+  errorMessage: string,
+  completedAt: string,
+  workflowRunId: string | null,
+  taskId: string | null,
+  metadata: Record<string, unknown>
+): Promise<AppExecution> {
+  const updateResult = await updateCompleteExecutionData(currentExecutionId, {
+    status: 'failed',
+    error_message: errorMessage,
+    completed_at: completedAt,
+    external_execution_id: workflowRunId,
+    task_id: taskId,
+    metadata,
+  });
+
+  if (!updateResult.success) {
+    throw updateResult.error;
+  }
+
+  return updateResult.data;
+}
+
 export async function saveCompleteWorkflowExecutionData({
   executionId,
   finalResult,
@@ -257,7 +336,7 @@ export async function saveFailedWorkflowExecutionData({
   }
 
   const completedAt = new Date().toISOString();
-  const metadata = buildFailedWorkflowMetadata({
+  const detailedMetadata = buildFailedWorkflowMetadata({
     errorMessage,
     rawErrorMessage,
     errorCode,
@@ -268,24 +347,80 @@ export async function saveFailedWorkflowExecutionData({
     instanceId,
   });
 
-  await updateCompleteExecutionData(currentExecutionId, {
-    status: 'failed',
-    error_message: errorMessage,
-    completed_at: completedAt,
-    external_execution_id: workflowRunId,
-    task_id: taskId,
-    metadata,
+  try {
+    const updatedExecution = await persistFailedWorkflowUpdate(
+      currentExecutionId,
+      errorMessage,
+      completedAt,
+      workflowRunId,
+      taskId,
+      detailedMetadata
+    );
+
+    updateCurrentExecution(updatedExecution);
+    conversationEvents.emit();
+    console.log('[Workflow Execution] ✅ Error status and detailed data saved');
+    return;
+  } catch (detailedError) {
+    console.warn(
+      '[Workflow Execution] Failed to save detailed error metadata, retrying with compact metadata:',
+      detailedError
+    );
+  }
+
+  const compactMetadata = buildCompactFailedWorkflowMetadata({
+    errorMessage,
+    rawErrorMessage,
+    errorCode,
+    errorKind,
+    suggestion,
+    requestId,
+    nodeExecutionData,
+    instanceId,
   });
+
+  try {
+    const updatedExecution = await persistFailedWorkflowUpdate(
+      currentExecutionId,
+      errorMessage,
+      completedAt,
+      workflowRunId,
+      taskId,
+      compactMetadata
+    );
+
+    updateCurrentExecution(updatedExecution);
+    conversationEvents.emit();
+    console.log('[Workflow Execution] ✅ Error status saved with compact data');
+    return;
+  } catch (compactError) {
+    console.warn(
+      '[Workflow Execution] Failed to save compact error metadata, falling back to status-only update:',
+      compactError
+    );
+  }
+
+  const fallbackStatusResult = await updateExecutionStatus(
+    currentExecutionId,
+    'failed',
+    errorMessage,
+    completedAt
+  );
+
+  if (!fallbackStatusResult.success || !fallbackStatusResult.data) {
+    throw fallbackStatusResult.success
+      ? new Error('Failed to persist workflow failed status')
+      : fallbackStatusResult.error;
+  }
 
   updateCurrentExecution({
     status: 'failed',
     error_message: errorMessage,
     completed_at: completedAt,
-    external_execution_id: workflowRunId,
-    task_id: taskId,
-    metadata,
   });
   conversationEvents.emit();
 
-  console.log('[Workflow Execution] ✅ Error status and data saved');
+  console.log(
+    '[Workflow Execution] ✅ Error status saved via status-only fallback'
+  );
 }

@@ -90,6 +90,7 @@ export function useWorkflowExecution(instanceId: string) {
       let nodeExecutionData: WorkflowNodeSnapshot[] = [];
       const normalizedInputs = buildNormalizedWorkflowInputs(nextFormData);
       let streamResponse: DifyWorkflowStreamResponse | null = null;
+      let currentExecutionId: string | null = null;
 
       try {
         getActions().startExecution(nextFormData);
@@ -142,6 +143,7 @@ export function useWorkflowExecution(instanceId: string) {
         }
 
         const dbExecution = createResult.data;
+        currentExecutionId = dbExecution.id;
         console.log(
           '[Workflow Execution] Database record created successfully, ID:',
           dbExecution.id
@@ -265,11 +267,10 @@ export function useWorkflowExecution(instanceId: string) {
         const errorMessage = formatUiErrorMessage(uiError);
         getActions().setError(errorMessage, true);
 
-        const current = useWorkflowExecutionStore.getState().currentExecution;
-        if (current?.id) {
+        if (currentExecutionId) {
           try {
             await saveFailedWorkflowExecutionData({
-              currentExecutionId: current.id,
+              currentExecutionId,
               rawErrorMessage,
               errorMessage,
               errorCode: uiError.code || normalizedError.code,
@@ -286,6 +287,27 @@ export function useWorkflowExecution(instanceId: string) {
               '[Workflow Execution] ❌ Error while updating failed status:',
               updateError
             );
+
+            try {
+              const completedAt = new Date().toISOString();
+              await updateExecutionStatus(
+                currentExecutionId,
+                'failed',
+                errorMessage,
+                completedAt
+              );
+              getActions().updateCurrentExecution({
+                status: 'failed',
+                error_message: errorMessage,
+                completed_at: completedAt,
+              });
+              conversationEvents.emit();
+            } catch (fallbackError) {
+              console.error(
+                '[Workflow Execution] ❌ Fallback failed status update failed:',
+                fallbackError
+              );
+            }
           }
         }
       } finally {
