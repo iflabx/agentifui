@@ -21,6 +21,33 @@ import {
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
+function resolvePublicOrigin(request: NextRequest): string {
+  const configuredOrigin =
+    process.env.BETTER_AUTH_URL?.trim() ||
+    process.env.NEXT_PUBLIC_APP_URL?.trim();
+
+  if (configuredOrigin) {
+    try {
+      return new URL(configuredOrigin).origin;
+    } catch {
+      // Fall through to forwarded headers / request origin.
+    }
+  }
+
+  const forwardedHost = request.headers.get('x-forwarded-host');
+  const forwardedProto = request.headers.get('x-forwarded-proto');
+
+  if (forwardedHost) {
+    return `${forwardedProto || 'http'}://${forwardedHost}`;
+  }
+
+  return request.nextUrl.origin;
+}
+
+function createPublicUrl(path: string, request: NextRequest): URL {
+  return new URL(path, resolvePublicOrigin(request));
+}
+
 export async function middleware(request: NextRequest) {
   const url = new URL(request.url);
   const pathname = url.pathname;
@@ -71,7 +98,7 @@ export async function middleware(request: NextRequest) {
     console.log(
       `[Middleware] User not authenticated, redirecting protected route ${pathname} to /login`
     );
-    return NextResponse.redirect(new URL('/login', request.url));
+    return NextResponse.redirect(createPublicUrl('/login', request));
   }
 
   if (user) {
@@ -84,9 +111,9 @@ export async function middleware(request: NextRequest) {
         );
         return await signOutAndRedirect(
           request,
-          new URL(
+          createPublicUrl(
             `/login?error=${AUTH_SYSTEM_ERRORS.PROFILE_NOT_FOUND}`,
-            request.url
+            request
           )
         );
       }
@@ -99,7 +126,7 @@ export async function middleware(request: NextRequest) {
         );
         return await signOutAndRedirect(
           request,
-          new URL(`/login?error=${errorCode}`, request.url)
+          createPublicUrl(`/login?error=${errorCode}`, request)
         );
       }
 
@@ -107,7 +134,7 @@ export async function middleware(request: NextRequest) {
         console.log(
           `[Middleware] Non-admin user attempting to access admin route ${pathname}, redirecting to /`
         );
-        return NextResponse.redirect(new URL('/', request.url));
+        return NextResponse.redirect(createPublicUrl('/', request));
       }
 
       if (isAdminRoute) {
@@ -121,9 +148,9 @@ export async function middleware(request: NextRequest) {
       );
       return await signOutAndRedirect(
         request,
-        new URL(
+        createPublicUrl(
           `/login?error=${AUTH_SYSTEM_ERRORS.PERMISSION_CHECK_FAILED}`,
-          request.url
+          request
         )
       );
     }
@@ -133,7 +160,7 @@ export async function middleware(request: NextRequest) {
     console.log(
       `[Middleware] User logged in, redirecting ${pathname} to /chat/new`
     );
-    return NextResponse.redirect(new URL('/chat/new', request.url));
+    return NextResponse.redirect(createPublicUrl('/chat/new', request));
   }
 
   return response;
