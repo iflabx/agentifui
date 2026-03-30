@@ -1476,7 +1476,9 @@
             "saveSuccess": "Configuración guardada exitosamente",
             "saveFailed": "Error al guardar configuración, inténtelo de nuevo",
             "cleanupImages": "({count} {count, plural, one {image} other {images}} sin usar eliminado)",
-            "cleanupFailed": "No se han podido limpiar las imágenes no utilizadas"
+            "cleanupFailed": "No se han podido limpiar las imágenes no utilizadas",
+            "translateAllSuccess": "Se tradujeron todos los idiomas",
+            "translateAllFailed": "Error al traducir todos los idiomas"
           },
           "saveActions": {
             "hasChanges": "Cambios sin guardar",
@@ -1484,7 +1486,9 @@
             "allSaved": "Todos los cambios guardados",
             "reset": "Restablecer",
             "save": "Guardar Cambios",
-            "saving_": "Guardando..."
+            "saving_": "Guardando...",
+            "translateAll": "Traducir todo",
+            "translatingAll": "Traduciendo..."
           }
         },
         "tabs": {

@@ -1476,7 +1476,9 @@
             "saveSuccess": "Konfiguration erfolgreich gespeichert",
             "saveFailed": "Speichern der Konfiguration fehlgeschlagen, bitte versuchen Sie es erneut",
             "cleanupImages": "({count} unbenutzte {count, plural, one {Bild} other {Bilder}} entfernt)",
-            "cleanupFailed": "Nicht verwendete Bilder konnten nicht bereinigt werden"
+            "cleanupFailed": "Nicht verwendete Bilder konnten nicht bereinigt werden",
+            "translateAllSuccess": "Alle Sprachen wurden übersetzt",
+            "translateAllFailed": "Übersetzen aller Sprachen fehlgeschlagen"
           },
           "saveActions": {
             "hasChanges": "Ungespeicherte Änderungen",
@@ -1484,7 +1486,9 @@
             "allSaved": "Alle Änderungen gespeichert",
             "reset": "Zurücksetzen",
             "save": "Änderungen speichern",
-            "saving_": "Speichern..."
+            "saving_": "Speichern...",
+            "translateAll": "Alles übersetzen",
+            "translatingAll": "Wird übersetzt..."
           }
         },
         "tabs": {

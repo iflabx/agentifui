@@ -44,6 +44,21 @@ export interface BatchUpdateResult {
   totalErrors: number;
 }
 
+export interface TranslateAllRequest<TData = TranslationData> {
+  section: 'pages.about' | 'pages.home';
+  sourceLocale: SupportedLocale;
+  sourceData: TData;
+}
+
+export interface TranslateAllResult<TData = TranslationData> {
+  success: boolean;
+  section: 'pages.about' | 'pages.home';
+  sourceLocale: SupportedLocale;
+  translatedAt: string;
+  translations: Record<SupportedLocale, TData>;
+  results: Array<{ locale: string; success: boolean; updatedAt: string }>;
+}
+
 // translation management service class
 export class TranslationService {
   private static readonly API_BASE = '/api/admin/translations';
@@ -195,6 +210,28 @@ export class TranslationService {
       updates,
       mode,
     });
+  }
+
+  static async translateAllPageTranslations<TData = TranslationData>(
+    request: TranslateAllRequest<TData>
+  ): Promise<TranslateAllResult<TData>> {
+    const response = await fetch(`${this.API_BASE}/translate-all`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(
+        error.error ||
+          `Failed to translate page content: ${response.statusText}`
+      );
+    }
+
+    return response.json();
   }
 
   // get translation structure template for a specific section (for admin interface initialization)

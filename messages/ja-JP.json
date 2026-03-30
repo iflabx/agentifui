@@ -1476,7 +1476,9 @@
             "saveSuccess": "設定が正常に保存されました",
             "saveFailed": "設定の保存に失敗しました。もう一度お試しください",
             "cleanupImages": "({count}未使用の{count, plural, one {画像} other {画像}}が削除されました)",
-            "cleanupFailed": "使用していない画像をクリーンアップできませんでした"
+            "cleanupFailed": "使用していない画像をクリーンアップできませんでした",
+            "translateAllSuccess": "すべての言語を翻訳しました",
+            "translateAllFailed": "すべての言語の翻訳に失敗しました"
           },
           "saveActions": {
             "hasChanges": "未保存の変更",
@@ -1484,7 +1486,9 @@
             "allSaved": "すべての変更が保存されました",
             "reset": "リセット",
             "save": "変更を保存",
-            "saving_": "保存中..."
+            "saving_": "保存中...",
+            "translateAll": "すべて翻訳",
+            "translatingAll": "翻訳中..."
           }
         },
         "tabs": {

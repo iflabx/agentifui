@@ -52,6 +52,7 @@ export default function ContentManagementPage() {
     'desktop' | 'tablet' | 'mobile'
   >('desktop');
   const [isSaving, setIsSaving] = useState(false);
+  const [isTranslating, setIsTranslating] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [showFullscreenPreview, setShowFullscreenPreview] = useState(false);
 
@@ -199,6 +200,47 @@ export default function ContentManagementPage() {
     }
   };
 
+  const handleTranslateAllLanguages = async () => {
+    setIsTranslating(true);
+    try {
+      if (activeTab === 'about' && aboutTranslations?.[currentLocale]) {
+        const result =
+          await TranslationService.translateAllPageTranslations<AboutTranslationData>(
+            {
+              section: 'pages.about',
+              sourceLocale: currentLocale,
+              sourceData: aboutTranslations[currentLocale],
+            }
+          );
+
+        setAboutTranslations(result.translations);
+        setOriginalAboutTranslations(result.translations);
+      } else if (activeTab === 'home' && homeTranslations?.[currentLocale]) {
+        const result =
+          await TranslationService.translateAllPageTranslations<HomeTranslationData>(
+            {
+              section: 'pages.home',
+              sourceLocale: currentLocale,
+              sourceData: homeTranslations[currentLocale],
+            }
+          );
+
+        setHomeTranslations(result.translations);
+        setOriginalHomeTranslations(result.translations);
+      } else {
+        throw new Error('Missing source translation data');
+      }
+
+      clearTranslationCache();
+      toast.success(t('messages.translateAllSuccess'));
+    } catch (error) {
+      console.error('Translate all languages failed:', error);
+      toast.error(t('messages.translateAllFailed'));
+    } finally {
+      setIsTranslating(false);
+    }
+  };
+
   const handleReset = () => {
     if (activeTab === 'about' && originalAboutTranslations) {
       setAboutTranslations({ ...originalAboutTranslations });
@@ -315,8 +357,10 @@ export default function ContentManagementPage() {
       <ContentSaveActions
         hasChanges={hasChanges}
         isSaving={isSaving}
+        isTranslating={isTranslating}
         onReset={handleReset}
         onSave={handleSave}
+        onTranslateAll={handleTranslateAllLanguages}
       />
     </div>
   );

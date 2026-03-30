@@ -1476,7 +1476,9 @@
             "saveSuccess": "Configuration enregistrée avec succès",
             "saveFailed": "Échec de l'enregistrement de la configuration, veuillez réessayer",
             "cleanupImages": "({count} inutilisé {count, plural, one {image} other {images}} supprimé)",
-            "cleanupFailed": "Échec du nettoyage des images inutilisées"
+            "cleanupFailed": "Échec du nettoyage des images inutilisées",
+            "translateAllSuccess": "Toutes les langues ont été traduites",
+            "translateAllFailed": "Échec de la traduction de toutes les langues"
           },
           "saveActions": {
             "hasChanges": "Modifications non enregistrées",
@@ -1484,7 +1486,9 @@
             "allSaved": "Toutes les modifications enregistrées",
             "reset": "Réinitialiser",
             "save": "Enregistrer les modifications",
-            "saving_": "Enregistrement..."
+            "saving_": "Enregistrement...",
+            "translateAll": "Tout traduire",
+            "translatingAll": "Traduction..."
           }
         },
         "tabs": {

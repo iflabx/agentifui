@@ -1476,7 +1476,9 @@
             "saveSuccess": "Configuration saved successfully",
             "saveFailed": "Failed to save configuration, please try again",
             "cleanupImages": "({count} unused {count, plural, one {image} other {images}} removed)",
-            "cleanupFailed": "Failed to cleanup unused images"
+            "cleanupFailed": "Failed to cleanup unused images",
+            "translateAllSuccess": "All languages translated",
+            "translateAllFailed": "Failed to translate all languages"
           },
           "saveActions": {
             "hasChanges": "Unsaved changes",
@@ -1484,7 +1486,9 @@
             "allSaved": "All changes saved",
             "reset": "Reset",
             "save": "Save Changes",
-            "saving_": "Saving..."
+            "saving_": "Saving...",
+            "translateAll": "Translate All",
+            "translatingAll": "Translating..."
           }
         },
         "imageUpload": {

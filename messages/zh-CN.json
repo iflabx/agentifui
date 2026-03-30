@@ -1476,7 +1476,9 @@
             "saveSuccess": "配置保存成功",
             "saveFailed": "保存配置失败，请重试",
             "cleanupImages": "({count}个未使用的{count, plural, one {图片} other {图片}}已删除)",
-            "cleanupFailed": "清理未使用的图片失败"
+            "cleanupFailed": "清理未使用的图片失败",
+            "translateAllSuccess": "已翻译全部语言",
+            "translateAllFailed": "翻译全部语言失败"
           },
           "saveActions": {
             "hasChanges": "有未保存的更改",
@@ -1484,7 +1486,9 @@
             "allSaved": "所有更改已保存",
             "reset": "重置",
             "save": "保存更改",
-            "saving_": "保存中..."
+            "saving_": "保存中...",
+            "translateAll": "翻译全部语言",
+            "translatingAll": "翻译中..."
           }
         },
         "imageUpload": {

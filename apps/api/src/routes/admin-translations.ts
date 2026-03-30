@@ -5,6 +5,7 @@ import path from 'node:path';
 import type { ApiRuntimeConfig } from '../config';
 import { buildRouteErrorPayload } from '../lib/route-error';
 import { resolveIdentityFromSession } from '../lib/session-identity';
+import { buildTranslatedLocaleMap } from './admin-translations-auto-translate';
 
 interface AdminTranslationsRoutesOptions {
   config: ApiRuntimeConfig;
@@ -543,6 +544,119 @@ export const adminTranslationsRoutes: FastifyPluginAsync<
             error instanceof Error
               ? error.message
               : 'Unknown translations update error',
+        })
+      );
+    }
+  });
+
+  app.post<{
+    Body: {
+      section?: string;
+      sourceLocale?: string;
+      sourceData?: unknown;
+    };
+  }>('/api/admin/translations/translate-all', async (request, reply) => {
+    try {
+      const authResult = await requireAdmin(request, options.config);
+      if (!authResult.ok) {
+        return reply.status(authResult.statusCode).send(authResult.payload);
+      }
+
+      const section =
+        typeof request.body?.section === 'string' ? request.body.section : '';
+      const sourceLocale =
+        typeof request.body?.sourceLocale === 'string'
+          ? request.body.sourceLocale
+          : '';
+      const sourceData = request.body?.sourceData;
+
+      if (!section || !sourceLocale || sourceData === undefined) {
+        return reply.status(400).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 400,
+            code: 'TRANSLATION_AUTO_PARAMS_MISSING',
+            userMessage:
+              'Missing required parameters: section, sourceLocale, sourceData',
+          })
+        );
+      }
+
+      if (!isValidLocale(sourceLocale)) {
+        return reply.status(400).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 400,
+            code: 'TRANSLATION_SOURCE_LOCALE_UNSUPPORTED',
+            userMessage: `Unsupported locale: ${sourceLocale}`,
+          })
+        );
+      }
+
+      if (section !== 'pages.about' && section !== 'pages.home') {
+        return reply.status(400).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 400,
+            code: 'TRANSLATION_SECTION_UNSUPPORTED',
+            userMessage: `Unsupported translation section: ${section}`,
+          })
+        );
+      }
+
+      const translatedAt = new Date().toISOString();
+      const translatedLocales = await buildTranslatedLocaleMap({
+        sourceData: sourceData as never,
+        sourceLocale,
+        targetLocales: getSupportedLocales(),
+        translatedAt,
+      });
+
+      const results: Array<{
+        locale: string;
+        success: boolean;
+        updatedAt: string;
+      }> = [];
+
+      for (const locale of getSupportedLocales()) {
+        const localeData = translatedLocales[locale];
+        if (localeData === undefined) {
+          continue;
+        }
+
+        const updatedAt = await updateSingleLocaleTranslation({
+          locale,
+          section,
+          updates: localeData as TranslationData,
+          mode: 'merge',
+        });
+
+        results.push({ locale, success: true, updatedAt });
+      }
+
+      return reply.send({
+        success: true,
+        section,
+        sourceLocale,
+        translatedAt,
+        translations: translatedLocales,
+        results,
+      });
+    } catch (error) {
+      request.log.error(
+        { err: error },
+        '[FastifyAPI][admin-translations] translate-all failed'
+      );
+      return reply.status(500).send(
+        buildRouteErrorPayload({
+          request,
+          statusCode: 500,
+          code: 'TRANSLATION_AUTO_TRANSLATE_FAILED',
+          userMessage: 'Failed to translate all languages',
+          developerMessage:
+            error instanceof Error
+              ? error.message
+              : 'Unknown translation automation error',
         })
       );
     }

@@ -1476,7 +1476,9 @@
             "saveSuccess": "設定儲存成功",
             "saveFailed": "儲存設定失敗，請重試",
             "cleanupImages": "(已移除{count}個未使用的{count, plural, one {image} other {images}})",
-            "cleanupFailed": "無法清理未使用的影像"
+            "cleanupFailed": "無法清理未使用的影像",
+            "translateAllSuccess": "已翻譯全部語言",
+            "translateAllFailed": "翻譯全部語言失敗"
           },
           "saveActions": {
             "hasChanges": "有未儲存的變更",
@@ -1484,7 +1486,9 @@
             "allSaved": "所有變更已儲存",
             "reset": "重設",
             "save": "儲存變更",
-            "saving_": "儲存中..."
+            "saving_": "儲存中...",
+            "translateAll": "翻譯全部語言",
+            "translatingAll": "翻譯中..."
           }
         },
         "tabs": {
