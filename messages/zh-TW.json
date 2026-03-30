@@ -1477,8 +1477,14 @@
             "saveFailed": "儲存設定失敗，請重試",
             "cleanupImages": "(已移除{count}個未使用的{count, plural, one {image} other {images}})",
             "cleanupFailed": "無法清理未使用的影像",
-            "translateAllSuccess": "已翻譯全部語言",
-            "translateAllFailed": "翻譯全部語言失敗"
+            "translateAllSuccess": "全部語言翻譯完成並已儲存",
+            "translateAllFailed": "全部語言翻譯失敗，請重試",
+            "translateAllPartial": "全部語言同步部分完成（成功 {successCount} 個，失敗 {failedCount} 個）",
+            "translateAllRequiresSavedChanges": "請先儲存或重設目前語言修改，再同步全部語言",
+            "saveOrResetBeforeSwitch": "切換頁面或語言前，請先儲存或重設目前修改",
+            "structureConflictTitle": "頁面結構已更新",
+            "structureConflictMessage": "目前編輯工作階段基於舊結構。請重新載入目前頁面後，再基於最新結構繼續編輯。",
+            "structureConflictReload": "重新載入目前頁面"
           },
           "saveActions": {
             "hasChanges": "有未儲存的變更",
@@ -1488,6 +1494,9 @@
             "save": "儲存變更",
             "saving_": "儲存中...",
             "translateAll": "翻譯全部語言",
+            "translateAllConfirmTitle": "確認同步全部語言？",
+            "translateAllConfirmMessage": "目前源語言：{locale}。系統將以目前語言文本為源，翻譯並覆蓋其他語言的頁面文本。本操作只同步文本，不會修改頁面結構。其他語言中已有的人工修改也會被覆蓋。同步可能部分成功，失敗語言會保留目前內容。",
+            "confirmTranslateAll": "開始同步並覆蓋",
             "translatingAll": "翻譯中..."
           }
         },

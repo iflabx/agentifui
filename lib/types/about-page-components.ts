@@ -72,6 +72,10 @@ export interface PageContent {
     version?: string;
     lastModified?: string;
     author?: string;
+    locale?: string;
+    sourceLocale?: string;
+    structureVersion?: number;
+    basedOnStructureVersion?: number;
   };
 }
 
@@ -228,15 +232,17 @@ export interface AboutTranslationData {
     version?: string;
     lastModified?: string;
     author?: string;
+    locale?: string;
+    sourceLocale?: string;
+    structureVersion?: number;
+    basedOnStructureVersion?: number;
     migrated?: boolean; // Flag to indicate if migration from fixed to dynamic structure has occurred
   };
 }
 
 // Checks if the data is in the new dynamic format
 export function isDynamicFormat(data: AboutTranslationData): boolean {
-  return Boolean(
-    data && Array.isArray(data.sections) && data.sections.length > 0
-  );
+  return Boolean(data && Array.isArray(data.sections));
 }
 
 // Checks if the data is in the old legacy format

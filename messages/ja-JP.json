@@ -1477,8 +1477,14 @@
             "saveFailed": "設定の保存に失敗しました。もう一度お試しください",
             "cleanupImages": "({count}未使用の{count, plural, one {画像} other {画像}}が削除されました)",
             "cleanupFailed": "使用していない画像をクリーンアップできませんでした",
-            "translateAllSuccess": "すべての言語を翻訳しました",
-            "translateAllFailed": "すべての言語の翻訳に失敗しました"
+            "translateAllSuccess": "すべてのページ言語が正常に翻訳されました",
+            "translateAllFailed": "すべてのページ言語の翻訳に失敗しました",
+            "translateAllPartial": "Language sync completed with partial failures ({successCount} succeeded, {failedCount} failed)",
+            "translateAllRequiresSavedChanges": "Save or reset the current language before syncing all languages",
+            "saveOrResetBeforeSwitch": "Save or reset the current changes before switching tabs or languages",
+            "structureConflictTitle": "Page structure has been updated",
+            "structureConflictMessage": "This editor session is based on an older page structure. Reload the current page to continue editing with the latest structure.",
+            "structureConflictReload": "Reload Current Page"
           },
           "saveActions": {
             "hasChanges": "未保存の変更",
@@ -1487,7 +1493,10 @@
             "reset": "リセット",
             "save": "変更を保存",
             "saving_": "保存中...",
-            "translateAll": "すべて翻訳",
+            "translateAll": "すべての言語を翻訳",
+            "translateAllConfirmTitle": "Confirm Sync All Languages?",
+            "translateAllConfirmMessage": "Current source language: {locale}. The system will translate and overwrite page text in other languages from this source. This only syncs text and will not change page structure. Existing manual edits in other languages will be overwritten. Sync may partially succeed; failed languages will keep their current content.",
+            "confirmTranslateAll": "Start Sync and Overwrite",
             "translatingAll": "翻訳中..."
           }
         },

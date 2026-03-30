@@ -5,21 +5,25 @@ import { AboutPreview } from '@components/admin/content/about-preview';
 import { EditorSkeleton } from '@components/admin/content/editor-skeleton';
 import { HomePreviewDynamic } from '@components/admin/content/home-preview-dynamic';
 import { PreviewToolbar } from '@components/admin/content/preview-toolbar';
+import { ConfirmDialog } from '@components/ui/confirm-dialog';
 import { ResizableSplitPane } from '@components/ui/resizable-split-pane';
 import { getCurrentUser } from '@lib/auth/better-auth/http-client';
-import type { SupportedLocale } from '@lib/config/language-config';
-import { getCurrentLocaleFromCookie } from '@lib/config/language-config';
-import { clearTranslationCache } from '@lib/hooks/use-dynamic-translations';
-import { TranslationService } from '@lib/services/admin/content/translation-service';
+import {
+  type SupportedLocale,
+  getCurrentLocaleFromCookie,
+  getLanguageInfo,
+} from '@lib/config/language-config';
+import { formatUiErrorMessage, toUiError } from '@lib/errors/ui-error';
+import { clearPageContentCache } from '@lib/hooks/use-page-content';
+import { ContentPageService } from '@lib/services/admin/content/translation-service';
 import { cleanupUnusedImages } from '@lib/services/content-image-upload-service';
 import { useAboutEditorStore } from '@lib/stores/about-editor-store';
-import { useHomeEditorStore } from '@lib/stores/home-editor-store';
 import type { AboutTranslationData } from '@lib/types/about-page-components';
 import { cn } from '@lib/utils';
 import type { HomeTranslationData } from '@lib/utils/data-migration';
 import { toast } from 'sonner';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -41,10 +45,10 @@ export default function ContentManagementPage() {
   const router = useRouter();
   const t = useTranslations('pages.admin.content.page');
 
-  const { setPageContent: setAboutPageContent, reset: resetAboutEditor } =
-    useAboutEditorStore();
-  const { setPageContent: setHomePageContent, reset: resetHomeEditor } =
-    useHomeEditorStore();
+  const {
+    setPageContent: setRenderedEditorPageContent,
+    reset: resetRenderedEditor,
+  } = useAboutEditorStore();
 
   const [activeTab, setActiveTab] = useState<'about' | 'home'>('about');
   const [showPreview, setShowPreview] = useState(true);
@@ -53,8 +57,9 @@ export default function ContentManagementPage() {
   >('desktop');
   const [isSaving, setIsSaving] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
-  const [hasChanges, setHasChanges] = useState(false);
   const [showFullscreenPreview, setShowFullscreenPreview] = useState(false);
+  const [isTranslateConfirmOpen, setIsTranslateConfirmOpen] = useState(false);
+  const [isStructureConflictOpen, setIsStructureConflictOpen] = useState(false);
 
   const [aboutTranslations, setAboutTranslations] = useState<Record<
     SupportedLocale,
@@ -69,6 +74,12 @@ export default function ContentManagementPage() {
   > | null>(null);
   const [originalHomeTranslations, setOriginalHomeTranslations] =
     useState<Record<SupportedLocale, HomeTranslationData> | null>(null);
+  const [aboutStructureVersion, setAboutStructureVersion] = useState<
+    number | null
+  >(null);
+  const [homeStructureVersion, setHomeStructureVersion] = useState<
+    number | null
+  >(null);
 
   const [currentLocale, setCurrentLocale] = useState<SupportedLocale>(
     getCurrentLocaleFromCookie()
@@ -83,19 +94,19 @@ export default function ContentManagementPage() {
       setIsLoading(true);
       try {
         if (activeTab === 'about') {
-          const translations =
-            await TranslationService.getAboutPageTranslations();
-          setAboutTranslations(translations);
-          setOriginalAboutTranslations(translations);
+          const response = await ContentPageService.getAboutPageTranslations();
+          setAboutTranslations(response.translations);
+          setOriginalAboutTranslations(response.translations);
+          setAboutStructureVersion(response.structureVersion);
         } else {
-          const translations =
-            await TranslationService.getHomePageTranslations();
-          setHomeTranslations(translations);
-          setOriginalHomeTranslations(translations);
+          const response = await ContentPageService.getHomePageTranslations();
+          setHomeTranslations(response.translations);
+          setOriginalHomeTranslations(response.translations);
+          setHomeStructureVersion(response.structureVersion);
         }
 
         if (supportedLocales.length === 0) {
-          const locales = await TranslationService.getSupportedLanguages();
+          const locales = ContentPageService.getSupportedLanguages();
           setSupportedLocales(locales);
         }
       } catch (error) {
@@ -106,7 +117,7 @@ export default function ContentManagementPage() {
       }
     };
 
-    loadTranslations();
+    void loadTranslations();
   }, [activeTab, supportedLocales.length, t]);
 
   useEffect(() => {
@@ -116,26 +127,58 @@ export default function ContentManagementPage() {
     }
   }, [searchParams]);
 
-  useEffect(() => {
-    const aboutChanged =
-      JSON.stringify(aboutTranslations) !==
-      JSON.stringify(originalAboutTranslations);
-    const homeChanged =
-      JSON.stringify(homeTranslations) !==
-      JSON.stringify(originalHomeTranslations);
-    setHasChanges(aboutChanged || homeChanged);
+  const hasCurrentLocaleChanges = useMemo(() => {
+    if (activeTab === 'about') {
+      return (
+        JSON.stringify(aboutTranslations?.[currentLocale] ?? null) !==
+        JSON.stringify(originalAboutTranslations?.[currentLocale] ?? null)
+      );
+    }
+
+    return (
+      JSON.stringify(homeTranslations?.[currentLocale] ?? null) !==
+      JSON.stringify(originalHomeTranslations?.[currentLocale] ?? null)
+    );
   }, [
+    activeTab,
     aboutTranslations,
-    originalAboutTranslations,
+    currentLocale,
     homeTranslations,
+    originalAboutTranslations,
     originalHomeTranslations,
   ]);
 
+  const blockNavigationOnUnsavedChanges = useCallback(() => {
+    if (!hasCurrentLocaleChanges) {
+      return false;
+    }
+
+    toast.warning(t('messages.saveOrResetBeforeSwitch'));
+    return true;
+  }, [hasCurrentLocaleChanges, t]);
+
   const handleTabChange = (tab: 'about' | 'home') => {
+    if (tab === activeTab) {
+      return;
+    }
+    if (blockNavigationOnUnsavedChanges()) {
+      return;
+    }
     setActiveTab(tab);
     const params = new URLSearchParams(searchParams?.toString() ?? '');
     params.set('tab', tab);
     router.push(`?${params.toString()}`, { scroll: false });
+  };
+
+  const handleLocaleChange = (newLocale: SupportedLocale) => {
+    if (newLocale === currentLocale) {
+      return;
+    }
+    if (blockNavigationOnUnsavedChanges()) {
+      return;
+    }
+
+    setCurrentLocale(newLocale);
   };
 
   const cleanupUnusedImagesAfterSave = async (
@@ -159,31 +202,79 @@ export default function ContentManagementPage() {
       const user = await getCurrentUser();
       let cleanupCount = 0;
 
-      if (activeTab === 'about' && aboutTranslations) {
-        await TranslationService.updateAboutPageTranslations(aboutTranslations);
-        setOriginalAboutTranslations({ ...aboutTranslations });
+      if (activeTab === 'about' && aboutTranslations?.[currentLocale]) {
+        if (aboutStructureVersion === null) {
+          throw new Error('Missing about structure version');
+        }
+
+        const result =
+          currentLocale === 'en-US'
+            ? await ContentPageService.updateAboutPageStructure(
+                aboutTranslations[currentLocale],
+                aboutStructureVersion
+              )
+            : await ContentPageService.updateAboutPageLocale(
+                currentLocale,
+                aboutTranslations[currentLocale],
+                aboutStructureVersion
+              );
+        setAboutTranslations(result.translations);
+        setOriginalAboutTranslations(result.translations);
+        setAboutStructureVersion(result.structureVersion);
+        const content = createPageContentFromAboutTranslation(
+          result.translations[currentLocale] || ({} as AboutTranslationData)
+        );
+        if (content) {
+          resetRenderedEditor();
+          setRenderedEditorPageContent(content);
+        }
 
         if (user?.id) {
           cleanupCount = await cleanupUnusedImagesAfterSave(
-            aboutTranslations,
+            result.translations,
             false,
             user.id
           );
         }
-      } else if (activeTab === 'home' && homeTranslations) {
-        await TranslationService.updateHomePageTranslations(homeTranslations);
-        setOriginalHomeTranslations({ ...homeTranslations });
+      } else if (activeTab === 'home' && homeTranslations?.[currentLocale]) {
+        if (homeStructureVersion === null) {
+          throw new Error('Missing home structure version');
+        }
+
+        const result =
+          currentLocale === 'en-US'
+            ? await ContentPageService.updateHomePageStructure(
+                homeTranslations[currentLocale],
+                homeStructureVersion
+              )
+            : await ContentPageService.updateHomePageLocale(
+                currentLocale,
+                homeTranslations[currentLocale],
+                homeStructureVersion
+              );
+        setHomeTranslations(result.translations);
+        setOriginalHomeTranslations(result.translations);
+        setHomeStructureVersion(result.structureVersion);
+        const content = createPageContentFromHomeTranslation(
+          result.translations[currentLocale] || ({} as HomeTranslationData)
+        );
+        if (content) {
+          resetRenderedEditor();
+          setRenderedEditorPageContent(content);
+        }
 
         if (user?.id) {
           cleanupCount = await cleanupUnusedImagesAfterSave(
-            homeTranslations,
+            result.translations,
             true,
             user.id
           );
         }
+      } else {
+        throw new Error('Missing current locale content');
       }
 
-      clearTranslationCache();
+      clearPageContentCache(activeTab);
 
       if (cleanupCount > 0) {
         toast.success(
@@ -194,76 +285,175 @@ export default function ContentManagementPage() {
       }
     } catch (error) {
       console.error('Save configuration failed:', error);
-      toast.error(t('messages.saveFailed'));
+      const uiError = toUiError(error, t('messages.saveFailed'));
+      if (uiError.code === 'ADMIN_CONTENT_STRUCTURE_CONFLICT') {
+        setIsStructureConflictOpen(true);
+      } else {
+        toast.error(formatUiErrorMessage(uiError));
+      }
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleTranslateAllLanguages = async () => {
+  const executeTranslateAllLanguages = async () => {
     setIsTranslating(true);
     try {
+      setIsTranslateConfirmOpen(false);
       if (activeTab === 'about' && aboutTranslations?.[currentLocale]) {
+        if (aboutStructureVersion === null) {
+          throw new Error('Missing about structure version');
+        }
+
         const result =
-          await TranslationService.translateAllPageTranslations<AboutTranslationData>(
+          await ContentPageService.translateAllPageTranslations<AboutTranslationData>(
             {
               section: 'pages.about',
               sourceLocale: currentLocale,
               sourceData: aboutTranslations[currentLocale],
+              basedOnStructureVersion: aboutStructureVersion,
+              mode: 'overwrite',
             }
           );
 
         setAboutTranslations(result.translations);
         setOriginalAboutTranslations(result.translations);
+        setAboutStructureVersion(result.structureVersion);
+        const content = createPageContentFromAboutTranslation(
+          result.translations[currentLocale] || ({} as AboutTranslationData)
+        );
+        if (content) {
+          resetRenderedEditor();
+          setRenderedEditorPageContent(content);
+        }
+        const failedLocales = result.results
+          .filter(item => item.status === 'failed')
+          .map(item => item.locale);
+        if (failedLocales.length === 0 && result.success) {
+          toast.success(t('messages.translateAllSuccess'));
+        } else if (failedLocales.length < result.results.length) {
+          toast.warning(
+            `${t('messages.translateAllPartial', {
+              successCount: result.results.length - failedLocales.length,
+              failedCount: failedLocales.length,
+            })}: ${failedLocales.join(', ')}`
+          );
+        } else {
+          toast.error(
+            `${t('messages.translateAllFailed')}: ${failedLocales.join(', ')}`
+          );
+        }
       } else if (activeTab === 'home' && homeTranslations?.[currentLocale]) {
+        if (homeStructureVersion === null) {
+          throw new Error('Missing home structure version');
+        }
+
         const result =
-          await TranslationService.translateAllPageTranslations<HomeTranslationData>(
+          await ContentPageService.translateAllPageTranslations<HomeTranslationData>(
             {
               section: 'pages.home',
               sourceLocale: currentLocale,
               sourceData: homeTranslations[currentLocale],
+              basedOnStructureVersion: homeStructureVersion,
+              mode: 'overwrite',
             }
           );
 
         setHomeTranslations(result.translations);
         setOriginalHomeTranslations(result.translations);
+        setHomeStructureVersion(result.structureVersion);
+        const content = createPageContentFromHomeTranslation(
+          result.translations[currentLocale] || ({} as HomeTranslationData)
+        );
+        if (content) {
+          resetRenderedEditor();
+          setRenderedEditorPageContent(content);
+        }
+        const failedLocales = result.results
+          .filter(item => item.status === 'failed')
+          .map(item => item.locale);
+        if (failedLocales.length === 0 && result.success) {
+          toast.success(t('messages.translateAllSuccess'));
+        } else if (failedLocales.length < result.results.length) {
+          toast.warning(
+            `${t('messages.translateAllPartial', {
+              successCount: result.results.length - failedLocales.length,
+              failedCount: failedLocales.length,
+            })}: ${failedLocales.join(', ')}`
+          );
+        } else {
+          toast.error(
+            `${t('messages.translateAllFailed')}: ${failedLocales.join(', ')}`
+          );
+        }
       } else {
         throw new Error('Missing source translation data');
       }
 
-      clearTranslationCache();
-      toast.success(t('messages.translateAllSuccess'));
+      clearPageContentCache(activeTab);
     } catch (error) {
       console.error('Translate all languages failed:', error);
-      toast.error(t('messages.translateAllFailed'));
+      const uiError = toUiError(error, t('messages.translateAllFailed'));
+      if (uiError.code === 'ADMIN_CONTENT_STRUCTURE_CONFLICT') {
+        setIsStructureConflictOpen(true);
+      } else {
+        toast.error(formatUiErrorMessage(uiError));
+      }
     } finally {
       setIsTranslating(false);
     }
   };
 
+  const handleTranslateAllLanguages = () => {
+    if (hasCurrentLocaleChanges) {
+      toast.warning(t('messages.translateAllRequiresSavedChanges'));
+      return;
+    }
+
+    setIsTranslateConfirmOpen(true);
+  };
+
   const handleReset = () => {
     if (activeTab === 'about' && originalAboutTranslations) {
-      setAboutTranslations({ ...originalAboutTranslations });
+      setAboutTranslations(current =>
+        current
+          ? {
+              ...current,
+              [currentLocale]:
+                originalAboutTranslations[currentLocale] ||
+                ({} as AboutTranslationData),
+            }
+          : current
+      );
       const content = createPageContentFromAboutTranslation(
         originalAboutTranslations[currentLocale] || ({} as AboutTranslationData)
       );
 
       if (content) {
-        resetAboutEditor();
-        setAboutPageContent(content);
+        resetRenderedEditor();
+        setRenderedEditorPageContent(content);
       }
       return;
     }
 
     if (activeTab === 'home' && originalHomeTranslations) {
-      setHomeTranslations({ ...originalHomeTranslations });
+      setHomeTranslations(current =>
+        current
+          ? {
+              ...current,
+              [currentLocale]:
+                originalHomeTranslations[currentLocale] ||
+                ({} as HomeTranslationData),
+            }
+          : current
+      );
       const content = createPageContentFromHomeTranslation(
         originalHomeTranslations[currentLocale] || ({} as HomeTranslationData)
       );
 
       if (content) {
-        resetHomeEditor();
-        setHomePageContent(content);
+        resetRenderedEditor();
+        setRenderedEditorPageContent(content);
       }
     }
   };
@@ -276,6 +466,12 @@ export default function ContentManagementPage() {
     homeTranslations,
     currentLocale
   );
+  const translateConfirmMessage = t('saveActions.translateAllConfirmMessage', {
+    locale: `${getLanguageInfo(currentLocale).nativeName} (${currentLocale})`,
+  });
+  const translateDisabledReason = hasCurrentLocaleChanges
+    ? t('messages.translateAllRequiresSavedChanges')
+    : undefined;
   const convertedHomeTranslations =
     convertHomeTranslationsToAboutTranslations(homeTranslations);
   const fullscreenTitle =
@@ -295,7 +491,7 @@ export default function ContentManagementPage() {
           currentLocale={currentLocale}
           supportedLocales={supportedLocales}
           onTranslationsChange={setAboutTranslations}
-          onLocaleChange={setCurrentLocale}
+          onLocaleChange={handleLocaleChange}
         />
       ) : (
         <div>{t('loadingEditor.about')}</div>
@@ -313,7 +509,7 @@ export default function ContentManagementPage() {
               convertAboutTranslationsToHomeTranslations(newTranslations)
             );
           }}
-          onLocaleChange={setCurrentLocale}
+          onLocaleChange={handleLocaleChange}
         />
       ) : (
         <div>{t('loadingEditor.home')}</div>
@@ -355,9 +551,11 @@ export default function ContentManagementPage() {
     <div className={cn('flex h-full flex-col', 'bg-white dark:bg-stone-900')}>
       <div className="flex-1 overflow-auto px-6">{renderEditor()}</div>
       <ContentSaveActions
-        hasChanges={hasChanges}
+        hasChanges={hasCurrentLocaleChanges}
         isSaving={isSaving}
         isTranslating={isTranslating}
+        isTranslateDisabled={Boolean(translateDisabledReason)}
+        translateDisabledReason={translateDisabledReason}
         onReset={handleReset}
         onSave={handleSave}
         onTranslateAll={handleTranslateAllLanguages}
@@ -416,6 +614,26 @@ export default function ContentManagementPage() {
       >
         {renderPreview()}
       </ContentFullscreenPreview>
+
+      <ConfirmDialog
+        isOpen={isTranslateConfirmOpen}
+        onClose={() => setIsTranslateConfirmOpen(false)}
+        onConfirm={executeTranslateAllLanguages}
+        title={t('saveActions.translateAllConfirmTitle')}
+        message={translateConfirmMessage}
+        confirmText={t('saveActions.confirmTranslateAll')}
+      />
+
+      <ConfirmDialog
+        isOpen={isStructureConflictOpen}
+        onClose={() => setIsStructureConflictOpen(false)}
+        onConfirm={() => {
+          window.location.reload();
+        }}
+        title={t('messages.structureConflictTitle')}
+        message={t('messages.structureConflictMessage')}
+        confirmText={t('messages.structureConflictReload')}
+      />
     </div>
   );
 }

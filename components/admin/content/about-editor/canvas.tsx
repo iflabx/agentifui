@@ -15,6 +15,7 @@ import { AboutEditorComponentCard } from './component-card';
 interface AboutEditorCanvasProps {
   editingComponentId: string | null;
   editingContent: string | null;
+  isStructureLocked: boolean;
   onCancelEdit: () => void;
   onComponentClick: (componentId: string) => void;
   onComponentContextMenu: (event: MouseEvent, componentId: string) => void;
@@ -30,6 +31,7 @@ interface AboutEditorCanvasProps {
 export function AboutEditorCanvas({
   editingComponentId,
   editingContent,
+  isStructureLocked,
   onCancelEdit,
   onComponentClick,
   onComponentContextMenu,
@@ -54,6 +56,7 @@ export function AboutEditorCanvas({
               {sectionIndex > 0 && (
                 <Droppable
                   id={`section-drop-${sectionIndex}`}
+                  disabled={isStructureLocked}
                   className="h-2 rounded-lg border-2 border-dashed border-transparent transition-all duration-200 hover:h-16 hover:border-stone-400 hover:bg-stone-100 dark:hover:border-stone-500 dark:hover:bg-stone-800"
                 >
                   {(isOver: boolean) => (
@@ -74,6 +77,7 @@ export function AboutEditorCanvas({
               <Sortable
                 id={`section-${section.id}`}
                 preview={sectionDragPreview}
+                disabled={isStructureLocked}
                 className={cn(
                   'group cursor-grab rounded-lg border p-4 transition-all',
                   'border-stone-200 bg-white hover:border-stone-300 hover:shadow-md',
@@ -98,18 +102,20 @@ export function AboutEditorCanvas({
                         Section {sectionIndex + 1} • {section.layout}
                       </h3>
                     </div>
-                    <button
-                      onClick={event => {
-                        event.stopPropagation();
-                        onDeleteSection(section.id);
-                      }}
-                      className={cn(
-                        'flex h-6 w-6 items-center justify-center rounded p-0 text-red-500 transition-colors',
-                        'hover:bg-red-100 dark:hover:bg-red-900/50'
-                      )}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
+                    {!isStructureLocked && (
+                      <button
+                        onClick={event => {
+                          event.stopPropagation();
+                          onDeleteSection(section.id);
+                        }}
+                        className={cn(
+                          'flex h-6 w-6 items-center justify-center rounded p-0 text-red-500 transition-colors',
+                          'hover:bg-red-100 dark:hover:bg-red-900/50'
+                        )}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    )}
                   </div>
                 </div>
                 <div
@@ -127,6 +133,7 @@ export function AboutEditorCanvas({
                         key={`${section.id}-${columnIndex}`}
                         id={`section-${section.id}-${columnIndex}`}
                         items={columnItems}
+                        disabled={isStructureLocked}
                         className={cn(
                           'min-h-24 rounded-md border-2 border-dashed p-3 transition-all duration-200',
                           'border-stone-300 bg-stone-50 hover:border-stone-400 hover:bg-stone-100',
@@ -155,6 +162,7 @@ export function AboutEditorCanvas({
                               key={component.id}
                               id={component.id}
                               preview={dragPreview}
+                              disabled={isStructureLocked}
                             >
                               <AboutEditorComponentCard
                                 component={component}
@@ -190,6 +198,7 @@ export function AboutEditorCanvas({
 
         <Droppable
           id="section-drop-final"
+          disabled={isStructureLocked}
           className="h-8 rounded-lg border-2 border-dashed border-transparent transition-all duration-200 hover:h-16 hover:border-stone-400 hover:bg-stone-100 dark:hover:border-stone-500 dark:hover:bg-stone-800"
         >
           {(isOver: boolean) => (

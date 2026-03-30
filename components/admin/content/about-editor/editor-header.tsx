@@ -14,6 +14,7 @@ import { cn } from '@lib/utils';
 import { Plus, Redo2, Undo2 } from 'lucide-react';
 
 interface AboutEditorHeaderProps {
+  canEditStructure: boolean;
   currentLocale: SupportedLocale;
   isDirty: boolean;
   onAddSection: () => void;
@@ -28,6 +29,7 @@ interface AboutEditorHeaderProps {
 }
 
 export function AboutEditorHeader({
+  canEditStructure,
   currentLocale,
   isDirty,
   onAddSection,
@@ -107,7 +109,12 @@ export function AboutEditorHeader({
               Redo
             </Button>
             <Separator orientation="vertical" className="h-8" />
-            <Button variant="outline" size="sm" onClick={onAddSection}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onAddSection}
+              disabled={!canEditStructure}
+            >
               <Plus className="mr-2 h-4 w-4" />
               Add Section
             </Button>
@@ -115,6 +122,7 @@ export function AboutEditorHeader({
 
           <div className="flex items-center gap-2">
             {isDirty && <Badge variant="secondary">Unsaved</Badge>}
+            {!canEditStructure && <Badge variant="outline">Text Only</Badge>}
             <Badge variant="outline">{sectionCount} sections</Badge>
           </div>
         </div>

@@ -1477,8 +1477,14 @@
             "saveFailed": "Speichern der Konfiguration fehlgeschlagen, bitte versuchen Sie es erneut",
             "cleanupImages": "({count} unbenutzte {count, plural, one {Bild} other {Bilder}} entfernt)",
             "cleanupFailed": "Nicht verwendete Bilder konnten nicht bereinigt werden",
-            "translateAllSuccess": "Alle Sprachen wurden übersetzt",
-            "translateAllFailed": "Übersetzen aller Sprachen fehlgeschlagen"
+            "translateAllSuccess": "Alle Seitensprachen erfolgreich übersetzt",
+            "translateAllFailed": "Alle Seitensprachen konnten nicht übersetzt werden",
+            "translateAllPartial": "Language sync completed with partial failures ({successCount} succeeded, {failedCount} failed)",
+            "translateAllRequiresSavedChanges": "Save or reset the current language before syncing all languages",
+            "saveOrResetBeforeSwitch": "Save or reset the current changes before switching tabs or languages",
+            "structureConflictTitle": "Page structure has been updated",
+            "structureConflictMessage": "This editor session is based on an older page structure. Reload the current page to continue editing with the latest structure.",
+            "structureConflictReload": "Reload Current Page"
           },
           "saveActions": {
             "hasChanges": "Ungespeicherte Änderungen",
@@ -1487,7 +1493,10 @@
             "reset": "Zurücksetzen",
             "save": "Änderungen speichern",
             "saving_": "Speichern...",
-            "translateAll": "Alles übersetzen",
+            "translateAll": "Alle Sprachen übersetzen",
+            "translateAllConfirmTitle": "Confirm Sync All Languages?",
+            "translateAllConfirmMessage": "Current source language: {locale}. The system will translate and overwrite page text in other languages from this source. This only syncs text and will not change page structure. Existing manual edits in other languages will be overwritten. Sync may partially succeed; failed languages will keep their current content.",
+            "confirmTranslateAll": "Start Sync and Overwrite",
             "translatingAll": "Wird übersetzt..."
           }
         },

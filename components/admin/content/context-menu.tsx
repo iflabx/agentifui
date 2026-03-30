@@ -13,15 +13,44 @@ interface ContextMenuProps {
   x: number;
   y: number;
   component: ComponentInstance | null;
+  isStructureLocked: boolean;
   onPropsChange: (newProps: Record<string, unknown>) => void;
   onDelete: (componentId: string) => void;
   onClose: () => void;
+}
+
+function getEditablePropertyEntries(
+  component: ComponentInstance,
+  isStructureLocked: boolean
+): Array<[string, unknown]> {
+  if (!isStructureLocked) {
+    return Object.entries(component.props);
+  }
+
+  switch (component.type) {
+    case 'heading':
+    case 'paragraph':
+      return [['content', component.props.content]];
+    case 'cards':
+      return [['items', component.props.items]];
+    case 'button':
+      return Object.entries(component.props).filter(
+        ([key]) => key === 'text' || key === 'secondaryButton'
+      );
+    case 'image':
+      return Object.entries(component.props).filter(
+        ([key]) => key === 'alt' || key === 'caption'
+      );
+    default:
+      return [];
+  }
 }
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({
   x,
   y,
   component,
+  isStructureLocked,
   onPropsChange,
   onDelete,
   onClose,
@@ -99,6 +128,10 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     onClose();
   };
 
+  const editablePropertyEntries = component
+    ? getEditablePropertyEntries(component, isStructureLocked)
+    : [];
+
   if (!component) {
     return null;
   }
@@ -125,14 +158,16 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               {component.type} Properties
             </h3>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleDelete}
-                className="flex h-6 w-6 items-center justify-center rounded p-0 text-red-500 transition-colors hover:bg-red-100 dark:hover:bg-red-900/50"
-                title="Delete Component"
-              >
-                <Trash2 className="h-3 w-3" />
-              </button>
+              {!isStructureLocked && (
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  className="flex h-6 w-6 items-center justify-center rounded p-0 text-red-500 transition-colors hover:bg-red-100 dark:hover:bg-red-900/50"
+                  title="Delete Component"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onClose}
@@ -145,26 +180,35 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           </div>
         </div>
         <div className="space-y-3 p-3">
-          {Object.entries(component.props).map(([key, value]) => (
+          {editablePropertyEntries.map(([key, value]) => (
             <PropertyField
               key={key}
               component={component}
               propertyKey={key}
+              structureLocked={isStructureLocked}
               value={value}
               userId={userId}
               onOpenUpload={() => setIsUploadDialogOpen(true)}
               onPropsChange={onPropsChange}
             />
           ))}
-          {component.type === 'button' && !component.props.secondaryButton && (
-            <PropertyField
-              component={component}
-              propertyKey="secondaryButton"
-              value={undefined}
-              userId={userId}
-              onOpenUpload={() => setIsUploadDialogOpen(true)}
-              onPropsChange={onPropsChange}
-            />
+          {!isStructureLocked &&
+            component.type === 'button' &&
+            !component.props.secondaryButton && (
+              <PropertyField
+                component={component}
+                propertyKey="secondaryButton"
+                structureLocked={isStructureLocked}
+                value={undefined}
+                userId={userId}
+                onOpenUpload={() => setIsUploadDialogOpen(true)}
+                onPropsChange={onPropsChange}
+              />
+            )}
+          {editablePropertyEntries.length === 0 && (
+            <p className="text-xs text-stone-500 dark:text-stone-400">
+              This component has no translatable fields in non-English locales.
+            </p>
           )}
         </div>
       </div>

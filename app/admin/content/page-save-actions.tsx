@@ -7,6 +7,8 @@ type ContentSaveActionsProps = {
   hasChanges: boolean;
   isSaving: boolean;
   isTranslating?: boolean;
+  isTranslateDisabled?: boolean;
+  translateDisabledReason?: string;
   onReset: () => void;
   onSave: () => void;
   onTranslateAll?: () => void;
@@ -16,6 +18,8 @@ export function ContentSaveActions({
   hasChanges,
   isSaving,
   isTranslating = false,
+  isTranslateDisabled = false,
+  translateDisabledReason,
   onReset,
   onSave,
   onTranslateAll,
@@ -24,28 +28,42 @@ export function ContentSaveActions({
 
   return (
     <div className={cn('flex-shrink-0 p-4', 'bg-white dark:bg-stone-900')}>
-      <div className="flex items-center justify-between">
-        <div>
-          {hasChanges && (
-            <div
-              className={cn(
-                'flex items-center gap-2 text-sm',
-                'text-stone-500 dark:text-stone-400'
-              )}
-            >
-              <div className="h-2 w-2 rounded-full bg-orange-500" />
-              <span>{t('saveActions.hasChanges')}</span>
-            </div>
-          )}
+      <div className="flex min-h-[3.5rem] items-center justify-between gap-4">
+        <div className="flex min-w-0 flex-1 flex-col justify-center">
+          <div
+            data-testid="save-actions-has-changes-row"
+            className={cn(
+              'flex h-5 items-center gap-2 text-sm',
+              'text-stone-500 dark:text-stone-400'
+            )}
+          >
+            {hasChanges ? (
+              <>
+                <div className="h-2 w-2 shrink-0 rounded-full bg-orange-500" />
+                <span className="truncate">{t('saveActions.hasChanges')}</span>
+              </>
+            ) : null}
+          </div>
+          <div
+            data-testid="save-actions-translate-reason-row"
+            className={cn(
+              'mt-1 h-5 text-sm',
+              'text-stone-500 dark:text-stone-400'
+            )}
+          >
+            {translateDisabledReason ? (
+              <span className="block truncate">{translateDisabledReason}</span>
+            ) : null}
+          </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center gap-3">
           {onTranslateAll && (
             <button
               onClick={onTranslateAll}
-              disabled={isSaving || isTranslating}
+              disabled={isSaving || isTranslating || isTranslateDisabled}
               className={cn(
                 'inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium shadow-sm transition-colors',
-                isSaving || isTranslating
+                isSaving || isTranslating || isTranslateDisabled
                   ? 'cursor-not-allowed border border-stone-200 bg-stone-100 text-stone-400 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-500'
                   : 'border border-stone-200 bg-white text-stone-700 hover:bg-stone-100 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-200 dark:hover:bg-stone-700'
               )}

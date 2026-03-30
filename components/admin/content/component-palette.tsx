@@ -16,9 +16,6 @@ import React from 'react';
 
 import { Draggable, Droppable } from './dnd-components';
 
-/**
- * Available component definitions for the palette
- */
 interface ComponentDefinition {
   type: ComponentType;
   name: string;
@@ -108,9 +105,6 @@ const availableComponents: ComponentDefinition[] = [
   },
 ];
 
-/**
- * Component categories for organization
- */
 const categories = [
   { id: 'basic' as const, name: 'Basic', icon: <Type className="h-4 w-4" /> },
   {
@@ -132,14 +126,13 @@ const categories = [
 
 interface ComponentPaletteProps {
   className?: string;
+  disabled?: boolean;
 }
 
-/**
- * Component Palette
- *
- * Displays available components that can be dragged to the editor
- */
-const ComponentPalette: React.FC<ComponentPaletteProps> = ({ className }) => {
+const ComponentPalette: React.FC<ComponentPaletteProps> = ({
+  className,
+  disabled = false,
+}) => {
   return (
     <div
       className={cn(
@@ -160,6 +153,12 @@ const ComponentPalette: React.FC<ComponentPaletteProps> = ({ className }) => {
         </h3>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-0">
+        {disabled && (
+          <div className="px-4 pt-4 text-xs text-stone-500 dark:text-stone-400">
+            Structure is locked for non-English locales. Switch to `en-US` to
+            add, remove, or reorder content blocks.
+          </div>
+        )}
         <Droppable
           id="component-palette"
           disabled={true}
@@ -227,6 +226,7 @@ const ComponentPalette: React.FC<ComponentPaletteProps> = ({ className }) => {
                         key={comp.type}
                         id={`palette-${comp.type}`}
                         preview={componentPreview}
+                        disabled={disabled}
                       >
                         {componentPreview}
                       </Draggable>

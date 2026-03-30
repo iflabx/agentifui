@@ -25,6 +25,7 @@ import { Upload } from 'lucide-react';
 type PropertyFieldProps = {
   component: ComponentInstance;
   propertyKey: string;
+  structureLocked: boolean;
   value: unknown;
   userId: string | null;
   onOpenUpload: () => void;
@@ -34,6 +35,7 @@ type PropertyFieldProps = {
 export function PropertyField({
   component,
   propertyKey,
+  structureLocked,
   value,
   userId,
   onOpenUpload,
@@ -59,7 +61,9 @@ export function PropertyField({
 
     return (
       <ArrayItemsField
+        allowAddRemove={!structureLocked}
         fieldId={fieldId}
+        hiddenItemKeys={['id']}
         label={propertyKey}
         items={items}
         onAddItem={() =>
@@ -79,8 +83,13 @@ export function PropertyField({
   }
 
   if (propertyKey === 'secondaryButton' && component.type === 'button') {
+    if (structureLocked && !value) {
+      return null;
+    }
+
     return (
       <SecondaryButtonField
+        canEditStructure={!structureLocked}
         value={value as Record<string, unknown> | undefined}
         onAdd={() =>
           onPropsChange({

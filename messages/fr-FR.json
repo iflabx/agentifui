@@ -1477,8 +1477,14 @@
             "saveFailed": "Échec de l'enregistrement de la configuration, veuillez réessayer",
             "cleanupImages": "({count} inutilisé {count, plural, one {image} other {images}} supprimé)",
             "cleanupFailed": "Échec du nettoyage des images inutilisées",
-            "translateAllSuccess": "Toutes les langues ont été traduites",
-            "translateAllFailed": "Échec de la traduction de toutes les langues"
+            "translateAllSuccess": "Toutes les langues de page traduites avec succès",
+            "translateAllFailed": "Échec de la traduction de toutes les langues de la page",
+            "translateAllPartial": "Language sync completed with partial failures ({successCount} succeeded, {failedCount} failed)",
+            "translateAllRequiresSavedChanges": "Save or reset the current language before syncing all languages",
+            "saveOrResetBeforeSwitch": "Save or reset the current changes before switching tabs or languages",
+            "structureConflictTitle": "Page structure has been updated",
+            "structureConflictMessage": "This editor session is based on an older page structure. Reload the current page to continue editing with the latest structure.",
+            "structureConflictReload": "Reload Current Page"
           },
           "saveActions": {
             "hasChanges": "Modifications non enregistrées",
@@ -1487,8 +1493,11 @@
             "reset": "Réinitialiser",
             "save": "Enregistrer les modifications",
             "saving_": "Enregistrement...",
-            "translateAll": "Tout traduire",
-            "translatingAll": "Traduction..."
+            "translateAll": "Traduire toutes les langues",
+            "translateAllConfirmTitle": "Confirm Sync All Languages?",
+            "translateAllConfirmMessage": "Current source language: {locale}. The system will translate and overwrite page text in other languages from this source. This only syncs text and will not change page structure. Existing manual edits in other languages will be overwritten. Sync may partially succeed; failed languages will keep their current content.",
+            "confirmTranslateAll": "Start Sync and Overwrite",
+            "translatingAll": "Traduction en cours"
           }
         },
         "tabs": {

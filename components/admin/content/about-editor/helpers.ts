@@ -29,12 +29,30 @@ export function buildPageContent(
 
   return {
     sections: translation.sections,
-    metadata: translation.metadata || {
-      version: '1.0.0',
-      lastModified: new Date().toISOString(),
-      author: 'admin',
-    },
+    metadata: translation.metadata ? { ...translation.metadata } : undefined,
   };
+}
+
+export function createTranslationFromPageContent(
+  translation: AboutTranslationData,
+  pageContent: PageContent
+): AboutTranslationData {
+  const metadata =
+    translation.metadata || pageContent.metadata
+      ? {
+          ...(translation.metadata || {}),
+          ...(pageContent.metadata || {}),
+        }
+      : undefined;
+
+  return metadata
+    ? {
+        sections: pageContent.sections,
+        metadata,
+      }
+    : {
+        sections: pageContent.sections,
+      };
 }
 
 export function findComponentById(

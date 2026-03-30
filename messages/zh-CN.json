@@ -1475,20 +1475,29 @@
             "loadFailed": "加载翻译数据失败",
             "saveSuccess": "配置保存成功",
             "saveFailed": "保存配置失败，请重试",
+            "translateAllSuccess": "全部语言翻译完成并已保存",
+            "translateAllFailed": "全部语言翻译失败，请重试",
+            "translateAllPartial": "全部语言同步部分完成（成功 {successCount} 个，失败 {failedCount} 个）",
+            "translateAllRequiresSavedChanges": "请先保存或重置当前语言修改，再同步全部语言",
+            "saveOrResetBeforeSwitch": "切换页面或语言前，请先保存或重置当前修改",
+            "structureConflictTitle": "页面结构已更新",
+            "structureConflictMessage": "当前编辑会话基于旧结构。请重新加载当前页面后，再基于最新结构继续编辑。",
+            "structureConflictReload": "重新加载当前页面",
             "cleanupImages": "({count}个未使用的{count, plural, one {图片} other {图片}}已删除)",
-            "cleanupFailed": "清理未使用的图片失败",
-            "translateAllSuccess": "已翻译全部语言",
-            "translateAllFailed": "翻译全部语言失败"
+            "cleanupFailed": "清理未使用的图片失败"
           },
           "saveActions": {
             "hasChanges": "有未保存的更改",
             "saving": "正在保存...",
             "allSaved": "所有更改已保存",
+            "translateAll": "翻译全部语言",
+            "translateAllConfirmTitle": "确认同步全部语言？",
+            "translateAllConfirmMessage": "当前源语言：{locale}。系统将以当前语言文本为源，翻译并覆盖其他语言的页面文本。本操作只同步文本，不会修改页面结构。其他语言中已有的人工修改也会被覆盖。同步可能部分成功，失败语言会保留当前内容。",
+            "confirmTranslateAll": "开始同步并覆盖",
+            "translatingAll": "翻译中...",
             "reset": "重置",
             "save": "保存更改",
-            "saving_": "保存中...",
-            "translateAll": "翻译全部语言",
-            "translatingAll": "翻译中..."
+            "saving_": "保存中..."
           }
         },
         "imageUpload": {

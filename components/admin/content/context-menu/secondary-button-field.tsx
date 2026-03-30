@@ -11,6 +11,7 @@ import { cn } from '@lib/utils';
 import { Plus, Trash2 } from 'lucide-react';
 
 type SecondaryButtonFieldProps = {
+  canEditStructure?: boolean;
   value?: Record<string, unknown>;
   onAdd: () => void;
   onChange: (key: string, value: unknown) => void;
@@ -18,12 +19,17 @@ type SecondaryButtonFieldProps = {
 };
 
 export function SecondaryButtonField({
+  canEditStructure = true,
   value,
   onAdd,
   onChange,
   onRemove,
 }: SecondaryButtonFieldProps) {
   if (!value) {
+    if (!canEditStructure) {
+      return null;
+    }
+
     return (
       <div className="space-y-2">
         <Label className="text-sm">Secondary Button</Label>
@@ -47,13 +53,15 @@ export function SecondaryButtonField({
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <Label className="text-sm">Secondary Button</Label>
-        <button
-          type="button"
-          onClick={onRemove}
-          className="flex h-6 w-6 items-center justify-center rounded p-0 text-red-500 transition-colors hover:bg-red-100 dark:hover:bg-red-900/50"
-        >
-          <Trash2 className="h-3 w-3" />
-        </button>
+        {canEditStructure && (
+          <button
+            type="button"
+            onClick={onRemove}
+            className="flex h-6 w-6 items-center justify-center rounded p-0 text-red-500 transition-colors hover:bg-red-100 dark:hover:bg-red-900/50"
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
+        )}
       </div>
       <div
         className={cn(
@@ -72,49 +80,53 @@ export function SecondaryButtonField({
           />
         </div>
 
-        <div className="space-y-2">
-          <Label className="text-xs">Variant</Label>
-          <Select
-            value={String(value.variant || 'outline')}
-            onValueChange={newValue => onChange('variant', newValue)}
-          >
-            <SelectTrigger className="h-8 text-sm">
-              <SelectValue placeholder="Select variant" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="solid">Solid</SelectItem>
-              <SelectItem value="outline">Outline</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        {canEditStructure && (
+          <>
+            <div className="space-y-2">
+              <Label className="text-xs">Variant</Label>
+              <Select
+                value={String(value.variant || 'outline')}
+                onValueChange={newValue => onChange('variant', newValue)}
+              >
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue placeholder="Select variant" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="solid">Solid</SelectItem>
+                  <SelectItem value="outline">Outline</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-        <div className="space-y-2">
-          <Label className="text-xs">Action</Label>
-          <Select
-            value={String(value.action || 'link')}
-            onValueChange={newValue => onChange('action', newValue)}
-          >
-            <SelectTrigger className="h-8 text-sm">
-              <SelectValue placeholder="Select action" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="link">Link</SelectItem>
-              <SelectItem value="submit">Submit</SelectItem>
-              <SelectItem value="external">External</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Action</Label>
+              <Select
+                value={String(value.action || 'link')}
+                onValueChange={newValue => onChange('action', newValue)}
+              >
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue placeholder="Select action" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="link">Link</SelectItem>
+                  <SelectItem value="submit">Submit</SelectItem>
+                  <SelectItem value="external">External</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-        <div className="space-y-2">
-          <Label className="text-xs">URL</Label>
-          <Input
-            type="text"
-            value={String(value.url || '')}
-            onChange={e => onChange('url', e.target.value)}
-            placeholder="Enter URL"
-            className="h-8 text-sm"
-          />
-        </div>
+            <div className="space-y-2">
+              <Label className="text-xs">URL</Label>
+              <Input
+                type="text"
+                value={String(value.url || '')}
+                onChange={e => onChange('url', e.target.value)}
+                placeholder="Enter URL"
+                className="h-8 text-sm"
+              />
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

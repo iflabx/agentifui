@@ -1477,8 +1477,14 @@
             "saveFailed": "Error al guardar configuración, inténtelo de nuevo",
             "cleanupImages": "({count} {count, plural, one {image} other {images}} sin usar eliminado)",
             "cleanupFailed": "No se han podido limpiar las imágenes no utilizadas",
-            "translateAllSuccess": "Se tradujeron todos los idiomas",
-            "translateAllFailed": "Error al traducir todos los idiomas"
+            "translateAllSuccess": "Todos los idiomas de la página se han traducido correctamente",
+            "translateAllFailed": "Error al traducir todos los idiomas de la página",
+            "translateAllPartial": "Language sync completed with partial failures ({successCount} succeeded, {failedCount} failed)",
+            "translateAllRequiresSavedChanges": "Save or reset the current language before syncing all languages",
+            "saveOrResetBeforeSwitch": "Save or reset the current changes before switching tabs or languages",
+            "structureConflictTitle": "Page structure has been updated",
+            "structureConflictMessage": "This editor session is based on an older page structure. Reload the current page to continue editing with the latest structure.",
+            "structureConflictReload": "Reload Current Page"
           },
           "saveActions": {
             "hasChanges": "Cambios sin guardar",
@@ -1487,7 +1493,10 @@
             "reset": "Restablecer",
             "save": "Guardar Cambios",
             "saving_": "Guardando...",
-            "translateAll": "Traducir todo",
+            "translateAll": "Traducir todos los idiomas",
+            "translateAllConfirmTitle": "Confirm Sync All Languages?",
+            "translateAllConfirmMessage": "Current source language: {locale}. The system will translate and overwrite page text in other languages from this source. This only syncs text and will not change page structure. Existing manual edits in other languages will be overwritten. Sync may partially succeed; failed languages will keep their current content.",
+            "confirmTranslateAll": "Start Sync and Overwrite",
             "translatingAll": "Traduciendo..."
           }
         },

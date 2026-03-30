@@ -24,6 +24,7 @@ import { AboutEditorCanvas } from './about-editor/canvas';
 import { AboutEditorHeader } from './about-editor/editor-header';
 import {
   buildPageContent,
+  createTranslationFromPageContent,
   findComponentById,
   getDynamicTranslation,
 } from './about-editor/helpers';
@@ -49,6 +50,7 @@ export function AboutEditor({
   onLocaleChange,
 }: AboutEditorProps) {
   const t = useTranslations('pages.admin.content.editor');
+  const isStructureLocked = currentLocale !== 'en-US';
 
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -103,21 +105,24 @@ export function AboutEditor({
         return;
       }
 
-      const updatedTranslation: AboutTranslationData = {
-        sections: pageContent.sections,
-        metadata: {
-          ...pageContent.metadata,
-          lastModified: new Date().toISOString(),
-        },
-      };
+      const updatedTranslation = createTranslationFromPageContent(
+        currentTranslation,
+        pageContent
+      );
 
       onTranslationsChange({
         ...translations,
         [currentLocale]: updatedTranslation,
       });
-    }, [pageContent, translations, currentLocale, onTranslationsChange]),
+    }, [
+      currentLocale,
+      currentTranslation,
+      onTranslationsChange,
+      pageContent,
+      translations,
+    ]),
     100,
-    [pageContent, translations, currentLocale]
+    [currentLocale, currentTranslation, pageContent, translations]
   );
 
   useEffect(() => {
@@ -145,10 +150,13 @@ export function AboutEditor({
 
   const handleDeleteComponent = useCallback(
     (componentId: string) => {
+      if (isStructureLocked) {
+        return;
+      }
       deleteComponent(componentId);
       setContextMenu(null);
     },
-    [deleteComponent]
+    [deleteComponent, isStructureLocked]
   );
 
   const focusEditorContainer = () => {
@@ -196,7 +204,7 @@ export function AboutEditor({
   );
 
   const handleKeyDown = (event: KeyboardEvent) => {
-    if (event.key === 'Delete' && selectedComponentId) {
+    if (event.key === 'Delete' && selectedComponentId && !isStructureLocked) {
       event.preventDefault();
       handleDeleteComponent(selectedComponentId);
     }
@@ -272,13 +280,16 @@ export function AboutEditor({
   }
 
   return (
-    <DndContextWrapper onDragEnd={handleDragEnd}>
+    <DndContextWrapper
+      onDragEnd={isStructureLocked ? () => false : handleDragEnd}
+    >
       <div
         className="flex h-full flex-col focus:outline-none"
         tabIndex={0}
         onKeyDown={handleKeyDown}
       >
         <AboutEditorHeader
+          canEditStructure={!isStructureLocked}
           currentLocale={currentLocale}
           isDirty={isDirty}
           onAddSection={() => addSection('single-column')}
@@ -299,12 +310,13 @@ export function AboutEditor({
               'border-stone-200 bg-stone-50 dark:border-stone-700 dark:bg-stone-900'
             )}
           >
-            <ComponentPalette />
+            <ComponentPalette disabled={isStructureLocked} />
           </div>
 
           <AboutEditorCanvas
             editingComponentId={editingComponent?.componentId || null}
             editingContent={editingComponent?.content || null}
+            isStructureLocked={isStructureLocked}
             onCancelEdit={() => setEditingComponent(null)}
             onComponentClick={handleComponentClick}
             onComponentContextMenu={handleContextMenu}
@@ -324,6 +336,7 @@ export function AboutEditor({
           x={contextMenu.x}
           y={contextMenu.y}
           component={contextMenuComponent}
+          isStructureLocked={isStructureLocked}
           onPropsChange={handleContextMenuPropsChange}
           onDelete={handleDeleteComponent}
           onClose={() => setContextMenu(null)}

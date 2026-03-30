@@ -66,6 +66,10 @@ export interface HomeTranslationData {
     version?: string;
     lastModified?: string;
     author?: string;
+    locale?: string;
+    sourceLocale?: string;
+    structureVersion?: number;
+    basedOnStructureVersion?: number;
     migrated?: boolean; // Flag to indicate if migration from fixed to dynamic structure has occurred
   };
 }
@@ -274,7 +278,7 @@ export function migrateAboutTranslationData(
   legacy: AboutTranslationData
 ): AboutTranslationData {
   // If it's already in the dynamic format, return directly
-  if (Array.isArray(legacy.sections) && legacy.sections.length > 0) {
+  if (Array.isArray(legacy.sections)) {
     return legacy;
   }
 
@@ -373,7 +377,7 @@ export function validateMigratedData(data: AboutTranslationData): {
 
 // Check if the home page data is in the new dynamic format
 export function isHomeDynamicFormat(data: HomeTranslationData): boolean {
-  return Boolean(data && data.sections && data.sections.length > 0);
+  return Boolean(data && Array.isArray(data.sections));
 }
 
 // Check if the home page data is in the old fixed format
@@ -514,7 +518,7 @@ export function migrateHomeTranslationData(
   legacy: HomeTranslationData
 ): HomeTranslationData {
   // If it's already in the dynamic format, return directly
-  if (legacy.sections && legacy.sections.length > 0) {
+  if (Array.isArray(legacy.sections)) {
     return legacy;
   }
 

@@ -267,6 +267,7 @@ interface SortableContainerProps {
   items: string[];
   children: React.ReactNode;
   className?: string;
+  disabled?: boolean;
   strategy?: SortingStrategy;
 }
 
@@ -280,12 +281,14 @@ export function SortableContainer({
   items,
   children,
   className,
+  disabled = false,
   strategy = verticalListSortingStrategy,
 }: SortableContainerProps) {
   const { isDraggingFromPalette } = useDndState();
 
   const { isOver, setNodeRef } = useDroppable({
     id,
+    disabled,
     data: {
       type: 'container',
       accepts: ['component', 'palette-item'],

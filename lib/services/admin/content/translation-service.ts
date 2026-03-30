@@ -3,347 +3,203 @@ import {
   getSupportedLocales,
   isValidLocale,
 } from '@lib/config/language-config';
+import { AppRequestError, extractAppErrorDetail } from '@lib/errors/app-error';
 
 type TranslationData = Record<string, unknown>;
 
-// translation service interface
-export interface TranslationResponse<TData = TranslationData> {
-  locale: string;
-  section?: string;
-  data: TData;
-}
+type PageName = 'about' | 'home';
 
-export interface UpdateTranslationRequest<TData = TranslationData> {
-  locale: SupportedLocale;
-  section?: string;
-  updates: TData;
-  mode?: 'merge' | 'replace';
-}
+type ContentPageResponse<TData = TranslationData> = {
+  page: PageName;
+  sourceLocale: SupportedLocale;
+  structureVersion: number;
+  supportedLocales: SupportedLocale[];
+  translations: Record<SupportedLocale, TData>;
+};
 
-export interface BatchUpdateRequest<TData = TranslationData> {
-  section: string;
-  updates: Record<SupportedLocale, TData>;
-  mode?: 'merge' | 'replace';
-}
-
-export interface TranslationUpdateResult {
+type ContentPageSaveResponse<TData = TranslationData> = {
   success: boolean;
-  locale: string;
-  section: string;
-  mode: string;
+  page: PageName;
+  sourceLocale: SupportedLocale;
+  structureVersion: number;
   updatedAt: string;
-}
+  translations: Record<SupportedLocale, TData>;
+};
 
-export interface BatchUpdateResult {
-  success: boolean;
-  section: string;
-  mode: string;
-  results: Array<{ locale: string; success: boolean; updatedAt: string }>;
-  errors: Array<{ locale: string; error: string }>;
-  totalProcessed: number;
-  totalErrors: number;
-}
+type TranslateAllResultItem = {
+  locale: SupportedLocale;
+  status: 'success' | 'failed';
+  error?: string;
+};
 
 export interface TranslateAllRequest<TData = TranslationData> {
   section: 'pages.about' | 'pages.home';
   sourceLocale: SupportedLocale;
   sourceData: TData;
+  basedOnStructureVersion: number;
+  mode: 'overwrite';
 }
 
 export interface TranslateAllResult<TData = TranslationData> {
   success: boolean;
-  section: 'pages.about' | 'pages.home';
+  page: PageName;
   sourceLocale: SupportedLocale;
+  structureVersion: number;
   translatedAt: string;
+  results: TranslateAllResultItem[];
   translations: Record<SupportedLocale, TData>;
-  results: Array<{ locale: string; success: boolean; updatedAt: string }>;
 }
 
-// translation management service class
-export class TranslationService {
-  private static readonly API_BASE = '/api/admin/translations';
+function sectionToPage(section: 'pages.about' | 'pages.home'): PageName {
+  return section === 'pages.about' ? 'about' : 'home';
+}
 
-  // get supported languages list
+async function parseJsonResponse<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    const detail = extractAppErrorDetail(payload);
+    throw new AppRequestError(
+      detail?.userMessage || `Request failed: ${response.statusText}`,
+      response.status,
+      detail
+    );
+  }
+
+  return response.json() as Promise<T>;
+}
+
+export class ContentPageService {
+  private static readonly API_BASE = '/api/admin/content/pages';
+
   static getSupportedLanguages(): SupportedLocale[] {
     return getSupportedLocales();
   }
 
-  // validate language code
   static isValidLanguage(locale: string): locale is SupportedLocale {
     return isValidLocale(locale);
   }
 
-  // get all supported languages information
-  static async getLanguageMetadata(): Promise<{
-    supportedLocales: SupportedLocale[];
-    availableLanguages: number;
-    lastModified: string;
-  }> {
-    const response = await fetch(this.API_BASE);
-    if (!response.ok) {
-      throw new Error(
-        `Failed to fetch language metadata: ${response.statusText}`
-      );
-    }
-    return response.json();
+  private static async getPageTranslations<TData = TranslationData>(
+    page: PageName
+  ): Promise<ContentPageResponse<TData>> {
+    const response = await fetch(`${this.API_BASE}/${page}`, {
+      cache: 'no-store',
+    });
+    return parseJsonResponse<ContentPageResponse<TData>>(response);
   }
 
-  // read translations for a specific language
-  static async getTranslations<TData = TranslationData>(
-    locale: SupportedLocale,
-    section?: string
-  ): Promise<TranslationResponse<TData>> {
-    const params = new URLSearchParams({ locale });
-    if (section) {
-      params.append('section', section);
-    }
-
-    const response = await fetch(`${this.API_BASE}?${params}`);
-    if (!response.ok) {
-      throw new Error(
-        `Failed to fetch translations for ${locale}: ${response.statusText}`
-      );
-    }
-    return response.json();
-  }
-
-  // get all translations for a specific section
-  static async getAllTranslationsForSection<TData = TranslationData>(
-    section: string
-  ): Promise<Record<SupportedLocale, TData>> {
-    const locales = this.getSupportedLanguages();
-    const results = {} as Record<SupportedLocale, TData>;
-
-    await Promise.all(
-      locales.map(async locale => {
-        try {
-          const response = await this.getTranslations<TData>(locale, section);
-          results[locale] = response.data;
-        } catch (error) {
-          console.warn(`Failed to load ${section} for ${locale}:`, error);
-          results[locale] = {} as TData;
-        }
-      })
-    );
-
-    return results;
-  }
-
-  // update translation for a specific language
-  static async updateTranslation<TData = TranslationData>(
-    request: UpdateTranslationRequest<TData>
-  ): Promise<TranslationUpdateResult> {
-    const response = await fetch(this.API_BASE, {
+  private static async savePageStructure<TData = TranslationData>(
+    page: PageName,
+    content: TData,
+    expectedStructureVersion: number
+  ): Promise<ContentPageSaveResponse<TData>> {
+    const response = await fetch(`${this.API_BASE}/${page}/structure`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(request),
+      body: JSON.stringify({ content, expectedStructureVersion }),
     });
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(
-        error.error || `Failed to update translation: ${response.statusText}`
-      );
-    }
-
-    return response.json();
+    return parseJsonResponse<ContentPageSaveResponse<TData>>(response);
   }
 
-  // batch update translations for multiple languages
-  static async batchUpdateTranslations<TData = TranslationData>(
-    request: BatchUpdateRequest<TData>
-  ): Promise<BatchUpdateResult> {
-    const response = await fetch(this.API_BASE, {
-      method: 'POST',
+  private static async savePageLocale<TData = TranslationData>(
+    page: PageName,
+    locale: SupportedLocale,
+    content: TData,
+    basedOnStructureVersion: number
+  ): Promise<ContentPageSaveResponse<TData>> {
+    const response = await fetch(`${this.API_BASE}/${page}/locales/${locale}`, {
+      method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(request),
+      body: JSON.stringify({ content, basedOnStructureVersion }),
     });
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(
-        error.error ||
-          `Failed to batch update translations: ${response.statusText}`
-      );
-    }
-
-    return response.json();
+    return parseJsonResponse<ContentPageSaveResponse<TData>>(response);
   }
 
-  // get translations for About page
   static async getAboutPageTranslations<TData = TranslationData>(): Promise<
-    Record<SupportedLocale, TData>
+    ContentPageResponse<TData>
   > {
-    return this.getAllTranslationsForSection<TData>('pages.about');
+    return this.getPageTranslations<TData>('about');
   }
 
-  // update translations for About page
-  static async updateAboutPageTranslations<TData = TranslationData>(
-    updates: Record<SupportedLocale, TData>,
-    mode: 'merge' | 'replace' = 'merge'
-  ): Promise<BatchUpdateResult> {
-    return this.batchUpdateTranslations<TData>({
-      section: 'pages.about',
-      updates,
-      mode,
-    });
+  static async updateAboutPageStructure<TData = TranslationData>(
+    content: TData,
+    expectedStructureVersion: number
+  ): Promise<ContentPageSaveResponse<TData>> {
+    return this.savePageStructure<TData>(
+      'about',
+      content,
+      expectedStructureVersion
+    );
   }
 
-  // get translations for Home page
+  static async updateAboutPageLocale<TData = TranslationData>(
+    locale: SupportedLocale,
+    content: TData,
+    basedOnStructureVersion: number
+  ): Promise<ContentPageSaveResponse<TData>> {
+    return this.savePageLocale<TData>(
+      'about',
+      locale,
+      content,
+      basedOnStructureVersion
+    );
+  }
+
   static async getHomePageTranslations<TData = TranslationData>(): Promise<
-    Record<SupportedLocale, TData>
+    ContentPageResponse<TData>
   > {
-    return this.getAllTranslationsForSection<TData>('pages.home');
+    return this.getPageTranslations<TData>('home');
   }
 
-  // update translations for Home page
-  static async updateHomePageTranslations<TData = TranslationData>(
-    updates: Record<SupportedLocale, TData>,
-    mode: 'merge' | 'replace' = 'merge'
-  ): Promise<BatchUpdateResult> {
-    return this.batchUpdateTranslations<TData>({
-      section: 'pages.home',
-      updates,
-      mode,
-    });
+  static async updateHomePageStructure<TData = TranslationData>(
+    content: TData,
+    expectedStructureVersion: number
+  ): Promise<ContentPageSaveResponse<TData>> {
+    return this.savePageStructure<TData>(
+      'home',
+      content,
+      expectedStructureVersion
+    );
+  }
+
+  static async updateHomePageLocale<TData = TranslationData>(
+    locale: SupportedLocale,
+    content: TData,
+    basedOnStructureVersion: number
+  ): Promise<ContentPageSaveResponse<TData>> {
+    return this.savePageLocale<TData>(
+      'home',
+      locale,
+      content,
+      basedOnStructureVersion
+    );
   }
 
   static async translateAllPageTranslations<TData = TranslationData>(
     request: TranslateAllRequest<TData>
   ): Promise<TranslateAllResult<TData>> {
-    const response = await fetch(`${this.API_BASE}/translate-all`, {
+    const page = sectionToPage(request.section);
+    const response = await fetch(`${this.API_BASE}/${page}/translate-all`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(request),
+      body: JSON.stringify({
+        sourceLocale: request.sourceLocale,
+        sourceData: request.sourceData,
+        basedOnStructureVersion: request.basedOnStructureVersion,
+        mode: request.mode,
+      }),
     });
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(
-        error.error ||
-          `Failed to translate page content: ${response.statusText}`
-      );
-    }
-
-    return response.json();
-  }
-
-  // get translation structure template for a specific section (for admin interface initialization)
-  static async getTranslationTemplate(
-    section: string,
-    baseLocale: SupportedLocale = 'zh-CN'
-  ): Promise<TranslationData> {
-    try {
-      const response = await this.getTranslations(baseLocale, section);
-      return response.data;
-    } catch (error) {
-      console.warn(`Failed to get template for ${section}:`, error);
-      return {};
-    }
-  }
-
-  // validate translation data structure completeness
-  static validateTranslationStructure(
-    template: unknown,
-    data: unknown,
-    path: string = ''
-  ): { isValid: boolean; missingKeys: string[]; extraKeys: string[] } {
-    const missingKeys: string[] = [];
-    const extraKeys: string[] = [];
-
-    // check if all keys in template exist in data
-    if (template && typeof template === 'object' && !Array.isArray(template)) {
-      const templateRecord = template as Record<string, unknown>;
-      const dataRecord =
-        data && typeof data === 'object' && !Array.isArray(data)
-          ? (data as Record<string, unknown>)
-          : {};
-
-      for (const key in templateRecord) {
-        const currentPath = path ? `${path}.${key}` : key;
-
-        if (!(key in dataRecord)) {
-          missingKeys.push(currentPath);
-        } else if (
-          typeof templateRecord[key] === 'object' &&
-          templateRecord[key] !== null &&
-          !Array.isArray(templateRecord[key])
-        ) {
-          // recursively check nested objects
-          const nested = this.validateTranslationStructure(
-            templateRecord[key],
-            dataRecord[key],
-            currentPath
-          );
-          missingKeys.push(...nested.missingKeys);
-          extraKeys.push(...nested.extraKeys);
-        }
-      }
-    }
-
-    // check if there are keys in data that do not exist in template
-    if (data && typeof data === 'object' && !Array.isArray(data)) {
-      const dataRecord = data as Record<string, unknown>;
-      const templateRecord =
-        template && typeof template === 'object' && !Array.isArray(template)
-          ? (template as Record<string, unknown>)
-          : null;
-
-      for (const key in dataRecord) {
-        const currentPath = path ? `${path}.${key}` : key;
-
-        if (!templateRecord || !(key in templateRecord)) {
-          extraKeys.push(currentPath);
-        }
-      }
-    }
-
-    return {
-      isValid: missingKeys.length === 0 && extraKeys.length === 0,
-      missingKeys,
-      extraKeys,
-    };
-  }
-
-  // create translation backup (before update)
-  static async createBackup(section: string): Promise<{
-    timestamp: string;
-    data: Record<SupportedLocale, TranslationData>;
-  }> {
-    const timestamp = new Date().toISOString();
-    const data = await this.getAllTranslationsForSection(section);
-
-    // here you can choose to store in localStorage or send to backend storage
-    const backupKey = `translation_backup_${section}_${timestamp}`;
-    localStorage.setItem(backupKey, JSON.stringify({ timestamp, data }));
-
-    return { timestamp, data };
-  }
-
-  // restore translation backup
-  static async restoreFromBackup(
-    section: string,
-    timestamp: string
-  ): Promise<BatchUpdateResult> {
-    const backupKey = `translation_backup_${section}_${timestamp}`;
-    const backupData = localStorage.getItem(backupKey);
-
-    if (!backupData) {
-      throw new Error(`Backup not found for ${section} at ${timestamp}`);
-    }
-
-    const { data } = JSON.parse(backupData);
-
-    return this.batchUpdateTranslations({
-      section,
-      updates: data,
-      mode: 'replace',
-    });
+    return parseJsonResponse<TranslateAllResult<TData>>(response);
   }
 }
+
+export { ContentPageService as TranslationService };

@@ -31,14 +31,6 @@ export interface HomePageConfig {
   };
 }
 
-function getMetadataFallback(): PageContent['metadata'] {
-  return {
-    version: '1.0.0',
-    lastModified: new Date().toISOString(),
-    author: 'admin',
-  };
-}
-
 export function createPageContentFromAboutTranslation(
   translation: AboutTranslationData
 ): PageContent | null {
@@ -52,7 +44,9 @@ export function createPageContentFromAboutTranslation(
 
   return {
     sections: dynamicTranslation.sections,
-    metadata: dynamicTranslation.metadata || getMetadataFallback(),
+    metadata: dynamicTranslation.metadata
+      ? { ...dynamicTranslation.metadata }
+      : undefined,
   };
 }
 
@@ -69,7 +63,9 @@ export function createPageContentFromHomeTranslation(
 
   return {
     sections: dynamicTranslation.sections,
-    metadata: dynamicTranslation.metadata || getMetadataFallback(),
+    metadata: dynamicTranslation.metadata
+      ? { ...dynamicTranslation.metadata }
+      : undefined,
   };
 }
 
