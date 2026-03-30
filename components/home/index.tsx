@@ -2,9 +2,7 @@
 
 import { Button } from '@components/ui/button';
 import { PageLoader } from '@components/ui/page-loader';
-import { useDynamicTranslations } from '@lib/hooks/use-dynamic-translations';
-
-import { useEffect, useState } from 'react';
+import { usePageContent } from '@lib/hooks/use-page-content';
 
 import { useRouter } from 'next/navigation';
 
@@ -12,58 +10,16 @@ import { HomeDynamic } from './home-dynamic';
 
 export function Home() {
   const router = useRouter();
-  const [mounted, setMounted] = useState(false);
-  const [useDynamicRender, setUseDynamicRender] = useState(false);
-  const { t: dynamicT, isLoading } = useDynamicTranslations({
-    sections: ['pages.home'],
-  });
+  const { pageContent, isLoading } = usePageContent({ page: 'home' });
 
-  // Ensure client-side rendering consistency
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  // Check if we should use dynamic rendering (if dynamic sections data is available)
-  useEffect(() => {
-    const checkForDynamicData = async () => {
-      try {
-        // Directly check for sections array in the translation data
-        const sections = dynamicT('sections', 'pages.home');
-        if (sections && Array.isArray(sections) && sections.length > 0) {
-          console.log(
-            'Dynamic home sections found:',
-            sections.length,
-            'sections'
-          );
-          setUseDynamicRender(true);
-        } else {
-          console.error(
-            'No dynamic home sections found - please configure home page in admin/content'
-          );
-          setUseDynamicRender(false);
-        }
-      } catch (error) {
-        console.error('Failed to load dynamic home sections:', error);
-        setUseDynamicRender(false);
-      }
-    };
-
-    if (mounted && !isLoading) {
-      checkForDynamicData();
-    }
-  }, [mounted, isLoading, dynamicT]);
-
-  // Show loading state while mounting or dynamic translations load
-  if (!mounted || isLoading) {
+  if (isLoading) {
     return <PageLoader />;
   }
 
-  // If dynamic rendering is available and enabled, use it
-  if (useDynamicRender) {
-    return <HomeDynamic />;
+  if (pageContent && pageContent.sections.length > 0) {
+    return <HomeDynamic pageContent={pageContent} />;
   }
 
-  // If no dynamic data is available, show error message
   return (
     <div className="flex min-h-screen flex-col items-center justify-center px-4">
       <div className="max-w-md text-center">
