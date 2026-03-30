@@ -1,0 +1,99 @@
+{
+  "page": "home",
+  "sourceLocale": "en-US",
+  "metadata": {
+    "version": "1.0.0",
+    "lastModified": "2025-08-12T12:00:00.000Z",
+    "author": "system-migration",
+    "structureVersion": 1
+  },
+  "sections": [
+    {
+      "id": "section-home-hero",
+      "layout": "single-column",
+      "columns": [
+        [
+          {
+            "id": "comp-home-title",
+            "type": "heading",
+            "props": {
+              "level": 1,
+              "textAlign": "center"
+            }
+          },
+          {
+            "id": "comp-home-subtitle",
+            "type": "paragraph",
+            "props": {
+              "textAlign": "center"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-home-features",
+      "layout": "single-column",
+      "columns": [
+        [
+          {
+            "id": "comp-home-features",
+            "type": "cards",
+            "props": {
+              "layout": "grid",
+              "items": [
+                {
+                  "id": "comp-home-features-item-1"
+                },
+                {
+                  "id": "comp-home-features-item-2"
+                },
+                {
+                  "id": "comp-home-features-item-3"
+                }
+              ]
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-home-buttons",
+      "layout": "single-column",
+      "columns": [
+        [
+          {
+            "id": "comp-home-button-primary",
+            "type": "button",
+            "props": {
+              "variant": "solid",
+              "action": "link",
+              "url": "/chat",
+              "textAlign": "center",
+              "secondaryButton": {
+                "variant": "outline",
+                "action": "link",
+                "url": "/about"
+              }
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-home-footer",
+      "layout": "single-column",
+      "columns": [
+        [
+          {
+            "id": "comp-home-copyright",
+            "type": "paragraph",
+            "props": {
+              "textAlign": "center"
+            }
+          }
+        ]
+      ]
+    }
+  ]
+}

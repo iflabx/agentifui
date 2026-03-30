@@ -1,0 +1,95 @@
+{
+  "page": "home",
+  "locale": "ja-JP",
+  "metadata": {
+    "version": "1.0.0",
+    "lastModified": "2025-08-12T12:00:00.000Z",
+    "author": "system-migration",
+    "locale": "ja-JP",
+    "basedOnStructureVersion": 1
+  },
+  "sections": [
+    {
+      "id": "section-home-hero",
+      "columns": [
+        [
+          {
+            "id": "comp-home-title",
+            "type": "heading",
+            "props": {
+              "content": "AgentifUI"
+            }
+          },
+          {
+            "id": "comp-home-subtitle",
+            "type": "paragraph",
+            "props": {
+              "content": "AIの無限の可能性を探求し、インテリジェントな新体験を創造"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-home-features",
+      "columns": [
+        [
+          {
+            "id": "comp-home-features",
+            "type": "cards",
+            "props": {
+              "items": [
+                {
+                  "id": "comp-home-features-item-1",
+                  "title": "大規模モデル統合",
+                  "description": "OpenAI、Anthropic、Difyなど複数のモデルプロバイダーをサポートし、様々な企業ニーズに対応"
+                },
+                {
+                  "id": "comp-home-features-item-2",
+                  "title": "RAG知識強化",
+                  "description": "検索拡張生成（RAG）技術を統合し、プライベート知識ベースとコンテキスト認識を実現"
+                },
+                {
+                  "id": "comp-home-features-item-3",
+                  "title": "エンタープライズ展開",
+                  "description": "プライベート展開をサポートし、データセキュリティを保証、Difyバックエンドに基づく安定した信頼性の高いサービスを提供"
+                }
+              ]
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-home-buttons",
+      "columns": [
+        [
+          {
+            "id": "comp-home-button-primary",
+            "type": "button",
+            "props": {
+              "text": "始める",
+              "secondaryButton": {
+                "text": "詳しく見る"
+              }
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-home-footer",
+      "columns": [
+        [
+          {
+            "id": "comp-home-copyright",
+            "type": "paragraph",
+            "props": {
+              "content": "© {year} AgentifUI。AIの無限の可能性を探求。"
+            }
+          }
+        ]
+      ]
+    }
+  ]
+}

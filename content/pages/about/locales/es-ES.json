@@ -1,0 +1,125 @@
+{
+  "page": "about",
+  "locale": "es-ES",
+  "metadata": {
+    "version": "1.0.0",
+    "lastModified": "2025-08-08T12:23:05.539Z",
+    "author": "system-migration",
+    "locale": "es-ES",
+    "basedOnStructureVersion": 1
+  },
+  "sections": [
+    {
+      "id": "section-1754655785510-hi9o34kms",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-9wmd3qfbr",
+            "type": "heading",
+            "props": {
+              "content": "Acerca de AgentifUI"
+            }
+          },
+          {
+            "id": "comp-1754655785510-8kgg6bug1",
+            "type": "paragraph",
+            "props": {
+              "content": "Conectando IA con empresas, creando nuevas experiencias con modelos de lenguaje grandes"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-1754655785510-4gy9xxu1j",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-wmcqou18g",
+            "type": "heading",
+            "props": {
+              "content": "Nuestra Misión"
+            }
+          },
+          {
+            "id": "comp-1754655785510-422a30k5a",
+            "type": "paragraph",
+            "props": {
+              "content": "AgentifUI se compromete a aprovechar el poder de los modelos de lenguaje grandes para proporcionar soluciones de aplicación innovadoras para empresas. Integramos capacidades de múltiples proveedores de modelos y proporcionamos servicios estables y confiables basados en backend Dify, ayudando a las organizaciones a utilizar completamente el valor de la tecnología IA."
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-1754655785510-ftxgzp8bp",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-trc6k02bt",
+            "type": "heading",
+            "props": {
+              "content": "Nuestros Valores"
+            }
+          },
+          {
+            "id": "comp-1754655785510-rat1vf5ow",
+            "type": "cards",
+            "props": {
+              "items": [
+                {
+                  "id": "comp-1754655785510-rat1vf5ow-item-1",
+                  "title": "Innovación Técnica",
+                  "description": "Integrar continuamente tecnologías de modelos grandes de vanguardia para proporcionar soluciones IA líderes para empresas"
+                },
+                {
+                  "id": "comp-1754655785510-rat1vf5ow-item-2",
+                  "title": "Seguridad de Datos",
+                  "description": "Soporte para despliegue privado y medidas estrictas de protección de datos para garantizar la seguridad y privacidad de los datos empresariales"
+                },
+                {
+                  "id": "comp-1754655785510-rat1vf5ow-item-3",
+                  "title": "Personalización Flexible",
+                  "description": "Proporcionar soluciones altamente personalizables para satisfacer necesidades específicas de diferentes industrias y escenarios"
+                },
+                {
+                  "id": "comp-1754655785510-rat1vf5ow-item-4",
+                  "title": "Mejora de Conocimiento",
+                  "description": "Integrar bases de conocimiento privadas a través de tecnología RAG para mejorar las capacidades de conciencia contextual del modelo"
+                }
+              ]
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-1754655785510-ul1fhhk7e",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-ac4fm11q8",
+            "type": "button",
+            "props": {
+              "text": "Comenzar a Explorar"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-1754655785510-7dkmyp6wa",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-8fd66745a",
+            "type": "paragraph",
+            "props": {
+              "content": "© {year} AgentifUI. Explora el futuro de las aplicaciones de modelos grandes."
+            }
+          }
+        ]
+      ]
+    }
+  ]
+}

@@ -1,0 +1,95 @@
+{
+  "page": "home",
+  "locale": "ru-RU",
+  "metadata": {
+    "version": "1.0.0",
+    "lastModified": "2025-08-12T12:00:00.000Z",
+    "author": "system-migration",
+    "locale": "ru-RU",
+    "basedOnStructureVersion": 1
+  },
+  "sections": [
+    {
+      "id": "section-home-hero",
+      "columns": [
+        [
+          {
+            "id": "comp-home-title",
+            "type": "heading",
+            "props": {
+              "content": "AgentifUI"
+            }
+          },
+          {
+            "id": "comp-home-subtitle",
+            "type": "paragraph",
+            "props": {
+              "content": "Исследуйте безграничные возможности ИИ и создавайте новые интеллектуальные решения"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-home-features",
+      "columns": [
+        [
+          {
+            "id": "comp-home-features",
+            "type": "cards",
+            "props": {
+              "items": [
+                {
+                  "id": "comp-home-features-item-1",
+                  "title": "Интеграция больших моделей",
+                  "description": "Поддержка нескольких поставщиков моделей, включая OpenAI, Anthropic, Dify и т.д., для удовлетворения различных потребностей предприятий"
+                },
+                {
+                  "id": "comp-home-features-item-2",
+                  "title": "Улучшение знаний с помощью RAG",
+                  "description": "Интеграция технологии Retrieval-Augmented Generation (RAG) для использования частных баз знаний и контекстной осведомленности"
+                },
+                {
+                  "id": "comp-home-features-item-3",
+                  "title": "Развертывание на предприятии",
+                  "description": "Поддержка частного развертывания, обеспечивающая безопасность данных и предоставляющая стабильные и надежные услуги на базе бэкенда Dify"
+                }
+              ]
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-home-buttons",
+      "columns": [
+        [
+          {
+            "id": "comp-home-button-primary",
+            "type": "button",
+            "props": {
+              "text": "Начать",
+              "secondaryButton": {
+                "text": "Узнать больше"
+              }
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-home-footer",
+      "columns": [
+        [
+          {
+            "id": "comp-home-copyright",
+            "type": "paragraph",
+            "props": {
+              "content": "© {year} AgentifUI. Исследуйте безграничные возможности ИИ."
+            }
+          }
+        ]
+      ]
+    }
+  ]
+}

@@ -1,0 +1,136 @@
+{
+  "generatedAt": "2026-03-30T06:53:54.196Z",
+  "sourceLocale": "en-US",
+  "pages": {
+    "home": {
+      "structureSections": 4,
+      "locales": {
+        "en-US": {
+          "byId": 5,
+          "byPosition": 0,
+          "byTypeFallback": 0,
+          "missing": 0
+        },
+        "zh-CN": {
+          "byId": 5,
+          "byPosition": 0,
+          "byTypeFallback": 0,
+          "missing": 0
+        },
+        "zh-TW": {
+          "byId": 5,
+          "byPosition": 0,
+          "byTypeFallback": 0,
+          "missing": 0
+        },
+        "ja-JP": {
+          "byId": 5,
+          "byPosition": 0,
+          "byTypeFallback": 0,
+          "missing": 0
+        },
+        "es-ES": {
+          "byId": 5,
+          "byPosition": 0,
+          "byTypeFallback": 0,
+          "missing": 0
+        },
+        "pt-PT": {
+          "byId": 5,
+          "byPosition": 0,
+          "byTypeFallback": 0,
+          "missing": 0
+        },
+        "fr-FR": {
+          "byId": 5,
+          "byPosition": 0,
+          "byTypeFallback": 0,
+          "missing": 0
+        },
+        "de-DE": {
+          "byId": 5,
+          "byPosition": 0,
+          "byTypeFallback": 0,
+          "missing": 0
+        },
+        "ru-RU": {
+          "byId": 5,
+          "byPosition": 0,
+          "byTypeFallback": 0,
+          "missing": 0
+        },
+        "it-IT": {
+          "byId": 5,
+          "byPosition": 0,
+          "byTypeFallback": 0,
+          "missing": 0
+        }
+      }
+    },
+    "about": {
+      "structureSections": 5,
+      "locales": {
+        "en-US": {
+          "byId": 8,
+          "byPosition": 0,
+          "byTypeFallback": 0,
+          "missing": 0
+        },
+        "zh-CN": {
+          "byId": 0,
+          "byPosition": 8,
+          "byTypeFallback": 0,
+          "missing": 0
+        },
+        "zh-TW": {
+          "byId": 0,
+          "byPosition": 8,
+          "byTypeFallback": 0,
+          "missing": 0
+        },
+        "ja-JP": {
+          "byId": 0,
+          "byPosition": 8,
+          "byTypeFallback": 0,
+          "missing": 0
+        },
+        "es-ES": {
+          "byId": 0,
+          "byPosition": 8,
+          "byTypeFallback": 0,
+          "missing": 0
+        },
+        "pt-PT": {
+          "byId": 0,
+          "byPosition": 8,
+          "byTypeFallback": 0,
+          "missing": 0
+        },
+        "fr-FR": {
+          "byId": 0,
+          "byPosition": 8,
+          "byTypeFallback": 0,
+          "missing": 0
+        },
+        "de-DE": {
+          "byId": 0,
+          "byPosition": 8,
+          "byTypeFallback": 0,
+          "missing": 0
+        },
+        "ru-RU": {
+          "byId": 0,
+          "byPosition": 8,
+          "byTypeFallback": 0,
+          "missing": 0
+        },
+        "it-IT": {
+          "byId": 0,
+          "byPosition": 8,
+          "byTypeFallback": 0,
+          "missing": 0
+        }
+      }
+    }
+  }
+}

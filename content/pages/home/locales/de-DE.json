@@ -1,0 +1,95 @@
+{
+  "page": "home",
+  "locale": "de-DE",
+  "metadata": {
+    "version": "1.0.0",
+    "lastModified": "2025-08-12T12:00:00.000Z",
+    "author": "system-migration",
+    "locale": "de-DE",
+    "basedOnStructureVersion": 1
+  },
+  "sections": [
+    {
+      "id": "section-home-hero",
+      "columns": [
+        [
+          {
+            "id": "comp-home-title",
+            "type": "heading",
+            "props": {
+              "content": "AgentifUI"
+            }
+          },
+          {
+            "id": "comp-home-subtitle",
+            "type": "paragraph",
+            "props": {
+              "content": "Entdecken Sie die unendlichen Möglichkeiten der KI und schaffen Sie intelligente neue Erfahrungen"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-home-features",
+      "columns": [
+        [
+          {
+            "id": "comp-home-features",
+            "type": "cards",
+            "props": {
+              "items": [
+                {
+                  "id": "comp-home-features-item-1",
+                  "title": "Integration großer Modelle",
+                  "description": "Unterstützung für mehrere Modellanbieter wie OpenAI, Anthropic, Dify usw., um verschiedene Unternehmensanforderungen zu erfüllen"
+                },
+                {
+                  "id": "comp-home-features-item-2",
+                  "title": "RAG-Wissenserweiterung",
+                  "description": "Integration der Retrieval-Augmented Generation (RAG) Technologie für private Wissensdatenbanken und Kontextbewusstsein"
+                },
+                {
+                  "id": "comp-home-features-item-3",
+                  "title": "Unternehmensbereitstellung",
+                  "description": "Unterstützung für private Bereitstellung, Gewährleistung der Datensicherheit, Bereitstellung stabiler und zuverlässiger Dienste basierend auf Dify-Backend"
+                }
+              ]
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-home-buttons",
+      "columns": [
+        [
+          {
+            "id": "comp-home-button-primary",
+            "type": "button",
+            "props": {
+              "text": "Loslegen",
+              "secondaryButton": {
+                "text": "Mehr erfahren"
+              }
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-home-footer",
+      "columns": [
+        [
+          {
+            "id": "comp-home-copyright",
+            "type": "paragraph",
+            "props": {
+              "content": "© {year} AgentifUI. Entdecken Sie die unendlichen Möglichkeiten der KI."
+            }
+          }
+        ]
+      ]
+    }
+  ]
+}

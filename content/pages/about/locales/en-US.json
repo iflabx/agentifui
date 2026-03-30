@@ -1,0 +1,125 @@
+{
+  "page": "about",
+  "locale": "en-US",
+  "metadata": {
+    "version": "1.0.0",
+    "lastModified": "2025-08-08T12:23:05.510Z",
+    "author": "system-migration",
+    "locale": "en-US",
+    "basedOnStructureVersion": 1
+  },
+  "sections": [
+    {
+      "id": "section-1754655785510-hi9o34kms",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-9wmd3qfbr",
+            "type": "heading",
+            "props": {
+              "content": "About AgentifUI"
+            }
+          },
+          {
+            "id": "comp-1754655785510-8kgg6bug1",
+            "type": "paragraph",
+            "props": {
+              "content": "Connecting AI with enterprises, creating new experiences with large language models"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-1754655785510-4gy9xxu1j",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-wmcqou18g",
+            "type": "heading",
+            "props": {
+              "content": "Our Mission"
+            }
+          },
+          {
+            "id": "comp-1754655785510-422a30k5a",
+            "type": "paragraph",
+            "props": {
+              "content": "AgentifUI is committed to leveraging the power of large language models to provide innovative application solutions for enterprises. We integrate capabilities from multiple model providers and provide stable, reliable services based on Dify backend, helping organizations fully utilize the value of AI technology."
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-1754655785510-ftxgzp8bp",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-trc6k02bt",
+            "type": "heading",
+            "props": {
+              "content": "Our Values"
+            }
+          },
+          {
+            "id": "comp-1754655785510-rat1vf5ow",
+            "type": "cards",
+            "props": {
+              "items": [
+                {
+                  "id": "comp-1754655785510-rat1vf5ow-item-1",
+                  "title": "Technical Innovation",
+                  "description": "Continuously integrate cutting-edge large model technologies to provide leading AI solutions for enterprises"
+                },
+                {
+                  "id": "comp-1754655785510-rat1vf5ow-item-2",
+                  "title": "Data Security",
+                  "description": "Support private deployment and strict data protection measures to ensure the security and privacy of enterprise data"
+                },
+                {
+                  "id": "comp-1754655785510-rat1vf5ow-item-3",
+                  "title": "Flexible Customization",
+                  "description": "Provide highly customizable solutions to meet specific needs of different industries and scenarios"
+                },
+                {
+                  "id": "comp-1754655785510-rat1vf5ow-item-4",
+                  "title": "Knowledge Enhancement",
+                  "description": "Integrate private knowledge bases through RAG technology to enhance model's contextual awareness capabilities"
+                }
+              ]
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-1754655785510-ul1fhhk7e",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-ac4fm11q8",
+            "type": "button",
+            "props": {
+              "text": "Start Exploring"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-1754655785510-7dkmyp6wa",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-8fd66745a",
+            "type": "paragraph",
+            "props": {
+              "content": "© {year} AgentifUI. Explore the future of large model applications."
+            }
+          }
+        ]
+      ]
+    }
+  ]
+}

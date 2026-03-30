@@ -1,0 +1,125 @@
+{
+  "page": "about",
+  "locale": "fr-FR",
+  "metadata": {
+    "version": "1.0.0",
+    "lastModified": "2025-08-08T12:23:05.527Z",
+    "author": "system-migration",
+    "locale": "fr-FR",
+    "basedOnStructureVersion": 1
+  },
+  "sections": [
+    {
+      "id": "section-1754655785510-hi9o34kms",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-9wmd3qfbr",
+            "type": "heading",
+            "props": {
+              "content": "À propos d'AgentifUI"
+            }
+          },
+          {
+            "id": "comp-1754655785510-8kgg6bug1",
+            "type": "paragraph",
+            "props": {
+              "content": "Connecter l'IA aux entreprises, créer de nouvelles expériences avec les grands modèles de langage"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-1754655785510-4gy9xxu1j",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-wmcqou18g",
+            "type": "heading",
+            "props": {
+              "content": "Notre mission"
+            }
+          },
+          {
+            "id": "comp-1754655785510-422a30k5a",
+            "type": "paragraph",
+            "props": {
+              "content": "AgentifUI s'engage à exploiter la puissance des grands modèles de langage pour fournir des solutions applicatives innovantes aux entreprises. Nous intégrons les capacités de plusieurs fournisseurs de modèles et fournissons des services stables et fiables basés sur le backend Dify, aidant les organisations à utiliser pleinement la valeur de la technologie IA."
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-1754655785510-ftxgzp8bp",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-trc6k02bt",
+            "type": "heading",
+            "props": {
+              "content": "Nos valeurs"
+            }
+          },
+          {
+            "id": "comp-1754655785510-rat1vf5ow",
+            "type": "cards",
+            "props": {
+              "items": [
+                {
+                  "id": "comp-1754655785510-rat1vf5ow-item-1",
+                  "title": "Innovation technique",
+                  "description": "Intégrer en continu les technologies de pointe des grands modèles pour fournir des solutions IA de premier plan aux entreprises"
+                },
+                {
+                  "id": "comp-1754655785510-rat1vf5ow-item-2",
+                  "title": "Sécurité des données",
+                  "description": "Soutenir le déploiement privé et des mesures strictes de protection des données pour garantir la sécurité et la confidentialité des données de l'entreprise"
+                },
+                {
+                  "id": "comp-1754655785510-rat1vf5ow-item-3",
+                  "title": "Personnalisation flexible",
+                  "description": "Fournir des solutions hautement personnalisables pour répondre aux besoins spécifiques des différentes industries et scénarios"
+                },
+                {
+                  "id": "comp-1754655785510-rat1vf5ow-item-4",
+                  "title": "Amélioration des connaissances",
+                  "description": "Intégrer des bases de connaissances privées via la technologie RAG pour améliorer les capacités de conscience contextuelle du modèle"
+                }
+              ]
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-1754655785510-ul1fhhk7e",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-ac4fm11q8",
+            "type": "button",
+            "props": {
+              "text": "Commencer à explorer"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-1754655785510-7dkmyp6wa",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-8fd66745a",
+            "type": "paragraph",
+            "props": {
+              "content": "© {year} AgentifUI. Explorez l'avenir des applications de grands modèles."
+            }
+          }
+        ]
+      ]
+    }
+  ]
+}

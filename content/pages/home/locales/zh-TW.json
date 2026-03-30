@@ -1,0 +1,95 @@
+{
+  "page": "home",
+  "locale": "zh-TW",
+  "metadata": {
+    "version": "1.0.0",
+    "lastModified": "2025-08-12T12:00:00.000Z",
+    "author": "system-migration",
+    "locale": "zh-TW",
+    "basedOnStructureVersion": 1
+  },
+  "sections": [
+    {
+      "id": "section-home-hero",
+      "columns": [
+        [
+          {
+            "id": "comp-home-title",
+            "type": "heading",
+            "props": {
+              "content": "AgentifUI"
+            }
+          },
+          {
+            "id": "comp-home-subtitle",
+            "type": "paragraph",
+            "props": {
+              "content": "探索AI的無限可能，打造智慧新體驗"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-home-features",
+      "columns": [
+        [
+          {
+            "id": "comp-home-features",
+            "type": "cards",
+            "props": {
+              "items": [
+                {
+                  "id": "comp-home-features-item-1",
+                  "title": "大模型整合",
+                  "description": "支援多種模型供應商，包括OpenAI、Anthropic、Dify等，滿足不同企業需求"
+                },
+                {
+                  "id": "comp-home-features-item-2",
+                  "title": "RAG知識增強",
+                  "description": "整合檢索增強生成(RAG)技術，實現私有知識庫和上下文感知"
+                },
+                {
+                  "id": "comp-home-features-item-3",
+                  "title": "企業級部署",
+                  "description": "支援私有化部署，保障資料安全，基於Dify後端提供穩定可靠的服務"
+                }
+              ]
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-home-buttons",
+      "columns": [
+        [
+          {
+            "id": "comp-home-button-primary",
+            "type": "button",
+            "props": {
+              "text": "立即開始",
+              "secondaryButton": {
+                "text": "了解更多"
+              }
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-home-footer",
+      "columns": [
+        [
+          {
+            "id": "comp-home-copyright",
+            "type": "paragraph",
+            "props": {
+              "content": "© {year} AgentifUI. 探索AI的無限可能。"
+            }
+          }
+        ]
+      ]
+    }
+  ]
+}

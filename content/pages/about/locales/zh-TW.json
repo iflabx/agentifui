@@ -1,0 +1,125 @@
+{
+  "page": "about",
+  "locale": "zh-TW",
+  "metadata": {
+    "version": "1.0.0",
+    "lastModified": "2025-08-08T12:23:05.516Z",
+    "author": "system-migration",
+    "locale": "zh-TW",
+    "basedOnStructureVersion": 1
+  },
+  "sections": [
+    {
+      "id": "section-1754655785510-hi9o34kms",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-9wmd3qfbr",
+            "type": "heading",
+            "props": {
+              "content": "關於 AgentifUI"
+            }
+          },
+          {
+            "id": "comp-1754655785510-8kgg6bug1",
+            "type": "paragraph",
+            "props": {
+              "content": "連接 AI 與企業，打造大模型應用新體驗"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-1754655785510-4gy9xxu1j",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-wmcqou18g",
+            "type": "heading",
+            "props": {
+              "content": "我們的使命"
+            }
+          },
+          {
+            "id": "comp-1754655785510-422a30k5a",
+            "type": "paragraph",
+            "props": {
+              "content": "AgentifUI 致力於利用大型語言模型的力量，為企業提供創新的應用解決方案。我們整合了多種模型供應商的能力，並基於 Dify 後端提供穩定、可靠的服務，幫助組織充分利用 AI 技術的價值。"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-1754655785510-ftxgzp8bp",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-trc6k02bt",
+            "type": "heading",
+            "props": {
+              "content": "我們的價值觀"
+            }
+          },
+          {
+            "id": "comp-1754655785510-rat1vf5ow",
+            "type": "cards",
+            "props": {
+              "items": [
+                {
+                  "id": "comp-1754655785510-rat1vf5ow-item-1",
+                  "title": "技術創新",
+                  "description": "持續整合前沿的大模型技術，為企業提供領先的 AI 解決方案"
+                },
+                {
+                  "id": "comp-1754655785510-rat1vf5ow-item-2",
+                  "title": "資料安全",
+                  "description": "支援私有化部署和嚴格的資料保護措施，確保企業資料的安全與隱私"
+                },
+                {
+                  "id": "comp-1754655785510-rat1vf5ow-item-3",
+                  "title": "靈活客製",
+                  "description": "提供高度可客製的解決方案，滿足不同行業和情境的特定需求"
+                },
+                {
+                  "id": "comp-1754655785510-rat1vf5ow-item-4",
+                  "title": "知識增強",
+                  "description": "透過 RAG 技術實現私有知識庫的整合，增強模型的上下文感知能力"
+                }
+              ]
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-1754655785510-ul1fhhk7e",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-ac4fm11q8",
+            "type": "button",
+            "props": {
+              "text": "開始探索"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-1754655785510-7dkmyp6wa",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-8fd66745a",
+            "type": "paragraph",
+            "props": {
+              "content": "© {year} AgentifUI. 探索大模型應用的未來。"
+            }
+          }
+        ]
+      ]
+    }
+  ]
+}

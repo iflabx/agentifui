@@ -1,0 +1,128 @@
+{
+  "page": "about",
+  "sourceLocale": "en-US",
+  "metadata": {
+    "version": "1.0.0",
+    "lastModified": "2025-08-08T12:23:05.510Z",
+    "author": "system-migration",
+    "structureVersion": 1
+  },
+  "sections": [
+    {
+      "id": "section-1754655785510-hi9o34kms",
+      "layout": "single-column",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-9wmd3qfbr",
+            "type": "heading",
+            "props": {
+              "level": 1,
+              "textAlign": "center"
+            }
+          },
+          {
+            "id": "comp-1754655785510-8kgg6bug1",
+            "type": "paragraph",
+            "props": {
+              "textAlign": "center"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-1754655785510-4gy9xxu1j",
+      "layout": "single-column",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-wmcqou18g",
+            "type": "heading",
+            "props": {
+              "level": 2,
+              "textAlign": "left"
+            }
+          },
+          {
+            "id": "comp-1754655785510-422a30k5a",
+            "type": "paragraph",
+            "props": {
+              "textAlign": "left"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-1754655785510-ftxgzp8bp",
+      "layout": "single-column",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-trc6k02bt",
+            "type": "heading",
+            "props": {
+              "level": 2,
+              "textAlign": "left"
+            }
+          },
+          {
+            "id": "comp-1754655785510-rat1vf5ow",
+            "type": "cards",
+            "props": {
+              "layout": "grid",
+              "items": [
+                {
+                  "id": "comp-1754655785510-rat1vf5ow-item-1"
+                },
+                {
+                  "id": "comp-1754655785510-rat1vf5ow-item-2"
+                },
+                {
+                  "id": "comp-1754655785510-rat1vf5ow-item-3"
+                },
+                {
+                  "id": "comp-1754655785510-rat1vf5ow-item-4"
+                }
+              ]
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-1754655785510-ul1fhhk7e",
+      "layout": "single-column",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-ac4fm11q8",
+            "type": "button",
+            "props": {
+              "variant": "solid",
+              "action": "link",
+              "url": "/chat",
+              "textAlign": "center"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-1754655785510-7dkmyp6wa",
+      "layout": "single-column",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-8fd66745a",
+            "type": "paragraph",
+            "props": {
+              "textAlign": "center"
+            }
+          }
+        ]
+      ]
+    }
+  ]
+}

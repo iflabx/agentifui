@@ -22,6 +22,7 @@ const bundleAnalyzer = withBundleAnalyzer({
 const FASTIFY_REWRITE_BYPASS_HEADER = 'x-agentifui-fastify-bypass';
 const DEFAULT_FASTIFY_PROXY_PREFIXES = [
   '/api/dify',
+  '/api/content',
   '/api/internal/data',
   '/api/internal/apps',
   '/api/internal/profile',

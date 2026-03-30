@@ -1,0 +1,125 @@
+{
+  "page": "about",
+  "locale": "it-IT",
+  "metadata": {
+    "version": "1.0.0",
+    "lastModified": "2025-08-08T12:23:05.533Z",
+    "author": "system-migration",
+    "locale": "it-IT",
+    "basedOnStructureVersion": 1
+  },
+  "sections": [
+    {
+      "id": "section-1754655785510-hi9o34kms",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-9wmd3qfbr",
+            "type": "heading",
+            "props": {
+              "content": "Informazioni su AgentifUI"
+            }
+          },
+          {
+            "id": "comp-1754655785510-8kgg6bug1",
+            "type": "paragraph",
+            "props": {
+              "content": "Connettere l'IA con le imprese, creando nuove esperienze con grandi modelli linguistici"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-1754655785510-4gy9xxu1j",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-wmcqou18g",
+            "type": "heading",
+            "props": {
+              "content": "La Nostra Missione"
+            }
+          },
+          {
+            "id": "comp-1754655785510-422a30k5a",
+            "type": "paragraph",
+            "props": {
+              "content": "AgentifUI si impegna a sfruttare la potenza dei grandi modelli linguistici per fornire soluzioni applicative innovative per le imprese. Integriamo le capacità di più fornitori di modelli e forniamo servizi stabili e affidabili basati sul backend di Dify, aiutando le organizzazioni a utilizzare appieno il valore della tecnologia IA."
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-1754655785510-ftxgzp8bp",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-trc6k02bt",
+            "type": "heading",
+            "props": {
+              "content": "I Nostri Valori"
+            }
+          },
+          {
+            "id": "comp-1754655785510-rat1vf5ow",
+            "type": "cards",
+            "props": {
+              "items": [
+                {
+                  "id": "comp-1754655785510-rat1vf5ow-item-1",
+                  "title": "Innovazione Tecnica",
+                  "description": "Integrare continuamente tecnologie all'avanguardia di grandi modelli per fornire soluzioni IA leader per le imprese"
+                },
+                {
+                  "id": "comp-1754655785510-rat1vf5ow-item-2",
+                  "title": "Sicurezza dei Dati",
+                  "description": "Supportare la distribuzione privata e rigorose misure di protezione dei dati per garantire la sicurezza e la privacy dei dati aziendali"
+                },
+                {
+                  "id": "comp-1754655785510-rat1vf5ow-item-3",
+                  "title": "Personalizzazione Flessibile",
+                  "description": "Fornire soluzioni altamente personalizzabili per soddisfare le esigenze specifiche di diversi settori e scenari"
+                },
+                {
+                  "id": "comp-1754655785510-rat1vf5ow-item-4",
+                  "title": "Miglioramento della Conoscenza",
+                  "description": "Integrare basi di conoscenza private tramite la tecnologia RAG per migliorare le capacità di consapevolezza contestuale del modello"
+                }
+              ]
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-1754655785510-ul1fhhk7e",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-ac4fm11q8",
+            "type": "button",
+            "props": {
+              "text": "Inizia a Esplorare"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-1754655785510-7dkmyp6wa",
+      "columns": [
+        [
+          {
+            "id": "comp-1754655785510-8fd66745a",
+            "type": "paragraph",
+            "props": {
+              "content": "© {year} AgentifUI. Esplora il futuro delle applicazioni di grandi modelli."
+            }
+          }
+        ]
+      ]
+    }
+  ]
+}

@@ -1,0 +1,95 @@
+{
+  "page": "home",
+  "locale": "es-ES",
+  "metadata": {
+    "version": "1.0.0",
+    "lastModified": "2025-08-12T12:00:00.000Z",
+    "author": "system-migration",
+    "locale": "es-ES",
+    "basedOnStructureVersion": 1
+  },
+  "sections": [
+    {
+      "id": "section-home-hero",
+      "columns": [
+        [
+          {
+            "id": "comp-home-title",
+            "type": "heading",
+            "props": {
+              "content": "AgentifUI"
+            }
+          },
+          {
+            "id": "comp-home-subtitle",
+            "type": "paragraph",
+            "props": {
+              "content": "Explora las posibilidades infinitas de la IA y crea nuevas experiencias inteligentes"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-home-features",
+      "columns": [
+        [
+          {
+            "id": "comp-home-features",
+            "type": "cards",
+            "props": {
+              "items": [
+                {
+                  "id": "comp-home-features-item-1",
+                  "title": "Integración de Modelos Grandes",
+                  "description": "Soporte para múltiples proveedores de modelos incluyendo OpenAI, Anthropic, Dify, etc., satisfaciendo diferentes necesidades empresariales"
+                },
+                {
+                  "id": "comp-home-features-item-2",
+                  "title": "Mejora de Conocimiento RAG",
+                  "description": "Integra tecnología de Generación Aumentada por Recuperación (RAG) para habilitar bases de conocimiento privadas y conciencia contextual"
+                },
+                {
+                  "id": "comp-home-features-item-3",
+                  "title": "Despliegue Empresarial",
+                  "description": "Soporte para despliegue privado, garantizando la seguridad de datos, proporcionando servicios estables y confiables basados en backend Dify"
+                }
+              ]
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-home-buttons",
+      "columns": [
+        [
+          {
+            "id": "comp-home-button-primary",
+            "type": "button",
+            "props": {
+              "text": "Comenzar",
+              "secondaryButton": {
+                "text": "Saber más"
+              }
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section-home-footer",
+      "columns": [
+        [
+          {
+            "id": "comp-home-copyright",
+            "type": "paragraph",
+            "props": {
+              "content": "© {year} AgentifUI. Explora las posibilidades infinitas de la IA."
+            }
+          }
+        ]
+      ]
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 export const DEFAULT_FASTIFY_PROXY_PREFIXES = [
   '/api/dify',
+  '/api/content',
   '/api/internal/data',
   '/api/internal/apps',
   '/api/internal/profile',
