@@ -4,6 +4,12 @@ import {
 } from './admin-translations-auto-translate';
 
 describe('admin translation auto-translate helpers', () => {
+  const mockedFetch = global.fetch as jest.MockedFunction<typeof fetch>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('translates only visible content fields and preserves structure fields', async () => {
     const translated = await buildTranslatedLocaleMap({
       sourceLocale: 'zh-CN',
@@ -161,5 +167,64 @@ describe('admin translation auto-translate helpers', () => {
         targetLocale: 'zh-CN',
       })
     ).resolves.toBe('BistuCopilot');
+  });
+
+  it('restores placeholders and protected terms when the provider drifts token case and spacing', async () => {
+    mockedFetch.mockImplementation(async input => {
+      const url = new URL(String(input));
+      const protectedText = url.searchParams.get('q') || '';
+      const translatedText = protectedText
+        .replace(/\[\[/g, '[[ ')
+        .replace(/\]\]/g, ' ]]')
+        .toLowerCase();
+
+      return {
+        ok: true,
+        json: async () => ({
+          responseStatus: 200,
+          responseData: {
+            translatedText,
+          },
+        }),
+      } as Response;
+    });
+
+    await expect(
+      translateTextViaMyMemory({
+        text: '© {year} BistuCopilot',
+        sourceLocale: 'zh-CN',
+        targetLocale: 'en-US',
+      })
+    ).resolves.toBe('© {year} BistuCopilot');
+  });
+
+  it('rejects untranslated internal tokens before they can be persisted', async () => {
+    await expect(
+      buildTranslatedLocaleMap({
+        sourceLocale: 'zh-CN',
+        targetLocales: ['en-US'],
+        sourceData: {
+          sections: [
+            {
+              id: 'section-home-footer',
+              layout: 'single-column',
+              columns: [
+                [
+                  {
+                    id: 'comp-footer',
+                    type: 'paragraph',
+                    props: {
+                      content: '© {year} BistuCopilot',
+                      textAlign: 'center',
+                    },
+                  },
+                ],
+              ],
+            },
+          ],
+        },
+        translateText: async () => '© __ placeholder_0 __ __ term_0 __',
+      })
+    ).rejects.toThrow('protected token');
   });
 });

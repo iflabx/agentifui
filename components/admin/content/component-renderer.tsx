@@ -12,9 +12,11 @@ import {
   getResolvedComponentProps,
 } from '@lib/types/about-page-components';
 import { cn } from '@lib/utils';
-import { processTextPlaceholders } from '@lib/utils/text-processing';
+import { resolveContentVariablesDeep } from '@lib/utils/text-processing';
 
 import React from 'react';
+
+import { useLocale } from 'next-intl';
 
 /**
  * Heading component renderer
@@ -83,9 +85,6 @@ const Paragraph: React.FC<ParagraphProps> = ({ content, textAlign }) => {
     right: 'text-right',
   };
 
-  // Process text placeholders like {year}
-  const processedContent = processTextPlaceholders(content);
-
   return (
     <p
       className={cn(
@@ -94,7 +93,7 @@ const Paragraph: React.FC<ParagraphProps> = ({ content, textAlign }) => {
         textAlignClasses[textAlign]
       )}
     >
-      {processedContent}
+      {content}
     </p>
   );
 };
@@ -304,6 +303,7 @@ const ComponentRenderer: React.FC<ComponentRendererProps> = ({
   previewDevice = 'desktop',
 }) => {
   const Component = componentMap[component.type];
+  const locale = useLocale();
 
   if (!Component) {
     // Fallback for unregistered components
@@ -327,12 +327,13 @@ const ComponentRenderer: React.FC<ComponentRendererProps> = ({
     component,
     sectionCommonProps
   );
+  const localizedProps = resolveContentVariablesDeep(resolvedProps, locale);
 
   // Add previewDevice to props if component supports it
   const componentProps =
     component.type === 'cards'
-      ? { ...resolvedProps, previewDevice }
-      : resolvedProps;
+      ? { ...localizedProps, previewDevice }
+      : localizedProps;
 
   return (
     <div className={className}>

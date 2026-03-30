@@ -1,3 +1,5 @@
+import { getProtectedTerms } from '../../../../lib/config/branding';
+
 type JsonPrimitive = string | number | boolean | null;
 type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
 type JsonObject = { [key: string]: JsonValue };
@@ -44,8 +46,9 @@ const TRANSLATABLE_KEYS = new Set([
   'learnMore',
 ]);
 
-const PROTECTED_TERMS = ['BistuCopilot', 'AgentifUI'];
 const PLACEHOLDER_PATTERN = /\{[^}]+\}/g;
+const INTERNAL_TOKEN_LEAK_PATTERN =
+  /(?:\[\s*\[\s*aifx[\s\w-]*\]\s*\])|(?:__\s*(?:placeholder|term)\s*_\s*\d+\s*__)/i;
 
 function resolveTranslationCode(locale: string): string {
   return LOCALE_CODE_MAP[locale] || locale.split('-')[0] || locale;
@@ -59,6 +62,10 @@ function cloneJsonValue<T extends JsonValue>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function shouldTranslateKey(key: string | undefined, value: string): boolean {
   if (!key || !TRANSLATABLE_KEYS.has(key)) {
     return false;
@@ -67,27 +74,113 @@ function shouldTranslateKey(key: string | undefined, value: string): boolean {
   return value.trim().length > 0;
 }
 
-function protectPatterns(text: string, pattern: RegExp, prefix: string) {
-  const matches: string[] = [];
+type ProtectedEntry = {
+  token: string;
+  original: string;
+  pattern: RegExp;
+};
+
+function createTransportToken(prefix: 'V' | 'T', index: number): string {
+  return `[[AIFX${prefix}${index}X]]`;
+}
+
+function buildFlexibleTokenPattern(token: string): RegExp {
+  const pattern = token
+    .split('')
+    .map(char => escapeRegex(char))
+    .join('\\s*');
+
+  return new RegExp(pattern, 'gi');
+}
+
+function protectPatterns(text: string, pattern: RegExp, prefix: 'V' | 'T') {
+  const entries: ProtectedEntry[] = [];
   const protectedText = text.replace(pattern, match => {
-    const token = `__${prefix}_${matches.length}__`;
-    matches.push(match);
+    const token = createTransportToken(prefix, entries.length);
+    entries.push({
+      token,
+      original: match,
+      pattern: buildFlexibleTokenPattern(token),
+    });
     return token;
   });
 
-  return { protectedText, matches };
+  return { protectedText, entries };
 }
 
-function restoreTokens(
-  text: string,
-  prefix: string,
-  matches: string[]
-): string {
-  return matches.reduce(
-    (current, match, index) =>
-      current.replace(new RegExp(`__${prefix}_${index}__`, 'g'), match),
+function protectLiteralTerms(text: string, terms: string[]) {
+  let protectedText = text;
+  const entries: ProtectedEntry[] = [];
+
+  for (const term of terms) {
+    const termPattern = new RegExp(escapeRegex(term), 'g');
+    protectedText = protectedText.replace(termPattern, match => {
+      const token = createTransportToken('T', entries.length);
+      entries.push({
+        token,
+        original: match,
+        pattern: buildFlexibleTokenPattern(token),
+      });
+      return token;
+    });
+  }
+
+  return { protectedText, entries };
+}
+
+function restoreEntries(text: string, entries: ProtectedEntry[]): string {
+  return entries.reduce(
+    (current, entry) => current.replace(entry.pattern, entry.original),
     text
   );
+}
+
+function countOccurrences(text: string, term: string): number {
+  const matches = text.match(new RegExp(escapeRegex(term), 'g'));
+  return matches?.length ?? 0;
+}
+
+function extractPlaceholders(text: string): string[] {
+  return text.match(PLACEHOLDER_PATTERN) ?? [];
+}
+
+function sortStrings(values: string[]): string[] {
+  return [...values].sort((left, right) => left.localeCompare(right));
+}
+
+function assertTranslationIntegrity(params: {
+  sourceText: string;
+  translatedText: string;
+  protectedTerms: string[];
+}) {
+  const { sourceText, translatedText, protectedTerms } = params;
+
+  if (INTERNAL_TOKEN_LEAK_PATTERN.test(translatedText)) {
+    throw new Error('Translation leaked internal protected token');
+  }
+
+  const sourcePlaceholders = sortStrings(extractPlaceholders(sourceText));
+  const translatedPlaceholders = sortStrings(
+    extractPlaceholders(translatedText)
+  );
+
+  if (
+    JSON.stringify(sourcePlaceholders) !==
+    JSON.stringify(translatedPlaceholders)
+  ) {
+    throw new Error('Translation changed protected placeholders');
+  }
+
+  for (const term of protectedTerms) {
+    const sourceCount = countOccurrences(sourceText, term);
+    if (sourceCount === 0) {
+      continue;
+    }
+
+    if (countOccurrences(translatedText, term) < sourceCount) {
+      throw new Error(`Translation lost protected term: ${term}`);
+    }
+  }
 }
 
 export async function translateTextViaMyMemory(params: {
@@ -101,32 +194,11 @@ export async function translateTextViaMyMemory(params: {
     return text;
   }
 
-  const placeholderProtected = protectPatterns(
-    text,
-    PLACEHOLDER_PATTERN,
-    'PLACEHOLDER'
-  );
-
-  const termProtected = PROTECTED_TERMS.reduce(
-    (current, term, index) => {
-      const termPattern = new RegExp(
-        term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
-        'g'
-      );
-      const protectedText = current.protectedText.replace(
-        termPattern,
-        `__TERM_${index}__`
-      );
-
-      return {
-        protectedText,
-        matches: [...current.matches, term],
-      };
-    },
-    {
-      protectedText: placeholderProtected.protectedText,
-      matches: [] as string[],
-    }
+  const protectedTerms = getProtectedTerms(targetLocale);
+  const placeholderProtected = protectPatterns(text, PLACEHOLDER_PATTERN, 'V');
+  const termProtected = protectLiteralTerms(
+    placeholderProtected.protectedText,
+    protectedTerms
   );
 
   const url = new URL('https://api.mymemory.translated.net/get');
@@ -162,17 +234,22 @@ export async function translateTextViaMyMemory(params: {
     );
   }
 
-  const restoredTerms = termProtected.matches.reduce(
-    (current, term, index) =>
-      current.replace(new RegExp(`__TERM_${index}__`, 'g'), term),
-    payload.responseData.translatedText
+  const restoredTerms = restoreEntries(
+    payload.responseData.translatedText,
+    termProtected.entries
+  );
+  const restoredText = restoreEntries(
+    restoredTerms,
+    placeholderProtected.entries
   );
 
-  return restoreTokens(
-    restoredTerms,
-    'PLACEHOLDER',
-    placeholderProtected.matches
-  );
+  assertTranslationIntegrity({
+    sourceText: text,
+    translatedText: restoredText,
+    protectedTerms,
+  });
+
+  return restoredText;
 }
 
 function normalizeMetadata(
@@ -209,11 +286,19 @@ async function translateNode(params: {
       return value;
     }
 
-    return translateText({
+    const translatedText = await translateText({
       text: value,
       sourceLocale,
       targetLocale,
     });
+
+    assertTranslationIntegrity({
+      sourceText: value,
+      translatedText,
+      protectedTerms: getProtectedTerms(targetLocale),
+    });
+
+    return translatedText;
   }
 
   if (Array.isArray(value)) {

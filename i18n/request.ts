@@ -1,3 +1,4 @@
+import { resolveReservedVariablesDeep } from '@lib/config/branding';
 import { DEFAULT_LOCALE, isValidLocale } from '@lib/config/language-config';
 
 import { getRequestConfig } from 'next-intl/server';
@@ -70,11 +71,14 @@ export default getRequestConfig(async () => {
     }
   }
 
+  const now = new Date();
+  messages = resolveReservedVariablesDeep(messages, finalLocale, now);
+
   return {
     locale: finalLocale,
     messages,
     // Provide unified current time to avoid server-client hydration inconsistencies
-    now: new Date(),
+    now,
     // Timezone handling: don't hardcode timezone here, let format.dateTime use user's local timezone
   };
 });
