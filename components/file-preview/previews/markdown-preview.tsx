@@ -2,6 +2,8 @@
 
 import { cn } from '@lib/utils';
 import { CodeIcon, DownloadIcon, EyeIcon } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 import React, { useEffect, useState } from 'react';
 
@@ -51,27 +53,6 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
       </div>
     );
   }
-
-  // Simple markdown to HTML conversion (basic headings and formatting)
-  const renderMarkdown = (text: string) => {
-    return text
-      .replace(
-        /^### (.*$)/gim,
-        '<h3 class="text-md font-semibold mt-4 mb-2">$1</h3>'
-      )
-      .replace(
-        /^## (.*$)/gim,
-        '<h2 class="text-lg font-semibold mt-4 mb-2">$1</h2>'
-      )
-      .replace(/^# (.*$)/gim, '<h1 class="text-xl font-bold mt-4 mb-2">$1</h1>')
-      .replace(/\*\*(.*)\*\*/gim, '<strong>$1</strong>')
-      .replace(/\*(.*)\*/gim, '<em>$1</em>')
-      .replace(
-        /`([^`]+)`/gim,
-        '<code class="bg-stone-200 dark:bg-stone-700 px-1 py-0.5 rounded text-sm font-mono">$1</code>'
-      )
-      .replace(/\n/gim, '<br>');
-  };
 
   return (
     <div className="flex h-full flex-col space-y-4">
@@ -134,12 +115,54 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
         )}
       >
         {viewMode === 'rendered' ? (
-          <div
-            className={cn('prose prose-sm max-w-none', 'dark:prose-invert')}
-            dangerouslySetInnerHTML={{
-              __html: renderMarkdown(markdown),
-            }}
-          />
+          <div className={cn('prose prose-sm max-w-none', 'dark:prose-invert')}>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                code({ className, children, ...props }) {
+                  const isBlock = className?.includes('language-');
+
+                  if (isBlock) {
+                    return (
+                      <code
+                        className={cn('font-mono text-sm', className)}
+                        {...props}
+                      >
+                        {children}
+                      </code>
+                    );
+                  }
+
+                  return (
+                    <code
+                      className={cn(
+                        'rounded px-1 py-0.5 font-mono text-sm',
+                        'bg-stone-200 dark:bg-stone-700'
+                      )}
+                      {...props}
+                    >
+                      {children}
+                    </code>
+                  );
+                },
+                pre({ children, ...props }) {
+                  return (
+                    <pre
+                      className={cn(
+                        'overflow-x-auto rounded-md p-3 font-mono text-sm',
+                        'bg-stone-200 dark:bg-stone-700'
+                      )}
+                      {...props}
+                    >
+                      {children}
+                    </pre>
+                  );
+                },
+              }}
+            >
+              {markdown}
+            </ReactMarkdown>
+          </div>
         ) : (
           <pre
             className={cn(

@@ -43,7 +43,6 @@ import 'katex/dist/katex.min.css';
 import ReactMarkdown from 'react-markdown';
 import type { Components } from 'react-markdown';
 import rehypeKatex from 'rehype-katex';
-import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 
@@ -165,69 +164,6 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = React.memo(
 
     // Parse content into blocks
     const blocks = useMemo(() => parseThinkBlocks(content), [content]);
-
-    // Preprocess main content: escape unknown HTML tags
-    const preprocessMainContent = (content: string): string => {
-      // Whitelist of allowed HTML tags
-      const knownHtmlTags = new Set([
-        'div',
-        'span',
-        'p',
-        'br',
-        'hr',
-        'strong',
-        'em',
-        'b',
-        'i',
-        'u',
-        's',
-        'h1',
-        'h2',
-        'h3',
-        'h4',
-        'h5',
-        'h6',
-        'ul',
-        'ol',
-        'li',
-        'dl',
-        'dt',
-        'dd',
-        'table',
-        'thead',
-        'tbody',
-        'tr',
-        'th',
-        'td',
-        'blockquote',
-        'pre',
-        'code',
-        'a',
-        'img',
-        'sub',
-        'sup',
-        'mark',
-        'del',
-        'ins',
-        'details',
-        'summary',
-      ]);
-
-      // Escape HTML tags not in whitelist
-      return content
-        .replace(/<([a-zA-Z][a-zA-Z0-9]*)[^>]*>/g, (match, tagName) => {
-          if (!knownHtmlTags.has(tagName.toLowerCase())) {
-            return match.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-          }
-          return match;
-        })
-        .replace(/<\/([a-zA-Z][a-zA-Z0-9]*)[^>]*>/g, (match, tagName) => {
-          if (!knownHtmlTags.has(tagName.toLowerCase())) {
-            return match.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-          }
-          return match;
-        });
-    };
 
     // Markdown rendering components for main content
     const mainMarkdownComponents: Components = {
@@ -522,7 +458,7 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = React.memo(
               )}
             >
               <StreamingText
-                content={preprocessMainContent(block.content)}
+                content={block.content}
                 isStreaming={isStreaming && isLast}
                 isComplete={!isStreaming || !isLast}
                 typewriterSpeed={50}
@@ -530,7 +466,7 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = React.memo(
                 {displayedContent => (
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm, remarkMath]}
-                    rehypePlugins={[rehypeKatex, rehypeRaw]}
+                    rehypePlugins={[rehypeKatex]}
                     components={mainMarkdownComponents}
                   >
                     {displayedContent}

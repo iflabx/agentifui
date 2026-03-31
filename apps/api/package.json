@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@fastify/cors": "^11.1.0",
-    "@fastify/reply-from": "^12.4.0",
+    "@fastify/reply-from": "^12.6.1",
     "fastify": "^5.6.1",
     "pg": "^8.18.0"
   },

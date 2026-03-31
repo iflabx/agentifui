@@ -4,13 +4,30 @@ import type { ReactNode } from 'react';
 
 import { AssistantMessage } from './assistant-message';
 
+const reactMarkdownMock = jest.fn(
+  ({
+    children,
+    rehypePlugins,
+  }: {
+    children: ReactNode;
+    rehypePlugins?: unknown[];
+  }) => (
+    <div
+      data-testid="react-markdown"
+      data-rehype-plugin-count={String(rehypePlugins?.length || 0)}
+    >
+      {children}
+    </div>
+  )
+);
+
 jest.mock('react-markdown', () => ({
   __esModule: true,
-  default: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  default: (props: { children: ReactNode; rehypePlugins?: unknown[] }) =>
+    reactMarkdownMock(props),
 }));
 
 jest.mock('rehype-katex', () => ({}));
-jest.mock('rehype-raw', () => ({}));
 jest.mock('remark-gfm', () => ({}));
 jest.mock('remark-math', () => ({}));
 
@@ -84,6 +101,10 @@ jest.mock('./streaming-markdown', () => ({
 }));
 
 describe('AssistantMessage think block behavior', () => {
+  beforeEach(() => {
+    reactMarkdownMock.mockClear();
+  });
+
   it('should keep think blocks collapsed by default', () => {
     render(
       <AssistantMessage
@@ -170,5 +191,21 @@ describe('AssistantMessage think block behavior', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it('does not pass rehypeRaw to ReactMarkdown', () => {
+    render(
+      <AssistantMessage
+        id="msg-4"
+        content="hello <div style='position:fixed'>world</div>"
+        isStreaming={false}
+        wasManuallyStopped={false}
+      />
+    );
+
+    expect(screen.getByTestId('react-markdown')).toHaveAttribute(
+      'data-rehype-plugin-count',
+      '1'
+    );
   });
 });

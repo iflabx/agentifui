@@ -7,7 +7,6 @@ import 'katex/dist/katex.min.css';
 import ReactMarkdown from 'react-markdown';
 import type { Components } from 'react-markdown';
 import rehypeKatex from 'rehype-katex';
-import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 
@@ -38,70 +37,6 @@ export const ThinkBlockContent: React.FC<ThinkBlockContentProps> = ({
 }) => {
   // Remove useTheme and useThemeColors, use CSS variables instead
   const t = useTranslations('pages.chat.messages');
-
-  // Preprocess content: escape custom HTML tags to avoid browser parsing errors
-  // Similar to code block handling, display unknown tags as text
-  const preprocessContent = (content: string): string => {
-    // Define a whitelist of known safe HTML tags
-    const knownHtmlTags = new Set([
-      'div',
-      'span',
-      'p',
-      'br',
-      'hr',
-      'strong',
-      'em',
-      'b',
-      'i',
-      'u',
-      's',
-      'h1',
-      'h2',
-      'h3',
-      'h4',
-      'h5',
-      'h6',
-      'ul',
-      'ol',
-      'li',
-      'dl',
-      'dt',
-      'dd',
-      'table',
-      'thead',
-      'tbody',
-      'tr',
-      'th',
-      'td',
-      'blockquote',
-      'pre',
-      'code',
-      'a',
-      'img',
-      'sub',
-      'sup',
-      'mark',
-      'del',
-      'ins',
-    ]);
-
-    // Escape HTML tags not in the whitelist so they display as text
-    return content
-      .replace(/<([a-zA-Z][a-zA-Z0-9]*)[^>]*>/g, (match, tagName) => {
-        if (!knownHtmlTags.has(tagName.toLowerCase())) {
-          return match.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        }
-        return match;
-      })
-      .replace(/<\/([a-zA-Z][a-zA-Z0-9]*)[^>]*>/g, (match, tagName) => {
-        if (!knownHtmlTags.has(tagName.toLowerCase())) {
-          return match.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        }
-        return match;
-      });
-  };
-
-  const processedContent = preprocessContent(markdownContent);
 
   const isImageTag = (value: unknown): value is { tagName: string } => {
     if (!value || typeof value !== 'object') {
@@ -487,10 +422,10 @@ export const ThinkBlockContent: React.FC<ThinkBlockContentProps> = ({
       >
         <ReactMarkdown
           remarkPlugins={[remarkGfm, remarkMath]}
-          rehypePlugins={[rehypeKatex, rehypeRaw]}
+          rehypePlugins={[rehypeKatex]}
           components={markdownComponents}
         >
-          {processedContent}
+          {markdownContent}
         </ReactMarkdown>
       </div>
     </motion.div>
