@@ -99,6 +99,7 @@ describe('executeChatSubmit', () => {
         navigateToConversation: jest.fn(),
         flushChunkBuffer: jest.fn(),
         chunkAppendInterval: 30,
+        moderationT: jest.fn((key: string) => key),
       },
       userMessage,
     };
@@ -166,6 +167,21 @@ describe('executeChatSubmit', () => {
             dify_metadata: { model: 'deepseek' },
           }),
         }),
+      })
+    );
+  });
+
+  it('passes moderation translator into stream error recovery', async () => {
+    const { input } = createInput();
+    const thrownError = new Error('blocked');
+    mockStartNewChatConversation.mockRejectedValueOnce(thrownError);
+
+    await executeChatSubmit(input);
+
+    expect(mockHandleChatSubmitStreamError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: thrownError,
+        moderationT: input.moderationT,
       })
     );
   });

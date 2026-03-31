@@ -8,6 +8,7 @@ import type { PendingConversation } from '@lib/stores/pending-conversation-store
 
 import type { MutableRefObject } from 'react';
 
+import type { ChatModerationTranslator } from './error-utils';
 import {
   mapChatUploadFilesToDifyFiles,
   mapChatUploadFilesToMessageAttachments,
@@ -112,6 +113,7 @@ interface ExecuteChatSubmitInput {
   navigateToConversation: (conversationId: string) => void;
   flushChunkBuffer: (id: string | null) => void;
   chunkAppendInterval: number;
+  moderationT: ChatModerationTranslator;
 }
 
 export async function executeChatSubmit(
@@ -274,6 +276,7 @@ export async function executeChatSubmit(
       updateMessage: input.updateMessage,
       saveMessage: input.saveMessage,
       saveErrorPlaceholder: input.saveErrorPlaceholder,
+      moderationT: input.moderationT,
     });
   } finally {
     if (input.appendTimerRef.current) {

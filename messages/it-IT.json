@@ -2365,7 +2365,14 @@
   "errors": {
     "notFound": "Pagina non trovata",
     "serverError": "Errore del server",
-    "unauthorized": "Accesso non autorizzato"
+    "unauthorized": "Accesso non autorizzato",
+    "system": {
+      "moderation": {
+        "blocked": "Il tuo messaggio non ha superato la revisione del modello di guardrail di sicurezza. Modificalo e riprova.",
+        "blockedWithCategories": "Il tuo messaggio non ha superato la revisione del modello di guardrail di sicurezza. Categoria non sicura: {categories}. Modificalo e riprova.",
+        "unavailable": "Il servizio di revisione del modello di guardrail di sicurezza è temporaneamente non disponibile. Riprova più tardi."
+      }
+    }
   },
   "navbar": {
     "user": {

@@ -2365,7 +2365,14 @@
   "errors": {
     "notFound": "Page non trouvée",
     "serverError": "Erreur du serveur",
-    "unauthorized": "Accès non autorisé"
+    "unauthorized": "Accès non autorisé",
+    "system": {
+      "moderation": {
+        "blocked": "Votre message n'a pas passé l'examen du modèle de garde-fou de sécurité. Veuillez le modifier puis réessayer.",
+        "blockedWithCategories": "Votre message n'a pas passé l'examen du modèle de garde-fou de sécurité. Catégorie non sûre : {categories}. Veuillez le modifier puis réessayer.",
+        "unavailable": "Le service d'examen du modèle de garde-fou de sécurité est temporairement indisponible. Veuillez réessayer plus tard."
+      }
+    }
   },
   "navbar": {
     "user": {

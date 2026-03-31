@@ -16,6 +16,11 @@ export const DEFAULT_FASTIFY_PROXY_PREFIXES = [
 
 export type RealtimeSourceMode = 'db-outbox' | 'app-direct' | 'hybrid';
 
+export interface InputModerationAppConfig {
+  apiUrl: string;
+  apiKey: string;
+}
+
 export interface ApiRuntimeConfig {
   host: string;
   port: number;
@@ -28,6 +33,10 @@ export interface ApiRuntimeConfig {
   difyTempConfigEnabled: boolean;
   difyTempConfigAllowedHosts: string[];
   difyTempConfigAllowPrivate: boolean;
+  inputModeration: {
+    enabled: boolean;
+    app: InputModerationAppConfig | null;
+  };
 }
 
 const DEFAULT_SESSION_COOKIE_NAMES = [
@@ -154,7 +163,63 @@ function parseRealtimeSourceMode(
   return 'db-outbox';
 }
 
+function parseInputModerationApp(
+  rawValue: string | undefined
+): InputModerationAppConfig | null {
+  if (!rawValue || rawValue.trim().length === 0) {
+    return null;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawValue);
+  } catch (error) {
+    throw new Error(
+      `Invalid DIFY_INPUT_MODERATION_APP JSON: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(
+      'Invalid DIFY_INPUT_MODERATION_APP: expected a JSON object'
+    );
+  }
+
+  const apiUrl =
+    typeof (parsed as { apiUrl?: unknown }).apiUrl === 'string'
+      ? (parsed as { apiUrl: string }).apiUrl.trim()
+      : '';
+  const apiKey =
+    typeof (parsed as { apiKey?: unknown }).apiKey === 'string'
+      ? (parsed as { apiKey: string }).apiKey.trim()
+      : '';
+
+  if (!apiUrl || !apiKey) {
+    throw new Error(
+      'Invalid DIFY_INPUT_MODERATION_APP: apiUrl and apiKey are required'
+    );
+  }
+
+  return { apiUrl, apiKey };
+}
+
 export function loadApiRuntimeConfig(): ApiRuntimeConfig {
+  const inputModerationEnabled = parseBooleanEnv(
+    process.env.DIFY_INPUT_MODERATION_ENABLED,
+    false
+  );
+  const inputModerationApp = inputModerationEnabled
+    ? parseInputModerationApp(process.env.DIFY_INPUT_MODERATION_APP)
+    : null;
+
+  if (inputModerationEnabled && !inputModerationApp) {
+    throw new Error(
+      'DIFY_INPUT_MODERATION_ENABLED=true requires DIFY_INPUT_MODERATION_APP'
+    );
+  }
+
   return {
     host: process.env.FASTIFY_API_HOST?.trim() || '0.0.0.0',
     port: parsePort(process.env.FASTIFY_API_PORT, 3010),
@@ -183,5 +248,9 @@ export function loadApiRuntimeConfig(): ApiRuntimeConfig {
       process.env.DIFY_TEMP_CONFIG_ALLOW_PRIVATE,
       false
     ),
+    inputModeration: {
+      enabled: inputModerationEnabled,
+      app: inputModerationApp,
+    },
   };
 }

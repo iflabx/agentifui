@@ -2365,7 +2365,14 @@
   "errors": {
     "notFound": "ページが見つかりません",
     "serverError": "サーバーエラー",
-    "unauthorized": "未認証アクセス"
+    "unauthorized": "未認証アクセス",
+    "system": {
+      "moderation": {
+        "blocked": "メッセージは安全ガードモデル審査を通過しませんでした。修正してから再度お試しください。",
+        "blockedWithCategories": "メッセージは安全ガードモデル審査を通過しませんでした。危険カテゴリ: {categories}。修正してから再度お試しください。",
+        "unavailable": "安全ガードモデル審査サービスは一時的に利用できません。しばらくしてからもう一度お試しください。"
+      }
+    }
   },
   "navbar": {
     "user": {

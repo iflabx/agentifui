@@ -1,4 +1,4 @@
-import type { AppErrorSource } from './app-error';
+import type { AppErrorDetail, AppErrorSource } from './app-error';
 import { AppRequestError, extractAppErrorDetail } from './app-error';
 
 export interface UiError {
@@ -7,6 +7,46 @@ export interface UiError {
   retryable: boolean;
   message: string;
   requestId?: string;
+  developerMessage?: string;
+  context?: Record<string, unknown>;
+}
+
+function buildUiErrorFromDetail(
+  detail: AppErrorDetail,
+  fallbackMessage: string,
+  messageOverride?: string
+): UiError {
+  return {
+    code: detail.code,
+    source: detail.source,
+    retryable: detail.retryable,
+    message: detail.userMessage || messageOverride || fallbackMessage,
+    ...(detail.requestId ? { requestId: detail.requestId } : {}),
+    ...(detail.developerMessage
+      ? { developerMessage: detail.developerMessage }
+      : {}),
+    ...(detail.context ? { context: detail.context } : {}),
+  };
+}
+
+function extractDetailFromErrorLike(error: Error): AppErrorDetail | null {
+  const detailCandidate = (
+    error as Error & {
+      detail?: unknown;
+      cause?: unknown;
+    }
+  ).detail;
+
+  if (detailCandidate) {
+    const detail = extractAppErrorDetail({
+      app_error: detailCandidate,
+    });
+    if (detail) {
+      return detail;
+    }
+  }
+
+  return extractAppErrorDetail((error as Error & { cause?: unknown }).cause);
 }
 
 export function toUiError(
@@ -16,15 +56,11 @@ export function toUiError(
 ): UiError {
   if (error instanceof AppRequestError) {
     if (error.detail) {
-      return {
-        code: error.detail.code,
-        source: error.detail.source,
-        retryable: error.detail.retryable,
-        message: error.detail.userMessage || error.message || fallbackMessage,
-        ...(error.detail.requestId
-          ? { requestId: error.detail.requestId }
-          : {}),
-      };
+      return buildUiErrorFromDetail(
+        error.detail,
+        fallbackMessage,
+        error.message
+      );
     }
 
     return {
@@ -36,17 +72,9 @@ export function toUiError(
   }
 
   if (error instanceof Error) {
-    const detail = extractAppErrorDetail(
-      (error as unknown as { cause?: unknown }).cause
-    );
+    const detail = extractDetailFromErrorLike(error);
     if (detail) {
-      return {
-        code: detail.code,
-        source: detail.source,
-        retryable: detail.retryable,
-        message: detail.userMessage || error.message || fallbackMessage,
-        ...(detail.requestId ? { requestId: detail.requestId } : {}),
-      };
+      return buildUiErrorFromDetail(detail, fallbackMessage, error.message);
     }
 
     return {

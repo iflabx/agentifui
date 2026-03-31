@@ -8,6 +8,7 @@ import type { MutableRefObject } from 'react';
 
 import type { ChatResolvedAppConfig } from './app-config';
 import { resolveChatSubmitAppConfig } from './app-config';
+import type { ChatModerationTranslator } from './error-utils';
 import { executeChatSubmit } from './submit-flow';
 import type { ChatNodeEvent } from './types';
 
@@ -63,6 +64,7 @@ interface UseChatSubmitHandlerInput {
   navigateToConversation: (conversationId: string) => void;
   flushChunkBuffer: (id: string | null) => void;
   chunkAppendInterval: number;
+  moderationT: ChatModerationTranslator;
 }
 
 export function useChatSubmitHandler({
@@ -98,6 +100,7 @@ export function useChatSubmitHandler({
   navigateToConversation,
   flushChunkBuffer,
   chunkAppendInterval,
+  moderationT,
 }: UseChatSubmitHandlerInput) {
   return useCallback(
     async (
@@ -173,6 +176,7 @@ export function useChatSubmitHandler({
         navigateToConversation,
         flushChunkBuffer,
         chunkAppendInterval,
+        moderationT,
       });
     },
     [
@@ -208,6 +212,7 @@ export function useChatSubmitHandler({
       navigateToConversation,
       flushChunkBuffer,
       chunkAppendInterval,
+      moderationT,
     ]
   );
 }

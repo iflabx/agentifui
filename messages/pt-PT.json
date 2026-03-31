@@ -2365,7 +2365,14 @@
   "errors": {
     "notFound": "Página não encontrada",
     "serverError": "Erro do servidor",
-    "unauthorized": "Acesso não autorizado"
+    "unauthorized": "Acesso não autorizado",
+    "system": {
+      "moderation": {
+        "blocked": "A sua mensagem não passou na revisão do modelo de guarda de segurança. Reveja-a e tente novamente.",
+        "blockedWithCategories": "A sua mensagem não passou na revisão do modelo de guarda de segurança. Categoria insegura: {categories}. Reveja-a e tente novamente.",
+        "unavailable": "O serviço de revisão do modelo de guarda de segurança está temporariamente indisponível. Tente novamente mais tarde."
+      }
+    }
   },
   "navbar": {
     "user": {

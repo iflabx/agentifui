@@ -201,6 +201,32 @@ Supported runtime controls:
 - `DIFY_PROXY_CIRCUIT_SHARED_STATE_ENABLED`
 - `DIFY_PROXY_CIRCUIT_SHARED_METRICS_ENABLED`
 
+## Dify Input Moderation
+
+Optional Fastify-side guardrail controls:
+
+- `DIFY_INPUT_MODERATION_ENABLED`
+- `DIFY_INPUT_MODERATION_APP`
+
+Behavior:
+
+- applies only to proxied Dify `chat-messages` and `completion-messages`
+- runs before the Fastify proxy forwards the request upstream
+- when enabled, `DIFY_INPUT_MODERATION_APP` must be valid JSON with:
+  - `apiUrl`
+  - `apiKey`
+- if the moderation app marks input unsafe, the proxy returns
+  `CONTENT_MODERATION_BLOCKED`
+- if the moderation app is unavailable or returns an invalid payload, the proxy
+  fails closed with `CONTENT_MODERATION_UNAVAILABLE`
+
+Example:
+
+```env
+DIFY_INPUT_MODERATION_ENABLED=true
+DIFY_INPUT_MODERATION_APP={"apiUrl":"https://your-dify-host/v1","apiKey":"app-xxxxxxxxxxxxxxxx"}
+```
+
 ## Dify Temporary Config
 
 `_temp_config` is an admin-only verification path for temporary Dify connectivity checks.

@@ -56,6 +56,7 @@ describe('useChatSubmitHandler', () => {
     navigateToConversation: jest.fn(),
     flushChunkBuffer: jest.fn(),
     chunkAppendInterval: 30,
+    moderationT: jest.fn((key: string) => key),
   });
 
   beforeEach(() => {
@@ -144,6 +145,7 @@ describe('useChatSubmitHandler', () => {
         navigateToConversation: input.navigateToConversation,
         flushChunkBuffer: input.flushChunkBuffer,
         chunkAppendInterval: 30,
+        moderationT: input.moderationT,
       })
     );
   });

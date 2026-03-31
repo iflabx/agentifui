@@ -2,6 +2,8 @@
 
 import {
   formatChatUiError,
+  isContentModerationBlocked,
+  localizeChatModerationMessage,
   reportTraceableClientError,
 } from '@lib/hooks/chat-interface/error-utils';
 import { isChatSubmitResult } from '@lib/hooks/chat-interface/guards';
@@ -55,6 +57,7 @@ export function ChatflowInputArea({
   const { widthClass, paddingClass } = useChatWidth();
   const { currentAppInstance } = useCurrentApp();
   const t = useTranslations('pages.chatflow');
+  const tModeration = useTranslations('errors.system.moderation');
   const tWorkflow = useTranslations('pages.workflow.form');
 
   const [query, setQuery] = useState('');
@@ -210,7 +213,18 @@ export function ChatflowInputArea({
 
         if (isChatSubmitResult(submitResult) && !submitResult.ok) {
           const submitFailureMessage =
-            submitResult.errorMessage || 'Failed to submit chatflow request.';
+            localizeChatModerationMessage(
+              {
+                code: submitResult.errorCode || 'REQUEST_FAILED',
+                developerMessage: submitResult.errorMessage,
+              },
+              (key, values) => tModeration(key, values)
+            ) ||
+            submitResult.errorMessage ||
+            'Failed to submit chatflow request.';
+          const isModerationBlocked = isContentModerationBlocked(
+            submitResult.errorCode
+          );
 
           void reportTraceableClientError({
             code: submitResult.errorCode || 'CHATFLOW_SUBMIT_FAILED',
@@ -228,6 +242,14 @@ export function ChatflowInputArea({
             },
           });
 
+          if (isModerationBlocked) {
+            setQuery('');
+            useNotificationStore
+              .getState()
+              .showNotification(submitFailureMessage, 'warning', 5000);
+            return;
+          }
+
           if (!submitResult.surfaced) {
             useNotificationStore
               .getState()
@@ -243,8 +265,12 @@ export function ChatflowInputArea({
         const { errorMessage, errorCode, requestId } = formatChatUiError(
           error,
           'Failed to submit chatflow request.',
-          'frontend'
+          'frontend',
+          {
+            moderationT: (key, values) => tModeration(key, values),
+          }
         );
+        const isModerationBlocked = isContentModerationBlocked(errorCode);
         void reportTraceableClientError({
           code: errorCode || 'CHATFLOW_SUBMIT_THROWN',
           userMessage: errorMessage,
@@ -260,6 +286,15 @@ export function ChatflowInputArea({
             fileCount: files.length,
           },
         });
+
+        if (isModerationBlocked) {
+          setQuery('');
+          useNotificationStore
+            .getState()
+            .showNotification(errorMessage, 'warning', 5000);
+          return;
+        }
+
         useNotificationStore
           .getState()
           .showNotification(errorMessage, 'error', 5000);
@@ -276,6 +311,7 @@ export function ChatflowInputArea({
       onSubmit,
       query,
       t,
+      tModeration,
       tWorkflow,
       userInputForm,
     ]

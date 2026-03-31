@@ -2365,7 +2365,14 @@
   "errors": {
     "notFound": "頁面未找到",
     "serverError": "伺服器錯誤",
-    "unauthorized": "未授權存取"
+    "unauthorized": "未授權存取",
+    "system": {
+      "moderation": {
+        "blocked": "您的訊息未通過安全護欄模型審查，請修改後重試。",
+        "blockedWithCategories": "您的訊息未通過安全護欄模型審查，不安全類別：{categories}。請修改後重試。",
+        "unavailable": "安全護欄模型審查服務暫時無法使用，請稍後再試。"
+      }
+    }
   },
   "navbar": {
     "user": {

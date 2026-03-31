@@ -2365,7 +2365,14 @@
   "errors": {
     "notFound": "Página no encontrada",
     "serverError": "Error del servidor",
-    "unauthorized": "Acceso no autorizado"
+    "unauthorized": "Acceso no autorizado",
+    "system": {
+      "moderation": {
+        "blocked": "Tu mensaje no pasó la revisión del modelo de barandilla de seguridad. Revísalo y vuelve a intentarlo.",
+        "blockedWithCategories": "Tu mensaje no pasó la revisión del modelo de barandilla de seguridad. Categoría no segura: {categories}. Revísalo y vuelve a intentarlo.",
+        "unavailable": "El servicio de revisión del modelo de barandilla de seguridad no está disponible temporalmente. Inténtalo de nuevo más tarde."
+      }
+    }
   },
   "navbar": {
     "user": {

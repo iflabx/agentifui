@@ -2365,7 +2365,14 @@
   "errors": {
     "notFound": "页面未找到",
     "serverError": "服务器错误",
-    "unauthorized": "未授权访问"
+    "unauthorized": "未授权访问",
+    "system": {
+      "moderation": {
+        "blocked": "您的消息未通过安全护栏模型审查，请修改后重试。",
+        "blockedWithCategories": "您的消息未通过安全护栏模型审查，不安全类别：{categories}。请修改后重试。",
+        "unavailable": "安全护栏模型审查服务暂时不可用，请稍后重试。"
+      }
+    }
   },
   "navbar": {
     "user": {

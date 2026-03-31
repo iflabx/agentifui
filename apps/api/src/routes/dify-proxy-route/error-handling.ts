@@ -118,6 +118,7 @@ export async function withAgentErrorEnvelope(
     route: string;
     method: string;
     actorUserId?: string;
+    extraContext?: Record<string, unknown>;
   }
 ): Promise<unknown> {
   const rawMessage = extractErrorMessage(payload);
@@ -144,6 +145,7 @@ export async function withAgentErrorEnvelope(
       agent_source: agentError.source,
       agent_kind: agentError.kind,
       suggestion: agentError.suggestion,
+      ...(context.extraContext || {}),
     },
   });
 
@@ -184,6 +186,7 @@ export function buildAppErrorPayload(input: {
   actorUserId?: string;
   code: string;
   message: string;
+  context?: Record<string, unknown>;
 }): Promise<unknown> {
   return withAgentErrorEnvelope(
     {
@@ -199,6 +202,7 @@ export function buildAppErrorPayload(input: {
       route: input.route,
       method: input.method,
       actorUserId: input.actorUserId,
+      extraContext: input.context,
     }
   );
 }

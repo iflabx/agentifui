@@ -2365,7 +2365,14 @@
   "errors": {
     "notFound": "Seite nicht gefunden",
     "serverError": "Serverfehler",
-    "unauthorized": "Nicht autorisierter Zugriff"
+    "unauthorized": "Nicht autorisierter Zugriff",
+    "system": {
+      "moderation": {
+        "blocked": "Ihre Nachricht hat die Prüfung durch das Safety-Guard-Modell nicht bestanden. Bitte überarbeiten Sie sie und versuchen Sie es erneut.",
+        "blockedWithCategories": "Ihre Nachricht hat die Prüfung durch das Safety-Guard-Modell nicht bestanden. Unsichere Kategorie: {categories}. Bitte überarbeiten Sie sie und versuchen Sie es erneut.",
+        "unavailable": "Der Prüfdienst des Safety-Guard-Modells ist vorübergehend nicht verfügbar. Bitte versuchen Sie es später erneut."
+      }
+    }
   },
   "navbar": {
     "user": {

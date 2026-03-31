@@ -31,6 +31,10 @@ function createConfig(
     difyTempConfigEnabled: false,
     difyTempConfigAllowedHosts: [],
     difyTempConfigAllowPrivate: false,
+    inputModeration: {
+      enabled: false,
+      app: null,
+    },
     ...overrides,
   };
 }

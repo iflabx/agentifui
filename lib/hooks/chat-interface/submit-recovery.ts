@@ -1,4 +1,8 @@
-import { formatChatUiError } from '@lib/hooks/chat-interface/error-utils';
+import {
+  type ChatModerationTranslator,
+  formatChatUiError,
+  isKnownModerationError,
+} from '@lib/hooks/chat-interface/error-utils';
 import type { ChatMessage } from '@lib/stores/chat-store';
 import { useChatStore } from '@lib/stores/chat-store';
 import { usePendingConversationStore } from '@lib/stores/pending-conversation-store';
@@ -23,6 +27,7 @@ interface HandleChatSubmitStreamErrorInput {
     status?: 'sent' | 'delivered' | 'error',
     errorMessage?: string
   ) => Promise<boolean>;
+  moderationT: ChatModerationTranslator;
 }
 
 export function handleChatSubmitStreamError(
@@ -31,10 +36,13 @@ export function handleChatSubmitStreamError(
   console.error('[handleSubmit] Error occurred during streaming:', input.error);
   const streamError =
     input.error instanceof Error ? input.error : new Error(String(input.error));
-  const { errorMessage } = formatChatUiError(
+  const { errorMessage, errorCode } = formatChatUiError(
     streamError,
     'Unknown error',
-    'dify-proxy'
+    'dify-proxy',
+    {
+      moderationT: input.moderationT,
+    }
   );
 
   if (input.assistantMessageId) {
@@ -68,8 +76,12 @@ export function handleChatSubmitStreamError(
     return streamError;
   }
 
+  const displayErrorMessage = isKnownModerationError(errorCode)
+    ? errorMessage
+    : `Sorry, an error occurred while processing your request: ${errorMessage}`;
+
   const errorAssistantMessage = input.addMessage({
-    text: `Sorry, an error occurred while processing your request: ${errorMessage}`,
+    text: displayErrorMessage,
     isUser: false,
     error: errorMessage,
     persistenceStatus: 'pending',
@@ -80,12 +92,14 @@ export function handleChatSubmitStreamError(
       console.log(
         `[handleSubmit] Save user message in error handler, ID=${input.userMessage.id}`
       );
-      void input.saveMessage(input.userMessage, input.finalDbConvUUID).catch(error => {
-        console.error(
-          '[handleSubmit] Failed to save user message in error handler:',
-          error
-        );
-      });
+      void input
+        .saveMessage(input.userMessage, input.finalDbConvUUID)
+        .catch(error => {
+          console.error(
+            '[handleSubmit] Failed to save user message in error handler:',
+            error
+          );
+        });
     }
 
     console.log(
@@ -103,9 +117,11 @@ export function handleChatSubmitStreamError(
         });
       });
 
-    const errorText = errorMessage
-      ? `Assistant reply failed: ${errorMessage}`
-      : 'Assistant reply failed: Unknown error';
+    const errorText = isKnownModerationError(errorCode)
+      ? errorMessage
+      : errorMessage
+        ? `Assistant reply failed: ${errorMessage}`
+        : 'Assistant reply failed: Unknown error';
 
     void input
       .saveErrorPlaceholder(input.finalDbConvUUID, 'error', errorText)
@@ -179,7 +195,10 @@ export async function finalizeChatSubmitStream(
 
       if (latestMessage.wasManuallyStopped) {
         try {
-          await input.saveStoppedAssistantMessage(latestMessage, currentDbConvId);
+          await input.saveStoppedAssistantMessage(
+            latestMessage,
+            currentDbConvId
+          );
         } catch (error) {
           console.error(
             '[handleSubmit-finally] Failed to save stopped assistant message:',

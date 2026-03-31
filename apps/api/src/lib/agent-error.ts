@@ -7,6 +7,8 @@ export type AgentErrorSource =
 
 type AgentErrorKind =
   | 'input_invalid'
+  | 'content_blocked'
+  | 'moderation_unavailable'
   | 'tool_runtime_failure'
   | 'upstream_unavailable'
   | 'quota_exceeded'
@@ -74,6 +76,21 @@ function resolveMessages(
 } {
   if (useZh) {
     switch (kind) {
+      case 'content_blocked':
+        return {
+          code: 'CONTENT_MODERATION_BLOCKED',
+          retryable: true,
+          userMessage: '您的消息未通过审查，请修改后重试。',
+          suggestion: '请调整表述后重新提交，避免敏感、违规或高风险内容。',
+        };
+      case 'moderation_unavailable':
+        return {
+          code: 'CONTENT_MODERATION_UNAVAILABLE',
+          retryable: true,
+          userMessage: '内容审查服务暂时不可用，请稍后重试。',
+          suggestion:
+            '请稍后重试；若持续失败，请检查审查服务配置与网络连通性。',
+        };
       case 'input_invalid':
         return {
           code: 'AGENT_INPUT_INVALID',
@@ -124,6 +141,24 @@ function resolveMessages(
   }
 
   switch (kind) {
+    case 'content_blocked':
+      return {
+        code: 'CONTENT_MODERATION_BLOCKED',
+        retryable: true,
+        userMessage:
+          'Your message did not pass content moderation. Please revise it and try again.',
+        suggestion:
+          'Revise the text to remove unsafe or policy-sensitive content, then resubmit.',
+      };
+    case 'moderation_unavailable':
+      return {
+        code: 'CONTENT_MODERATION_UNAVAILABLE',
+        retryable: true,
+        userMessage:
+          'The content moderation service is temporarily unavailable. Please try again later.',
+        suggestion:
+          'Retry shortly; if it persists, verify the moderation app configuration and network connectivity.',
+      };
     case 'input_invalid':
       return {
         code: 'AGENT_INPUT_INVALID',
@@ -188,6 +223,14 @@ function classifyErrorKind(
 ): AgentErrorKind {
   const message = rawMessage || '';
   const normalizedCode = (code || '').toLowerCase();
+
+  if (normalizedCode === 'content_moderation_blocked') {
+    return 'content_blocked';
+  }
+
+  if (normalizedCode === 'content_moderation_unavailable') {
+    return 'moderation_unavailable';
+  }
 
   if (
     status === 401 ||

@@ -23,10 +23,12 @@ import { usePendingConversationStore } from '@lib/stores/pending-conversation-st
 
 import { useCallback } from 'react';
 
+import { useTranslations } from 'next-intl';
 import { usePathname, useRouter } from 'next/navigation';
 
 import { useChatConversationState } from './chat-interface/conversation-state';
 import { sendDirectChatMessage } from './chat-interface/direct-send';
+import type { ChatModerationTranslator } from './chat-interface/error-utils';
 import { useChatStopHandler } from './chat-interface/stop-handler';
 import { useChatStreamingState } from './chat-interface/streaming-state';
 import { useChatSubmitHandler } from './chat-interface/submit-handler';
@@ -60,6 +62,11 @@ export function useChatInterface(
 ) {
   const router = useRouter();
   const currentPathname = usePathname();
+  const tModerationBase = useTranslations('errors.system.moderation');
+  const moderationT = useCallback<ChatModerationTranslator>(
+    (key, values) => tModerationBase(key, values),
+    [tModerationBase]
+  );
   const { isWelcomeScreen, setIsWelcomeScreen } = useChatInputStore();
 
   // Get authentication state and current app info using new hook
@@ -161,6 +168,7 @@ export function useChatInterface(
     navigateToConversation,
     flushChunkBuffer,
     chunkAppendInterval: CHUNK_APPEND_INTERVAL,
+    moderationT,
   });
 
   // New: direct send message function

@@ -2365,7 +2365,14 @@
   "errors": {
     "notFound": "Page not found",
     "serverError": "Server error",
-    "unauthorized": "Unauthorized access"
+    "unauthorized": "Unauthorized access",
+    "system": {
+      "moderation": {
+        "blocked": "Your message did not pass the safety guard model review. Please revise it and try again.",
+        "blockedWithCategories": "Your message did not pass the safety guard model review. Unsafe category: {categories}. Please revise it and try again.",
+        "unavailable": "The safety guard model review service is temporarily unavailable. Please try again later."
+      }
+    }
   },
   "navbar": {
     "user": {

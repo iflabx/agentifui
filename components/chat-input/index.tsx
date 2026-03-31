@@ -4,6 +4,8 @@ import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
 import { useChatWidth, useInputHeightReset } from '@lib/hooks';
 import {
   formatChatUiError,
+  isContentModerationBlocked,
+  localizeChatModerationMessage,
   reportTraceableClientError,
 } from '@lib/hooks/chat-interface/error-utils';
 import { isChatSubmitResult } from '@lib/hooks/chat-interface/guards';
@@ -73,6 +75,7 @@ export const ChatInput = ({
   showModelSelector = true,
 }: ChatInputProps) => {
   const t = useTranslations('pages.chat');
+  const tModeration = useTranslations('errors.system.moderation');
   const defaultPlaceholder = placeholder || t('input.placeholder');
   const { widthClass } = useChatWidth();
   const { setInputHeight } = useChatLayoutStore();
@@ -190,8 +193,18 @@ export const ChatInput = ({
 
         if (isChatSubmitResult(submitResult) && !submitResult.ok) {
           const submitFailureMessage =
+            localizeChatModerationMessage(
+              {
+                code: submitResult.errorCode || 'REQUEST_FAILED',
+                developerMessage: submitResult.errorMessage,
+              },
+              (key, values) => tModeration(key, values)
+            ) ||
             submitResult.errorMessage ||
             `${t('input.messageSendFailed')}: ${t('input.unknownError')}`;
+          const isModerationBlocked = isContentModerationBlocked(
+            submitResult.errorCode
+          );
 
           void reportTraceableClientError({
             code: submitResult.errorCode || 'CHAT_INPUT_SUBMIT_FAILED',
@@ -209,6 +222,15 @@ export const ChatInput = ({
             },
           });
 
+          if (isModerationBlocked) {
+            clearMessage();
+            clearAttachments();
+            useNotificationStore
+              .getState()
+              .showNotification(submitFailureMessage, 'warning', 5000);
+            return;
+          }
+
           if (!submitResult.surfaced) {
             setMessage(savedMessage);
             useAttachmentStore.getState().setFiles(savedAttachments);
@@ -223,8 +245,37 @@ export const ChatInput = ({
       const { errorMessage, errorCode, requestId } = formatChatUiError(
         error,
         `${t('input.messageSendFailed')}: ${t('input.unknownError')}`,
-        'frontend'
+        'frontend',
+        {
+          moderationT: (key, values) => tModeration(key, values),
+        }
       );
+      const isModerationBlocked = isContentModerationBlocked(errorCode);
+
+      if (isModerationBlocked) {
+        clearMessage();
+        clearAttachments();
+        void reportTraceableClientError({
+          code: errorCode || 'CHAT_INPUT_SUBMIT_THROWN',
+          userMessage: errorMessage,
+          developerMessage:
+            error instanceof Error ? error.message : String(error),
+          requestId,
+          context: {
+            component: 'chat-input',
+            phase: 'submit_throw',
+            currentAppId: currentAppId || null,
+            userId: session?.user?.id || null,
+            attachmentCount: savedAttachments.length,
+            messageLength: savedMessage.length,
+          },
+        });
+        useNotificationStore
+          .getState()
+          .showNotification(errorMessage, 'warning', 3000);
+        return;
+      }
+
       setMessage(savedMessage);
       useAttachmentStore.getState().setFiles(savedAttachments);
       void reportTraceableClientError({
