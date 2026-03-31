@@ -1,4 +1,7 @@
-import { getProtectedTerms } from '../../../../lib/config/branding';
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- API runtime needs the JS companion outside apps/api/src rootDir
+const { getProtectedTerms } = require('../../../../lib/config/branding.js') as {
+  getProtectedTerms: (locale?: string) => string[];
+};
 
 type JsonPrimitive = string | number | boolean | null;
 type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
