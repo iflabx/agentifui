@@ -13,6 +13,7 @@ import { FileAttachmentDisplay } from './file-attachment-display';
 interface UserMessageProps {
   content: string;
   attachments?: MessageAttachment[];
+  conversationAppId?: string | null;
   id: string;
   className?: string;
   onCopy?: () => void;
@@ -22,6 +23,7 @@ interface UserMessageProps {
 export const UserMessage: React.FC<UserMessageProps> = ({
   content,
   attachments = [],
+  conversationAppId = null,
   id,
   className,
   onEdit = () => console.log('Edit message', id),
@@ -30,6 +32,7 @@ export const UserMessage: React.FC<UserMessageProps> = ({
   const isMounted = useMounted();
   const { currentAppId } = useCurrentApp();
   const hasAttachments = attachments && attachments.length > 0;
+  const previewAppId = conversationAppId || currentAppId || undefined;
 
   if (!isMounted) {
     return null;
@@ -47,9 +50,10 @@ export const UserMessage: React.FC<UserMessageProps> = ({
               size: att.size,
               type: att.type,
               upload_file_id: att.upload_file_id,
-              app_id: att.app_id || currentAppId || undefined, // Preserve app_id or use current app ID
+              // Historical messages should keep their original app context whenever possible.
+              app_id: att.app_id || previewAppId,
             }))}
-            appId={currentAppId || undefined} // Pass current app ID for file preview
+            appId={previewAppId}
             className={cn('mb-2 w-full')}
           />
         )}

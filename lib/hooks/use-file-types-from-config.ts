@@ -27,6 +27,9 @@ const generateAcceptString = (extensions: string[]): string => {
   return extensions.map(ext => `.${ext}`).join(',');
 };
 
+const normalizeExtension = (extension: string): string =>
+  extension.trim().replace(/^\./, '').toLowerCase();
+
 const FILE_TYPE_MAPPING: Record<string, FileTypeKey> = {
   document: 'document',
   image: 'image',
@@ -80,16 +83,30 @@ export function useFileTypesFromConfig() {
     ];
     const allowedFileTypes = actualConfig.allowed_file_types || [];
     const allowedExtensions = actualConfig.allowed_file_extensions || [];
+    const normalizedAllowedExtensions = new Set(
+      allowedExtensions.map(normalizeExtension).filter(Boolean)
+    );
+    const hasExtensionAllowlist = normalizedAllowedExtensions.size > 0;
 
     allowedFileTypes.forEach((fileTypeKey: string) => {
       const configKey = FILE_TYPE_MAPPING[fileTypeKey] || fileTypeKey;
       const config = FILE_TYPE_CONFIG[configKey as FileTypeKey];
       if (config) {
+        const extensions = hasExtensionAllowlist
+          ? config.extensions.filter(extension =>
+              normalizedAllowedExtensions.has(normalizeExtension(extension))
+            )
+          : [...config.extensions];
+
+        if (extensions.length === 0) {
+          return;
+        }
+
         enabledTypes.push({
           title: configKey,
-          extensions: [...config.extensions],
+          extensions,
           icon: React.createElement(config.icon, { className: 'h-4 w-4' }),
-          acceptString: generateAcceptString(config.extensions),
+          acceptString: generateAcceptString(extensions),
           maxSize: config.maxSize,
         });
       } else {

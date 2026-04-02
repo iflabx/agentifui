@@ -123,7 +123,8 @@ export async function executeChatSubmit(
   input.setIsWaitingForResponse(true);
 
   const messageAttachments = mapChatUploadFilesToMessageAttachments(
-    input.files
+    input.files,
+    input.appConfig.appId
   );
   const userMessage = input.addMessage({
     text: input.message,

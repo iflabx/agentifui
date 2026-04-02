@@ -4,7 +4,8 @@ import type { MessageAttachment } from '@lib/stores/chat-store';
 import type { DifyLocalFile } from './types';
 
 export function mapChatUploadFilesToMessageAttachments(
-  files?: unknown[]
+  files?: unknown[],
+  appId?: string
 ): MessageAttachment[] | undefined {
   if (!Array.isArray(files) || files.length === 0) {
     return undefined;
@@ -18,6 +19,7 @@ export function mapChatUploadFilesToMessageAttachments(
       size: uploadFile.size,
       type: uploadFile.mime_type,
       upload_file_id: uploadFile.upload_file_id,
+      app_id: appId || undefined,
     };
   });
 }

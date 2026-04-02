@@ -18,6 +18,8 @@ import { AssistantMessage, UserMessage } from './messages';
 interface ChatLoaderProps {
   /** List of chat messages */
   messages: ChatMessage[];
+  /** Original conversation app context for historical attachment preview */
+  conversationAppId?: string | null;
   /** Whether waiting for response */
   isWaitingForResponse?: boolean;
   /** Whether initial loading is in progress */
@@ -48,6 +50,7 @@ interface ChatLoaderProps {
  */
 export const ChatLoader = ({
   messages,
+  conversationAppId,
   isWaitingForResponse = false,
   isLoadingInitial = false,
   className,
@@ -155,6 +158,7 @@ export const ChatLoader = ({
                   key={msg.id}
                   content={msg.text}
                   attachments={msg.attachments}
+                  conversationAppId={conversationAppId}
                   id={msg.id}
                 />
               ) : (

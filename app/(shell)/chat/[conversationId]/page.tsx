@@ -56,6 +56,7 @@ export default function ChatPage() {
   const isPreviewOpen = useFilePreviewStore(state => state.isPreviewOpen);
   const chatflowInterface = useChatflowInterface();
   const regularInterface = useChatInterface();
+  const { conversationAppId } = regularInterface;
 
   // Use the wrapped hook to detect chatflow apps
   const { isChatflowApp } = useChatflowDetection();
@@ -190,6 +191,7 @@ export default function ChatPage() {
 
               <ChatLoader
                 messages={messages}
+                conversationAppId={conversationAppId}
                 isWaitingForResponse={isWaitingForResponse}
                 isLoadingInitial={isLoadingInitial}
               />

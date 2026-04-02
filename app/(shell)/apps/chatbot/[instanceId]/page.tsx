@@ -52,6 +52,7 @@ export default function AppDetailPage() {
     isWaitingForResponse,
     handleStopProcessing,
     sendDirectMessage,
+    conversationAppId,
     clearConversationState,
   } = chatInterface;
 
@@ -387,6 +388,7 @@ export default function AppDetailPage() {
             >
               <ChatLoader
                 messages={messages}
+                conversationAppId={conversationAppId}
                 isWaitingForResponse={isWaitingForResponse}
                 isLoadingInitial={false}
               />
