@@ -44,8 +44,8 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
 
   // Actions
   openPreview: async (file: MessageAttachment, appId?: string) => {
-    // Use appId from parameter or file, with fallback
-    const finalAppId = appId || file.app_id;
+    // Preserve the file's original app context first; only fall back to the caller appId.
+    const finalAppId = file.app_id || appId;
 
     if (!finalAppId) {
       set({
@@ -56,6 +56,9 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
       });
       return;
     }
+
+    const previewFile =
+      file.app_id === finalAppId ? file : { ...file, app_id: finalAppId };
 
     // Generate cache key
     const cacheKey = getCacheKey(finalAppId, file.upload_file_id);
@@ -68,7 +71,7 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
       // Cache hit - use cached content
       set({
         isPreviewOpen: true,
-        currentPreviewFile: file,
+        currentPreviewFile: previewFile,
         previewContent: cachedEntry.content,
         contentHeaders: cachedEntry.headers,
         isLoading: false,
@@ -80,7 +83,7 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
     // Cache miss - show loading and fetch from API
     set({
       isPreviewOpen: true,
-      currentPreviewFile: file,
+      currentPreviewFile: previewFile,
       isLoading: true,
       error: null,
       previewContent: null,

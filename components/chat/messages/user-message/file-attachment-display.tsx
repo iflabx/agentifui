@@ -86,13 +86,15 @@ export const FileAttachmentDisplay: React.FC<FileAttachmentDisplayProps> = ({
       }
     }
 
-    // Create enhanced attachment with appId if available
+    const resolvedAppId = attachment.app_id || appId;
+
+    // Preserve attachment app context first; only fall back to the external appId.
     const enhancedAttachment: MessageAttachment = {
       ...attachment,
-      app_id: appId || attachment.app_id,
+      app_id: resolvedAppId,
     };
 
-    openPreview(enhancedAttachment, appId);
+    openPreview(enhancedAttachment, resolvedAppId);
   };
 
   return (
