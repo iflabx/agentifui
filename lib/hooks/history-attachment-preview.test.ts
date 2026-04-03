@@ -4,6 +4,7 @@ import type { ChatMessage } from '@lib/stores/chat-store';
 import {
   applyAttachmentPreviewIds,
   hasPendingAttachmentPreviewSync,
+  resolveHistoryAttachmentPreviewUserId,
 } from './history-attachment-preview';
 
 function createUserMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
@@ -61,6 +62,22 @@ function createDifyMessage(
 }
 
 describe('history attachment preview helpers', () => {
+  it('prefers the auth session user id for Dify history lookups', () => {
+    expect(
+      resolveHistoryAttachmentPreviewUserId({
+        sessionUserId: 'auth-user-1',
+        profileUserId: 'profile-user-1',
+      })
+    ).toBe('auth-user-1');
+
+    expect(
+      resolveHistoryAttachmentPreviewUserId({
+        sessionUserId: '   ',
+        profileUserId: 'profile-user-1',
+      })
+    ).toBe('profile-user-1');
+  });
+
   it('detects pending sync only when preview ids are still missing and streaming is done', () => {
     expect(
       hasPendingAttachmentPreviewSync([

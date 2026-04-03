@@ -13,6 +13,8 @@ import { DynamicSuggestedQuestions } from '@components/chat/dynamic-suggested-qu
 import { ChatflowFloatingController } from '@components/chatflow/chatflow-floating-controller';
 import { ChatflowNodeTracker } from '@components/chatflow/chatflow-node-tracker';
 import { FilePreviewCanvas } from '@components/file-preview/file-preview-canvas';
+import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
+import { resolveHistoryAttachmentPreviewUserId } from '@lib/hooks/history-attachment-preview';
 import { useChatInterface } from '@lib/hooks/use-chat-interface';
 import { useChatPageState } from '@lib/hooks/use-chat-page-state';
 import { useChatScroll } from '@lib/hooks/use-chat-scroll';
@@ -40,6 +42,7 @@ export default function ChatPage() {
     typeof params?.conversationId === 'string' ? params.conversationId : '';
   const pathname = usePathname() ?? '';
   const t = useTranslations('pages.chat.input');
+  const { session } = useAuthSession();
 
   // Get chatflow execution state cleanup method
   const { resetExecution } = useChatflowExecutionStore();
@@ -132,7 +135,10 @@ export default function ChatPage() {
   useHistoryAttachmentPreviewSync({
     appId: conversationAppId,
     conversationId: conversationIdFromUrl,
-    userId: loadedProfile?.id,
+    userId: resolveHistoryAttachmentPreviewUserId({
+      sessionUserId: session?.user?.id,
+      profileUserId: loadedProfile?.id,
+    }),
     messages,
   });
 

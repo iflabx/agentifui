@@ -2,6 +2,19 @@ import { getConversationMessages } from '@lib/services/dify/message-service';
 import type { ConversationMessage } from '@lib/services/dify/types';
 import type { ChatMessage, MessageAttachment } from '@lib/stores/chat-store';
 
+export function resolveHistoryAttachmentPreviewUserId(input: {
+  sessionUserId?: string | null;
+  profileUserId?: string | null;
+}): string | null {
+  const sessionUserId = input.sessionUserId?.trim();
+  if (sessionUserId) {
+    return sessionUserId;
+  }
+
+  const profileUserId = input.profileUserId?.trim();
+  return profileUserId || null;
+}
+
 function hasAttachmentsWithoutPreviewId(message: ChatMessage): boolean {
   return Boolean(
     message.isUser &&
