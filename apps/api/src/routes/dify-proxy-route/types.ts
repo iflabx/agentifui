@@ -2,6 +2,7 @@ import type { AgentErrorSource } from '../../lib/agent-error';
 
 export interface DifyProxyActor {
   userId: string;
+  authUserId?: string;
   role: string;
 }
 

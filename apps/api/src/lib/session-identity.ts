@@ -224,6 +224,7 @@ export async function resolveIdentityFromSession(
     kind: 'ok',
     identity: {
       userId: resolved.identity.userId,
+      authUserId: resolved.identity.authUserId,
       role: resolved.identity.role,
     },
   };

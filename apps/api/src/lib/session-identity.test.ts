@@ -168,7 +168,33 @@ describe('session-identity resolver', () => {
       kind: 'ok',
       identity: {
         userId: '00000000-0000-4000-8000-000000000013',
+        authUserId: '00000000-0000-4000-8000-000000000013',
         role: 'admin',
+      },
+    });
+  });
+
+  it('preserves auth user id when profile id differs from auth id', async () => {
+    mockedQueryRowsWithPgSystemContext.mockResolvedValueOnce([
+      {
+        auth_user_id: '00000000-0000-4000-8000-000000000021',
+        user_id: '00000000-0000-4000-8000-000000000022',
+        role: 'user',
+        status: 'active',
+      } as never,
+    ]);
+
+    const result = await resolveIdentityFromSession(
+      createRequest({ cookie: 'session_token=token-790' }),
+      createConfig()
+    );
+
+    expect(result).toEqual({
+      kind: 'ok',
+      identity: {
+        userId: '00000000-0000-4000-8000-000000000022',
+        authUserId: '00000000-0000-4000-8000-000000000021',
+        role: 'user',
       },
     });
   });

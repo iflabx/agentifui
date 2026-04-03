@@ -1,5 +1,6 @@
 export interface ActorIdentity {
   userId: string;
+  authUserId?: string;
   role: string;
 }
 

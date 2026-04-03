@@ -314,7 +314,7 @@ export async function dispatchDifyUpstreamRequest(
   const scopedQuery = buildScopedUpstreamQuery({
     rawQuery,
     slugPath,
-    actorUserId: context.actor.userId,
+    actorUserId: context.actor.authUserId || context.actor.userId,
   });
   const targetUrl = `${targetConfig.difyApiUrl.replace(/\/+$/, '')}/${slugPath}${scopedQuery}`;
   const target = new URL(targetUrl);
