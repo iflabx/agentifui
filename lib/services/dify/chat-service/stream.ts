@@ -694,6 +694,7 @@ export async function streamDifyChat(
               }
 
               const completionData = {
+                messageId: event.id,
                 usage: extractUsage(event.metadata?.usage || event.usage),
                 metadata: event.metadata || {},
                 retrieverResources: extractRetrieverResources(

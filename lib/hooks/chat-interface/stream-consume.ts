@@ -125,6 +125,8 @@ function applyCompletionDataToAssistantMessage(input: {
   };
 
   input.updateMessage(input.assistantMessageId, {
+    dify_message_id:
+      input.completionData.messageId || existingMessage?.dify_message_id,
     metadata: enhancedMetadata,
     token_count:
       input.completionData.usage?.total_tokens || existingMessage?.token_count,

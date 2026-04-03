@@ -44,6 +44,8 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
 
   // Actions
   openPreview: async (file: MessageAttachment, appId?: string) => {
+    const previewFileId = file.preview_file_id || file.upload_file_id;
+
     // Preserve the file's original app context first; only fall back to the caller appId.
     const finalAppId = file.app_id || appId;
 
@@ -61,7 +63,7 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
       file.app_id === finalAppId ? file : { ...file, app_id: finalAppId };
 
     // Generate cache key
-    const cacheKey = getCacheKey(finalAppId, file.upload_file_id);
+    const cacheKey = getCacheKey(finalAppId, previewFileId);
     const cacheStore = useFilePreviewCacheStore.getState();
 
     // Try to get from cache first
@@ -94,7 +96,7 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
       // Call the previewDifyFile API
       const response = await previewDifyFile(
         finalAppId,
-        file.upload_file_id,
+        previewFileId,
         { as_attachment: false } // Preview mode
       );
 
@@ -150,6 +152,8 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
   downloadFile: async () => {
     const { currentPreviewFile } = get();
     if (!currentPreviewFile) return;
+    const previewFileId =
+      currentPreviewFile.preview_file_id || currentPreviewFile.upload_file_id;
 
     const finalAppId = currentPreviewFile.app_id;
     if (!finalAppId) {
@@ -161,7 +165,7 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
       // Call the API with attachment mode
       const response = await previewDifyFile(
         finalAppId,
-        currentPreviewFile.upload_file_id,
+        previewFileId,
         { as_attachment: true } // Download mode
       );
 

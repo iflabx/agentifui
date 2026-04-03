@@ -44,13 +44,19 @@ describe('useConversationMessages helpers', () => {
               size: 12,
               type: 'text/plain',
               upload_file_id: 'upload-1',
+              preview_file_id: 'preview-1',
             },
           ],
         },
         token_count: 4,
         sequence_index: 2,
       } as never).attachments
-    ).toHaveLength(1);
+    ).toEqual([
+      expect.objectContaining({
+        upload_file_id: 'upload-1',
+        preview_file_id: 'preview-1',
+      }),
+    ]);
   });
 
   it('detects load-more and route transition preservation rules', () => {

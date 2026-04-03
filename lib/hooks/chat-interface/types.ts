@@ -34,6 +34,7 @@ export interface ChatSubmitResult {
 }
 
 export interface ChatStreamCompletionData {
+  messageId?: string;
   usage?: DifyUsage;
   metadata?: Record<string, unknown>;
   retrieverResources?: DifyRetrieverResource[];

@@ -85,4 +85,26 @@ describe('useFilePreviewStore', () => {
       })
     );
   });
+
+  it('prefers preview_file_id over upload_file_id for preview requests and caching', async () => {
+    mockedPreviewDifyFile.mockResolvedValue({
+      content: new Blob(['preview']),
+      headers: {
+        contentType: 'text/markdown',
+      },
+    });
+
+    await useFilePreviewStore.getState().openPreview(
+      createAttachment({
+        app_id: 'attachment-app',
+        preview_file_id: 'preview-file-1',
+      })
+    );
+
+    expect(mockedPreviewDifyFile).toHaveBeenCalledWith(
+      'attachment-app',
+      'preview-file-1',
+      { as_attachment: false }
+    );
+  });
 });

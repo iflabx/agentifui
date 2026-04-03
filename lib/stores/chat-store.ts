@@ -14,6 +14,8 @@ export interface MessageAttachment {
   type: string;
   /** Uploaded file ID */
   upload_file_id: string;
+  /** Message-context preview file ID returned by Dify */
+  preview_file_id?: string;
   /** Dify application ID for API calls (optional for backward compatibility) */
   app_id?: string;
 }

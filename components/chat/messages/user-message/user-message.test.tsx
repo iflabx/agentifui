@@ -4,7 +4,7 @@ import { UserMessage } from './user-message';
 
 let lastFileAttachmentDisplayProps: {
   appId?: string;
-  attachments: Array<{ app_id?: string }>;
+  attachments: Array<{ app_id?: string; preview_file_id?: string }>;
 } | null = null;
 
 jest.mock('@lib/hooks', () => ({
@@ -25,7 +25,7 @@ jest.mock('@components/chat/message-actions', () => ({
 jest.mock('./file-attachment-display', () => ({
   FileAttachmentDisplay: (props: {
     appId?: string;
-    attachments: Array<{ app_id?: string }>;
+    attachments: Array<{ app_id?: string; preview_file_id?: string }>;
   }) => {
     lastFileAttachmentDisplayProps = props;
     return <div data-testid="attachment-display" />;
@@ -86,5 +86,29 @@ describe('UserMessage', () => {
     expect(lastFileAttachmentDisplayProps?.attachments[0]?.app_id).toBe(
       'attachment-app'
     );
+  });
+
+  it('preserves preview_file_id for history preview requests', () => {
+    render(
+      <UserMessage
+        id="msg-1"
+        content="hello"
+        conversationAppId="conversation-app"
+        attachments={[
+          {
+            id: 'att-1',
+            name: 'notes.md',
+            size: 128,
+            type: 'text/markdown',
+            upload_file_id: 'upload-file-1',
+            preview_file_id: 'preview-file-1',
+          },
+        ]}
+      />
+    );
+
+    expect(
+      lastFileAttachmentDisplayProps?.attachments[0]?.preview_file_id
+    ).toBe('preview-file-1');
   });
 });

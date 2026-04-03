@@ -20,6 +20,7 @@ import { useChatflowDetection } from '@lib/hooks/use-chatflow-detection';
 import { useChatflowInterface } from '@lib/hooks/use-chatflow-interface';
 import { useChatflowState } from '@lib/hooks/use-chatflow-state';
 import { useConversationMessages } from '@lib/hooks/use-conversation-messages';
+import { useHistoryAttachmentPreviewSync } from '@lib/hooks/use-history-attachment-preview-sync';
 import { useProfile } from '@lib/hooks/use-profile';
 import { useChatLayoutStore } from '@lib/stores/chat-layout-store';
 import { useChatStore } from '@lib/stores/chat-store';
@@ -127,6 +128,13 @@ export default function ChatPage() {
   const isNewChat = conversationIdFromUrl === 'new';
   const { profile: loadedProfile, isLoading: isProfileLoading } = useProfile();
   const profile = isNewChat ? loadedProfile : null;
+
+  useHistoryAttachmentPreviewSync({
+    appId: conversationAppId,
+    conversationId: conversationIdFromUrl,
+    userId: loadedProfile?.id,
+    messages,
+  });
 
   return (
     <div

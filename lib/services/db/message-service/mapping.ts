@@ -16,7 +16,9 @@ function isMessageAttachmentArray(
         typeof record.name === 'string' &&
         typeof record.size === 'number' &&
         typeof record.type === 'string' &&
-        typeof record.upload_file_id === 'string'
+        typeof record.upload_file_id === 'string' &&
+        (record.preview_file_id === undefined ||
+          typeof record.preview_file_id === 'string')
       );
     })
   );

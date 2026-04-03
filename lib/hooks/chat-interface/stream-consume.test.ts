@@ -43,6 +43,7 @@ describe('applyChatCompletionMetadata', () => {
 
     await applyChatCompletionMetadata({
       completionPromise: Promise.resolve({
+        messageId: 'dify-msg-1',
         usage: { total_tokens: 42 },
         metadata: { model: 'deepseek' },
         retrieverResources: [],
@@ -55,6 +56,7 @@ describe('applyChatCompletionMetadata', () => {
     expect(updateMessage).toHaveBeenCalledWith(
       'assistant-1',
       expect.objectContaining({
+        dify_message_id: 'dify-msg-1',
         token_count: 42,
         persistenceStatus: 'pending',
         metadata: expect.objectContaining({
@@ -92,6 +94,7 @@ describe('applyChatCompletionMetadata', () => {
     expect(updateMessage).not.toHaveBeenCalled();
 
     resolveCompletion({
+      messageId: 'dify-msg-delayed',
       usage: { total_tokens: 7 },
       metadata: { delayed: true },
       retrieverResources: [],
@@ -103,6 +106,7 @@ describe('applyChatCompletionMetadata', () => {
     expect(updateMessage).toHaveBeenCalledWith(
       'assistant-1',
       expect.objectContaining({
+        dify_message_id: 'dify-msg-delayed',
         token_count: 7,
         persistenceStatus: 'pending',
         metadata: expect.objectContaining({

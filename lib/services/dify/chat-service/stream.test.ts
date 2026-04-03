@@ -113,6 +113,51 @@ describe('streamDifyChat agent_thought handling', () => {
     );
   });
 
+  it('exposes the final Dify message id through completionPromise', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: createSseBody([
+        {
+          event: 'message',
+          task_id: 'task-1',
+          conversation_id: 'conv-1',
+          id: 'msg-1',
+          answer: 'Final answer',
+          created_at: 1,
+        },
+        {
+          event: 'message_end',
+          task_id: 'task-1',
+          conversation_id: 'conv-1',
+          id: 'msg-1',
+          metadata: {},
+          usage: {
+            total_tokens: 10,
+          },
+        },
+      ]),
+    });
+
+    const response = await streamDifyChat(
+      {
+        query: 'hello',
+        user: 'user-1',
+        response_mode: 'streaming',
+      },
+      'app-1'
+    );
+
+    await collectStream(response.answerStream);
+
+    await expect(response.completionPromise).resolves.toMatchObject({
+      messageId: 'msg-1',
+      usage: {
+        total_tokens: 10,
+      },
+    });
+  });
+
   it('should close a synthetic think block on message_end when no answer text arrives', async () => {
     (global.fetch as jest.Mock).mockResolvedValue({
       ok: true,
