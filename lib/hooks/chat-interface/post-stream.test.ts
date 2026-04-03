@@ -3,6 +3,7 @@ import { persistChatMessagesAfterStreaming } from './post-stream';
 const mockGetChatStoreState = jest.fn();
 const mockPersistUserMessageIfNeeded = jest.fn();
 const mockResolveDbConversationUuidByExternalId = jest.fn();
+const mockUpdateMessageMetadataRecord = jest.fn();
 
 jest.mock('@lib/stores/chat-store', () => ({
   useChatStore: {
@@ -15,6 +16,11 @@ jest.mock('./conversation-db', () => ({
     mockPersistUserMessageIfNeeded(...args),
   resolveDbConversationUuidByExternalId: (...args: unknown[]) =>
     mockResolveDbConversationUuidByExternalId(...args),
+}));
+
+jest.mock('@lib/services/client/messages-api', () => ({
+  updateMessageMetadataRecord: (...args: unknown[]) =>
+    mockUpdateMessageMetadataRecord(...args),
 }));
 
 describe('persistChatMessagesAfterStreaming', () => {
@@ -32,6 +38,11 @@ describe('persistChatMessagesAfterStreaming', () => {
     });
     mockPersistUserMessageIfNeeded.mockReset();
     mockResolveDbConversationUuidByExternalId.mockReset();
+    mockUpdateMessageMetadataRecord.mockReset();
+    mockUpdateMessageMetadataRecord.mockResolvedValue({
+      success: true,
+      data: { id: 'db-msg-user-1' },
+    });
   });
 
   afterEach(() => {
@@ -251,5 +262,77 @@ describe('persistChatMessagesAfterStreaming', () => {
       }),
       'db-3'
     );
+  });
+
+  it('patches persisted user metadata when preview file ids arrive after the early save', async () => {
+    const updateMessage = jest.fn();
+
+    mockGetChatStoreState.mockReturnValue({
+      messages: [
+        {
+          id: 'user-1',
+          text: 'preview me',
+          isUser: true,
+          persistenceStatus: 'saved',
+          db_id: 'db-msg-user-1',
+          attachments: [
+            {
+              id: 'upload-file-1',
+              name: 'notes.md',
+              size: 128,
+              type: 'text/markdown',
+              upload_file_id: 'upload-file-1',
+            },
+          ],
+        },
+      ],
+      currentConversationId: 'real-conv-3',
+      currentTaskId: null,
+    });
+
+    const saveMessage = jest.fn().mockResolvedValue(true);
+
+    await persistChatMessagesAfterStreaming({
+      finalDbConvUUID: 'db-3',
+      dbConversationUUID: null,
+      finalRealConvId: 'real-conv-3',
+      userMessage: {
+        id: 'user-1',
+        text: 'preview me',
+        isUser: true,
+        persistenceStatus: 'pending',
+      },
+      userMessagePreviewFileIds: ['preview-file-1'],
+      assistantMessageId: null,
+      assistantFallback: null,
+      setDbConversationUUID: jest.fn(),
+      finalizeStreamingMessage: jest.fn(),
+      updateMessage,
+      saveMessage,
+    });
+
+    expect(updateMessage).toHaveBeenCalledWith(
+      'user-1',
+      expect.objectContaining({
+        attachments: [
+          expect.objectContaining({
+            upload_file_id: 'upload-file-1',
+            preview_file_id: 'preview-file-1',
+          }),
+        ],
+      })
+    );
+    expect(mockUpdateMessageMetadataRecord).toHaveBeenCalledWith({
+      conversationId: 'db-3',
+      messageId: 'db-msg-user-1',
+      metadata: expect.objectContaining({
+        attachments: [
+          expect.objectContaining({
+            preview_file_id: 'preview-file-1',
+          }),
+        ],
+      }),
+    });
+    expect(mockPersistUserMessageIfNeeded).not.toHaveBeenCalled();
   });
 });

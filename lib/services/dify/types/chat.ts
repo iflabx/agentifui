@@ -16,6 +16,7 @@ export interface DifyStreamResponse {
   getTaskId: () => string | null;
   completionPromise?: Promise<{
     messageId?: string;
+    userMessageFileIds?: string[];
     usage?: DifyUsage;
     metadata?: Record<string, unknown>;
     retrieverResources?: DifyRetrieverResource[];

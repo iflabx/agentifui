@@ -44,6 +44,14 @@ export function saveMessageRecord(
   });
 }
 
+export function updateMessageMetadataRecord(input: {
+  conversationId: string;
+  messageId: string;
+  metadata: Record<string, unknown>;
+}): Promise<Result<Message>> {
+  return callInternalDataAction<Message>('messages.updateMetadata', input);
+}
+
 export function createPlaceholderAssistantMessageRecord(
   conversationId: string,
   status: MessageStatus = 'error',

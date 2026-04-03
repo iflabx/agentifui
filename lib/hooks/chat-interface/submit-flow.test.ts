@@ -123,6 +123,7 @@ describe('executeChatSubmit', () => {
       assistantText: '完整回答',
     });
     mockApplyChatCompletionMetadata.mockResolvedValue({
+      userMessageFileIds: ['preview-file-1'],
       usage: { total_tokens: 8 },
       metadata: { model: 'deepseek' },
       retrieverResources: [],
@@ -158,6 +159,7 @@ describe('executeChatSubmit', () => {
 
     expect(mockPersistChatMessagesAfterStreaming).toHaveBeenCalledWith(
       expect.objectContaining({
+        userMessagePreviewFileIds: ['preview-file-1'],
         assistantMessageId: 'assistant-1',
         assistantFallback: expect.objectContaining({
           id: 'assistant-1',

@@ -233,6 +233,7 @@ export const LOCAL_MESSAGE_ACTIONS = new Set([
   'messages.getLatest',
   'messages.findDuplicate',
   'messages.save',
+  'messages.updateMetadata',
   'messages.createPlaceholder',
 ]);
 
@@ -378,6 +379,7 @@ export const AUTH_ACTIONS = new Set([
   'messages.getLatest',
   'messages.findDuplicate',
   'messages.save',
+  'messages.updateMetadata',
   'messages.createPlaceholder',
   'appExecutions.getUserExecutions',
   'appExecutions.getByServiceInstance',

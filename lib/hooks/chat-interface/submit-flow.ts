@@ -246,6 +246,7 @@ export async function executeChatSubmit(
       dbConversationUUID: input.dbConversationUUID,
       finalRealConvId,
       userMessage,
+      userMessagePreviewFileIds: completionData?.userMessageFileIds,
       assistantMessageId,
       assistantFallback,
       setDbConversationUUID: input.setDbConversationUUID,

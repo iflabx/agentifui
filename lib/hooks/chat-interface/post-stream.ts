@@ -1,3 +1,4 @@
+import { updateMessageMetadataRecord } from '@lib/services/client/messages-api';
 import type { ChatMessage } from '@lib/stores/chat-store';
 import { useChatStore } from '@lib/stores/chat-store';
 import type { PendingConversation } from '@lib/stores/pending-conversation-store';
@@ -65,6 +66,7 @@ interface PersistChatMessagesAfterStreamingInput {
   dbConversationUUID: string | null;
   finalRealConvId?: string;
   userMessage: ChatMessage;
+  userMessagePreviewFileIds?: string[];
   assistantMessageId: string | null;
   assistantFallback?: AssistantMessagePersistenceFallback | null;
   setDbConversationUUID: (conversationId: string) => void;
@@ -126,6 +128,92 @@ function resolveLatestMessageForPersistence(
     useChatStore.getState().messages.find(item => item.id === message.id) ||
     message
   );
+}
+
+function applyPreviewFileIdsToUserMessage(input: {
+  message: ChatMessage | null;
+  previewFileIds?: string[];
+  updateMessage: (id: string, updates: ChatMessageUpdates) => void;
+}): ChatMessage | null {
+  if (!input.message?.attachments?.length || !input.previewFileIds?.length) {
+    return input.message;
+  }
+
+  let changed = false;
+  const nextAttachments = input.message.attachments.map((attachment, index) => {
+    const previewFileId = input.previewFileIds?.[index];
+    if (!previewFileId || attachment.preview_file_id === previewFileId) {
+      return attachment;
+    }
+
+    changed = true;
+    return {
+      ...attachment,
+      preview_file_id: previewFileId,
+    };
+  });
+
+  if (!changed) {
+    return input.message;
+  }
+
+  const nextMetadata = {
+    ...(input.message.metadata || {}),
+    attachments: nextAttachments,
+  };
+
+  input.updateMessage(input.message.id, {
+    attachments: nextAttachments,
+    metadata: nextMetadata,
+  });
+
+  return {
+    ...input.message,
+    attachments: nextAttachments,
+    metadata: nextMetadata,
+  };
+}
+
+function hasPreviewAttachmentMetadata(
+  message: ChatMessage | null | undefined
+): boolean {
+  return Boolean(
+    message?.attachments?.some(
+      attachment =>
+        typeof attachment.preview_file_id === 'string' &&
+        attachment.preview_file_id.trim().length > 0
+    )
+  );
+}
+
+async function patchPersistedUserMessageMetadata(input: {
+  conversationId: string;
+  userMessage: ChatMessage | null;
+}): Promise<void> {
+  if (
+    !input.userMessage?.db_id ||
+    !hasPreviewAttachmentMetadata(input.userMessage)
+  ) {
+    return;
+  }
+
+  const metadata = {
+    ...(input.userMessage.metadata || {}),
+    attachments: input.userMessage.attachments,
+  };
+
+  const result = await updateMessageMetadataRecord({
+    conversationId: input.conversationId,
+    messageId: input.userMessage.db_id,
+    metadata,
+  });
+
+  if (!result.success) {
+    console.warn(
+      '[handleSubmit] Failed to patch persisted user message metadata:',
+      result.error
+    );
+  }
 }
 
 function buildAssistantFallbackMessage(input: {
@@ -301,21 +389,36 @@ export async function persistChatMessagesAfterStreaming(
       `[handleSubmit] Streaming ended, start saving messages, db conversation ID=${currentDbConvId}`
     );
 
-    const latestUserMessageForPersistence =
-      resolveLatestMessageForPersistence(input.userMessage) ||
-      input.userMessage;
+    const latestUserMessageForPersistence = applyPreviewFileIdsToUserMessage({
+      message:
+        resolveLatestMessageForPersistence(input.userMessage) ||
+        input.userMessage,
+      previewFileIds: input.userMessagePreviewFileIds,
+      updateMessage: input.updateMessage,
+    });
 
-    if (isMessageAlreadyPersisted(latestUserMessageForPersistence)) {
+    if (
+      latestUserMessageForPersistence &&
+      isMessageAlreadyPersisted(latestUserMessageForPersistence)
+    ) {
       console.log(
         `[handleSubmit] User message already saved, skip duplicate save, ID=${latestUserMessageForPersistence.id}, db_id=${latestUserMessageForPersistence.db_id}, status=${latestUserMessageForPersistence.persistenceStatus}`
       );
-    } else {
+      await patchPersistedUserMessageMetadata({
+        conversationId: currentDbConvId,
+        userMessage: latestUserMessageForPersistence,
+      });
+    } else if (latestUserMessageForPersistence) {
       persistUserMessageIfNeeded({
         userMessage: latestUserMessageForPersistence,
         conversationId: currentDbConvId,
         saveMessage: input.saveMessage,
         errorLog: '[handleSubmit] Failed to save user message after streaming:',
       });
+    } else {
+      console.warn(
+        '[handleSubmit] User message not found for persistence after streaming'
+      );
     }
 
     if (input.assistantMessageId || input.assistantFallback?.text?.trim()) {
@@ -361,14 +464,26 @@ export async function persistChatMessagesAfterStreaming(
     `[handleSubmit] Queried db conversation ID, start saving messages, ID=${currentDbConvId}`
   );
 
-  const latestUserMessageForPersistence =
-    resolveLatestMessageForPersistence(input.userMessage) || input.userMessage;
+  const latestUserMessageForPersistence = applyPreviewFileIdsToUserMessage({
+    message:
+      resolveLatestMessageForPersistence(input.userMessage) ||
+      input.userMessage,
+    previewFileIds: input.userMessagePreviewFileIds,
+    updateMessage: input.updateMessage,
+  });
 
-  if (isMessageAlreadyPersisted(latestUserMessageForPersistence)) {
+  if (
+    latestUserMessageForPersistence &&
+    isMessageAlreadyPersisted(latestUserMessageForPersistence)
+  ) {
     console.log(
       `[handleSubmit] User message already saved, skip duplicate save, ID=${latestUserMessageForPersistence.id}, db_id=${latestUserMessageForPersistence.db_id}, status=${latestUserMessageForPersistence.persistenceStatus}`
     );
-  } else {
+    await patchPersistedUserMessageMetadata({
+      conversationId: currentDbConvId,
+      userMessage: latestUserMessageForPersistence,
+    });
+  } else if (latestUserMessageForPersistence) {
     persistUserMessageIfNeeded({
       userMessage: latestUserMessageForPersistence,
       conversationId: currentDbConvId,
@@ -376,6 +491,10 @@ export async function persistChatMessagesAfterStreaming(
       errorLog:
         '[handleSubmit] Failed to save user message after second query:',
     });
+  } else {
+    console.warn(
+      '[handleSubmit] User message not found for persistence after second query'
+    );
   }
 
   if (input.assistantMessageId || input.assistantFallback?.text?.trim()) {

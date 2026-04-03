@@ -434,6 +434,8 @@ export async function streamDifyChat(
     const callbackCalledRef = { value: false };
 
     let completionResolve: (value: {
+      messageId?: string;
+      userMessageFileIds?: string[];
       usage?: DifyUsage;
       metadata?: Record<string, unknown>;
       retrieverResources?: DifyRetrieverResource[];
@@ -442,6 +444,8 @@ export async function streamDifyChat(
     let completionResolved = false;
 
     const completionPromise = new Promise<{
+      messageId?: string;
+      userMessageFileIds?: string[];
       usage?: DifyUsage;
       metadata?: Record<string, unknown>;
       retrieverResources?: DifyRetrieverResource[];
@@ -455,6 +459,7 @@ export async function streamDifyChat(
       let syntheticThinkBlockOpen = false;
       let normalizedContent = '';
       const previousAgentThoughtByPosition = new Map<string, string>();
+      const userMessageFileIds: string[] = [];
       const thinkState = {
         insideThinkBlock: false,
         currentOpenThinkContent: '',
@@ -661,6 +666,15 @@ export async function streamDifyChat(
                 yield* yieldChunk(event.answer);
               }
               break;
+            case 'message_file':
+              if (
+                event.belongs_to === 'user' &&
+                event.id &&
+                !userMessageFileIds.includes(event.id)
+              ) {
+                userMessageFileIds.push(event.id);
+              }
+              break;
             case 'message_end':
               yield* closeSyntheticThinkBlock();
               console.log(
@@ -695,6 +709,7 @@ export async function streamDifyChat(
 
               const completionData = {
                 messageId: event.id,
+                userMessageFileIds: [...userMessageFileIds],
                 usage: extractUsage(event.metadata?.usage || event.usage),
                 metadata: event.metadata || {},
                 retrieverResources: extractRetrieverResources(

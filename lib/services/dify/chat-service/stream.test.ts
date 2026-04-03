@@ -119,6 +119,15 @@ describe('streamDifyChat agent_thought handling', () => {
       status: 200,
       body: createSseBody([
         {
+          event: 'message_file',
+          task_id: 'task-1',
+          conversation_id: 'conv-1',
+          id: 'preview-file-1',
+          type: 'document',
+          belongs_to: 'user',
+          url: 'https://example.com/file-1',
+        },
+        {
           event: 'message',
           task_id: 'task-1',
           conversation_id: 'conv-1',
@@ -152,6 +161,7 @@ describe('streamDifyChat agent_thought handling', () => {
 
     await expect(response.completionPromise).resolves.toMatchObject({
       messageId: 'msg-1',
+      userMessageFileIds: ['preview-file-1'],
       usage: {
         total_tokens: 10,
       },

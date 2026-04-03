@@ -243,6 +243,53 @@ export async function handleMessageAction(
     return toSuccessResponse(saved);
   }
 
+  if (action === 'messages.updateMetadata') {
+    const conversationId = readString(payload?.conversationId);
+    const messageId = readString(payload?.messageId);
+    const metadata = readObject(payload?.metadata) || {};
+
+    if (!conversationId || !messageId) {
+      return toErrorResponse('Missing required fields', 400);
+    }
+
+    const owned = await loadConversationOwnedByActor(
+      conversationId,
+      actorUserId
+    );
+    if (!owned) {
+      return toErrorResponse('Conversation not found', 404);
+    }
+
+    const rows = await queryRowsWithPgSystemContext<MessageRow>(
+      `
+        UPDATE messages
+        SET metadata = $3::jsonb
+        WHERE id = $1::uuid
+          AND conversation_id = $2::uuid
+        RETURNING
+          id::text,
+          conversation_id::text,
+          user_id::text,
+          role::text,
+          content,
+          metadata,
+          created_at::text,
+          status::text,
+          external_id,
+          token_count,
+          is_synced,
+          sequence_index
+      `,
+      [messageId, conversationId, JSON.stringify(metadata)]
+    );
+
+    if (!rows[0]) {
+      return toErrorResponse('Message not found', 404);
+    }
+
+    return toSuccessResponse(sanitizeMessage(rows[0]));
+  }
+
   if (action === 'messages.createPlaceholder') {
     const conversationId = readString(payload?.conversationId);
     const statusRaw = payload?.status;
