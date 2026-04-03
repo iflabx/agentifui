@@ -17,6 +17,22 @@ interface UseHistoryAttachmentPreviewSyncInput {
   userId: string | null | undefined;
 }
 
+function buildHistoryAttachmentPreviewSyncKey(messages: ChatMessage[]): string {
+  return messages
+    .map(
+      message =>
+        `${message.id}:${message.dify_message_id || ''}:${message.text}:${
+          message.attachments
+            ?.map(
+              attachment =>
+                `${attachment.upload_file_id}:${attachment.preview_file_id || ''}`
+            )
+            .join(',') || ''
+        }`
+    )
+    .join('|');
+}
+
 function isPersistedConversationId(conversationId: string): boolean {
   return (
     Boolean(conversationId) &&
@@ -45,19 +61,7 @@ export function useHistoryAttachmentPreviewSync(
       input.conversationId,
       input.appId,
       input.userId,
-      input.messages
-        .map(
-          message =>
-            `${message.id}:${message.dify_message_id || ''}:${message.text}:${
-              message.attachments
-                ?.map(
-                  attachment =>
-                    `${attachment.upload_file_id}:${attachment.preview_file_id || ''}`
-                )
-                .join(',') || ''
-            }`
-        )
-        .join('|'),
+      buildHistoryAttachmentPreviewSyncKey(input.messages),
     ].join('::');
 
     if (lastAttemptKeyRef.current === attemptKey) {
@@ -68,9 +72,9 @@ export function useHistoryAttachmentPreviewSync(
     const requestVersion = requestVersionRef.current + 1;
     requestVersionRef.current = requestVersion;
     let cancelled = false;
-    const sourceMessageIds = input.messages
-      .map(message => message.id)
-      .join('|');
+    const sourceMessageKey = buildHistoryAttachmentPreviewSyncKey(
+      input.messages
+    );
 
     void fetchAttachmentPreviewIds({
       appId: input.appId,
@@ -85,8 +89,8 @@ export function useHistoryAttachmentPreviewSync(
 
         useChatStore.setState(state => {
           if (
-            state.messages.map(message => message.id).join('|') !==
-            sourceMessageIds
+            buildHistoryAttachmentPreviewSyncKey(state.messages) !==
+            sourceMessageKey
           ) {
             return state;
           }
