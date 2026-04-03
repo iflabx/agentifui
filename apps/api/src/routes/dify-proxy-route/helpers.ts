@@ -118,6 +118,36 @@ export function extractRawQuery(rawUrl: string | undefined): string {
   return rawUrl.slice(index);
 }
 
+function normalizeRawQuery(rawQuery: string): string {
+  if (!rawQuery) {
+    return '';
+  }
+
+  return rawQuery.startsWith('?') ? rawQuery.slice(1) : rawQuery;
+}
+
+export function buildScopedUpstreamQuery(input: {
+  rawQuery: string;
+  slugPath: string;
+  actorUserId?: string;
+}): string {
+  const { rawQuery, slugPath, actorUserId } = input;
+
+  if (!actorUserId || !/^files\/[^/]+\/preview$/.test(slugPath)) {
+    return rawQuery;
+  }
+
+  const searchParams = new URLSearchParams(normalizeRawQuery(rawQuery));
+
+  // Dify file previews are scoped to the end user who uploaded / attached the file.
+  if (!searchParams.get('user')) {
+    searchParams.set('user', actorUserId);
+  }
+
+  const queryString = searchParams.toString();
+  return queryString ? `?${queryString}` : '';
+}
+
 export function isMediaContentType(contentType: string): boolean {
   const normalized = contentType.toLowerCase();
   return (

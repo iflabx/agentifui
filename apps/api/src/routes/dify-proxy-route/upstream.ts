@@ -11,6 +11,7 @@ import {
 } from './error-handling';
 import {
   adjustApiPathByAppType,
+  buildScopedUpstreamQuery,
   copyHeaders,
   extractRawQuery,
   inferAgentSource,
@@ -310,7 +311,12 @@ export async function dispatchDifyUpstreamRequest(
   const slugPath = adjustApiPathByAppType(context.slug, targetConfig.appType);
   const agentSource = inferAgentSource(slugPath);
   const rawQuery = extractRawQuery(request.raw.url);
-  const targetUrl = `${targetConfig.difyApiUrl.replace(/\/+$/, '')}/${slugPath}${rawQuery}`;
+  const scopedQuery = buildScopedUpstreamQuery({
+    rawQuery,
+    slugPath,
+    actorUserId: context.actor.userId,
+  });
+  const targetUrl = `${targetConfig.difyApiUrl.replace(/\/+$/, '')}/${slugPath}${scopedQuery}`;
   const target = new URL(targetUrl);
   const upstreamRequestStartedAt = Date.now();
   const proxyTimeoutMs = resolveDifyProxyTimeoutMs();
@@ -326,7 +332,7 @@ export async function dispatchDifyUpstreamRequest(
       targetHost: target.host,
       targetOrigin: target.origin,
       targetPath: target.pathname,
-      queryPresent: rawQuery.length > 0,
+      queryPresent: scopedQuery.length > 0,
       proxyTimeoutMs,
       circuit: getDifyProxyCircuitSnapshot(circuitKey),
     },
