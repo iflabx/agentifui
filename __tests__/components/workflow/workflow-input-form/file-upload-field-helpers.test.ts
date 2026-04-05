@@ -17,7 +17,12 @@ describe('file upload field helpers', () => {
     expect(isProcessedFileItem({ upload_file_id: 'file-1' })).toBe(true);
     expect(isProcessedFileItem({ id: 'x' })).toBe(false);
 
-    const file = new File(['demo'], 'demo.txt', { type: 'text/plain' });
+    const file = {
+      name: 'demo.txt',
+      lastModified: 123,
+      size: 4,
+      type: 'text/plain',
+    } as File;
     const [uploadFile] = createUploadFiles([file]);
     expect(uploadFile.name).toBe('demo.txt');
     expect(uploadFile.status).toBe('pending');
