@@ -321,6 +321,7 @@ export async function executeChatSubmit(
       finalizeStreamingMessage: input.finalizeStreamingMessage,
       updateMessage: input.updateMessage,
       saveMessage: input.saveMessage,
+      saveStoppedAssistantMessage: input.saveStoppedAssistantMessage,
     });
 
     syncChatStateAfterStreaming({

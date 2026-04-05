@@ -77,6 +77,10 @@ interface PersistChatMessagesAfterStreamingInput {
     conversationId: string,
     retryCount?: number
   ) => Promise<boolean>;
+  saveStoppedAssistantMessage: (
+    message: ChatMessage,
+    conversationId: string
+  ) => Promise<boolean>;
 }
 
 function isPersistableConversationExternalId(
@@ -313,6 +317,10 @@ function persistAssistantMessageAfterStreaming(input: {
     conversationId: string,
     retryCount?: number
   ) => Promise<boolean>;
+  saveStoppedAssistantMessage: (
+    message: ChatMessage,
+    conversationId: string
+  ) => Promise<boolean>;
   errorLog: string;
 }): void {
   console.log(
@@ -351,16 +359,21 @@ function persistAssistantMessageAfterStreaming(input: {
     });
   }
 
-  void input
-    .saveMessage(assistantMessageForPersistence, input.conversationId)
-    .catch(error => {
-      console.error(input.errorLog, error);
-      if (input.assistantMessageId) {
-        input.updateMessage(input.assistantMessageId, {
-          persistenceStatus: 'error',
-        });
-      }
-    });
+  const saveAssistantMessage = assistantMessageForPersistence.wasManuallyStopped
+    ? input.saveStoppedAssistantMessage(
+        assistantMessageForPersistence,
+        input.conversationId
+      )
+    : input.saveMessage(assistantMessageForPersistence, input.conversationId);
+
+  void saveAssistantMessage.catch(error => {
+    console.error(input.errorLog, error);
+    if (input.assistantMessageId) {
+      input.updateMessage(input.assistantMessageId, {
+        persistenceStatus: 'error',
+      });
+    }
+  });
 }
 
 export async function persistChatMessagesAfterStreaming(
@@ -429,6 +442,7 @@ export async function persistChatMessagesAfterStreaming(
         finalizeStreamingMessage: input.finalizeStreamingMessage,
         updateMessage: input.updateMessage,
         saveMessage: input.saveMessage,
+        saveStoppedAssistantMessage: input.saveStoppedAssistantMessage,
         errorLog: '[handleSubmit] Failed to save assistant message:',
       });
     }
@@ -505,6 +519,7 @@ export async function persistChatMessagesAfterStreaming(
       finalizeStreamingMessage: input.finalizeStreamingMessage,
       updateMessage: input.updateMessage,
       saveMessage: input.saveMessage,
+      saveStoppedAssistantMessage: input.saveStoppedAssistantMessage,
       errorLog:
         '[handleSubmit] Failed to save assistant message after second query:',
     });

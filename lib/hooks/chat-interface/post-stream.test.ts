@@ -52,6 +52,7 @@ describe('persistChatMessagesAfterStreaming', () => {
 
   it('saves the assistant fallback snapshot when the store message is gone', async () => {
     const saveMessage = jest.fn().mockResolvedValue(true);
+    const saveStoppedAssistantMessage = jest.fn().mockResolvedValue(true);
 
     await persistChatMessagesAfterStreaming({
       finalDbConvUUID: 'db-1',
@@ -71,6 +72,7 @@ describe('persistChatMessagesAfterStreaming', () => {
       finalizeStreamingMessage: jest.fn(),
       updateMessage: jest.fn(),
       saveMessage,
+      saveStoppedAssistantMessage,
     });
 
     expect(saveMessage).toHaveBeenCalledWith(
@@ -100,6 +102,7 @@ describe('persistChatMessagesAfterStreaming', () => {
     });
 
     const saveMessage = jest.fn().mockResolvedValue(true);
+    const saveStoppedAssistantMessage = jest.fn().mockResolvedValue(true);
 
     await persistChatMessagesAfterStreaming({
       finalDbConvUUID: 'db-1',
@@ -119,6 +122,7 @@ describe('persistChatMessagesAfterStreaming', () => {
       finalizeStreamingMessage: jest.fn(),
       updateMessage: jest.fn(),
       saveMessage,
+      saveStoppedAssistantMessage,
     });
 
     expect(saveMessage).toHaveBeenCalledWith(
@@ -139,6 +143,7 @@ describe('persistChatMessagesAfterStreaming', () => {
     mockResolveDbConversationUuidByExternalId.mockResolvedValue('db-2');
 
     const saveMessage = jest.fn().mockResolvedValue(true);
+    const saveStoppedAssistantMessage = jest.fn().mockResolvedValue(true);
     const setDbConversationUUID = jest.fn();
 
     await persistChatMessagesAfterStreaming({
@@ -159,6 +164,7 @@ describe('persistChatMessagesAfterStreaming', () => {
       finalizeStreamingMessage: jest.fn(),
       updateMessage: jest.fn(),
       saveMessage,
+      saveStoppedAssistantMessage,
     });
 
     expect(mockResolveDbConversationUuidByExternalId).toHaveBeenCalledWith(
@@ -181,6 +187,7 @@ describe('persistChatMessagesAfterStreaming', () => {
     mockResolveDbConversationUuidByExternalId.mockResolvedValue('db-4');
 
     const saveMessage = jest.fn().mockResolvedValue(true);
+    const saveStoppedAssistantMessage = jest.fn().mockResolvedValue(true);
     const setDbConversationUUID = jest.fn();
 
     await persistChatMessagesAfterStreaming({
@@ -200,6 +207,7 @@ describe('persistChatMessagesAfterStreaming', () => {
       finalizeStreamingMessage: jest.fn(),
       updateMessage: jest.fn(),
       saveMessage,
+      saveStoppedAssistantMessage,
     });
 
     expect(mockResolveDbConversationUuidByExternalId).toHaveBeenCalledWith(
@@ -232,6 +240,7 @@ describe('persistChatMessagesAfterStreaming', () => {
     });
 
     const saveMessage = jest.fn().mockResolvedValue(true);
+    const saveStoppedAssistantMessage = jest.fn().mockResolvedValue(true);
 
     await persistChatMessagesAfterStreaming({
       finalDbConvUUID: 'db-3',
@@ -251,6 +260,7 @@ describe('persistChatMessagesAfterStreaming', () => {
       finalizeStreamingMessage: jest.fn(),
       updateMessage: jest.fn(),
       saveMessage,
+      saveStoppedAssistantMessage,
     });
 
     expect(mockPersistUserMessageIfNeeded).not.toHaveBeenCalled();
@@ -291,6 +301,7 @@ describe('persistChatMessagesAfterStreaming', () => {
     });
 
     const saveMessage = jest.fn().mockResolvedValue(true);
+    const saveStoppedAssistantMessage = jest.fn().mockResolvedValue(true);
 
     await persistChatMessagesAfterStreaming({
       finalDbConvUUID: 'db-3',
@@ -309,6 +320,7 @@ describe('persistChatMessagesAfterStreaming', () => {
       finalizeStreamingMessage: jest.fn(),
       updateMessage,
       saveMessage,
+      saveStoppedAssistantMessage,
     });
 
     expect(updateMessage).toHaveBeenCalledWith(
@@ -334,5 +346,59 @@ describe('persistChatMessagesAfterStreaming', () => {
       }),
     });
     expect(mockPersistUserMessageIfNeeded).not.toHaveBeenCalled();
+  });
+
+  it('uses stopped assistant persistence for manually stopped replies', async () => {
+    mockGetChatStoreState.mockReturnValue({
+      messages: [
+        {
+          id: 'assistant-1',
+          text: '<think>Plan steps\n\n**生成内容**：\n* bullet',
+          isUser: false,
+          wasManuallyStopped: true,
+          persistenceStatus: 'pending',
+          metadata: {
+            stopped_manually: true,
+          },
+        },
+      ],
+      currentConversationId: null,
+      currentTaskId: null,
+    });
+
+    const saveMessage = jest.fn().mockResolvedValue(true);
+    const saveStoppedAssistantMessage = jest.fn().mockResolvedValue(true);
+
+    await persistChatMessagesAfterStreaming({
+      finalDbConvUUID: 'db-5',
+      dbConversationUUID: null,
+      userMessage: {
+        id: 'user-1',
+        text: 'stop test',
+        isUser: true,
+        persistenceStatus: 'saved',
+      },
+      assistantMessageId: 'assistant-1',
+      assistantFallback: {
+        id: 'assistant-1',
+        text: '<think>Plan steps\n\n**生成内容**：\n* bullet',
+        wasManuallyStopped: true,
+      },
+      setDbConversationUUID: jest.fn(),
+      finalizeStreamingMessage: jest.fn(),
+      updateMessage: jest.fn(),
+      saveMessage,
+      saveStoppedAssistantMessage,
+    });
+
+    expect(saveStoppedAssistantMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'assistant-1',
+        wasManuallyStopped: true,
+        text: '<think>Plan steps\n\n**生成内容**：\n* bullet',
+      }),
+      'db-5'
+    );
+    expect(saveMessage).not.toHaveBeenCalled();
   });
 });
