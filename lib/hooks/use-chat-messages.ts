@@ -6,10 +6,10 @@
  * Adapts to the new Result type system and unified data service.
  */
 import {
+  type MessageSavePayload,
   createPlaceholderAssistantMessageRecord,
   findDuplicateMessage,
   saveMessageRecord,
-  type MessageSavePayload,
 } from '@lib/services/client/messages-api';
 import { ChatMessage, useChatStore } from '@lib/stores/chat-store';
 
@@ -344,8 +344,16 @@ export function useChatMessages(userId?: string) {
         persistenceStatus: 'pending', // Mark as pending save
       });
 
-      // Save the stopped message immediately
-      return saveMessage(message, conversationId);
+      const updatedMessage = useChatStore
+        .getState()
+        .messages.find(m => m.id === message.id);
+
+      if (!updatedMessage) {
+        return false;
+      }
+
+      // Save the stopped message immediately with the updated stopped metadata.
+      return saveMessage(updatedMessage, conversationId);
     },
     [saveMessage, updateMessage]
   );
