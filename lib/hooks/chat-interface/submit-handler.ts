@@ -65,6 +65,7 @@ interface UseChatSubmitHandlerInput {
   flushChunkBuffer: (id: string | null) => void;
   chunkAppendInterval: number;
   moderationT: ChatModerationTranslator;
+  incompleteAnswerMessage: string;
 }
 
 export function useChatSubmitHandler({
@@ -101,6 +102,7 @@ export function useChatSubmitHandler({
   flushChunkBuffer,
   chunkAppendInterval,
   moderationT,
+  incompleteAnswerMessage,
 }: UseChatSubmitHandlerInput) {
   return useCallback(
     async (
@@ -177,6 +179,7 @@ export function useChatSubmitHandler({
         flushChunkBuffer,
         chunkAppendInterval,
         moderationT,
+        incompleteAnswerMessage,
       });
     },
     [
@@ -213,6 +216,7 @@ export function useChatSubmitHandler({
       flushChunkBuffer,
       chunkAppendInterval,
       moderationT,
+      incompleteAnswerMessage,
     ]
   );
 }

@@ -231,7 +231,8 @@
         "imageLink": "Ссылка на изображение",
         "viewImage": "Просмотреть изображение",
         "clickToView": "Нажмите, чтобы просмотреть",
-        "clickToViewWithAlt": "Нажмите, чтобы просмотреть: {alt}"
+        "clickToViewWithAlt": "Нажмите, чтобы просмотреть: {alt}",
+        "incompleteAnswer": "Ответ был сгенерирован не полностью. Повторите попытку."
       },
       "suggestedQuestions": {
         "moreQuestions": "Еще {count} вопросов..."

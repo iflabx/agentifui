@@ -100,6 +100,7 @@ describe('executeChatSubmit', () => {
         flushChunkBuffer: jest.fn(),
         chunkAppendInterval: 30,
         moderationT: jest.fn((key: string) => key),
+        incompleteAnswerMessage: '回答未完整生成，请重试。',
       },
       userMessage,
     };
@@ -184,6 +185,37 @@ describe('executeChatSubmit', () => {
       expect.objectContaining({
         error: thrownError,
         moderationT: input.moderationT,
+      })
+    );
+  });
+
+  it('materializes a localized fallback when the assistant reply ends with draft-only think content', async () => {
+    const { input } = createInput();
+
+    mockConsumeChatAnswerStream.mockResolvedValueOnce({
+      assistantMessageId: 'assistant-1',
+      assistantText: '<think>Plan steps\n\n**生成内容**：\n* bullet',
+    });
+
+    await executeChatSubmit(input);
+
+    expect(input.updateMessage).toHaveBeenCalledWith(
+      'assistant-1',
+      expect.objectContaining({
+        text: '<think>Plan steps\n\n**生成内容**：\n* bullet</think>\n\n回答未完整生成，请重试。',
+      })
+    );
+
+    expect(mockPersistChatMessagesAfterStreaming).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assistantFallback: expect.objectContaining({
+          text: '<think>Plan steps\n\n**生成内容**：\n* bullet</think>\n\n回答未完整生成，请重试。',
+          metadata: expect.objectContaining({
+            frontend_metadata: expect.objectContaining({
+              incomplete_assistant_fallback: true,
+            }),
+          }),
+        }),
       })
     );
   });

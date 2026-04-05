@@ -224,4 +224,33 @@ describe('AssistantMessage think block behavior', () => {
       'Visible answer'
     );
   });
+
+  it('should render a localized fallback when a completed message only contains draft think content', () => {
+    render(
+      <AssistantMessage
+        id="msg-6"
+        content={'<think>Plan steps\n\n**生成内容**：\n* bullet'}
+        isStreaming={false}
+        wasManuallyStopped={false}
+      />
+    );
+
+    expect(screen.getByTestId('think-content')).toHaveTextContent('Plan steps');
+    expect(screen.getByTestId('react-markdown')).toHaveTextContent(
+      'pages.chat.messages.incompleteAnswer'
+    );
+  });
+
+  it('should not inject a fallback after a manually stopped draft-only message', () => {
+    render(
+      <AssistantMessage
+        id="msg-7"
+        content={'<think>Plan steps\n\n**生成内容**：\n* bullet'}
+        isStreaming={false}
+        wasManuallyStopped={true}
+      />
+    );
+
+    expect(screen.queryByTestId('react-markdown')).not.toBeInTheDocument();
+  });
 });

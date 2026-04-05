@@ -231,7 +231,8 @@
         "imageLink": "圖片連結",
         "viewImage": "檢視圖片",
         "clickToView": "點擊檢視",
-        "clickToViewWithAlt": "點擊檢視: {alt}"
+        "clickToViewWithAlt": "點擊檢視: {alt}",
+        "incompleteAnswer": "本輪回答未完整生成，請重試。"
       },
       "suggestedQuestions": {
         "moreQuestions": "還有 {count} 個問題..."

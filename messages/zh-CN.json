@@ -231,7 +231,8 @@
         "imageLink": "图片链接",
         "viewImage": "查看图片",
         "clickToView": "点击查看",
-        "clickToViewWithAlt": "点击查看: {alt}"
+        "clickToViewWithAlt": "点击查看: {alt}",
+        "incompleteAnswer": "本轮回答未完整生成，请重试。"
       },
       "suggestedQuestions": {
         "moreQuestions": "还有 {count} 个问题..."

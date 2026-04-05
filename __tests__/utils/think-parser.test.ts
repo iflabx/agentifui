@@ -1,6 +1,7 @@
 import { extractMainContentForPreview } from '../../lib/utils';
 import {
   analyzeThinkAwareContent,
+  materializeIncompleteAssistantReply,
   parseThinkBlocks,
 } from '../../lib/utils/think-parser';
 
@@ -183,5 +184,42 @@ describe('parseThinkBlocks', () => {
     );
 
     expect(preview).toBe('');
+  });
+
+  it('should materialize an explicit fallback reply for draft-only think content', () => {
+    const result = materializeIncompleteAssistantReply(
+      '<think>Plan steps\n\n**生成内容**：\n* bullet',
+      '回答未完整生成，请重试。'
+    );
+
+    expect(result).toEqual({
+      content:
+        '<think>Plan steps\n\n**生成内容**：\n* bullet</think>\n\n回答未完整生成，请重试。',
+      usedFallback: true,
+    });
+  });
+
+  it('should keep normal think-aware content unchanged when a visible reply already exists', () => {
+    const result = materializeIncompleteAssistantReply(
+      '<think>Plan steps</think>\n\nVisible answer',
+      '回答未完整生成，请重试。'
+    );
+
+    expect(result).toEqual({
+      content: '<think>Plan steps</think>\n\nVisible answer',
+      usedFallback: false,
+    });
+  });
+
+  it('should keep draft-only content unchanged when the fallback text is empty', () => {
+    const result = materializeIncompleteAssistantReply(
+      '<think>Plan steps\n\n**生成内容**：\n* bullet',
+      '   '
+    );
+
+    expect(result).toEqual({
+      content: '<think>Plan steps\n\n**生成内容**：\n* bullet',
+      usedFallback: false,
+    });
   });
 });

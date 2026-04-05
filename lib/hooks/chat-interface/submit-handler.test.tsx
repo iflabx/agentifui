@@ -57,6 +57,7 @@ describe('useChatSubmitHandler', () => {
     flushChunkBuffer: jest.fn(),
     chunkAppendInterval: 30,
     moderationT: jest.fn((key: string) => key),
+    incompleteAnswerMessage: '回答未完整生成，请重试。',
   });
 
   beforeEach(() => {
@@ -146,6 +147,7 @@ describe('useChatSubmitHandler', () => {
         flushChunkBuffer: input.flushChunkBuffer,
         chunkAppendInterval: 30,
         moderationT: input.moderationT,
+        incompleteAnswerMessage: input.incompleteAnswerMessage,
       })
     );
   });

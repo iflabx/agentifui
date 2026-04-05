@@ -231,7 +231,8 @@
         "imageLink": "画像リンク",
         "viewImage": "画像を表示",
         "clickToView": "クリックして表示",
-        "clickToViewWithAlt": "クリックして表示: {alt}"
+        "clickToViewWithAlt": "クリックして表示: {alt}",
+        "incompleteAnswer": "この回答は完全に生成されませんでした。再試行してください。"
       },
       "suggestedQuestions": {
         "moreQuestions": "他に {count} つの質問があります..."

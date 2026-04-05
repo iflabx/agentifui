@@ -231,7 +231,8 @@
         "imageLink": "Lien de l'image",
         "viewImage": "Voir l'image",
         "clickToView": "Cliquer pour voir",
-        "clickToViewWithAlt": "Cliquer pour voir: {alt}"
+        "clickToViewWithAlt": "Cliquer pour voir: {alt}",
+        "incompleteAnswer": "La réponse n’a pas été générée complètement. Veuillez réessayer."
       },
       "suggestedQuestions": {
         "moreQuestions": "{count} questions de plus..."

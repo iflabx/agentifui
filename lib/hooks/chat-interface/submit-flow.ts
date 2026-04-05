@@ -4,7 +4,9 @@ import type {
   UseCreateConversationReturn,
 } from '@lib/hooks/create-conversation/types';
 import type { ChatMessage } from '@lib/stores/chat-store';
+import { useChatStore } from '@lib/stores/chat-store';
 import type { PendingConversation } from '@lib/stores/pending-conversation-store';
+import { materializeIncompleteAssistantReply } from '@lib/utils/think-parser';
 
 import type { MutableRefObject } from 'react';
 
@@ -38,31 +40,61 @@ import type {
 
 type ChatMessageUpdates = Partial<Omit<ChatMessage, 'id' | 'isUser'>>;
 
+interface AssistantPersistenceFallbackBuildResult {
+  assistantFallback: AssistantMessagePersistenceFallback | null;
+  normalizedText: string;
+  metadata?: Record<string, unknown>;
+  usedFallback: boolean;
+}
+
 function buildAssistantPersistenceFallback(input: {
   assistantMessageId: string | null;
   assistantText: string;
   completionData: ChatStreamCompletionData | null;
-}): AssistantMessagePersistenceFallback | null {
-  if (!input.assistantText.trim()) {
-    return null;
+  incompleteAnswerMessage: string;
+}): AssistantPersistenceFallbackBuildResult {
+  const normalizedAssistantContent = materializeIncompleteAssistantReply(
+    input.assistantText,
+    input.incompleteAnswerMessage
+  );
+  const assistantText = normalizedAssistantContent.content;
+
+  if (!assistantText.trim()) {
+    return {
+      assistantFallback: null,
+      normalizedText: assistantText,
+      usedFallback: normalizedAssistantContent.usedFallback,
+    };
   }
+
+  const frontendMetadata = {
+    sequence_index: 1,
+    ...(normalizedAssistantContent.usedFallback
+      ? { incomplete_assistant_fallback: true }
+      : {}),
+  };
 
   const completionMetadata = input.completionData
     ? {
         dify_metadata: input.completionData.metadata || {},
         dify_usage: input.completionData.usage || {},
         dify_retriever_resources: input.completionData.retrieverResources || [],
-        frontend_metadata: {
-          sequence_index: 1,
-        },
+        frontend_metadata: frontendMetadata,
       }
-    : undefined;
+    : {
+        frontend_metadata: frontendMetadata,
+      };
 
   return {
-    id: input.assistantMessageId,
-    text: input.assistantText,
-    tokenCount: input.completionData?.usage?.total_tokens,
+    assistantFallback: {
+      id: input.assistantMessageId,
+      text: assistantText,
+      tokenCount: input.completionData?.usage?.total_tokens,
+      metadata: completionMetadata,
+    },
+    normalizedText: assistantText,
     metadata: completionMetadata,
+    usedFallback: normalizedAssistantContent.usedFallback,
   };
 }
 
@@ -114,6 +146,7 @@ interface ExecuteChatSubmitInput {
   flushChunkBuffer: (id: string | null) => void;
   chunkAppendInterval: number;
   moderationT: ChatModerationTranslator;
+  incompleteAnswerMessage: string;
 }
 
 export async function executeChatSubmit(
@@ -235,11 +268,31 @@ export async function executeChatSubmit(
       updateMessage: input.updateMessage,
     });
 
-    assistantFallback = buildAssistantPersistenceFallback({
+    const assistantPersistenceFallback = buildAssistantPersistenceFallback({
       assistantMessageId,
       assistantText: answerStreamResult.assistantText,
       completionData,
+      incompleteAnswerMessage: input.incompleteAnswerMessage,
     });
+    assistantFallback = assistantPersistenceFallback.assistantFallback;
+
+    if (
+      assistantPersistenceFallback.usedFallback &&
+      assistantMessageId &&
+      assistantPersistenceFallback.metadata
+    ) {
+      const existingMessage = useChatStore
+        .getState()
+        .messages.find(message => message.id === assistantMessageId);
+
+      input.updateMessage(assistantMessageId, {
+        text: assistantPersistenceFallback.normalizedText,
+        metadata: {
+          ...(existingMessage?.metadata || {}),
+          ...assistantPersistenceFallback.metadata,
+        },
+      });
+    }
 
     finalDbConvUUID = await persistChatMessagesAfterStreaming({
       finalDbConvUUID,

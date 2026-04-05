@@ -216,6 +216,49 @@ export function analyzeThinkAwareContent(content: string): ThinkAwareAnalysis {
   };
 }
 
+function serializeThinkAwareBlocks(blocks: MessageBlock[]): string {
+  return blocks
+    .map(block =>
+      block.type === 'think' ? `<think>${block.content}</think>` : block.content
+    )
+    .join('');
+}
+
+export function materializeIncompleteAssistantReply(
+  content: string,
+  fallbackText: string
+): {
+  content: string;
+  usedFallback: boolean;
+} {
+  const trimmedFallback = fallbackText.trim();
+  if (!content.trim() || !trimmedFallback) {
+    return {
+      content,
+      usedFallback: false,
+    };
+  }
+
+  const analysis = analyzeThinkAwareContent(content);
+  const hasThinkBlock = analysis.blocks.some(block => block.type === 'think');
+
+  if (analysis.mainText || !hasThinkBlock) {
+    return {
+      content,
+      usedFallback: false,
+    };
+  }
+
+  const normalizedThinkContent = serializeThinkAwareBlocks(
+    analysis.blocks
+  ).trimEnd();
+
+  return {
+    content: `${normalizedThinkContent}\n\n${trimmedFallback}`,
+    usedFallback: true,
+  };
+}
+
 /**
  * Parses a message string into a sequence of think blocks and text blocks.
  * Supports:

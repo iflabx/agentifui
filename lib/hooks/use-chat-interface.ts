@@ -63,10 +63,12 @@ export function useChatInterface(
   const router = useRouter();
   const currentPathname = usePathname();
   const tModerationBase = useTranslations('errors.system.moderation');
+  const tChatMessages = useTranslations('pages.chat.messages');
   const moderationT = useCallback<ChatModerationTranslator>(
     (key, values) => tModerationBase(key, values),
     [tModerationBase]
   );
+  const incompleteAnswerMessage = tChatMessages('incompleteAnswer');
   const { isWelcomeScreen, setIsWelcomeScreen } = useChatInputStore();
 
   // Get authentication state and current app info using new hook
@@ -169,6 +171,7 @@ export function useChatInterface(
     flushChunkBuffer,
     chunkAppendInterval: CHUNK_APPEND_INTERVAL,
     moderationT,
+    incompleteAnswerMessage,
   });
 
   // New: direct send message function

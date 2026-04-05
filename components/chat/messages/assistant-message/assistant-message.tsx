@@ -37,7 +37,11 @@ import { AssistantMessageActions } from '@components/chat/message-actions';
 import { ReferenceSources } from '@components/chat/reference-sources';
 import { useThrottledThinkPreview } from '@lib/hooks/use-throttled-think-preview';
 import { cn } from '@lib/utils';
-import { MessageBlock, parseThinkBlocks } from '@lib/utils/think-parser';
+import {
+  MessageBlock,
+  materializeIncompleteAssistantReply,
+  parseThinkBlocks,
+} from '@lib/utils/think-parser';
 import { buildThinkPreviewText } from '@lib/utils/think-preview';
 import 'katex/dist/katex.min.css';
 import ReactMarkdown from 'react-markdown';
@@ -162,8 +166,22 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = React.memo(
   ({ id, content, isStreaming, wasManuallyStopped, metadata, className }) => {
     const t = useTranslations('pages.chat');
 
+    const normalizedContent = useMemo(() => {
+      if (isStreaming || wasManuallyStopped) {
+        return content;
+      }
+
+      return materializeIncompleteAssistantReply(
+        content,
+        t('messages.incompleteAnswer')
+      ).content;
+    }, [content, isStreaming, t, wasManuallyStopped]);
+
     // Parse content into blocks
-    const blocks = useMemo(() => parseThinkBlocks(content), [content]);
+    const blocks = useMemo(
+      () => parseThinkBlocks(normalizedContent),
+      [normalizedContent]
+    );
 
     // Markdown rendering components for main content
     const mainMarkdownComponents: Components = {
