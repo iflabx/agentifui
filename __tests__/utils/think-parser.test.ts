@@ -1,4 +1,8 @@
-import { parseThinkBlocks } from '../../lib/utils/think-parser';
+import { extractMainContentForPreview } from '../../lib/utils';
+import {
+  analyzeThinkAwareContent,
+  parseThinkBlocks,
+} from '../../lib/utils/think-parser';
 
 describe('parseThinkBlocks', () => {
   it('should parse plain text', () => {
@@ -135,5 +139,49 @@ describe('parseThinkBlocks', () => {
     expect(result).toEqual([
       { type: 'think', content: '\nLine 1\nLine 2\n', status: 'closed' },
     ]);
+  });
+
+  it('should recover a reply tail from an unclosed think block when a reply marker exists', () => {
+    const result = parseThinkBlocks(
+      '<think>Plan steps\n\n**生成回复**：\nVisible answer'
+    );
+
+    expect(result).toEqual([
+      { type: 'think', content: 'Plan steps', status: 'closed' },
+      { type: 'text', content: 'Visible answer' },
+    ]);
+  });
+
+  it('should keep an unclosed think block intact when no safe reply marker exists', () => {
+    const analysis = analyzeThinkAwareContent(
+      '<think>Plan steps\n\n**生成内容**：\n* bullet'
+    );
+
+    expect(analysis.blocks).toEqual([
+      {
+        type: 'think',
+        content: 'Plan steps\n\n**生成内容**：\n* bullet',
+        status: 'open',
+      },
+    ]);
+    expect(analysis.mainText).toBe('');
+    expect(analysis.hasUnbalancedThink).toBe(true);
+    expect(analysis.usedReplyMarkerFallback).toBe(false);
+  });
+
+  it('should extract preview text from a repaired malformed think payload', () => {
+    const preview = extractMainContentForPreview(
+      '<think>Plan steps\n\n**生成回复**：\nVisible answer'
+    );
+
+    expect(preview).toBe('Visible answer');
+  });
+
+  it('should return an empty preview for malformed think content without a safe answer tail', () => {
+    const preview = extractMainContentForPreview(
+      '<think>Plan steps\n\n**生成内容**：\n* bullet'
+    );
+
+    expect(preview).toBe('');
   });
 });

@@ -1,7 +1,7 @@
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
-import { parseThinkBlocks } from './think-parser';
+import { analyzeThinkAwareContent, parseThinkBlocks } from './think-parser';
 
 /**
  * Utility function to merge className values.
@@ -37,33 +37,26 @@ export function formatBytes(bytes: number, decimals: number = 2): string {
  * @returns The cleaned main content string.
  */
 export function extractMainContentForPreview(rawContent: string): string {
-  // Check for unclosed key tags
-  const openThinkCount = (rawContent.match(/<think(?:\s[^>]*)?>/gi) || [])
-    .length;
-  const closeThinkCount = (rawContent.match(/<\/think>/gi) || []).length;
-  const openDetailsCount = (rawContent.match(/<details(?:\s[^>]*)?>/gi) || [])
-    .length;
-  const closeDetailsCount = (rawContent.match(/<\/details>/gi) || []).length;
+  const analysis = analyzeThinkAwareContent(rawContent);
 
-  // If there are unclosed tags, the content is still being generated, return empty string
-  if (
-    openThinkCount > closeThinkCount ||
-    openDetailsCount > closeDetailsCount
-  ) {
+  if (analysis.mainText) {
+    return analysis.mainText;
+  }
+
+  if (analysis.hasUnbalancedThink) {
     return '';
   }
 
   let cleanContent = rawContent;
+  cleanContent = cleanContent.replace(
+    /<think(?:\s[^>]*)?>[\s\S]*?<\/think>/gi,
+    ''
+  );
+  cleanContent = cleanContent.replace(
+    /<details(?:\s[^>]*)?>[\s\S]*?<\/details>/gi,
+    ''
+  );
 
-  // Remove all <think>...</think> blocks
-  const thinkRegex = /<think(?:\s[^>]*)?>[\s\S]*?<\/think>/gi;
-  cleanContent = cleanContent.replace(thinkRegex, '');
-
-  // Remove all <details>...</details> blocks
-  const detailsRegex = /<details(?:\s[^>]*)?>[\s\S]*?<\/details>/gi;
-  cleanContent = cleanContent.replace(detailsRegex, '');
-
-  // Clean up extra whitespace
   return cleanContent.replace(/\n\s*\n/g, '\n').trim();
 }
 

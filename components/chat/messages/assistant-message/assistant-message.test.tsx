@@ -208,4 +208,20 @@ describe('AssistantMessage think block behavior', () => {
       '1'
     );
   });
+
+  it('should render repaired reply text for malformed historical think content', () => {
+    render(
+      <AssistantMessage
+        id="msg-5"
+        content={'<think>Plan steps\n\n**生成回复**：\nVisible answer'}
+        isStreaming={false}
+        wasManuallyStopped={false}
+      />
+    );
+
+    expect(screen.getByTestId('think-content')).toHaveTextContent('Plan steps');
+    expect(screen.getByTestId('react-markdown')).toHaveTextContent(
+      'Visible answer'
+    );
+  });
 });

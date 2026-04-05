@@ -278,6 +278,69 @@ describe('streamDifyChat agent_thought handling', () => {
     );
   });
 
+  it('should recover a final answer from a mixed agent_thought payload after raw message think chunks', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: createSseBody([
+        {
+          event: 'message',
+          task_id: 'task-1',
+          conversation_id: 'conv-1',
+          id: 'msg-raw-1',
+          answer: '<think>用户',
+          created_at: 1,
+        },
+        {
+          event: 'message',
+          task_id: 'task-1',
+          conversation_id: 'conv-1',
+          id: 'msg-raw-2',
+          answer: '想知道模型如何推理',
+          created_at: 2,
+        },
+        {
+          event: 'agent_thought',
+          task_id: 'task-1',
+          conversation_id: 'conv-1',
+          id: 'thought-1',
+          message_id: 'msg-1',
+          position: 1,
+          thought: '<think>用户想知道模型如何推理</think>\n\n正式回答',
+          observation: '',
+          tool: '',
+          tool_labels: {},
+          tool_input: '',
+          message_files: [],
+          created_at: 3,
+        },
+        {
+          event: 'message_end',
+          task_id: 'task-1',
+          conversation_id: 'conv-1',
+          id: 'end-1',
+          metadata: {},
+          usage: {
+            total_tokens: 10,
+          },
+        },
+      ]),
+    });
+
+    const response = await streamDifyChat(
+      {
+        query: 'hello',
+        user: 'user-1',
+        response_mode: 'streaming',
+      },
+      'app-1'
+    );
+
+    await expect(collectStream(response.answerStream)).resolves.toBe(
+      '<think>用户想知道模型如何推理</think>正式回答'
+    );
+  });
+
   it('should ignore replayed agent_thought payloads after the answer has already been emitted', async () => {
     (global.fetch as jest.Mock).mockResolvedValue({
       ok: true,
@@ -315,6 +378,77 @@ describe('streamDifyChat agent_thought handling', () => {
           message_id: 'msg-1',
           position: 2,
           thought: '<think>first step</think>Visible answer',
+          observation: '',
+          tool: '',
+          tool_labels: {},
+          tool_input: '',
+          message_files: [],
+          created_at: 3,
+        },
+        {
+          event: 'message_end',
+          task_id: 'task-1',
+          conversation_id: 'conv-1',
+          id: 'end-1',
+          metadata: {},
+          usage: {
+            total_tokens: 10,
+          },
+        },
+      ]),
+    });
+
+    const response = await streamDifyChat(
+      {
+        query: 'hello',
+        user: 'user-1',
+        response_mode: 'streaming',
+      },
+      'app-1'
+    );
+
+    await expect(collectStream(response.answerStream)).resolves.toBe(
+      '<think>first step</think>Visible answer'
+    );
+  });
+
+  it('should keep the existing answer when a later mixed agent_thought payload conflicts', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: createSseBody([
+        {
+          event: 'agent_thought',
+          task_id: 'task-1',
+          conversation_id: 'conv-1',
+          id: 'thought-1',
+          message_id: 'msg-1',
+          position: 1,
+          thought: 'first step',
+          observation: '',
+          tool: '',
+          tool_labels: {},
+          tool_input: '',
+          message_files: [],
+          created_at: 1,
+        },
+        {
+          event: 'agent_message',
+          task_id: 'task-1',
+          conversation_id: 'conv-1',
+          id: 'answer-1',
+          message_id: 'msg-1',
+          answer: 'Visible answer',
+          created_at: 2,
+        },
+        {
+          event: 'agent_thought',
+          task_id: 'task-1',
+          conversation_id: 'conv-1',
+          id: 'thought-2',
+          message_id: 'msg-1',
+          position: 2,
+          thought: '<think>late conflicting reasoning</think>Another answer',
           observation: '',
           tool: '',
           tool_labels: {},

@@ -1,6 +1,9 @@
 import { Message, MessageStatus } from '@lib/types/database';
 import { Result, success } from '@lib/types/result';
-import { extractMainContentForPreview } from '@lib/utils/index';
+import {
+  extractMainContentForPreview,
+  hasThinkAwareContent,
+} from '@lib/utils/index';
 
 import { dataService } from '../data-service';
 import {
@@ -36,7 +39,12 @@ function toSavedMessageData(message: SaveMessageInput) {
 
 function buildPreviewText(content: string): string {
   const mainContent = extractMainContentForPreview(content);
-  let previewText = mainContent || content;
+  let previewText = mainContent;
+
+  if (!previewText && !hasThinkAwareContent(content)) {
+    previewText = content;
+  }
+
   if (previewText.length > 100) {
     previewText = previewText.substring(0, 100) + '...';
   }
