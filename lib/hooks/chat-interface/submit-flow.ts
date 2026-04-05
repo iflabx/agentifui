@@ -52,11 +52,17 @@ function buildAssistantPersistenceFallback(input: {
   assistantText: string;
   completionData: ChatStreamCompletionData | null;
   incompleteAnswerMessage: string;
+  assistantWasManuallyStopped: boolean;
 }): AssistantPersistenceFallbackBuildResult {
-  const normalizedAssistantContent = materializeIncompleteAssistantReply(
-    input.assistantText,
-    input.incompleteAnswerMessage
-  );
+  const normalizedAssistantContent = input.assistantWasManuallyStopped
+    ? {
+        content: input.assistantText,
+        usedFallback: false,
+      }
+    : materializeIncompleteAssistantReply(
+        input.assistantText,
+        input.incompleteAnswerMessage
+      );
   const assistantText = normalizedAssistantContent.content;
 
   if (!assistantText.trim()) {
@@ -91,6 +97,7 @@ function buildAssistantPersistenceFallback(input: {
       text: assistantText,
       tokenCount: input.completionData?.usage?.total_tokens,
       metadata: completionMetadata,
+      wasManuallyStopped: input.assistantWasManuallyStopped,
     },
     normalizedText: assistantText,
     metadata: completionMetadata,
@@ -268,11 +275,19 @@ export async function executeChatSubmit(
       updateMessage: input.updateMessage,
     });
 
+    const latestAssistantMessage = assistantMessageId
+      ? useChatStore
+          .getState()
+          .messages.find(message => message.id === assistantMessageId)
+      : null;
+
     const assistantPersistenceFallback = buildAssistantPersistenceFallback({
       assistantMessageId,
       assistantText: answerStreamResult.assistantText,
       completionData,
       incompleteAnswerMessage: input.incompleteAnswerMessage,
+      assistantWasManuallyStopped:
+        latestAssistantMessage?.wasManuallyStopped === true,
     });
     assistantFallback = assistantPersistenceFallback.assistantFallback;
 

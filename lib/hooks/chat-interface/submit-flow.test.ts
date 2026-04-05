@@ -1,3 +1,5 @@
+import { useChatStore } from '@lib/stores/chat-store';
+
 import type { ChatResolvedAppConfig } from './app-config';
 import { executeChatSubmit } from './submit-flow';
 
@@ -108,6 +110,13 @@ describe('executeChatSubmit', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    useChatStore.setState({
+      messages: [],
+      streamingMessageId: null,
+      isWaitingForResponse: false,
+      currentConversationId: null,
+      currentTaskId: null,
+    });
 
     mockMapChatUploadFilesToDifyFiles.mockReturnValue(undefined);
     mockMapChatUploadFilesToMessageAttachments.mockReturnValue(undefined);
@@ -212,6 +221,55 @@ describe('executeChatSubmit', () => {
           text: '<think>Plan steps\n\n**生成内容**：\n* bullet</think>\n\n回答未完整生成，请重试。',
           metadata: expect.objectContaining({
             frontend_metadata: expect.objectContaining({
+              incomplete_assistant_fallback: true,
+            }),
+          }),
+        }),
+      })
+    );
+  });
+
+  it('does not inject incomplete fallback for manually stopped draft-only content', async () => {
+    const { input } = createInput();
+
+    useChatStore.setState({
+      messages: [
+        {
+          id: 'assistant-1',
+          text: '<think>Plan steps\n\n**生成内容**：\n* bullet',
+          isUser: false,
+          isStreaming: false,
+          wasManuallyStopped: true,
+          metadata: {
+            frontend_metadata: {
+              stopped_manually: true,
+            },
+          },
+        },
+      ],
+    });
+
+    mockConsumeChatAnswerStream.mockResolvedValueOnce({
+      assistantMessageId: 'assistant-1',
+      assistantText: '<think>Plan steps\n\n**生成内容**：\n* bullet',
+    });
+
+    await executeChatSubmit(input);
+
+    expect(input.updateMessage).not.toHaveBeenCalledWith(
+      'assistant-1',
+      expect.objectContaining({
+        text: expect.stringContaining('回答未完整生成，请重试。'),
+      })
+    );
+
+    expect(mockPersistChatMessagesAfterStreaming).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assistantFallback: expect.objectContaining({
+          text: '<think>Plan steps\n\n**生成内容**：\n* bullet',
+          wasManuallyStopped: true,
+          metadata: expect.objectContaining({
+            frontend_metadata: expect.not.objectContaining({
               incomplete_assistant_fallback: true,
             }),
           }),
