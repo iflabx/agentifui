@@ -17,10 +17,7 @@ export function resolveContentPagesDir(rootDir = process.cwd()) {
 }
 
 export function resolveLanguageConfigPath(rootDir = process.cwd()) {
-  return path.resolve(
-    resolveRootDir(rootDir),
-    'lib/config/language-config.ts'
-  );
+  return path.resolve(resolveRootDir(rootDir), 'lib/config/language-config.ts');
 }
 
 export function parseSupportedLocales(rootDir = process.cwd()) {
@@ -277,16 +274,14 @@ function getBaselineComponent(params) {
 }
 
 function getStringProp(value, key) {
-  return isPlainObject(value) && typeof value[key] === 'string' ? value[key] : '';
+  return isPlainObject(value) && typeof value[key] === 'string'
+    ? value[key]
+    : '';
 }
 
 function scoreGlobalCandidate(params) {
-  const {
-    candidate,
-    baselineComponent,
-    targetComponent,
-    targetSectionIndex,
-  } = params;
+  const { candidate, baselineComponent, targetComponent, targetSectionIndex } =
+    params;
   let score = 0;
 
   score -= Math.abs(candidate.sectionIndex - targetSectionIndex) * 10;
@@ -306,7 +301,10 @@ function scoreGlobalCandidate(params) {
   }
 
   if (baselineContent.includes('{year}') || baselineContent.includes('©')) {
-    if (candidateContent.includes('{year}') || candidateContent.includes('©')) {
+    if (
+      candidateContent.includes('{year}') ||
+      candidateContent.includes('©')
+    ) {
       score += 80;
     } else {
       score -= 40;
@@ -361,9 +359,9 @@ function resolveMatchedComponent(params) {
     return directById;
   }
 
-  const directByPosition = withArray(sourceSection?.columns?.[targetColumnIndex])[
-    targetComponentIndex
-  ];
+  const directByPosition = withArray(
+    sourceSection?.columns?.[targetColumnIndex]
+  )[targetComponentIndex];
   if (directByPosition && directByPosition.type === targetComponent.type) {
     report.byPosition += 1;
     return directByPosition;
@@ -587,7 +585,10 @@ export function validateContentFiles(params) {
   const { structureFile, localeLayer } = params;
   const errors = [];
 
-  if (!Array.isArray(structureFile.sections) || structureFile.sections.length === 0) {
+  if (
+    !Array.isArray(structureFile.sections) ||
+    structureFile.sections.length === 0
+  ) {
     errors.push('structure sections are missing');
     return errors;
   }

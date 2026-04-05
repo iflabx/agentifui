@@ -35,7 +35,11 @@ function main() {
   let hasFailures = false;
 
   for (const pageName of PAGE_NAMES) {
-    const structurePath = path.resolve(contentPagesDir, pageName, 'structure.json');
+    const structurePath = path.resolve(
+      contentPagesDir,
+      pageName,
+      'structure.json'
+    );
     const structureFile = readRequiredJson(structurePath);
 
     if (structureFile.page !== pageName) {
@@ -64,11 +68,15 @@ function main() {
       const errors = [];
 
       if (localeLayer.page !== pageName) {
-        errors.push(`page mismatch: expected ${pageName}, found ${localeLayer.page}`);
+        errors.push(
+          `page mismatch: expected ${pageName}, found ${localeLayer.page}`
+        );
       }
 
       if (localeLayer.locale !== locale) {
-        errors.push(`locale mismatch: expected ${locale}, found ${localeLayer.locale}`);
+        errors.push(
+          `locale mismatch: expected ${locale}, found ${localeLayer.locale}`
+        );
       }
 
       errors.push(...validateContentFiles({ structureFile, localeLayer }));

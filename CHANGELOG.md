@@ -175,5 +175,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Code Standards**: Consistent code style and quality standards
 - **CI/CD Ready**: Prepared for continuous integration and deployment
 
-[0.2.0]: https://github.com/ifLabX/AgentifUI/releases/tag/v0.2.0
-[0.1.0]: https://github.com/ifLabX/AgentifUI/releases/tag/v0.1.0
+[0.2.0]: https://github.com/iflabx/agentifui/releases/tag/v0.2.0
+[0.1.0]: https://github.com/iflabx/agentifui/releases/tag/v0.1.0
