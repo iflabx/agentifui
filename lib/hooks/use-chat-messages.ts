@@ -10,6 +10,7 @@ import {
   createPlaceholderAssistantMessageRecord,
   findDuplicateMessage,
   saveMessageRecord,
+  updateMessageMetadataRecord,
 } from '@lib/services/client/messages-api';
 import { ChatMessage, useChatStore } from '@lib/stores/chat-store';
 
@@ -292,6 +293,54 @@ export function useChatMessages(userId?: string) {
    */
   const saveStoppedAssistantMessage = useCallback(
     async (message: ChatMessage, conversationId: string): Promise<boolean> => {
+      const persistStoppedMetadata = async (
+        stoppedMessage: ChatMessage,
+        fallbackStoppedAt?: string
+      ): Promise<boolean> => {
+        const saved = await saveMessage(stoppedMessage, conversationId);
+        if (!saved) {
+          return false;
+        }
+
+        const latestSavedMessage = useChatStore
+          .getState()
+          .messages.find(m => m.id === message.id);
+
+        if (!latestSavedMessage?.db_id) {
+          return true;
+        }
+
+        const stoppedMetadata = {
+          ...(latestSavedMessage.metadata || {}),
+          stopped_manually: true,
+          stopped_at:
+            (latestSavedMessage.metadata?.stopped_at as string | undefined) ||
+            fallbackStoppedAt ||
+            new Date().toISOString(),
+        };
+
+        const patchResult = await updateMessageMetadataRecord({
+          conversationId,
+          messageId: latestSavedMessage.db_id,
+          metadata: stoppedMetadata,
+        });
+
+        if (!patchResult.success) {
+          console.warn(
+            '[saveStoppedAssistantMessage] Failed to patch stopped metadata:',
+            patchResult.error
+          );
+          return false;
+        }
+
+        updateMessage(message.id, {
+          metadata: stoppedMetadata,
+          wasManuallyStopped: true,
+        });
+
+        return true;
+      };
+
       // Special logic for saving a stopped assistant message:
       // 1. Ensure message content is not empty (even if stopped)
       // 2. Add stop marker to metadata
@@ -322,7 +371,10 @@ export function useChatMessages(userId?: string) {
           .getState()
           .messages.find(m => m.id === message.id);
         if (updatedMessage) {
-          return saveMessage(updatedMessage, conversationId);
+          return persistStoppedMetadata(
+            updatedMessage,
+            updatedMessage.metadata?.stopped_at as string | undefined
+          );
         }
         return false;
       }
@@ -353,7 +405,7 @@ export function useChatMessages(userId?: string) {
       }
 
       // Save the stopped message immediately with the updated stopped metadata.
-      return saveMessage(updatedMessage, conversationId);
+      return persistStoppedMetadata(updatedMessage, updatedMetadata.stopped_at);
     },
     [saveMessage, updateMessage]
   );
