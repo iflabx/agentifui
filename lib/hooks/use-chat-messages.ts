@@ -13,6 +13,7 @@ import {
   updateMessageMetadataRecord,
 } from '@lib/services/client/messages-api';
 import { ChatMessage, useChatStore } from '@lib/stores/chat-store';
+import { resolveStoppedResponseSnapshot } from '@lib/utils/stopped-message-content';
 
 import { useCallback, useRef, useState } from 'react';
 
@@ -45,6 +46,17 @@ function chatMessageToSavePayload(
     baseMetadata.stopped_at =
       (baseMetadata.stopped_at as string | undefined) ||
       new Date().toISOString();
+  }
+
+  if (chatMessage.wasManuallyStopped) {
+    const stoppedResponseSnapshot = resolveStoppedResponseSnapshot({
+      text: chatMessage.text,
+      metadata: baseMetadata,
+    });
+
+    if (stoppedResponseSnapshot) {
+      baseMetadata.stopped_response_text = stoppedResponseSnapshot;
+    }
   }
 
   if (chatMessage.attachments && chatMessage.attachments.length > 0) {
@@ -317,6 +329,10 @@ export function useChatMessages(userId?: string) {
             (latestSavedMessage.metadata?.stopped_at as string | undefined) ||
             fallbackStoppedAt ||
             new Date().toISOString(),
+          stopped_response_text: resolveStoppedResponseSnapshot({
+            text: latestSavedMessage.text,
+            metadata: latestSavedMessage.metadata,
+          }),
         };
 
         const patchResult = await updateMessageMetadataRecord({
@@ -388,6 +404,10 @@ export function useChatMessages(userId?: string) {
         ...(message.metadata || {}),
         stopped_manually: true,
         stopped_at: new Date().toISOString(),
+        stopped_response_text: resolveStoppedResponseSnapshot({
+          text: message.text,
+          metadata: message.metadata,
+        }),
       };
 
       updateMessage(message.id, {

@@ -83,6 +83,7 @@ describe('useChatMessages', () => {
         metadata: expect.objectContaining({
           stopped_manually: true,
           stopped_at: expect.any(String),
+          stopped_response_text: 'partial reply',
         }),
       })
     );
@@ -92,6 +93,7 @@ describe('useChatMessages', () => {
       metadata: expect.objectContaining({
         stopped_manually: true,
         stopped_at: expect.any(String),
+        stopped_response_text: 'partial reply',
       }),
     });
 
@@ -153,6 +155,7 @@ describe('useChatMessages', () => {
       metadata: expect.objectContaining({
         stopped_manually: true,
         stopped_at: expect.any(String),
+        stopped_response_text: 'partial reply',
       }),
     });
     expect(useChatStore.getState().messages[0]).toEqual(

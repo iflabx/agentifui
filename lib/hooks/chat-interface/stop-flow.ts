@@ -1,9 +1,10 @@
-import type { MutableRefObject } from 'react';
-
-import type { ServiceInstance } from '@lib/types/database';
 import { stopDifyStreamingTask } from '@lib/services/dify/chat-service';
 import type { ChatMessage } from '@lib/stores/chat-store';
 import { useChatStore } from '@lib/stores/chat-store';
+import type { ServiceInstance } from '@lib/types/database';
+import { resolveStoppedResponseSnapshot } from '@lib/utils/stopped-message-content';
+
+import type { MutableRefObject } from 'react';
 
 import { resolveChatStopAppConfig } from './app-config';
 import {
@@ -126,7 +127,9 @@ export async function stopRemoteStreamingTaskIfNeeded(
   }
 
   if (input.currentTaskId) {
-    console.warn('[handleStopProcessing] No valid app config, skip remote stop');
+    console.warn(
+      '[handleStopProcessing] No valid app config, skip remote stop'
+    );
     input.setCurrentTaskId(null);
   }
 }
@@ -156,6 +159,10 @@ export async function persistStoppedStreamingState(
       ...(assistantMessage.metadata || {}),
       stopped_manually: true,
       stopped_at: new Date().toISOString(),
+      stopped_response_text: resolveStoppedResponseSnapshot({
+        text: assistantMessage.text,
+        metadata: assistantMessage.metadata,
+      }),
     };
 
     input.updateMessage(input.currentStreamingId, {
@@ -207,8 +214,7 @@ export async function persistStoppedStreamingState(
     externalId: input.difyConversationId,
     setDbConversationUUID: input.setDbConversationUUID,
     errorLog: '[handleStopProcessing] Failed to query db ID:',
-    missingLog:
-      `[handleStopProcessing] No db record found while stopping, Dify conversation ID=${input.difyConversationId}`,
+    missingLog: `[handleStopProcessing] No db record found while stopping, Dify conversation ID=${input.difyConversationId}`,
   });
 
   if (!resolvedDbConversationId) {
@@ -223,7 +229,8 @@ export async function persistStoppedStreamingState(
       userMessage: recentUserMessage,
       conversationId: resolvedDbConversationId,
       saveMessage: input.saveMessage,
-      errorLog: '[handleStopProcessing] Failed to save user message after query:',
+      errorLog:
+        '[handleStopProcessing] Failed to save user message after query:',
     });
   } else {
     console.log(
@@ -280,7 +287,9 @@ export async function executeChatStop(
   }
 
   if (!input.currentUserId) {
-    console.error('useChatInterface.handleStopProcessing: User not authenticated.');
+    console.error(
+      'useChatInterface.handleStopProcessing: User not authenticated.'
+    );
     return;
   }
 

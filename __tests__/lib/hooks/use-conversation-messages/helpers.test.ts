@@ -59,6 +59,28 @@ describe('useConversationMessages helpers', () => {
     ]);
   });
 
+  it('restores stopped think content from metadata snapshot for history rendering', () => {
+    expect(
+      dbMessageToChatMessage({
+        id: 'm2',
+        content: '',
+        role: 'assistant',
+        external_id: 'ext-2',
+        metadata: {
+          stopped_manually: true,
+          stopped_response_text: '<think>draft reasoning',
+        },
+        token_count: null,
+        sequence_index: 1,
+      } as never)
+    ).toEqual(
+      expect.objectContaining({
+        text: '<think>draft reasoning',
+        wasManuallyStopped: true,
+      })
+    );
+  });
+
   it('detects load-more and route transition preservation rules', () => {
     expect(
       shouldLoadMoreMessages({

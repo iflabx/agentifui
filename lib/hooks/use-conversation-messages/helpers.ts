@@ -1,5 +1,6 @@
 import type { ChatMessage, MessageAttachment } from '@lib/stores/chat-store';
 import type { Message } from '@lib/types/database';
+import { resolvePersistedStoppedAssistantText } from '@lib/utils/stopped-message-content';
 
 import type { LoadingStatus } from './types';
 
@@ -31,10 +32,14 @@ export function dbMessageToChatMessage(dbMessage: Message): ChatMessage {
   const attachments = isMessageAttachmentArray(rawAttachments)
     ? rawAttachments
     : [];
+  const resolvedContent = resolvePersistedStoppedAssistantText({
+    content: dbMessage.content,
+    metadata: dbMessage.metadata,
+  });
 
   return {
     id: `db-${dbMessage.id}`,
-    text: dbMessage.content,
+    text: resolvedContent,
     isUser: dbMessage.role === 'user',
     role: dbMessage.role,
     persistenceStatus: 'saved',

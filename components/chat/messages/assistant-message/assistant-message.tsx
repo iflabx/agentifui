@@ -88,11 +88,11 @@ const ThinkBlockItem = ({
 
   // Calculate the current think block status
   const calculateStatus = (): ThinkBlockStatus => {
-    if (block.status === 'closed') {
-      return 'completed';
-    }
     if (wasManuallyStopped) {
       return 'stopped';
+    }
+    if (block.status === 'closed') {
+      return 'completed';
     }
     // Parser leaves unfinished <think> tags "open"; only the last streaming block counts as thinking.
     if (isStreaming && isLast) {

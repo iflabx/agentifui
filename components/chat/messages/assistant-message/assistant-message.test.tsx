@@ -253,4 +253,20 @@ describe('AssistantMessage think block behavior', () => {
 
     expect(screen.queryByTestId('react-markdown')).not.toBeInTheDocument();
   });
+
+  it('shows stopped status for manually stopped historical think blocks even when the block is closed', () => {
+    render(
+      <AssistantMessage
+        id="msg-8"
+        content="<think>Plan steps</think>"
+        isStreaming={false}
+        wasManuallyStopped={true}
+      />
+    );
+
+    expect(screen.getByTestId('think-header')).toHaveAttribute(
+      'data-status',
+      'stopped'
+    );
+  });
 });
