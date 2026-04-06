@@ -1,4 +1,3 @@
-import { clearConversationMessagesCache } from '../../../../../lib/services/db/message-service/cache';
 import { queryRowsWithPgSystemContext } from '../../lib/pg-context';
 import { loadConversationOwnedByActor } from './auth';
 import {
@@ -240,9 +239,6 @@ export async function handleMessageAction(
         // Best-effort parity with legacy logic: message save should not fail because preview update failed.
       }
     }
-
-    clearConversationMessagesCache(conversationId);
-
     return toSuccessResponse(saved);
   }
 
@@ -289,9 +285,6 @@ export async function handleMessageAction(
     if (!rows[0]) {
       return toErrorResponse('Message not found', 404);
     }
-
-    clearConversationMessagesCache(conversationId);
-
     return toSuccessResponse(sanitizeMessage(rows[0]));
   }
 
@@ -374,9 +367,6 @@ export async function handleMessageAction(
         status,
       ]
     );
-
-    clearConversationMessagesCache(conversationId);
-
     return toSuccessResponse(rows[0] ? sanitizeMessage(rows[0]) : null);
   }
 
