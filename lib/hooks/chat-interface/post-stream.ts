@@ -306,7 +306,7 @@ function isMessageAlreadyPersisted(
   return Boolean(message?.db_id) || message?.persistenceStatus === 'saved';
 }
 
-function persistAssistantMessageAfterStreaming(input: {
+async function persistAssistantMessageAfterStreaming(input: {
   assistantMessageId: string | null;
   assistantFallback?: AssistantMessagePersistenceFallback | null;
   conversationId: string;
@@ -322,7 +322,7 @@ function persistAssistantMessageAfterStreaming(input: {
     conversationId: string
   ) => Promise<boolean>;
   errorLog: string;
-}): void {
+}): Promise<void> {
   console.log(
     `[handleSubmit] Save assistant message immediately, ID=${input.assistantMessageId ?? 'fallback-only'}, db conversation ID=${input.conversationId}`
   );
@@ -359,21 +359,30 @@ function persistAssistantMessageAfterStreaming(input: {
     });
   }
 
-  const saveAssistantMessage = assistantMessageForPersistence.wasManuallyStopped
-    ? input.saveStoppedAssistantMessage(
-        assistantMessageForPersistence,
-        input.conversationId
-      )
-    : input.saveMessage(assistantMessageForPersistence, input.conversationId);
+  try {
+    const saveSucceeded = assistantMessageForPersistence.wasManuallyStopped
+      ? await input.saveStoppedAssistantMessage(
+          assistantMessageForPersistence,
+          input.conversationId
+        )
+      : await input.saveMessage(
+          assistantMessageForPersistence,
+          input.conversationId
+        );
 
-  void saveAssistantMessage.catch(error => {
+    if (!saveSucceeded) {
+      console.warn(
+        `[handleSubmit] Assistant message persistence returned false, ID=${assistantMessageForPersistence.id}, stopped=${assistantMessageForPersistence.wasManuallyStopped === true}`
+      );
+    }
+  } catch (error) {
     console.error(input.errorLog, error);
     if (input.assistantMessageId) {
       input.updateMessage(input.assistantMessageId, {
         persistenceStatus: 'error',
       });
     }
-  });
+  }
 }
 
 export async function persistChatMessagesAfterStreaming(
@@ -435,7 +444,7 @@ export async function persistChatMessagesAfterStreaming(
     }
 
     if (input.assistantMessageId || input.assistantFallback?.text?.trim()) {
-      persistAssistantMessageAfterStreaming({
+      await persistAssistantMessageAfterStreaming({
         assistantMessageId: input.assistantMessageId,
         assistantFallback: input.assistantFallback,
         conversationId: currentDbConvId,
@@ -512,7 +521,7 @@ export async function persistChatMessagesAfterStreaming(
   }
 
   if (input.assistantMessageId || input.assistantFallback?.text?.trim()) {
-    persistAssistantMessageAfterStreaming({
+    await persistAssistantMessageAfterStreaming({
       assistantMessageId: input.assistantMessageId,
       assistantFallback: input.assistantFallback,
       conversationId: currentDbConvId,

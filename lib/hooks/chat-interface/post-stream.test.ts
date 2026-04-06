@@ -401,4 +401,71 @@ describe('persistChatMessagesAfterStreaming', () => {
     );
     expect(saveMessage).not.toHaveBeenCalled();
   });
+
+  it('waits for stopped assistant persistence before returning', async () => {
+    mockGetChatStoreState.mockReturnValue({
+      messages: [
+        {
+          id: 'assistant-1',
+          text: '<think>draft only',
+          isUser: false,
+          wasManuallyStopped: true,
+          persistenceStatus: 'pending',
+          metadata: {
+            stopped_manually: true,
+          },
+        },
+      ],
+      currentConversationId: null,
+      currentTaskId: null,
+    });
+
+    const saveMessage = jest.fn().mockResolvedValue(true);
+    let resolveStoppedSave: ((value: boolean) => void) | null = null;
+    const saveStoppedAssistantMessage = jest.fn().mockImplementation(
+      () =>
+        new Promise<boolean>(resolve => {
+          resolveStoppedSave = resolve;
+        })
+    );
+
+    const persistencePromise = persistChatMessagesAfterStreaming({
+      finalDbConvUUID: 'db-6',
+      dbConversationUUID: null,
+      userMessage: {
+        id: 'user-1',
+        text: 'stop sync test',
+        isUser: true,
+        persistenceStatus: 'saved',
+      },
+      assistantMessageId: 'assistant-1',
+      assistantFallback: {
+        id: 'assistant-1',
+        text: '<think>draft only',
+        wasManuallyStopped: true,
+      },
+      setDbConversationUUID: jest.fn(),
+      finalizeStreamingMessage: jest.fn(),
+      updateMessage: jest.fn(),
+      saveMessage,
+      saveStoppedAssistantMessage,
+    });
+
+    let settled = false;
+    void persistencePromise.then(() => {
+      settled = true;
+    });
+
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    expect(resolveStoppedSave).not.toBeNull();
+    if (!resolveStoppedSave) {
+      throw new Error('Expected stopped persistence resolver to be captured');
+    }
+
+    (resolveStoppedSave as (value: boolean) => void)(true);
+    await expect(persistencePromise).resolves.toBe('db-6');
+    expect(saveMessage).not.toHaveBeenCalled();
+  });
 });
