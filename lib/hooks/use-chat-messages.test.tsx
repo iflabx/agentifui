@@ -166,4 +166,102 @@ describe('useChatMessages', () => {
       })
     );
   });
+
+  it('patches stopped metadata after an in-flight save finishes', async () => {
+    useChatStore.setState(state => ({
+      ...state,
+      messages: [
+        {
+          id: 'assistant-1',
+          text: 'partial reply',
+          isUser: false,
+          persistenceStatus: 'pending',
+        },
+      ],
+    }));
+
+    let resolveSaveRecord:
+      | ((value: {
+          success: true;
+          data: { id: string; content: string; external_id: null };
+        }) => void)
+      | null = null;
+
+    (saveMessageRecord as jest.Mock).mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolveSaveRecord = resolve;
+        })
+    );
+
+    const { result } = renderHook(() => useChatMessages('user-1'));
+
+    let initialSavePromise: Promise<boolean> | null = null;
+    await act(async () => {
+      initialSavePromise = result.current.saveMessage(
+        {
+          id: 'assistant-1',
+          text: 'partial reply',
+          isUser: false,
+          persistenceStatus: 'pending',
+        },
+        'conv-1'
+      );
+      await Promise.resolve();
+    });
+
+    let stoppedPromise: Promise<boolean> | null = null;
+    await act(async () => {
+      stoppedPromise = result.current.saveStoppedAssistantMessage(
+        {
+          id: 'assistant-1',
+          text: 'partial reply',
+          isUser: false,
+          persistenceStatus: 'pending',
+        },
+        'conv-1'
+      );
+      await Promise.resolve();
+    });
+
+    expect(saveMessageRecord).toHaveBeenCalledTimes(1);
+    expect(updateMessageMetadataRecord).not.toHaveBeenCalled();
+    expect(resolveSaveRecord).not.toBeNull();
+    expect(stoppedPromise).not.toBeNull();
+
+    await act(async () => {
+      if (!resolveSaveRecord || !stoppedPromise || !initialSavePromise) {
+        throw new Error('Expected deferred save and stopped promise');
+      }
+
+      resolveSaveRecord({
+        success: true,
+        data: {
+          id: 'db-msg-1',
+          content: 'partial reply',
+          external_id: null,
+        },
+      });
+
+      await initialSavePromise;
+      await stoppedPromise;
+    });
+
+    expect(updateMessageMetadataRecord).toHaveBeenCalledWith({
+      conversationId: 'conv-1',
+      messageId: 'db-msg-1',
+      metadata: expect.objectContaining({
+        stopped_manually: true,
+        stopped_at: expect.any(String),
+        stopped_response_text: 'partial reply',
+      }),
+    });
+    expect(useChatStore.getState().messages[0]).toEqual(
+      expect.objectContaining({
+        wasManuallyStopped: true,
+        persistenceStatus: 'saved',
+        db_id: 'db-msg-1',
+      })
+    );
+  });
 });

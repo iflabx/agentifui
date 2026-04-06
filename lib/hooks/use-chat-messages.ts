@@ -32,6 +32,40 @@ const RETRY_CONFIG = {
   baseDelayMs: 1000, // 1 second, used for exponential backoff
 };
 
+const STOPPED_PATCH_WAIT_MS = 1200;
+const STOPPED_PATCH_POLL_MS = 25;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function waitForMessageDbId(
+  messageId: string,
+  timeoutMs: number = STOPPED_PATCH_WAIT_MS,
+  pollMs: number = STOPPED_PATCH_POLL_MS
+): Promise<ChatMessage | null> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const latestMessage =
+      useChatStore
+        .getState()
+        .messages.find(message => message.id === messageId) || null;
+
+    if (latestMessage?.db_id) {
+      return latestMessage;
+    }
+
+    await sleep(pollMs);
+  }
+
+  return (
+    useChatStore
+      .getState()
+      .messages.find(message => message.id === messageId) || null
+  );
+}
+
 function chatMessageToSavePayload(
   chatMessage: ChatMessage,
   conversationId: string,
@@ -310,16 +344,41 @@ export function useChatMessages(userId?: string) {
         fallbackStoppedAt?: string
       ): Promise<boolean> => {
         const saved = await saveMessage(stoppedMessage, conversationId);
-        if (!saved) {
-          return false;
-        }
-
-        const latestSavedMessage = useChatStore
+        let latestSavedMessage: ChatMessage | null | undefined = useChatStore
           .getState()
           .messages.find(m => m.id === message.id);
 
+        if (!saved && !latestSavedMessage?.db_id) {
+          latestSavedMessage = await waitForMessageDbId(message.id);
+        }
+
         if (!latestSavedMessage?.db_id) {
-          return true;
+          const duplicateResult = await findDuplicateMessage(
+            stoppedMessage.text,
+            'assistant',
+            conversationId
+          );
+
+          if (duplicateResult.success && duplicateResult.data) {
+            updateMessage(message.id, {
+              persistenceStatus: 'saved',
+              db_id: duplicateResult.data.id,
+              dify_message_id: duplicateResult.data.external_id || undefined,
+            });
+
+            latestSavedMessage = {
+              ...(useChatStore
+                .getState()
+                .messages.find(m => m.id === message.id) || stoppedMessage),
+              persistenceStatus: 'saved',
+              db_id: duplicateResult.data.id,
+              dify_message_id: duplicateResult.data.external_id || undefined,
+            };
+          }
+        }
+
+        if (!latestSavedMessage?.db_id) {
+          return saved;
         }
 
         const stoppedMetadata = {
@@ -330,8 +389,8 @@ export function useChatMessages(userId?: string) {
             fallbackStoppedAt ||
             new Date().toISOString(),
           stopped_response_text: resolveStoppedResponseSnapshot({
-            text: latestSavedMessage.text,
-            metadata: latestSavedMessage.metadata,
+            text: latestSavedMessage.text || stoppedMessage.text,
+            metadata: latestSavedMessage.metadata || stoppedMessage.metadata,
           }),
         };
 
