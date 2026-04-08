@@ -1,8 +1,8 @@
+import type { ChatMessage } from '@lib/stores/chat-store';
+import type { ServiceInstance } from '@lib/types/database';
+
 import { useCallback } from 'react';
 import type { MutableRefObject } from 'react';
-
-import type { ServiceInstance } from '@lib/types/database';
-import type { ChatMessage } from '@lib/stores/chat-store';
 
 import { executeChatStop } from './stop-flow';
 
@@ -27,6 +27,10 @@ interface UseChatStopHandlerInput {
     conversationId: string,
     retryCount?: number
   ) => Promise<boolean>;
+  saveStoppedAssistantMessage: (
+    message: ChatMessage,
+    conversationId: string
+  ) => Promise<boolean>;
   finalizeStreamingMessage: (id: string) => void;
 }
 
@@ -45,6 +49,7 @@ export function useChatStopHandler({
   flushChunkBuffer,
   updateMessage,
   saveMessage,
+  saveStoppedAssistantMessage,
   finalizeStreamingMessage,
 }: UseChatStopHandlerInput) {
   return useCallback(
@@ -64,6 +69,7 @@ export function useChatStopHandler({
         flushChunkBuffer,
         updateMessage,
         saveMessage,
+        saveStoppedAssistantMessage,
         finalizeStreamingMessage,
       }),
     [
@@ -81,6 +87,7 @@ export function useChatStopHandler({
       flushChunkBuffer,
       updateMessage,
       saveMessage,
+      saveStoppedAssistantMessage,
       finalizeStreamingMessage,
     ]
   );

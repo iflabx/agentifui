@@ -7,10 +7,7 @@ import { resolveStoppedResponseSnapshot } from '@lib/utils/stopped-message-conte
 import type { MutableRefObject } from 'react';
 
 import { resolveChatStopAppConfig } from './app-config';
-import {
-  persistUserMessageIfNeeded,
-  resolveDbConversationUuidByExternalId,
-} from './conversation-db';
+import { resolveDbConversationUuidByExternalId } from './conversation-db';
 
 type ChatMessageUpdates = Partial<Omit<ChatMessage, 'id' | 'isUser'>>;
 
@@ -145,6 +142,10 @@ interface PersistStoppedStreamingStateInput {
     conversationId: string,
     retryCount?: number
   ) => Promise<boolean>;
+  saveStoppedAssistantMessage: (
+    message: ChatMessage,
+    conversationId: string
+  ) => Promise<boolean>;
 }
 
 export async function persistStoppedStreamingState(
@@ -177,64 +178,67 @@ export async function persistStoppedStreamingState(
   }
 
   const recentUserMessage = findLatestUnsavedUserMessage();
-  if (!recentUserMessage) {
-    return;
-  }
-
   const canSaveForNewConversation =
     isNewConversationUrl() || !input.difyConversationId;
 
-  if (input.dbConversationUUID) {
-    if (canSaveForNewConversation) {
-      console.log(
-        `[handleStopProcessing] Found unsaved user message in new conversation, save now, ID=${recentUserMessage.id}`
-      );
-      persistUserMessageIfNeeded({
-        userMessage: recentUserMessage,
-        conversationId: input.dbConversationUUID,
-        saveMessage: input.saveMessage,
-        errorLog: '[handleStopProcessing] Failed to save user message:',
-      });
-    } else {
-      console.log(
-        `[handleStopProcessing] Found unsaved user message in historical conversation, but may have been saved in handleSubmit, skip duplicate save, ID=${recentUserMessage.id}`
-      );
-    }
-    return;
+  let resolvedDbConversationId = input.dbConversationUUID;
+  if (!resolvedDbConversationId && input.difyConversationId) {
+    console.log(
+      `[handleStopProcessing] Try to query db ID while stopping, Dify conversation ID=${input.difyConversationId}`
+    );
+    resolvedDbConversationId = await resolveDbConversationUuidByExternalId({
+      externalId: input.difyConversationId,
+      setDbConversationUUID: input.setDbConversationUUID,
+      errorLog: '[handleStopProcessing] Failed to query db ID:',
+      missingLog: `[handleStopProcessing] No db record found while stopping, Dify conversation ID=${input.difyConversationId}`,
+    });
   }
-
-  if (!input.difyConversationId) {
-    return;
-  }
-
-  console.log(
-    `[handleStopProcessing] Try to query db ID and save user message, Dify conversation ID=${input.difyConversationId}`
-  );
-  const resolvedDbConversationId = await resolveDbConversationUuidByExternalId({
-    externalId: input.difyConversationId,
-    setDbConversationUUID: input.setDbConversationUUID,
-    errorLog: '[handleStopProcessing] Failed to query db ID:',
-    missingLog: `[handleStopProcessing] No db record found while stopping, Dify conversation ID=${input.difyConversationId}`,
-  });
 
   if (!resolvedDbConversationId) {
     return;
   }
 
-  if (canSaveForNewConversation) {
-    console.log(
-      `[handleStopProcessing] Queried db ID, save user message in new conversation, ID=${recentUserMessage.id}`
+  if (recentUserMessage) {
+    if (canSaveForNewConversation) {
+      console.log(
+        `[handleStopProcessing] Found unsaved user message in new conversation, save now, ID=${recentUserMessage.id}`
+      );
+      try {
+        await input.saveMessage(recentUserMessage, resolvedDbConversationId);
+      } catch (error) {
+        console.error(
+          '[handleStopProcessing] Failed to save user message:',
+          error
+        );
+      }
+    } else {
+      console.log(
+        `[handleStopProcessing] Found unsaved user message in historical conversation, but may have been saved in handleSubmit, skip duplicate save, ID=${recentUserMessage.id}`
+      );
+    }
+  }
+
+  const stoppedAssistantMessage = useChatStore
+    .getState()
+    .messages.find(message => message.id === input.currentStreamingId);
+
+  if (!stoppedAssistantMessage) {
+    return;
+  }
+
+  console.log(
+    `[handleStopProcessing] Persist stopped assistant message immediately, ID=${input.currentStreamingId}`
+  );
+
+  try {
+    await input.saveStoppedAssistantMessage(
+      stoppedAssistantMessage,
+      resolvedDbConversationId
     );
-    persistUserMessageIfNeeded({
-      userMessage: recentUserMessage,
-      conversationId: resolvedDbConversationId,
-      saveMessage: input.saveMessage,
-      errorLog:
-        '[handleStopProcessing] Failed to save user message after query:',
-    });
-  } else {
-    console.log(
-      `[handleStopProcessing] Queried db ID, but user message in historical conversation may have been saved, skip, ID=${recentUserMessage.id}`
+  } catch (error) {
+    console.error(
+      '[handleStopProcessing] Failed to persist stopped assistant message:',
+      error
     );
   }
 }
@@ -257,6 +261,10 @@ interface ExecuteChatStopInput {
     message: ChatMessage,
     conversationId: string,
     retryCount?: number
+  ) => Promise<boolean>;
+  saveStoppedAssistantMessage: (
+    message: ChatMessage,
+    conversationId: string
   ) => Promise<boolean>;
   finalizeStreamingMessage: (id: string) => void;
 }
@@ -320,6 +328,7 @@ export async function executeChatStop(
       setDbConversationUUID: input.setDbConversationUUID,
       updateMessage: input.updateMessage,
       saveMessage: input.saveMessage,
+      saveStoppedAssistantMessage: input.saveStoppedAssistantMessage,
     });
   }
 

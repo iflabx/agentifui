@@ -202,6 +202,7 @@ export function useChatInterface(
     flushChunkBuffer,
     updateMessage,
     saveMessage,
+    saveStoppedAssistantMessage,
     finalizeStreamingMessage,
   });
 
