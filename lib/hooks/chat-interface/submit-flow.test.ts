@@ -229,6 +229,38 @@ describe('executeChatSubmit', () => {
     );
   });
 
+  it('prunes duplicated think noise before persisting a completed assistant reply', async () => {
+    const { input } = createInput();
+
+    mockConsumeChatAnswerStream.mockResolvedValueOnce({
+      assistantMessageId: 'assistant-1',
+      assistantText:
+        '<think>先分析时间请求</think>\n\n<think>先分析时间请求</think>\n\nVisible answer<think>Visible answer</think>',
+    });
+
+    await executeChatSubmit(input);
+
+    expect(input.updateMessage).toHaveBeenCalledWith(
+      'assistant-1',
+      expect.objectContaining({
+        text: '<think>先分析时间请求</think>\n\nVisible answer',
+      })
+    );
+
+    expect(mockPersistChatMessagesAfterStreaming).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assistantFallback: expect.objectContaining({
+          text: '<think>先分析时间请求</think>\n\nVisible answer',
+          metadata: expect.objectContaining({
+            frontend_metadata: expect.objectContaining({
+              sequence_index: 1,
+            }),
+          }),
+        }),
+      })
+    );
+  });
+
   it('does not inject incomplete fallback for manually stopped draft-only content', async () => {
     const { input } = createInput();
 

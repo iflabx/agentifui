@@ -39,7 +39,7 @@ import { useThrottledThinkPreview } from '@lib/hooks/use-throttled-think-preview
 import { cn } from '@lib/utils';
 import {
   MessageBlock,
-  materializeIncompleteAssistantReply,
+  normalizeCompletedAssistantReply,
   parseThinkBlocks,
 } from '@lib/utils/think-parser';
 import { buildThinkPreviewText } from '@lib/utils/think-preview';
@@ -171,7 +171,7 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = React.memo(
         return content;
       }
 
-      return materializeIncompleteAssistantReply(
+      return normalizeCompletedAssistantReply(
         content,
         t('messages.incompleteAnswer')
       ).content;

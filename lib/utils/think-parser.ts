@@ -34,6 +34,10 @@ function normalizeMainText(content: string): string {
   return content.replace(/\n\s*\n/g, '\n').trim();
 }
 
+function normalizeComparableText(content: string): string {
+  return content.replace(/\s+/g, ' ').trim();
+}
+
 function countTag(content: string, tag: 'think' | 'details', close = false) {
   if (close) {
     return (content.match(new RegExp(`</${tag}>`, 'gi')) || []).length;
@@ -101,6 +105,80 @@ function finalizeBlocks(blocks: MessageBlock[]): MessageBlock[] {
 
     return acc;
   }, [] as MessageBlock[]);
+}
+
+function isWhitespaceOnlyTextBlock(block: MessageBlock | undefined): boolean {
+  return block?.type === 'text' && block.content.trim().length === 0;
+}
+
+function findLastMeaningfulBlockIndex(blocks: MessageBlock[]): number {
+  let index = blocks.length - 1;
+
+  while (index >= 0 && isWhitespaceOnlyTextBlock(blocks[index])) {
+    index -= 1;
+  }
+
+  return index;
+}
+
+function pruneRedundantThinkBlocks(blocks: MessageBlock[]): {
+  blocks: MessageBlock[];
+  changed: boolean;
+} {
+  const pruned: MessageBlock[] = [];
+  let changed = false;
+
+  for (const block of blocks) {
+    if (block.type !== 'think') {
+      pruned.push(block);
+      continue;
+    }
+
+    const comparableContent = normalizeComparableText(block.content);
+    const previousMeaningfulIndex = findLastMeaningfulBlockIndex(pruned);
+    const previousMeaningfulBlock =
+      previousMeaningfulIndex >= 0 ? pruned[previousMeaningfulIndex] : null;
+
+    if (
+      comparableContent &&
+      previousMeaningfulBlock?.type === 'think' &&
+      normalizeComparableText(previousMeaningfulBlock.content) ===
+        comparableContent
+    ) {
+      if (isWhitespaceOnlyTextBlock(pruned[pruned.length - 1])) {
+        pruned.pop();
+      }
+      changed = true;
+      continue;
+    }
+
+    pruned.push(block);
+  }
+
+  const mainText = normalizeMainText(
+    pruned
+      .filter(block => block.type === 'text')
+      .map(block => block.content)
+      .join('')
+  );
+  const comparableMainText = normalizeComparableText(mainText);
+  const lastMeaningfulIndex = findLastMeaningfulBlockIndex(pruned);
+  const lastMeaningfulBlock =
+    lastMeaningfulIndex >= 0 ? pruned[lastMeaningfulIndex] : null;
+
+  if (
+    comparableMainText &&
+    lastMeaningfulBlock?.type === 'think' &&
+    normalizeComparableText(lastMeaningfulBlock.content) === comparableMainText
+  ) {
+    pruned.splice(lastMeaningfulIndex, 1);
+    changed = true;
+  }
+
+  return {
+    blocks: finalizeBlocks(pruned),
+    changed,
+  };
 }
 
 function parseThinkBlocksRaw(content: string): MessageBlock[] {
@@ -222,6 +300,54 @@ function serializeThinkAwareBlocks(blocks: MessageBlock[]): string {
       block.type === 'think' ? `<think>${block.content}</think>` : block.content
     )
     .join('');
+}
+
+export function normalizeCompletedThinkAwareContent(content: string): {
+  content: string;
+  changed: boolean;
+} {
+  if (!content.trim()) {
+    return {
+      content,
+      changed: false,
+    };
+  }
+
+  const analysis = analyzeThinkAwareContent(content);
+  const pruned = pruneRedundantThinkBlocks(analysis.blocks);
+
+  if (!pruned.changed) {
+    return {
+      content,
+      changed: false,
+    };
+  }
+
+  return {
+    content: serializeThinkAwareBlocks(pruned.blocks).trimEnd(),
+    changed: true,
+  };
+}
+
+export function normalizeCompletedAssistantReply(
+  content: string,
+  fallbackText: string
+): {
+  content: string;
+  changed: boolean;
+  usedFallback: boolean;
+} {
+  const normalized = normalizeCompletedThinkAwareContent(content);
+  const materialized = materializeIncompleteAssistantReply(
+    normalized.content,
+    fallbackText
+  );
+
+  return {
+    content: materialized.content,
+    changed: normalized.changed || materialized.content !== content,
+    usedFallback: materialized.usedFallback,
+  };
 }
 
 export function materializeIncompleteAssistantReply(

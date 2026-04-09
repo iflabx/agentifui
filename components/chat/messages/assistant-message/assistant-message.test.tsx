@@ -254,10 +254,31 @@ describe('AssistantMessage think block behavior', () => {
     expect(screen.queryByTestId('react-markdown')).not.toBeInTheDocument();
   });
 
-  it('shows stopped status for manually stopped historical think blocks even when the block is closed', () => {
+  it('should collapse duplicated think blocks and drop a trailing think block that mirrors the visible answer', () => {
     render(
       <AssistantMessage
         id="msg-8"
+        content={
+          '<think>先分析时间请求</think>\n\n<think>先分析时间请求</think>\n\nVisible answer<think>Visible answer</think>'
+        }
+        isStreaming={false}
+        wasManuallyStopped={false}
+      />
+    );
+
+    expect(screen.getAllByTestId('think-header')).toHaveLength(1);
+    expect(screen.getByTestId('think-content')).toHaveTextContent(
+      '先分析时间请求'
+    );
+    expect(screen.getByTestId('react-markdown')).toHaveTextContent(
+      'Visible answer'
+    );
+  });
+
+  it('shows stopped status for manually stopped historical think blocks even when the block is closed', () => {
+    render(
+      <AssistantMessage
+        id="msg-9"
         content="<think>Plan steps</think>"
         isStreaming={false}
         wasManuallyStopped={true}

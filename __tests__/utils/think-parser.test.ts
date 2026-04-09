@@ -2,6 +2,8 @@ import { extractMainContentForPreview } from '../../lib/utils';
 import {
   analyzeThinkAwareContent,
   materializeIncompleteAssistantReply,
+  normalizeCompletedAssistantReply,
+  normalizeCompletedThinkAwareContent,
   parseThinkBlocks,
 } from '../../lib/utils/think-parser';
 
@@ -208,6 +210,31 @@ describe('parseThinkBlocks', () => {
     expect(result).toEqual({
       content: '<think>Plan steps</think>\n\nVisible answer',
       usedFallback: false,
+    });
+  });
+
+  it('should prune duplicated head and tail think blocks from completed content', () => {
+    const result = normalizeCompletedThinkAwareContent(
+      '<think>先分析时间请求</think>\n\n<think>先分析时间请求</think>\n\nVisible answer<think>Visible answer</think>'
+    );
+
+    expect(result).toEqual({
+      content: '<think>先分析时间请求</think>\n\nVisible answer',
+      changed: true,
+    });
+  });
+
+  it('should combine duplicate-think normalization with the draft-only fallback flow', () => {
+    const result = normalizeCompletedAssistantReply(
+      '<think>Plan steps\n\n**生成内容**：\n* bullet',
+      '回答未完整生成，请重试。'
+    );
+
+    expect(result).toEqual({
+      content:
+        '<think>Plan steps\n\n**生成内容**：\n* bullet</think>\n\n回答未完整生成，请重试。',
+      changed: true,
+      usedFallback: true,
     });
   });
 

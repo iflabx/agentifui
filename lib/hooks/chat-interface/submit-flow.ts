@@ -6,7 +6,7 @@ import type {
 import type { ChatMessage } from '@lib/stores/chat-store';
 import { useChatStore } from '@lib/stores/chat-store';
 import type { PendingConversation } from '@lib/stores/pending-conversation-store';
-import { materializeIncompleteAssistantReply } from '@lib/utils/think-parser';
+import { normalizeCompletedAssistantReply } from '@lib/utils/think-parser';
 
 import type { MutableRefObject } from 'react';
 
@@ -43,6 +43,7 @@ type ChatMessageUpdates = Partial<Omit<ChatMessage, 'id' | 'isUser'>>;
 interface AssistantPersistenceFallbackBuildResult {
   assistantFallback: AssistantMessagePersistenceFallback | null;
   normalizedText: string;
+  changed: boolean;
   metadata?: Record<string, unknown>;
   usedFallback: boolean;
 }
@@ -53,13 +54,15 @@ function buildAssistantPersistenceFallback(input: {
   completionData: ChatStreamCompletionData | null;
   incompleteAnswerMessage: string;
   assistantWasManuallyStopped: boolean;
+  updateMessage: (id: string, updates: ChatMessageUpdates) => void;
 }): AssistantPersistenceFallbackBuildResult {
   const normalizedAssistantContent = input.assistantWasManuallyStopped
     ? {
         content: input.assistantText,
+        changed: false,
         usedFallback: false,
       }
-    : materializeIncompleteAssistantReply(
+    : normalizeCompletedAssistantReply(
         input.assistantText,
         input.incompleteAnswerMessage
       );
@@ -69,6 +72,7 @@ function buildAssistantPersistenceFallback(input: {
     return {
       assistantFallback: null,
       normalizedText: assistantText,
+      changed: normalizedAssistantContent.changed,
       usedFallback: normalizedAssistantContent.usedFallback,
     };
   }
@@ -91,6 +95,24 @@ function buildAssistantPersistenceFallback(input: {
         frontend_metadata: frontendMetadata,
       };
 
+  if (normalizedAssistantContent.changed && input.assistantMessageId) {
+    const existingMessage = useChatStore
+      .getState()
+      .messages.find(message => message.id === input.assistantMessageId);
+
+    input.updateMessage(input.assistantMessageId, {
+      text: assistantText,
+      ...(normalizedAssistantContent.usedFallback
+        ? {
+            metadata: {
+              ...(existingMessage?.metadata || {}),
+              ...completionMetadata,
+            },
+          }
+        : {}),
+    });
+  }
+
   return {
     assistantFallback: {
       id: input.assistantMessageId,
@@ -100,6 +122,7 @@ function buildAssistantPersistenceFallback(input: {
       wasManuallyStopped: input.assistantWasManuallyStopped,
     },
     normalizedText: assistantText,
+    changed: normalizedAssistantContent.changed,
     metadata: completionMetadata,
     usedFallback: normalizedAssistantContent.usedFallback,
   };
@@ -288,26 +311,9 @@ export async function executeChatSubmit(
       incompleteAnswerMessage: input.incompleteAnswerMessage,
       assistantWasManuallyStopped:
         latestAssistantMessage?.wasManuallyStopped === true,
+      updateMessage: input.updateMessage,
     });
     assistantFallback = assistantPersistenceFallback.assistantFallback;
-
-    if (
-      assistantPersistenceFallback.usedFallback &&
-      assistantMessageId &&
-      assistantPersistenceFallback.metadata
-    ) {
-      const existingMessage = useChatStore
-        .getState()
-        .messages.find(message => message.id === assistantMessageId);
-
-      input.updateMessage(assistantMessageId, {
-        text: assistantPersistenceFallback.normalizedText,
-        metadata: {
-          ...(existingMessage?.metadata || {}),
-          ...assistantPersistenceFallback.metadata,
-        },
-      });
-    }
 
     finalDbConvUUID = await persistChatMessagesAfterStreaming({
       finalDbConvUUID,
