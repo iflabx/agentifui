@@ -1,10 +1,7 @@
 name: Auto I18n Translation
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "messages/en-US.json"
+  workflow_dispatch:
 
 permissions:
   contents: write
