@@ -30,12 +30,71 @@ const REPLY_MARKERS = [
   '最终回复:',
 ];
 
+const MIN_SUBSET_THINK_LENGTH = 40;
+const MIN_SUBSET_CONTAINMENT_RATIO = 0.6;
+
 function normalizeMainText(content: string): string {
   return content.replace(/\n\s*\n/g, '\n').trim();
 }
 
 function normalizeComparableText(content: string): string {
   return content.replace(/\s+/g, ' ').trim();
+}
+
+function isClosedThinkBlock(
+  block: MessageBlock | null | undefined
+): block is ParsedThinkBlock {
+  return block?.type === 'think' && block.status === 'closed';
+}
+
+function isComparableContainedText(
+  containedContent: string,
+  containerContent: string
+): boolean {
+  const contained = normalizeComparableText(containedContent);
+  const container = normalizeComparableText(containerContent);
+
+  if (!contained || !container) {
+    return false;
+  }
+
+  if (contained.length < MIN_SUBSET_THINK_LENGTH) {
+    return false;
+  }
+
+  if (!container.includes(contained)) {
+    return false;
+  }
+
+  return contained.length / container.length >= MIN_SUBSET_CONTAINMENT_RATIO;
+}
+
+function isComparablePrefixText(
+  containedContent: string,
+  containerContent: string
+): boolean {
+  const contained = normalizeComparableText(containedContent);
+  const container = normalizeComparableText(containerContent);
+
+  if (!contained || !container) {
+    return false;
+  }
+
+  if (contained.length < MIN_SUBSET_THINK_LENGTH) {
+    return false;
+  }
+
+  return container.startsWith(contained);
+}
+
+function shouldCollapseComparableContainedThink(
+  containedContent: string,
+  containerContent: string
+): boolean {
+  return (
+    isComparablePrefixText(containedContent, containerContent) ||
+    isComparableContainedText(containedContent, containerContent)
+  );
 }
 
 function countTag(content: string, tag: 'think' | 'details', close = false) {
@@ -152,6 +211,39 @@ function pruneRedundantThinkBlocks(blocks: MessageBlock[]): {
       continue;
     }
 
+    // Only collapse conservative subset noise when the earlier and later
+    // blocks are both closed think blocks with whitespace-only separation.
+    if (
+      comparableContent &&
+      isClosedThinkBlock(previousMeaningfulBlock) &&
+      isClosedThinkBlock(block) &&
+      shouldCollapseComparableContainedThink(
+        previousMeaningfulBlock.content,
+        block.content
+      )
+    ) {
+      pruned.splice(previousMeaningfulIndex);
+      pruned.push(block);
+      changed = true;
+      continue;
+    }
+
+    if (
+      comparableContent &&
+      isClosedThinkBlock(previousMeaningfulBlock) &&
+      isClosedThinkBlock(block) &&
+      shouldCollapseComparableContainedThink(
+        block.content,
+        previousMeaningfulBlock.content
+      )
+    ) {
+      if (isWhitespaceOnlyTextBlock(pruned[pruned.length - 1])) {
+        pruned.pop();
+      }
+      changed = true;
+      continue;
+    }
+
     pruned.push(block);
   }
 
@@ -170,6 +262,13 @@ function pruneRedundantThinkBlocks(blocks: MessageBlock[]): {
     comparableMainText &&
     lastMeaningfulBlock?.type === 'think' &&
     normalizeComparableText(lastMeaningfulBlock.content) === comparableMainText
+  ) {
+    pruned.splice(lastMeaningfulIndex, 1);
+    changed = true;
+  } else if (
+    comparableMainText &&
+    isClosedThinkBlock(lastMeaningfulBlock) &&
+    isComparableContainedText(lastMeaningfulBlock.content, mainText)
   ) {
     pruned.splice(lastMeaningfulIndex, 1);
     changed = true;

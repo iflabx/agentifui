@@ -224,6 +224,82 @@ describe('parseThinkBlocks', () => {
     });
   });
 
+  it('should prune an earlier think block when it is an exact prefix of the following think block', () => {
+    const smallerThink =
+      '先确认图书馆开放时间，再核对节假日安排，最后补充借阅服务与自习区开放提示，确保给出完整准确的答复。';
+    const largerThink = `${smallerThink}用户问的是图书馆“开门了吗”，我还需要核对当前日期时间，再说明资料里只有研讨室预约时间，没有完整的全馆开闭馆表，并提醒用户以当天公告与图书馆联系方式为准。`;
+
+    const result = normalizeCompletedThinkAwareContent(
+      `<think>${smallerThink}</think>\n\n<think>${largerThink}</think>\n\nVisible answer`
+    );
+
+    expect(result).toEqual({
+      content: `<think>${largerThink}</think>\n\nVisible answer`,
+      changed: true,
+    });
+  });
+
+  it('should prune a later think block when it is an exact substring of the previous think block', () => {
+    const largerThink =
+      '用户询问图书馆的开门时间，这是一个关于图书馆开放时间的问题。根据我的知识库分类，这个问题应该优先查询图书馆相关的知识库。User is asking about library opening hours. I queried the library dataset. The returned information contains discussion room booking hours, but not the general library opening hours. I should be careful not to guess and should explain the limitation clearly.';
+    const smallerThink =
+      'User is asking about library opening hours. I queried the library dataset. The returned information contains discussion room booking hours, but not the general library opening hours. I should be careful not to guess and should explain the limitation clearly.';
+
+    const result = normalizeCompletedThinkAwareContent(
+      `<think>${largerThink}</think>\n\n<think>${smallerThink}</think>\n\nVisible answer`
+    );
+
+    expect(result).toEqual({
+      content: `<think>${largerThink}</think>\n\nVisible answer`,
+      changed: true,
+    });
+  });
+
+  it('should prune a trailing think block when it is an exact subset of the visible answer', () => {
+    const answerTail =
+      '如果遇到节假日调整，请以当天公告为准，并提前安排借阅和自习时间，同时留意临时闭馆与预约规则变化。';
+    const visibleAnswer = `比斯兔竖起大耳朵查了一下，图书馆今天正常开放。${answerTail}`;
+
+    const result = normalizeCompletedThinkAwareContent(
+      `${visibleAnswer}<think>${answerTail}</think>`
+    );
+
+    expect(result).toEqual({
+      content: visibleAnswer,
+      changed: true,
+    });
+  });
+
+  it('should keep short subset think blocks to avoid over-pruning', () => {
+    const smallerThink = '先查开门时间再答复';
+    const largerThink = `${smallerThink}，同时补充节假日提示与馆藏服务说明，确保回复完整准确。`;
+
+    const result = normalizeCompletedThinkAwareContent(
+      `<think>${smallerThink}</think>\n\n<think>${largerThink}</think>\n\nVisible answer`
+    );
+
+    expect(result).toEqual({
+      content: `<think>${smallerThink}</think>\n\n<think>${largerThink}</think>\n\nVisible answer`,
+      changed: false,
+    });
+  });
+
+  it('should keep similar think blocks when they are not exact contained substrings', () => {
+    const firstThink =
+      '先确认今天是否开馆，再查看自习区安排，最后提醒用户关注官网公告，确保信息可靠完整。';
+    const secondThink =
+      '先确认今日开馆状态，并核对自习区开放安排，最后提醒用户以官网公告为准，确保答复可靠。';
+
+    const result = normalizeCompletedThinkAwareContent(
+      `<think>${firstThink}</think>\n\n<think>${secondThink}</think>\n\nVisible answer`
+    );
+
+    expect(result).toEqual({
+      content: `<think>${firstThink}</think>\n\n<think>${secondThink}</think>\n\nVisible answer`,
+      changed: false,
+    });
+  });
+
   it('should combine duplicate-think normalization with the draft-only fallback flow', () => {
     const result = normalizeCompletedAssistantReply(
       '<think>Plan steps\n\n**生成内容**：\n* bullet',
@@ -233,6 +309,23 @@ describe('parseThinkBlocks', () => {
     expect(result).toEqual({
       content:
         '<think>Plan steps\n\n**生成内容**：\n* bullet</think>\n\n回答未完整生成，请重试。',
+      changed: true,
+      usedFallback: true,
+    });
+  });
+
+  it('should combine subset-think normalization with the draft-only fallback flow', () => {
+    const smallerThink =
+      '先确认图书馆开放时间，再核对节假日安排，最后补充借阅服务与自习区开放提示，确保给出完整准确的答复。';
+    const largerThink = `${smallerThink}如果官网没有写明临时调整，还需要提醒用户以当天公告为准。`;
+
+    const result = normalizeCompletedAssistantReply(
+      `<think>${smallerThink}</think>\n\n<think>${largerThink}</think>`,
+      '回答未完整生成，请重试。'
+    );
+
+    expect(result).toEqual({
+      content: `<think>${largerThink}</think>\n\n回答未完整生成，请重试。`,
       changed: true,
       usedFallback: true,
     });

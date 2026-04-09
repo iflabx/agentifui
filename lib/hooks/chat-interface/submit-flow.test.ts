@@ -261,6 +261,38 @@ describe('executeChatSubmit', () => {
     );
   });
 
+  it('prunes conservative subset think noise before persisting a completed assistant reply', async () => {
+    const { input } = createInput();
+    const smallerThink =
+      '先确认图书馆开放时间，再核对节假日安排，最后补充借阅服务与自习区开放提示，确保给出完整准确的答复。';
+    const largerThink = `${smallerThink}用户问的是图书馆“开门了吗”，我还需要核对当前日期时间，再说明资料里只有研讨室预约时间，没有完整的全馆开闭馆表，并提醒用户以当天公告与图书馆联系方式为准。`;
+    const answerTail =
+      '如果遇到节假日调整，请以当天公告为准，并提前安排借阅和自习时间，同时留意临时闭馆与预约规则变化。';
+    const visibleAnswer = `比斯兔竖起大耳朵查了一下，图书馆今天正常开放。${answerTail}`;
+
+    mockConsumeChatAnswerStream.mockResolvedValueOnce({
+      assistantMessageId: 'assistant-1',
+      assistantText: `<think>${smallerThink}</think>\n\n<think>${largerThink}</think>\n\n${visibleAnswer}<think>${answerTail}</think>`,
+    });
+
+    await executeChatSubmit(input);
+
+    expect(input.updateMessage).toHaveBeenCalledWith(
+      'assistant-1',
+      expect.objectContaining({
+        text: `<think>${largerThink}</think>\n\n${visibleAnswer}`,
+      })
+    );
+
+    expect(mockPersistChatMessagesAfterStreaming).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assistantFallback: expect.objectContaining({
+          text: `<think>${largerThink}</think>\n\n${visibleAnswer}`,
+        }),
+      })
+    );
+  });
+
   it('does not inject incomplete fallback for manually stopped draft-only content', async () => {
     const { input } = createInput();
 
