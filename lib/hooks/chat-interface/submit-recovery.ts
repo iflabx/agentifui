@@ -169,58 +169,77 @@ export async function finalizeChatSubmitStream(
   const finalMessageState = useChatStore
     .getState()
     .messages.find(message => message.id === input.assistantMessageId);
-  if (!finalMessageState || !finalMessageState.isStreaming) {
+  if (!finalMessageState) {
     return;
   }
 
-  input.finalizeStreamingMessage(input.assistantMessageId);
+  const shouldFinalizeManuallyStoppedMessage =
+    finalMessageState.wasManuallyStopped === true;
+
+  if (!finalMessageState.isStreaming && !shouldFinalizeManuallyStoppedMessage) {
+    return;
+  }
+
+  if (finalMessageState.isStreaming) {
+    input.finalizeStreamingMessage(input.assistantMessageId);
+  }
 
   const currentDbConvId = input.finalDbConvUUID || input.dbConversationUUID;
-  if (
-    currentDbConvId &&
-    finalMessageState.persistenceStatus !== 'saved' &&
-    !finalMessageState.db_id
-  ) {
+  if (!currentDbConvId) {
+    return;
+  }
+
+  const latestMessage = useChatStore
+    .getState()
+    .messages.find(message => message.id === input.assistantMessageId);
+  if (!latestMessage || latestMessage.text.trim().length === 0) {
+    return;
+  }
+
+  if (latestMessage.wasManuallyStopped) {
     console.log(
-      `[handleSubmit-finally] Unified save for assistant message, ID=${input.assistantMessageId}, wasManuallyStopped=${finalMessageState.wasManuallyStopped}`
+      `[handleSubmit-finally] Patch stopped assistant metadata, ID=${input.assistantMessageId}, alreadySaved=${latestMessage.persistenceStatus === 'saved' || !!latestMessage.db_id}`
     );
 
-    const latestMessage = useChatStore
-      .getState()
-      .messages.find(message => message.id === input.assistantMessageId);
-    if (latestMessage && latestMessage.text.trim().length > 0) {
+    if (latestMessage.persistenceStatus !== 'saved') {
       input.updateMessage(input.assistantMessageId, {
         persistenceStatus: 'pending',
       });
+    }
 
-      if (latestMessage.wasManuallyStopped) {
-        try {
-          await input.saveStoppedAssistantMessage(
-            latestMessage,
-            currentDbConvId
-          );
-        } catch (error) {
-          console.error(
-            '[handleSubmit-finally] Failed to save stopped assistant message:',
-            error
-          );
-          input.updateMessage(input.assistantMessageId, {
-            persistenceStatus: 'error',
-          });
-        }
-      } else {
-        try {
-          await input.saveMessage(latestMessage, currentDbConvId);
-        } catch (error) {
-          console.error(
-            '[handleSubmit-finally] Failed to save assistant message:',
-            error
-          );
-          input.updateMessage(input.assistantMessageId, {
-            persistenceStatus: 'error',
-          });
-        }
-      }
+    try {
+      await input.saveStoppedAssistantMessage(latestMessage, currentDbConvId);
+    } catch (error) {
+      console.error(
+        '[handleSubmit-finally] Failed to save stopped assistant message:',
+        error
+      );
+      input.updateMessage(input.assistantMessageId, {
+        persistenceStatus: 'error',
+      });
+    }
+  } else if (
+    latestMessage.persistenceStatus !== 'saved' &&
+    !latestMessage.db_id
+  ) {
+    console.log(
+      `[handleSubmit-finally] Unified save for assistant message, ID=${input.assistantMessageId}, wasManuallyStopped=${latestMessage.wasManuallyStopped}`
+    );
+
+    input.updateMessage(input.assistantMessageId, {
+      persistenceStatus: 'pending',
+    });
+
+    try {
+      await input.saveMessage(latestMessage, currentDbConvId);
+    } catch (error) {
+      console.error(
+        '[handleSubmit-finally] Failed to save assistant message:',
+        error
+      );
+      input.updateMessage(input.assistantMessageId, {
+        persistenceStatus: 'error',
+      });
     }
   }
 
