@@ -239,6 +239,20 @@ describe('parseThinkBlocks', () => {
     });
   });
 
+  it('should prune a short earlier think block when it is an exact prefix of the following think block', () => {
+    const smallerThink = '先分析时间请求';
+    const largerThink = `${smallerThink}，并补充换算步骤`;
+
+    const result = normalizeCompletedThinkAwareContent(
+      `<think>${smallerThink}</think>\n\n<think>${largerThink}</think>\n\nVisible answer`
+    );
+
+    expect(result).toEqual({
+      content: `<think>${largerThink}</think>\n\nVisible answer`,
+      changed: true,
+    });
+  });
+
   it('should prune a later think block when it is an exact substring of the previous think block', () => {
     const largerThink =
       '用户询问图书馆的开门时间，这是一个关于图书馆开放时间的问题。根据我的知识库分类，这个问题应该优先查询图书馆相关的知识库。User is asking about library opening hours. I queried the library dataset. The returned information contains discussion room booking hours, but not the general library opening hours. I should be careful not to guess and should explain the limitation clearly.';
@@ -270,9 +284,10 @@ describe('parseThinkBlocks', () => {
     });
   });
 
-  it('should keep short subset think blocks to avoid over-pruning', () => {
-    const smallerThink = '先查开门时间再答复';
-    const largerThink = `${smallerThink}，同时补充节假日提示与馆藏服务说明，确保回复完整准确。`;
+  it('should keep short non-prefix subset think blocks to avoid over-pruning', () => {
+    const smallerThink = '补充节假日提示';
+    const largerThink =
+      '先查开门时间再答复，同时补充节假日提示与馆藏服务说明，确保回复完整准确。';
 
     const result = normalizeCompletedThinkAwareContent(
       `<think>${smallerThink}</think>\n\n<think>${largerThink}</think>\n\nVisible answer`

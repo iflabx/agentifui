@@ -80,10 +80,6 @@ function isComparablePrefixText(
     return false;
   }
 
-  if (contained.length < MIN_SUBSET_THINK_LENGTH) {
-    return false;
-  }
-
   return container.startsWith(contained);
 }
 

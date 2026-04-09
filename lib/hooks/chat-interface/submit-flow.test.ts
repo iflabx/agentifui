@@ -293,6 +293,33 @@ describe('executeChatSubmit', () => {
     );
   });
 
+  it('prunes a short prefix think block before persisting a completed assistant reply', async () => {
+    const { input } = createInput();
+
+    mockConsumeChatAnswerStream.mockResolvedValueOnce({
+      assistantMessageId: 'assistant-1',
+      assistantText:
+        '<think>先分析时间请求</think>\n\n<think>先分析时间请求，并补充换算步骤</think>\n\nVisible answer',
+    });
+
+    await executeChatSubmit(input);
+
+    expect(input.updateMessage).toHaveBeenCalledWith(
+      'assistant-1',
+      expect.objectContaining({
+        text: '<think>先分析时间请求，并补充换算步骤</think>\n\nVisible answer',
+      })
+    );
+
+    expect(mockPersistChatMessagesAfterStreaming).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assistantFallback: expect.objectContaining({
+          text: '<think>先分析时间请求，并补充换算步骤</think>\n\nVisible answer',
+        }),
+      })
+    );
+  });
+
   it('does not inject incomplete fallback for manually stopped draft-only content', async () => {
     const { input } = createInput();
 

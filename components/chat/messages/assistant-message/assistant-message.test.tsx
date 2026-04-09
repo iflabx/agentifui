@@ -299,10 +299,31 @@ describe('AssistantMessage think block behavior', () => {
     );
   });
 
-  it('shows stopped status for manually stopped historical think blocks even when the block is closed', () => {
+  it('should collapse a short prefix think block into the later completed think block', () => {
     render(
       <AssistantMessage
         id="msg-10"
+        content={
+          '<think>先分析时间请求</think>\n\n<think>先分析时间请求，并补充换算步骤</think>\n\nVisible answer'
+        }
+        isStreaming={false}
+        wasManuallyStopped={false}
+      />
+    );
+
+    expect(screen.getAllByTestId('think-header')).toHaveLength(1);
+    expect(screen.getByTestId('think-content')).toHaveTextContent(
+      '先分析时间请求，并补充换算步骤'
+    );
+    expect(screen.getByTestId('react-markdown')).toHaveTextContent(
+      'Visible answer'
+    );
+  });
+
+  it('shows stopped status for manually stopped historical think blocks even when the block is closed', () => {
+    render(
+      <AssistantMessage
+        id="msg-11"
         content="<think>Plan steps</think>"
         isStreaming={false}
         wasManuallyStopped={true}
