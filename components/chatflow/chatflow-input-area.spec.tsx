@@ -167,4 +167,56 @@ describe('ChatflowInputArea moderation handling', () => {
       ).toHaveValue('');
     });
   });
+
+  it('does not render system-injected user fields and still submits normally', async () => {
+    mockedFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        app: {
+          config: {
+            dify_parameters: {
+              user_input_form: [
+                {
+                  'text-input': {
+                    variable: 'agentifui_user_id',
+                    label: 'Injected User Id',
+                    required: true,
+                    default: '',
+                  },
+                },
+              ],
+            },
+          },
+        },
+      }),
+    } as Response);
+
+    const onSubmit = jest.fn().mockResolvedValue({
+      ok: true,
+    });
+
+    render(<ChatflowInputArea instanceId="app-1" onSubmit={onSubmit} />);
+
+    const textarea = await screen.findByPlaceholderText(
+      'form.question.placeholder'
+    );
+    expect(screen.queryByText('Injected User Id')).not.toBeInTheDocument();
+
+    fireEvent.change(textarea, {
+      target: {
+        value: 'hello',
+      },
+    });
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'form.startConversation',
+      })
+    );
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith('hello', {}, []);
+    });
+  });
 });

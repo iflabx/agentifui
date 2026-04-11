@@ -5,6 +5,10 @@ import type {
   DifyTextInputControl,
   DifyUserInputFormItem,
 } from '@lib/services/dify/types';
+import {
+  filterVisibleUserInputForm,
+  getDifyUserInputFormEntry,
+} from '@lib/services/dify/user-input-form';
 
 function hasUploadFileId(value: unknown): value is { upload_file_id: string } {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -29,9 +33,8 @@ export function validateFormData(
 ): Record<string, string> {
   const errors: Record<string, string> = {};
 
-  userInputForm.forEach(formItem => {
-    const fieldType = Object.keys(formItem)[0];
-    const fieldConfig = formItem[fieldType as keyof typeof formItem];
+  filterVisibleUserInputForm(userInputForm).forEach(formItem => {
+    const { fieldType, fieldConfig } = getDifyUserInputFormEntry(formItem);
 
     if (!fieldConfig) return;
 

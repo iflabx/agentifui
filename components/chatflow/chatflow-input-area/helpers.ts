@@ -1,5 +1,9 @@
 import { validateFormData } from '@components/workflow/workflow-input-form/validation';
 import type { DifyUserInputFormItem } from '@lib/services/dify/types';
+import {
+  filterVisibleUserInputForm,
+  getDifyUserInputFormEntry,
+} from '@lib/services/dify/user-input-form';
 
 import type {
   ChatflowFormConfigResult,
@@ -15,19 +19,15 @@ type TranslateFn = (
 ) => string;
 
 function getFieldConfig(formItem: DifyUserInputFormItem) {
-  const fieldType = Object.keys(formItem)[0];
-  const fieldConfig = formItem[fieldType as keyof typeof formItem];
-
-  return {
-    fieldType,
-    fieldConfig,
-  };
+  return getDifyUserInputFormEntry(formItem);
 }
 
 export function buildChatflowFormConfig(
   formItems: DifyUserInputFormItem[] | undefined
 ): ChatflowFormConfigResult {
-  if (!Array.isArray(formItems) || formItems.length === 0) {
+  const visibleFormItems = filterVisibleUserInputForm(formItems);
+
+  if (visibleFormItems.length === 0) {
     return {
       hasFormConfig: false,
       initialFormData: {},
@@ -37,7 +37,7 @@ export function buildChatflowFormConfig(
 
   const initialData: ChatflowFormData = {};
 
-  formItems.forEach(formItem => {
+  visibleFormItems.forEach(formItem => {
     const { fieldType, fieldConfig } = getFieldConfig(formItem);
     if (!fieldConfig) {
       return;
@@ -63,7 +63,7 @@ export function buildChatflowFormConfig(
   return {
     hasFormConfig: true,
     initialFormData: initialData,
-    userInputForm: formItems,
+    userInputForm: visibleFormItems,
   };
 }
 

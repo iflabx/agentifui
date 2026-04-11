@@ -1,6 +1,10 @@
 'use client';
 
 import type { DifyUserInputFormItem } from '@lib/services/dify/types';
+import {
+  filterVisibleUserInputForm,
+  getDifyUserInputFormEntry,
+} from '@lib/services/dify/user-input-form';
 import type { DifyParametersSimplifiedConfig } from '@lib/types/dify-parameters';
 import { cn } from '@lib/utils';
 import { AlertCircle, Loader2, Play } from 'lucide-react';
@@ -92,12 +96,14 @@ export const WorkflowInputForm = React.forwardRef<
           // Initialize form default value
           const difyParams = serviceInstance.config
             ?.dify_parameters as DifyParametersSimplifiedConfig;
-          const userInputForm = difyParams?.user_input_form || [];
+          const userInputForm = filterVisibleUserInputForm(
+            difyParams?.user_input_form
+          );
           const initialData: WorkflowFormData = {};
 
           userInputForm.forEach((formItem: DifyUserInputFormItem) => {
-            const fieldType = Object.keys(formItem)[0];
-            const fieldConfig = formItem[fieldType as keyof typeof formItem];
+            const { fieldType, fieldConfig } =
+              getDifyUserInputFormEntry(formItem);
 
             if (fieldConfig) {
               // Set default value based on field type
@@ -209,7 +215,9 @@ export const WorkflowInputForm = React.forwardRef<
     if (isExecuting) return;
 
     // Validate the form
-    const userInputForm = appConfig?.dify_parameters?.user_input_form || [];
+    const userInputForm = filterVisibleUserInputForm(
+      appConfig?.dify_parameters?.user_input_form
+    );
     const validationErrors = validateFormData(formData, userInputForm, t);
 
     if (Object.keys(validationErrors).length > 0) {
@@ -256,9 +264,10 @@ export const WorkflowInputForm = React.forwardRef<
   }
 
   // --- Get form configuration ---
-  const userInputForm = appConfig?.dify_parameters?.user_input_form || [];
+  const rawUserInputForm = appConfig?.dify_parameters?.user_input_form || [];
+  const userInputForm = filterVisibleUserInputForm(rawUserInputForm);
 
-  if (userInputForm.length === 0) {
+  if (rawUserInputForm.length === 0) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="space-y-4 text-center">
@@ -291,8 +300,8 @@ export const WorkflowInputForm = React.forwardRef<
         <div className="no-scrollbar flex-1 space-y-6 overflow-x-visible overflow-y-auto px-2">
           {userInputForm.map(
             (formItem: DifyUserInputFormItem, index: number) => {
-              const fieldType = Object.keys(formItem)[0];
-              const fieldConfig = formItem[fieldType as keyof typeof formItem];
+              const { fieldType, fieldConfig } =
+                getDifyUserInputFormEntry(formItem);
 
               if (!fieldConfig) return null;
 

@@ -25,6 +25,57 @@ describe('chatflow input area helpers', () => {
     });
   });
 
+  it('filters system-injected user fields from chatflow form config', () => {
+    const result = buildChatflowFormConfig([
+      {
+        'text-input': {
+          variable: 'agentifui_user_id',
+          label: 'Injected User Id',
+          default: '',
+        },
+      },
+      {
+        paragraph: {
+          variable: 'note',
+          label: 'Note',
+          default: 'hello',
+        },
+      },
+    ] as never);
+
+    expect(result.hasFormConfig).toBe(true);
+    expect(result.userInputForm).toEqual([
+      {
+        paragraph: {
+          variable: 'note',
+          label: 'Note',
+          default: 'hello',
+        },
+      },
+    ]);
+    expect(result.initialFormData).toEqual({
+      note: 'hello',
+    });
+  });
+
+  it('treats hidden-only system fields as no visible chatflow form config', () => {
+    const result = buildChatflowFormConfig([
+      {
+        'text-input': {
+          variable: 'agentifui_user_role',
+          label: 'Injected User Role',
+          default: '',
+        },
+      },
+    ] as never);
+
+    expect(result).toEqual({
+      hasFormConfig: false,
+      initialFormData: {},
+      userInputForm: [],
+    });
+  });
+
   it('validates query and workflow form fields', () => {
     expect(
       validateChatflowSubmission({
