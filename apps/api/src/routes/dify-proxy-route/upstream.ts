@@ -21,6 +21,11 @@ import {
   resolveDifyProxyTimeoutMs,
 } from './helpers';
 import { sendUpstreamStream } from './stream';
+import {
+  injectTrustedUserContext,
+  loadTrustedUserProfile,
+  shouldInjectTrustedUserContext,
+} from './trusted-user-context';
 import type { DifyProxyRequestContext, DifyProxyTargetConfig } from './types';
 
 async function handleResilienceFailure(input: {
@@ -358,10 +363,37 @@ export async function dispatchDifyUpstreamRequest(
   upstreamHeaders.set('Authorization', `Bearer ${targetConfig.difyApiKey}`);
 
   const actualMethod = targetConfig.tempConfigUsed ? 'GET' : request.method;
+  let upstreamPayload = targetConfig.rawBody;
+
+  if (shouldInjectTrustedUserContext(actualMethod, slugPath)) {
+    let trustedProfile = null;
+
+    try {
+      trustedProfile = await loadTrustedUserProfile(context.actor.userId);
+    } catch (error) {
+      request.log.warn(
+        {
+          appId: context.appId,
+          route: context.routePath,
+          slugPath,
+          actorUserId: context.actor.userId,
+          err: error,
+        },
+        '[FastifyDifyProxy] trusted user profile lookup failed, falling back to minimal actor context'
+      );
+    }
+
+    upstreamPayload = injectTrustedUserContext(
+      targetConfig.rawBody,
+      context.actor,
+      trustedProfile
+    );
+  }
+
   const finalBody =
     actualMethod === 'GET' || actualMethod === 'HEAD'
       ? null
-      : normalizeRequestBody(targetConfig.rawBody);
+      : normalizeRequestBody(upstreamPayload);
 
   if (
     finalBody &&
