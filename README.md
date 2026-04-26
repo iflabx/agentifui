@@ -121,7 +121,7 @@ pnpm smoke:prod
 
 ## Contributing and Support
 
-- Open issues and pull requests on GitHub.
+- Open issues and pull requests at [`iflabx/agentifui`](https://github.com/iflabx/agentifui).
 - Read `CONTRIBUTING.md` before sending a PR.
 - Report security issues to [security@iflabx.com](mailto:security@iflabx.com).
 - See `.github/TRADEMARK_POLICY.md` for trademark usage.
