@@ -229,6 +229,39 @@ describe('executeChatSubmit', () => {
     );
   });
 
+  it('recovers a swallowed visible answer tail from open think content before persistence', async () => {
+    const { input } = createInput();
+    const visibleAnswer =
+      '比斯兔建议今晚可以试试二食堂的小火锅，或者一食堂的风味档口。';
+
+    mockConsumeChatAnswerStream.mockResolvedValueOnce({
+      assistantMessageId: 'assistant-1',
+      assistantText: `<think>Here is a thinking process:\n\n1. 先分析用户晚饭需求。\n\n2. 再结合校内餐饮选项。\n\n3. 最后给出直接推荐。\n\n${visibleAnswer}`,
+    });
+
+    await executeChatSubmit(input);
+
+    expect(input.updateMessage).toHaveBeenCalledWith(
+      'assistant-1',
+      expect.objectContaining({
+        text: `<think>Here is a thinking process:\n\n1. 先分析用户晚饭需求。\n\n2. 再结合校内餐饮选项。\n\n3. 最后给出直接推荐。</think>\n\n${visibleAnswer}`,
+      })
+    );
+
+    expect(mockPersistChatMessagesAfterStreaming).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assistantFallback: expect.objectContaining({
+          text: `<think>Here is a thinking process:\n\n1. 先分析用户晚饭需求。\n\n2. 再结合校内餐饮选项。\n\n3. 最后给出直接推荐。</think>\n\n${visibleAnswer}`,
+          metadata: expect.objectContaining({
+            frontend_metadata: expect.objectContaining({
+              sequence_index: 1,
+            }),
+          }),
+        }),
+      })
+    );
+  });
+
   it('prunes duplicated think noise before persisting a completed assistant reply', async () => {
     const { input } = createInput();
 

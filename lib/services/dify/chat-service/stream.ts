@@ -736,6 +736,49 @@ export async function streamDifyChat(
                 yield* emitSegments(segments);
               }
               break;
+            case 'message_replace':
+              if (event.answer) {
+                const hasThinkMarkup =
+                  event.answer.includes(THINK_OPEN_TAG) ||
+                  event.answer.includes(THINK_CLOSE_TAG);
+
+                if (!hasThinkMarkup) {
+                  const answerDelta = buildNovelTail(
+                    answerContent,
+                    event.answer
+                  );
+                  if (answerDelta) {
+                    answerStreamThinkState.thinkDepth = 0;
+                    answerStreamThinkState.pendingThinkTagFragment = '';
+                    yield* emitAnswerChunk(answerDelta);
+                  }
+                  break;
+                }
+
+                const { reasoningText, answerText, hasMalformedThink } =
+                  splitStaticThinkAwarePayload(event.answer);
+
+                if (hasMalformedThink) {
+                  rawEventSummary.malformedPayloadCount += 1;
+                }
+
+                const reasoningDelta = buildNovelTail(
+                  outputThinkState.currentOpenThinkContent,
+                  reasoningText
+                );
+                const answerDelta = buildNovelTail(answerContent, answerText);
+
+                if (reasoningDelta) {
+                  yield* emitReasoningChunk(reasoningDelta);
+                }
+
+                if (answerDelta) {
+                  answerStreamThinkState.thinkDepth = 0;
+                  answerStreamThinkState.pendingThinkTagFragment = '';
+                  yield* emitAnswerChunk(answerDelta);
+                }
+              }
+              break;
             case 'node_started':
               console.log('[Dify Service] Node started:', event.data);
               emitNodeEvent(

@@ -201,6 +201,22 @@ describe('parseThinkBlocks', () => {
     });
   });
 
+  it('should recover a visible answer tail from an unclosed think block when it follows a reasoning outline', () => {
+    const visibleAnswer =
+      '比斯兔建议今晚可以试试二食堂的小火锅，或者一食堂的风味档口。';
+
+    const result = normalizeCompletedAssistantReply(
+      `<think>Here is a thinking process:\n\n1. 先分析用户晚饭需求。\n\n2. 再结合校内餐饮选项。\n\n3. 最后给出直接推荐。\n\n${visibleAnswer}`,
+      '回答未完整生成，请重试。'
+    );
+
+    expect(result).toEqual({
+      content: `<think>Here is a thinking process:\n\n1. 先分析用户晚饭需求。\n\n2. 再结合校内餐饮选项。\n\n3. 最后给出直接推荐。</think>\n\n${visibleAnswer}`,
+      changed: true,
+      usedFallback: false,
+    });
+  });
+
   it('should keep normal think-aware content unchanged when a visible reply already exists', () => {
     const result = materializeIncompleteAssistantReply(
       '<think>Plan steps</think>\n\nVisible answer',

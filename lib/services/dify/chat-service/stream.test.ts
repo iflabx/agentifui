@@ -609,4 +609,52 @@ describe('streamDifyChat agent_thought handling', () => {
       '<think>first step</think>Visible answer<think>follow-up reasoning</think>Final answer'
     );
   });
+
+  it('should append the final answer from message_replace instead of ignoring it', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: createSseBody([
+        {
+          event: 'message',
+          task_id: 'task-2',
+          conversation_id: 'conv-2',
+          id: 'msg-raw-1',
+          answer: '<think>先分析用户的晚饭需求。\n\n',
+          created_at: 1,
+        },
+        {
+          event: 'message_replace',
+          task_id: 'task-2',
+          conversation_id: 'conv-2',
+          id: 'replace-1',
+          answer: '今晚可以去二食堂试试小火锅。',
+          created_at: 2,
+        },
+        {
+          event: 'message_end',
+          task_id: 'task-2',
+          conversation_id: 'conv-2',
+          id: 'end-2',
+          metadata: {},
+          usage: {
+            total_tokens: 10,
+          },
+        },
+      ]),
+    });
+
+    const response = await streamDifyChat(
+      {
+        query: 'hello',
+        user: 'user-1',
+        response_mode: 'streaming',
+      },
+      'app-1'
+    );
+
+    await expect(collectStream(response.answerStream)).resolves.toBe(
+      '<think>先分析用户的晚饭需求。\n\n</think>今晚可以去二食堂试试小火锅。'
+    );
+  });
 });

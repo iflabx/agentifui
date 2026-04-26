@@ -32,6 +32,15 @@ const REPLY_MARKERS = [
 
 const MIN_SUBSET_THINK_LENGTH = 40;
 const MIN_SUBSET_CONTAINMENT_RATIO = 0.6;
+const MIN_HEURISTIC_REPLY_PREFIX_LENGTH = 40;
+const MIN_HEURISTIC_REPLY_LEAD_LENGTH = 12;
+
+const REASONING_LEAD_PATTERNS = [
+  /^(?:here(?:'s| is)?\s+(?:a\s+)?thinking process[:：]?)/i,
+  /^(?:thinking|analysis|plan|steps?)[:：]?/i,
+  /^(?:first|second|third|next|then|finally)\b/i,
+  /^(?:首先|先|接下来|然后|最后|需要|分析|考虑|计划|步骤|思路|推理)/,
+];
 
 function normalizeMainText(content: string): string {
   return content.replace(/\n\s*\n/g, '\n').trim();
@@ -116,6 +125,103 @@ function isLikelyReplyText(content: string): boolean {
   return true;
 }
 
+function getFirstParagraph(content: string): string {
+  return content.split(/\n\s*\n/, 1)[0]?.trim() || '';
+}
+
+function countReasoningListItems(content: string): number {
+  return (content.match(/(?:^|\n)\s*(?:[-*+]\s|\d+[.)]\s)/g) || []).length;
+}
+
+function looksLikeReasoningLeadParagraph(paragraph: string): boolean {
+  const trimmed = paragraph.trim();
+
+  if (!trimmed) {
+    return false;
+  }
+
+  return REASONING_LEAD_PATTERNS.some(pattern => pattern.test(trimmed));
+}
+
+function looksLikeReasoningPrefix(content: string): boolean {
+  const trimmed = content.trim();
+
+  if (!trimmed) {
+    return false;
+  }
+
+  if (countReasoningListItems(trimmed) >= 2) {
+    return true;
+  }
+
+  return looksLikeReasoningLeadParagraph(getFirstParagraph(trimmed));
+}
+
+function isLikelyReplyLeadParagraph(paragraph: string): boolean {
+  const trimmed = paragraph.trim();
+
+  if (!trimmed) {
+    return false;
+  }
+
+  if (trimmed.length < MIN_HEURISTIC_REPLY_LEAD_LENGTH) {
+    return false;
+  }
+
+  if (/^(?:[-*+]\s|\d+[.)]\s|#{1,6}\s|>)/.test(trimmed)) {
+    return false;
+  }
+
+  if (looksLikeReasoningLeadParagraph(trimmed)) {
+    return false;
+  }
+
+  return /[\u4e00-\u9fffA-Za-z]/.test(trimmed);
+}
+
+function extractReplyFromOpenThinkHeuristically(content: string): {
+  thinkContent: string;
+  answerText: string;
+} | null {
+  const normalized = content.replace(/\r\n/g, '\n');
+  const boundaryPattern = /\n\s*\n/g;
+  const boundaries: number[] = [];
+
+  for (const match of normalized.matchAll(boundaryPattern)) {
+    if (typeof match.index === 'number') {
+      boundaries.push(match.index + match[0].length);
+    }
+  }
+
+  for (let index = boundaries.length - 1; index >= 0; index -= 1) {
+    const boundary = boundaries[index];
+    const thinkContent = normalized.slice(0, boundary).trimEnd();
+    const answerText = normalized.slice(boundary).trim();
+
+    if (
+      thinkContent.length < MIN_HEURISTIC_REPLY_PREFIX_LENGTH ||
+      !answerText
+    ) {
+      continue;
+    }
+
+    if (!looksLikeReasoningPrefix(thinkContent)) {
+      continue;
+    }
+
+    if (!isLikelyReplyLeadParagraph(getFirstParagraph(answerText))) {
+      continue;
+    }
+
+    return {
+      thinkContent,
+      answerText,
+    };
+  }
+
+  return null;
+}
+
 function extractReplyFromOpenThink(content: string): {
   thinkContent: string;
   answerText: string;
@@ -132,7 +238,7 @@ function extractReplyFromOpenThink(content: string): {
   }
 
   if (markerIndex < 0) {
-    return null;
+    return extractReplyFromOpenThinkHeuristically(content);
   }
 
   const answerText = content.slice(markerIndex + markerLength).trim();
@@ -390,11 +496,26 @@ export function analyzeThinkAwareContent(content: string): ThinkAwareAnalysis {
 }
 
 function serializeThinkAwareBlocks(blocks: MessageBlock[]): string {
-  return blocks
-    .map(block =>
-      block.type === 'think' ? `<think>${block.content}</think>` : block.content
-    )
-    .join('');
+  return blocks.reduce((result, block, index) => {
+    const serializedBlock =
+      block.type === 'think'
+        ? `<think>${block.content}</think>`
+        : block.content;
+
+    if (index === 0) {
+      return serializedBlock;
+    }
+
+    const previousBlock = blocks[index - 1];
+    const shouldInsertParagraphGap =
+      previousBlock?.type === 'think' &&
+      previousBlock.status === 'closed' &&
+      block.type === 'text' &&
+      block.content.trim().length > 0 &&
+      !/^\s/.test(block.content);
+
+    return `${result}${shouldInsertParagraphGap ? '\n\n' : ''}${serializedBlock}`;
+  }, '');
 }
 
 export function normalizeCompletedThinkAwareContent(content: string): {
@@ -410,8 +531,14 @@ export function normalizeCompletedThinkAwareContent(content: string): {
 
   const analysis = analyzeThinkAwareContent(content);
   const pruned = pruneRedundantThinkBlocks(analysis.blocks);
+  const serializedAnalysis = serializeThinkAwareBlocks(
+    analysis.blocks
+  ).trimEnd();
+  const serializedPruned = serializeThinkAwareBlocks(pruned.blocks).trimEnd();
+  const normalizedTrimmed = content.trimEnd();
+  const analysisChanged = serializedAnalysis !== normalizedTrimmed;
 
-  if (!pruned.changed) {
+  if (!pruned.changed && !analysisChanged) {
     return {
       content,
       changed: false,
@@ -419,7 +546,7 @@ export function normalizeCompletedThinkAwareContent(content: string): {
   }
 
   return {
-    content: serializeThinkAwareBlocks(pruned.blocks).trimEnd(),
+    content: serializedPruned,
     changed: true,
   };
 }
