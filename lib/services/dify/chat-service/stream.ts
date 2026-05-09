@@ -514,6 +514,8 @@ export async function streamDifyChat(
     }) => void;
     let completionReject: (reason?: unknown) => void;
     let completionResolved = false;
+    let firstAnswerResolve: (value: boolean) => void;
+    let firstAnswerResolved = false;
 
     const completionPromise = new Promise<{
       messageId?: string;
@@ -525,6 +527,19 @@ export async function streamDifyChat(
       completionResolve = resolve;
       completionReject = reject;
     });
+
+    const firstAnswerPromise = new Promise<boolean>(resolve => {
+      firstAnswerResolve = resolve;
+    });
+
+    const resolveFirstAnswer = (value: boolean) => {
+      if (firstAnswerResolved) {
+        return;
+      }
+
+      firstAnswerResolve(value);
+      firstAnswerResolved = true;
+    };
 
     async function* processStream(): AsyncGenerator<string, void, undefined> {
       let syntheticThinkBlockOpen = false;
@@ -584,6 +599,7 @@ export async function streamDifyChat(
           return;
         }
 
+        resolveFirstAnswer(true);
         yield* closeSyntheticThinkBlock();
         answerContent += chunk;
         yield* yieldChunk(chunk);
@@ -875,6 +891,7 @@ export async function streamDifyChat(
               }
               break;
             case 'message_end':
+              resolveFirstAnswer(false);
               if (answerStreamThinkState.pendingThinkTagFragment) {
                 rawEventSummary.malformedPayloadCount += 1;
                 answerStreamThinkState.pendingThinkTagFragment = '';
@@ -938,6 +955,7 @@ export async function streamDifyChat(
               const errorInfo = new Error(
                 `Dify API error: ${event.code} - ${event.message}`
               );
+              resolveFirstAnswer(false);
               completionReject(errorInfo);
               throw errorInfo;
             default:
@@ -945,6 +963,7 @@ export async function streamDifyChat(
           }
         }
         console.log('[Dify Service] Finished processing stream.');
+        resolveFirstAnswer(false);
 
         if (answerStreamThinkState.pendingThinkTagFragment) {
           rawEventSummary.malformedPayloadCount += 1;
@@ -991,6 +1010,7 @@ export async function streamDifyChat(
         }
       } catch (error) {
         console.error('[Dify Service] Error in processStream:', error);
+        resolveFirstAnswer(false);
         if (completionReject) {
           completionReject(
             error instanceof Error ? error : new Error(String(error))
@@ -1004,6 +1024,7 @@ export async function streamDifyChat(
       answerStream: processStream(),
       getConversationId: () => conversationId,
       getTaskId: () => taskId,
+      firstAnswerPromise,
       completionPromise,
     };
   } catch (error) {

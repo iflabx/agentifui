@@ -58,6 +58,11 @@ function writeConversationLookupCache(
   pruneConversationLookupCache(Date.now());
 }
 
+function clearConversationLookupCache(): void {
+  conversationLookupCache.clear();
+  conversationLookupInflight.clear();
+}
+
 export async function getConversationByExternalId(
   externalId: string
 ): Promise<Result<Conversation | null>> {
@@ -148,6 +153,45 @@ export async function renameConversation(
   newTitle: string
 ): Promise<Result<boolean>> {
   return updateConversation(conversationId, { title: newTitle });
+}
+
+export async function syncGeneratedTitleIfPlaceholder(
+  conversationId: string,
+  title: string,
+  placeholderTitles: string[]
+): Promise<Result<boolean>> {
+  const normalizedConversationId = conversationId.trim();
+  const normalizedTitle = title.trim();
+  const normalizedPlaceholderTitles = Array.from(
+    new Set(placeholderTitles.map(value => value.trim()).filter(Boolean))
+  );
+
+  if (!normalizedConversationId) {
+    return failure('Conversation ID is required');
+  }
+
+  if (!normalizedTitle) {
+    return failure('Generated title is required');
+  }
+
+  if (normalizedPlaceholderTitles.length === 0) {
+    return failure('Placeholder title candidates are required');
+  }
+
+  const result = await callInternalDataAction<boolean>(
+    'conversations.syncGeneratedTitleIfPlaceholder',
+    {
+      conversationId: normalizedConversationId,
+      title: normalizedTitle,
+      placeholderTitles: normalizedPlaceholderTitles,
+    }
+  );
+
+  if (result.success && result.data) {
+    clearConversationLookupCache();
+  }
+
+  return result;
 }
 
 export async function deleteConversation(

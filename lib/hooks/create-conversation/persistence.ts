@@ -3,9 +3,11 @@
 import { conversationEvents } from '@lib/hooks/use-combined-conversations';
 import {
   createConversation,
+  syncGeneratedTitleIfPlaceholder,
   updateConversation,
 } from '@lib/services/client/conversations-api';
 import { renameConversation } from '@lib/services/dify/conversation-service';
+import type { RenameConversationResponse } from '@lib/services/dify/types/conversations';
 import type { PendingConversation } from '@lib/stores/pending-conversation-store';
 import { usePendingConversationStore } from '@lib/stores/pending-conversation-store';
 
@@ -13,6 +15,67 @@ import { selectConversationIfCurrent } from './routing';
 import type { OnConversationDbIdCreated } from './types';
 
 type PendingConversationStatus = PendingConversation['status'];
+
+const DEFAULT_PLACEHOLDER_TITLE_CANDIDATES = [
+  '创建中...',
+  'Creating...',
+  '无标题',
+  'Untitled',
+];
+
+export function resolveGeneratedTitle(
+  renameResponse: Pick<RenameConversationResponse, 'name'> | null | undefined,
+  untitledTitle: string
+): string {
+  const generatedTitle = renameResponse?.name?.trim();
+  return generatedTitle || untitledTitle;
+}
+
+export function buildPlaceholderTitleCandidates(
+  tempTitle: string,
+  untitledTitle: string
+): string[] {
+  return Array.from(
+    new Set(
+      [tempTitle, untitledTitle, ...DEFAULT_PLACEHOLDER_TITLE_CANDIDATES]
+        .map(title => title.trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+export async function persistResolvedConversationTitle(
+  dbId: string | null | undefined,
+  title: string,
+  tempTitle: string
+): Promise<boolean> {
+  if (!dbId || title === tempTitle) {
+    return false;
+  }
+
+  try {
+    const result = await updateConversation(dbId, { title });
+    if (result.success && result.data) {
+      console.log(
+        `[useCreateConversation] Database title update successful: ${title}`
+      );
+      conversationEvents.emit();
+      return true;
+    }
+
+    console.error(
+      '[useCreateConversation] Database title update rejected:',
+      result.success ? result.data : result.error
+    );
+    return false;
+  } catch (updateError) {
+    console.error(
+      '[useCreateConversation] Update database title failed:',
+      updateError
+    );
+    return false;
+  }
+}
 
 interface SaveConversationRecordInput {
   difyConvId: string;
@@ -132,6 +195,67 @@ interface StartConversationTitleResolutionInput {
   startTitleTypewriter: (id: string, title: string) => void;
 }
 
+interface RecoverConversationTitleAfterStreamInput {
+  appId: string;
+  difyConvId: string;
+  userIdentifier: string;
+  dbId?: string | null;
+  tempTitle: string;
+  untitledTitle: string;
+}
+
+export async function recoverConversationTitleAfterStream(
+  input: RecoverConversationTitleAfterStreamInput
+): Promise<boolean> {
+  if (!input.dbId) {
+    return false;
+  }
+
+  try {
+    const renameResponse = await renameConversation(
+      input.appId,
+      input.difyConvId,
+      {
+        user: input.userIdentifier,
+        auto_generate: true,
+      }
+    );
+    const finalTitle = resolveGeneratedTitle(
+      renameResponse,
+      input.untitledTitle
+    );
+    const placeholderTitles = buildPlaceholderTitleCandidates(
+      input.tempTitle,
+      input.untitledTitle
+    );
+    const result = await syncGeneratedTitleIfPlaceholder(
+      input.dbId,
+      finalTitle,
+      placeholderTitles
+    );
+
+    if (result.success && result.data) {
+      console.log(
+        `[useCreateConversation] Recovered generated title after stream: ${finalTitle}`
+      );
+      conversationEvents.emit();
+      return true;
+    }
+
+    console.log(
+      '[useCreateConversation] Post-stream title recovery skipped:',
+      result.success ? result.data : result.error
+    );
+    return false;
+  } catch (error) {
+    console.error(
+      '[useCreateConversation] Post-stream title recovery failed:',
+      error
+    );
+    return false;
+  }
+}
+
 export function startConversationTitleResolution(
   input: StartConversationTitleResolutionInput
 ): void {
@@ -140,30 +264,21 @@ export function startConversationTitleResolution(
     auto_generate: true,
   })
     .then(async renameResponse => {
-      const finalTitle =
-        renameResponse && renameResponse.name
-          ? renameResponse.name
-          : input.untitledTitle;
+      const finalTitle = resolveGeneratedTitle(
+        renameResponse,
+        input.untitledTitle
+      );
       console.log(
         `[useCreateConversation] Title acquisition successful, start typewriter effect: ${finalTitle}`
       );
 
       input.startTitleTypewriter(input.tempConvId, finalTitle);
 
-      if (input.dbId && finalTitle !== input.tempTitle) {
-        try {
-          await updateConversation(input.dbId, { title: finalTitle });
-          console.log(
-            `[useCreateConversation] Database title update successful: ${finalTitle}`
-          );
-          conversationEvents.emit();
-        } catch (updateError) {
-          console.error(
-            '[useCreateConversation] Update database title failed:',
-            updateError
-          );
-        }
-      }
+      await persistResolvedConversationTitle(
+        input.dbId,
+        finalTitle,
+        input.tempTitle
+      );
 
       selectConversationIfCurrent(
         input.difyConvId,
@@ -179,22 +294,11 @@ export function startConversationTitleResolution(
 
       input.startTitleTypewriter(input.tempConvId, fallbackTitle);
 
-      if (input.dbId) {
-        try {
-          await updateConversation(input.dbId, {
-            title: fallbackTitle,
-          });
-          console.log(
-            `[useCreateConversation] Update database with default title: ${fallbackTitle}`
-          );
-          conversationEvents.emit();
-        } catch (updateError) {
-          console.error(
-            '[useCreateConversation] Update default title failed:',
-            updateError
-          );
-        }
-      }
+      await persistResolvedConversationTitle(
+        input.dbId,
+        fallbackTitle,
+        input.tempTitle
+      );
 
       selectConversationIfCurrent(
         input.difyConvId,

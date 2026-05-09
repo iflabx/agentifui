@@ -142,3 +142,56 @@ describe('conversations-api lookup dedupe', () => {
     expect(mockedCallInternalDataAction).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('conversations-api generated title sync', () => {
+  beforeEach(() => {
+    jest.resetModules();
+  });
+
+  it('calls placeholder-only title sync with normalized inputs', async () => {
+    const { callInternalDataAction } = await import(
+      '@lib/db/internal-data-api'
+    );
+    const mockedCallInternalDataAction =
+      callInternalDataAction as jest.MockedFunction<
+        typeof callInternalDataAction
+      >;
+
+    mockedCallInternalDataAction.mockReset();
+    mockedCallInternalDataAction.mockResolvedValueOnce({
+      success: true,
+      data: true,
+    });
+
+    const { syncGeneratedTitleIfPlaceholder } = await import(
+      './conversations-api'
+    );
+
+    await expect(
+      syncGeneratedTitleIfPlaceholder(' db-1 ', ' Final title ', [
+        ' Creating... ',
+        'Creating...',
+        '',
+      ])
+    ).resolves.toEqual({ success: true, data: true });
+
+    expect(mockedCallInternalDataAction).toHaveBeenCalledWith(
+      'conversations.syncGeneratedTitleIfPlaceholder',
+      {
+        conversationId: 'db-1',
+        title: 'Final title',
+        placeholderTitles: ['Creating...'],
+      }
+    );
+  });
+
+  it('rejects placeholder sync without placeholder candidates', async () => {
+    const { syncGeneratedTitleIfPlaceholder } = await import(
+      './conversations-api'
+    );
+
+    await expect(
+      syncGeneratedTitleIfPlaceholder('db-1', 'Final title', ['  '])
+    ).resolves.toMatchObject({ success: false });
+  });
+});

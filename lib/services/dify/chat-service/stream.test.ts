@@ -657,4 +657,84 @@ describe('streamDifyChat agent_thought handling', () => {
       '<think>先分析用户的晚饭需求。\n\n</think>今晚可以去二食堂试试小火锅。'
     );
   });
+
+  it('resolves firstAnswerPromise true after first answer chunk', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: createSseBody([
+        {
+          event: 'agent_message',
+          task_id: 'task-1',
+          conversation_id: 'conv-1',
+          id: 'answer-1',
+          message_id: 'msg-1',
+          answer: 'Final answer',
+          created_at: 1,
+        },
+        {
+          event: 'message_end',
+          task_id: 'task-1',
+          conversation_id: 'conv-1',
+          id: 'end-1',
+          metadata: {},
+        },
+      ]),
+    });
+
+    const response = await streamDifyChat(
+      {
+        query: 'hello',
+        user: 'user-1',
+        response_mode: 'streaming',
+      },
+      'app-1'
+    );
+
+    await collectStream(response.answerStream);
+    await expect(response.firstAnswerPromise).resolves.toBe(true);
+  });
+
+  it('resolves firstAnswerPromise false when stream ends without answer', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: createSseBody([
+        {
+          event: 'agent_thought',
+          task_id: 'task-1',
+          conversation_id: 'conv-1',
+          id: 'thought-1',
+          message_id: 'msg-1',
+          position: 1,
+          thought: 'thinking only',
+          observation: '',
+          tool: '',
+          tool_labels: {},
+          tool_input: '',
+          message_files: [],
+          created_at: 1,
+        },
+        {
+          event: 'message_end',
+          task_id: 'task-1',
+          conversation_id: 'conv-1',
+          id: 'end-1',
+          metadata: {},
+        },
+      ]),
+    });
+
+    const response = await streamDifyChat(
+      {
+        query: 'hello',
+        user: 'user-1',
+        response_mode: 'streaming',
+      },
+      'app-1'
+    );
+
+    await collectStream(response.answerStream);
+    await expect(response.firstAnswerPromise).resolves.toBe(false);
+  });
 });

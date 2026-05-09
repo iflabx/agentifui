@@ -31,6 +31,7 @@ import {
   buildTempConversationId,
 } from './create-conversation/payload';
 import {
+  recoverConversationTitleAfterStream,
   saveConversationRecord,
   startConversationTitleResolution,
 } from './create-conversation/persistence';
@@ -102,7 +103,9 @@ export function useCreateConversation(): UseCreateConversationReturn {
       let streamResponse: DifyStreamResponse | null = null;
       let realConvIdFromStream: string | null = null;
       let taskIdFromStream: string | null = null;
-      let persistConversationPromise: Promise<void> | null = null;
+      let persistConversationPromise: Promise<string | null> | null = null;
+      let earlyTitleResolutionScheduled = false;
+      let postStreamTitleRecoveryScheduled = false;
 
       const persistConversationIfNeeded = (difyConversationId: string) => {
         if (persistConversationPromise) {
@@ -115,7 +118,7 @@ export function useCreateConversation(): UseCreateConversationReturn {
             `[useCreateConversation] Persisting conversation state, Dify conversation ID=${difyConversationId}`
           );
 
-          const dbId = await saveConversationRecord({
+          return saveConversationRecord({
             difyConvId: difyConversationId,
             title: tempTitle,
             tempConvId,
@@ -127,25 +130,83 @@ export function useCreateConversation(): UseCreateConversationReturn {
             addToFavorites,
             onDbIdCreated,
           });
-
-          startConversationTitleResolution({
-            appId,
-            difyConvId: difyConversationId,
-            userIdentifier,
-            tempConvId,
-            tempTitle,
-            untitledTitle: t('untitled'),
-            dbId,
-            startTitleTypewriter,
-          });
         })().catch(persistError => {
           console.error(
             '[useCreateConversation] Error occurred during conversation persistence:',
             persistError
           );
+          return null;
         });
 
         return persistConversationPromise;
+      };
+
+      const scheduleInitialTitleResolutionAfterFirstAnswer = (
+        difyConversationId: string,
+        firstAnswerPromise: Promise<boolean> | undefined
+      ) => {
+        if (earlyTitleResolutionScheduled || !firstAnswerPromise) {
+          return;
+        }
+
+        earlyTitleResolutionScheduled = true;
+        void (async () => {
+          const hasFirstAnswer = await firstAnswerPromise;
+          if (!hasFirstAnswer) {
+            return;
+          }
+
+          const dbId = await persistConversationIfNeeded(difyConversationId);
+          startConversationTitleResolution({
+            appId,
+            difyConvId: difyConversationId,
+            userIdentifier,
+            tempConvId,
+            tempTitle: t('creating'),
+            untitledTitle: t('untitled'),
+            dbId,
+            startTitleTypewriter,
+          });
+        })().catch(error => {
+          console.error(
+            '[useCreateConversation] Initial title resolution failed:',
+            error
+          );
+        });
+      };
+
+      const schedulePostStreamTitleRecovery = (difyConversationId: string) => {
+        if (postStreamTitleRecoveryScheduled) {
+          return;
+        }
+
+        postStreamTitleRecoveryScheduled = true;
+        void (async () => {
+          if (streamResponse?.completionPromise) {
+            await streamResponse.completionPromise.catch(error => {
+              console.error(
+                '[useCreateConversation] Completion promise failed before title recovery:',
+                error
+              );
+              return null;
+            });
+          }
+
+          const dbId = await persistConversationIfNeeded(difyConversationId);
+          await recoverConversationTitleAfterStream({
+            appId,
+            difyConvId: difyConversationId,
+            userIdentifier,
+            dbId,
+            tempTitle: t('creating'),
+            untitledTitle: t('untitled'),
+          });
+        })().catch(error => {
+          console.error(
+            '[useCreateConversation] Post-stream title recovery failed:',
+            error
+          );
+        });
       };
 
       try {
@@ -175,6 +236,11 @@ export function useCreateConversation(): UseCreateConversationReturn {
               updateStatusInPendingStore(tempConvId, 'title_fetching');
 
               void persistConversationIfNeeded(id);
+              scheduleInitialTitleResolutionAfterFirstAnswer(
+                id,
+                streamResponse?.firstAnswerPromise
+              );
+              schedulePostStreamTitleRecovery(id);
             }
           },
           onNodeEvent
@@ -205,6 +271,11 @@ export function useCreateConversation(): UseCreateConversationReturn {
 
         if (realConvIdFromStream) {
           void persistConversationIfNeeded(realConvIdFromStream);
+          scheduleInitialTitleResolutionAfterFirstAnswer(
+            realConvIdFromStream,
+            streamResponse.firstAnswerPromise
+          );
+          schedulePostStreamTitleRecovery(realConvIdFromStream);
         }
 
         setIsLoading(false);

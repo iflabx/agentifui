@@ -1,4 +1,8 @@
 import {
+  buildPlaceholderTitleCandidates,
+  persistResolvedConversationTitle,
+  recoverConversationTitleAfterStream,
+  resolveGeneratedTitle,
   saveConversationRecord,
   startConversationTitleResolution,
 } from './persistence';
@@ -6,6 +10,7 @@ import { selectConversationIfCurrent } from './routing';
 
 const mockCreateConversation = jest.fn();
 const mockUpdateConversation = jest.fn();
+const mockSyncGeneratedTitleIfPlaceholder = jest.fn();
 const mockRenameConversation = jest.fn();
 const mockGetPendingState = jest.fn();
 const mockEmitConversationEvents = jest.fn();
@@ -13,6 +18,8 @@ const mockEmitConversationEvents = jest.fn();
 jest.mock('@lib/services/client/conversations-api', () => ({
   createConversation: (...args: unknown[]) => mockCreateConversation(...args),
   updateConversation: (...args: unknown[]) => mockUpdateConversation(...args),
+  syncGeneratedTitleIfPlaceholder: (...args: unknown[]) =>
+    mockSyncGeneratedTitleIfPlaceholder(...args),
 }));
 
 jest.mock('@lib/services/dify/conversation-service', () => ({
@@ -36,6 +43,8 @@ jest.mock('./routing', () => ({
 }));
 
 const flushPromises = async () => {
+  await Promise.resolve();
+  await Promise.resolve();
   await Promise.resolve();
   await Promise.resolve();
 };
@@ -114,7 +123,7 @@ describe('create-conversation persistence helpers', () => {
 
   it('resolves and persists the generated title', async () => {
     mockRenameConversation.mockResolvedValue({ name: 'Final title' });
-    mockUpdateConversation.mockResolvedValue({ success: true });
+    mockUpdateConversation.mockResolvedValue({ success: true, data: true });
     const startTitleTypewriter = jest.fn();
 
     startConversationTitleResolution({
@@ -147,7 +156,7 @@ describe('create-conversation persistence helpers', () => {
 
   it('falls back to untitled when title generation fails', async () => {
     mockRenameConversation.mockRejectedValue(new Error('rename failed'));
-    mockUpdateConversation.mockResolvedValue({ success: true });
+    mockUpdateConversation.mockResolvedValue({ success: true, data: true });
     const startTitleTypewriter = jest.fn();
 
     startConversationTitleResolution({
@@ -172,5 +181,58 @@ describe('create-conversation persistence helpers', () => {
       'conv-2',
       'Error selecting item in sidebar (title fetch failed)'
     );
+  });
+
+  it('resolves generated titles with untitled fallback', () => {
+    expect(resolveGeneratedTitle({ name: ' Final title ' }, 'Untitled')).toBe(
+      'Final title'
+    );
+    expect(resolveGeneratedTitle({ name: '   ' }, 'Untitled')).toBe('Untitled');
+    expect(resolveGeneratedTitle(null, 'Untitled')).toBe('Untitled');
+  });
+
+  it('builds placeholder title candidates with locale and fallback values', () => {
+    expect(buildPlaceholderTitleCandidates('创建中...', '无标题')).toEqual(
+      expect.arrayContaining(['创建中...', '无标题', 'Creating...', 'Untitled'])
+    );
+  });
+
+  it('does not treat rejected title persistence as success', async () => {
+    mockUpdateConversation.mockResolvedValue({ success: true, data: false });
+
+    await expect(
+      persistResolvedConversationTitle('db-1', 'Final title', 'Creating')
+    ).resolves.toBe(false);
+    expect(mockEmitConversationEvents).not.toHaveBeenCalled();
+  });
+
+  it('recovers generated title after stream only through placeholder sync', async () => {
+    mockRenameConversation.mockResolvedValue({ name: 'Recovered title' });
+    mockSyncGeneratedTitleIfPlaceholder.mockResolvedValue({
+      success: true,
+      data: true,
+    });
+
+    await expect(
+      recoverConversationTitleAfterStream({
+        appId: 'app-1',
+        difyConvId: 'conv-1',
+        userIdentifier: 'user-1',
+        dbId: 'db-1',
+        tempTitle: 'Creating...',
+        untitledTitle: 'Untitled',
+      })
+    ).resolves.toBe(true);
+
+    expect(mockRenameConversation).toHaveBeenCalledWith('app-1', 'conv-1', {
+      user: 'user-1',
+      auto_generate: true,
+    });
+    expect(mockSyncGeneratedTitleIfPlaceholder).toHaveBeenCalledWith(
+      'db-1',
+      'Recovered title',
+      expect.arrayContaining(['Creating...', 'Untitled', '创建中...'])
+    );
+    expect(mockEmitConversationEvents).toHaveBeenCalledTimes(1);
   });
 });

@@ -226,6 +226,7 @@ export const LOCAL_CONVERSATION_ACTIONS = new Set([
   'conversations.createConversation',
   'conversations.getUserConversations',
   'conversations.renameConversation',
+  'conversations.syncGeneratedTitleIfPlaceholder',
   'conversations.deleteConversation',
 ]);
 

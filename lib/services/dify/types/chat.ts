@@ -14,6 +14,7 @@ export interface DifyStreamResponse {
   answerStream: AsyncGenerator<string, void, undefined>;
   getConversationId: () => string | null;
   getTaskId: () => string | null;
+  firstAnswerPromise?: Promise<boolean>;
   completionPromise?: Promise<{
     messageId?: string;
     userMessageFileIds?: string[];

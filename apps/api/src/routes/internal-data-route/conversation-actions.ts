@@ -227,6 +227,44 @@ export async function handleConversationAction(
     return toSuccessResponse(Boolean(rows[0]?.id));
   }
 
+  if (action === 'conversations.syncGeneratedTitleIfPlaceholder') {
+    const conversationId = readString(payload?.conversationId);
+    const title = readString(payload?.title);
+    const placeholderTitles = Array.isArray(payload?.placeholderTitles)
+      ? Array.from(
+          new Set(payload.placeholderTitles.map(readString).filter(Boolean))
+        )
+      : [];
+
+    if (
+      !resolvedUserId ||
+      !conversationId ||
+      !title ||
+      placeholderTitles.length === 0
+    ) {
+      return toErrorResponse('Missing required fields', 400);
+    }
+
+    const rows = await queryRowsWithPgSystemContext<{ id: string }>(
+      `
+        UPDATE conversations
+        SET title = $1,
+            updated_at = updated_at + interval '1 microsecond'
+        WHERE id = $2::uuid
+          AND user_id = $3::uuid
+          AND status = 'active'
+          AND (
+            NULLIF(BTRIM(title), '') IS NULL
+            OR title = ANY($4::text[])
+          )
+        RETURNING id::text
+      `,
+      [title, conversationId, resolvedUserId, placeholderTitles]
+    );
+
+    return toSuccessResponse(Boolean(rows[0]?.id));
+  }
+
   if (action === 'conversations.deleteConversation') {
     const conversationId = readString(payload?.conversationId);
     if (!resolvedUserId || !conversationId) {
