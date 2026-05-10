@@ -230,6 +230,7 @@ export async function recoverConversationTitleAfterStream(
     );
     const result = await syncGeneratedTitleIfPlaceholder(
       input.dbId,
+      input.userIdentifier,
       finalTitle,
       placeholderTitles
     );

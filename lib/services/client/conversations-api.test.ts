@@ -168,7 +168,7 @@ describe('conversations-api generated title sync', () => {
     );
 
     await expect(
-      syncGeneratedTitleIfPlaceholder(' db-1 ', ' Final title ', [
+      syncGeneratedTitleIfPlaceholder(' db-1 ', ' user-1 ', ' Final title ', [
         ' Creating... ',
         'Creating...',
         '',
@@ -179,6 +179,7 @@ describe('conversations-api generated title sync', () => {
       'conversations.syncGeneratedTitleIfPlaceholder',
       {
         conversationId: 'db-1',
+        userId: 'user-1',
         title: 'Final title',
         placeholderTitles: ['Creating...'],
       }
@@ -191,7 +192,7 @@ describe('conversations-api generated title sync', () => {
     );
 
     await expect(
-      syncGeneratedTitleIfPlaceholder('db-1', 'Final title', ['  '])
+      syncGeneratedTitleIfPlaceholder('db-1', 'user-1', 'Final title', ['  '])
     ).resolves.toMatchObject({ success: false });
   });
 });

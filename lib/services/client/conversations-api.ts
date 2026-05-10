@@ -157,10 +157,12 @@ export async function renameConversation(
 
 export async function syncGeneratedTitleIfPlaceholder(
   conversationId: string,
+  userId: string,
   title: string,
   placeholderTitles: string[]
 ): Promise<Result<boolean>> {
   const normalizedConversationId = conversationId.trim();
+  const normalizedUserId = userId.trim();
   const normalizedTitle = title.trim();
   const normalizedPlaceholderTitles = Array.from(
     new Set(placeholderTitles.map(value => value.trim()).filter(Boolean))
@@ -168,6 +170,10 @@ export async function syncGeneratedTitleIfPlaceholder(
 
   if (!normalizedConversationId) {
     return failure('Conversation ID is required');
+  }
+
+  if (!normalizedUserId) {
+    return failure('User ID is required');
   }
 
   if (!normalizedTitle) {
@@ -182,6 +188,7 @@ export async function syncGeneratedTitleIfPlaceholder(
     'conversations.syncGeneratedTitleIfPlaceholder',
     {
       conversationId: normalizedConversationId,
+      userId: normalizedUserId,
       title: normalizedTitle,
       placeholderTitles: normalizedPlaceholderTitles,
     }

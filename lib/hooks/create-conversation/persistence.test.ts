@@ -230,6 +230,7 @@ describe('create-conversation persistence helpers', () => {
     });
     expect(mockSyncGeneratedTitleIfPlaceholder).toHaveBeenCalledWith(
       'db-1',
+      'user-1',
       'Recovered title',
       expect.arrayContaining(['Creating...', 'Untitled', '创建中...'])
     );
