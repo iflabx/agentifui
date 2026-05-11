@@ -621,3 +621,14 @@ export function materializeIncompleteAssistantReply(
 export function parseThinkBlocks(content: string): MessageBlock[] {
   return analyzeThinkAwareContent(content).blocks;
 }
+
+/**
+ * Parses streaming content without repairing an open think block.
+ *
+ * Completed messages may use answer-tail recovery for malformed historical
+ * payloads, but streaming content is still provisional. Keeping the full open
+ * think tail inside the think block prevents temporary body text flicker.
+ */
+export function parseStreamingThinkBlocks(content: string): MessageBlock[] {
+  return parseThinkBlocksRaw(content);
+}

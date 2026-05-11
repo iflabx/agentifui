@@ -4,6 +4,7 @@ import {
   materializeIncompleteAssistantReply,
   normalizeCompletedAssistantReply,
   normalizeCompletedThinkAwareContent,
+  parseStreamingThinkBlocks,
   parseThinkBlocks,
 } from '../../lib/utils/think-parser';
 
@@ -141,6 +142,56 @@ describe('parseThinkBlocks', () => {
     );
     expect(result).toEqual([
       { type: 'think', content: '\nLine 1\nLine 2\n', status: 'closed' },
+    ]);
+  });
+
+  it('should keep apparent answer text inside an open think block while streaming', () => {
+    const content = `<think>Here is a thinking process:
+
+1. 先分析用户需求。
+
+2. 再给出方案。
+
+比斯兔建议今晚可以试试二食堂的小火锅。`;
+
+    expect(parseStreamingThinkBlocks(content)).toEqual([
+      {
+        type: 'think',
+        content: `Here is a thinking process:
+
+1. 先分析用户需求。
+
+2. 再给出方案。
+
+比斯兔建议今晚可以试试二食堂的小火锅。`,
+        status: 'open',
+      },
+    ]);
+  });
+
+  it('should keep completed parser recovery for apparent answer tails in open think content', () => {
+    const content = `<think>Here is a thinking process:
+
+1. 先分析用户需求。
+
+2. 再给出方案。
+
+比斯兔建议今晚可以试试二食堂的小火锅。`;
+
+    expect(parseThinkBlocks(content)).toEqual([
+      {
+        type: 'think',
+        content: `Here is a thinking process:
+
+1. 先分析用户需求。
+
+2. 再给出方案。`,
+        status: 'closed',
+      },
+      {
+        type: 'text',
+        content: '比斯兔建议今晚可以试试二食堂的小火锅。',
+      },
     ]);
   });
 

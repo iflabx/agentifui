@@ -193,6 +193,52 @@ describe('AssistantMessage think block behavior', () => {
     }
   });
 
+  it('keeps apparent answer text inside an open think block while streaming', () => {
+    render(
+      <AssistantMessage
+        id="msg-stream-open-think"
+        content={`<think>Here is a thinking process:
+
+1. 先分析用户需求。
+
+2. 再给出方案。
+
+比斯兔建议今晚可以试试二食堂的小火锅。`}
+        isStreaming={true}
+        wasManuallyStopped={false}
+      />
+    );
+
+    expect(screen.getByTestId('think-content')).toHaveTextContent(
+      '比斯兔建议今晚可以试试二食堂的小火锅。'
+    );
+    expect(screen.queryByTestId('react-markdown')).not.toBeInTheDocument();
+  });
+
+  it('keeps completed recovery for apparent answer text in malformed historical think content', () => {
+    render(
+      <AssistantMessage
+        id="msg-completed-open-think"
+        content={`<think>Here is a thinking process:
+
+1. 先分析用户需求。
+
+2. 再给出方案。
+
+比斯兔建议今晚可以试试二食堂的小火锅。`}
+        isStreaming={false}
+        wasManuallyStopped={false}
+      />
+    );
+
+    expect(screen.getByTestId('think-content')).not.toHaveTextContent(
+      '比斯兔建议今晚可以试试二食堂的小火锅。'
+    );
+    expect(screen.getByTestId('react-markdown')).toHaveTextContent(
+      '比斯兔建议今晚可以试试二食堂的小火锅。'
+    );
+  });
+
   it('does not pass rehypeRaw to ReactMarkdown', () => {
     render(
       <AssistantMessage
