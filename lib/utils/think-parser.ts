@@ -541,6 +541,62 @@ function serializeThinkAwareBlocks(blocks: MessageBlock[]): string {
   }, '');
 }
 
+function replaceFallbackWithRecoveredThinkAnswer(
+  content: string,
+  fallbackText: string
+): {
+  content: string;
+  changed: boolean;
+} {
+  const trimmedFallback = fallbackText.trim();
+  if (!trimmedFallback) {
+    return { content, changed: false };
+  }
+
+  const analysis = analyzeThinkAwareContent(content);
+  if (analysis.mainText !== trimmedFallback) {
+    return { content, changed: false };
+  }
+
+  const blocks = [...analysis.blocks];
+  const lastThinkBlock = blocks.findLast(isClosedThinkBlock);
+
+  if (!lastThinkBlock) {
+    return { content, changed: false };
+  }
+
+  const replySplit = extractReplyFromOpenThinkHeuristically(
+    lastThinkBlock.content
+  );
+  if (!replySplit) {
+    return { content, changed: false };
+  }
+
+  const nextBlocks = blocks.flatMap(block => {
+    if (block === lastThinkBlock) {
+      return [
+        {
+          type: 'think' as const,
+          content: replySplit.thinkContent,
+          status: 'closed' as const,
+        },
+        { type: 'text' as const, content: replySplit.answerText },
+      ];
+    }
+
+    if (block.type === 'text' && block.content.trim() === trimmedFallback) {
+      return [];
+    }
+
+    return [block];
+  });
+
+  return {
+    content: serializeThinkAwareBlocks(finalizeBlocks(nextBlocks)).trimEnd(),
+    changed: true,
+  };
+}
+
 export function normalizeCompletedThinkAwareContent(content: string): {
   content: string;
   changed: boolean;
@@ -583,14 +639,21 @@ export function normalizeCompletedAssistantReply(
   usedFallback: boolean;
 } {
   const normalized = normalizeCompletedThinkAwareContent(content);
-  const materialized = materializeIncompleteAssistantReply(
+  const recovered = replaceFallbackWithRecoveredThinkAnswer(
     normalized.content,
+    fallbackText
+  );
+  const materialized = materializeIncompleteAssistantReply(
+    recovered.content,
     fallbackText
   );
 
   return {
     content: materialized.content,
-    changed: normalized.changed || materialized.content !== content,
+    changed:
+      normalized.changed ||
+      recovered.changed ||
+      materialized.content !== content,
     usedFallback: materialized.usedFallback,
   };
 }

@@ -284,6 +284,33 @@ describe('parseThinkBlocks', () => {
     });
   });
 
+  it('should replace fallback with a recovered answer trapped inside a closed think block', () => {
+    const result = normalizeCompletedAssistantReply(
+      `<think>Here is a thinking process:
+
+1. 先分析用户需求。
+
+2. 再给出方案。
+
+比斯兔建议今晚可以试试二食堂的小火锅。</think>
+
+The answer was not generated completely. Please retry.`,
+      'The answer was not generated completely. Please retry.'
+    );
+
+    expect(result).toEqual({
+      content: `<think>Here is a thinking process:
+
+1. 先分析用户需求。
+
+2. 再给出方案。</think>
+
+比斯兔建议今晚可以试试二食堂的小火锅。`,
+      changed: true,
+      usedFallback: false,
+    });
+  });
+
   it('should recover a visible answer tail from an unclosed think block when it follows a reasoning outline', () => {
     const visibleAnswer =
       '比斯兔建议今晚可以试试二食堂的小火锅，或者一食堂的风味档口。';
