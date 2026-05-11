@@ -340,7 +340,6 @@ async function persistAssistantMessageAfterStreaming(input: {
 
   const needsSaving =
     !assistantMessageForPersistence.db_id &&
-    assistantMessageForPersistence.persistenceStatus !== 'saved' &&
     assistantMessageForPersistence.text.trim().length > 0;
 
   if (!needsSaving) {

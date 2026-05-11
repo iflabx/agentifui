@@ -134,6 +134,54 @@ describe('persistChatMessagesAfterStreaming', () => {
     );
   });
 
+  it('saves an assistant message marked saved when no db id exists', async () => {
+    mockGetChatStoreState.mockReturnValue({
+      messages: [
+        {
+          id: 'assistant-1',
+          text: '恢复出的真实正文',
+          isUser: false,
+          persistenceStatus: 'saved',
+        },
+      ],
+      currentConversationId: null,
+      currentTaskId: null,
+    });
+
+    const saveMessage = jest.fn().mockResolvedValue(true);
+    const saveStoppedAssistantMessage = jest.fn().mockResolvedValue(true);
+
+    await persistChatMessagesAfterStreaming({
+      finalDbConvUUID: 'db-1',
+      dbConversationUUID: null,
+      userMessage: {
+        id: 'user-1',
+        text: '问晚饭推荐',
+        isUser: true,
+        persistenceStatus: 'saved',
+      },
+      assistantMessageId: 'assistant-1',
+      assistantFallback: {
+        id: 'assistant-1',
+        text: '恢复出的真实正文',
+      },
+      setDbConversationUUID: jest.fn(),
+      finalizeStreamingMessage: jest.fn(),
+      updateMessage: jest.fn(),
+      saveMessage,
+      saveStoppedAssistantMessage,
+    });
+
+    expect(saveMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'assistant-1',
+        text: '恢复出的真实正文',
+        persistenceStatus: 'saved',
+      }),
+      'db-1'
+    );
+  });
+
   it('re-queries the db conversation id from the store conversation id when submit state missed it', async () => {
     mockGetChatStoreState.mockReturnValue({
       messages: [],
