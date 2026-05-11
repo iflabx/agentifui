@@ -195,6 +195,38 @@ describe('parseThinkBlocks', () => {
     ]);
   });
 
+  it('should recover a final answer line from completed open think content', () => {
+    const content = `<think>Here is a thinking process:
+1. 先分析用户需求。
+2. 再给出方案。
+比斯兔建议今晚可以试试二食堂的小火锅。`;
+
+    expect(parseStreamingThinkBlocks(content)).toEqual([
+      {
+        type: 'think',
+        content: `Here is a thinking process:
+1. 先分析用户需求。
+2. 再给出方案。
+比斯兔建议今晚可以试试二食堂的小火锅。`,
+        status: 'open',
+      },
+    ]);
+
+    expect(parseThinkBlocks(content)).toEqual([
+      {
+        type: 'think',
+        content: `Here is a thinking process:
+1. 先分析用户需求。
+2. 再给出方案。`,
+        status: 'closed',
+      },
+      {
+        type: 'text',
+        content: '比斯兔建议今晚可以试试二食堂的小火锅。',
+      },
+    ]);
+  });
+
   it('should recover a reply tail from an unclosed think block when a reply marker exists', () => {
     const result = parseThinkBlocks(
       '<think>Plan steps\n\n**生成回复**：\nVisible answer'

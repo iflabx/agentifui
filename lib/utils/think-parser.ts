@@ -179,6 +179,44 @@ function isLikelyReplyLeadParagraph(paragraph: string): boolean {
   return /[\u4e00-\u9fffA-Za-z]/.test(trimmed);
 }
 
+function tryExtractReplyAtBoundary(
+  normalizedContent: string,
+  boundary: number
+): {
+  thinkContent: string;
+  answerText: string;
+} | null {
+  const thinkContent = normalizedContent.slice(0, boundary).trimEnd();
+  const answerText = normalizedContent.slice(boundary).trim();
+
+  if (thinkContent.length < MIN_HEURISTIC_REPLY_PREFIX_LENGTH || !answerText) {
+    return null;
+  }
+
+  if (!looksLikeReasoningPrefix(thinkContent)) {
+    return null;
+  }
+
+  if (!isLikelyReplyLeadParagraph(getFirstParagraph(answerText))) {
+    return null;
+  }
+
+  return {
+    thinkContent,
+    answerText,
+  };
+}
+
+function getLastNonEmptyLineBoundary(content: string): number | null {
+  const match = content.match(/\n[^\S\n]*\S[^\n]*[^\S\n]*$/);
+
+  if (typeof match?.index !== 'number') {
+    return null;
+  }
+
+  return match.index + 1;
+}
+
 function extractReplyFromOpenThinkHeuristically(content: string): {
   thinkContent: string;
   answerText: string;
@@ -194,32 +232,17 @@ function extractReplyFromOpenThinkHeuristically(content: string): {
   }
 
   for (let index = boundaries.length - 1; index >= 0; index -= 1) {
-    const boundary = boundaries[index];
-    const thinkContent = normalized.slice(0, boundary).trimEnd();
-    const answerText = normalized.slice(boundary).trim();
+    const replySplit = tryExtractReplyAtBoundary(normalized, boundaries[index]);
 
-    if (
-      thinkContent.length < MIN_HEURISTIC_REPLY_PREFIX_LENGTH ||
-      !answerText
-    ) {
-      continue;
+    if (replySplit) {
+      return replySplit;
     }
-
-    if (!looksLikeReasoningPrefix(thinkContent)) {
-      continue;
-    }
-
-    if (!isLikelyReplyLeadParagraph(getFirstParagraph(answerText))) {
-      continue;
-    }
-
-    return {
-      thinkContent,
-      answerText,
-    };
   }
 
-  return null;
+  const lineBoundary = getLastNonEmptyLineBoundary(normalized);
+  return lineBoundary === null
+    ? null
+    : tryExtractReplyAtBoundary(normalized, lineBoundary);
 }
 
 function extractReplyFromOpenThink(content: string): {
