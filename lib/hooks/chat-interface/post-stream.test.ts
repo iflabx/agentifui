@@ -134,6 +134,64 @@ describe('persistChatMessagesAfterStreaming', () => {
     );
   });
 
+  it('persists the normalized fallback snapshot over stale dirty store text', async () => {
+    mockGetChatStoreState.mockReturnValue({
+      messages: [
+        {
+          id: 'assistant-1',
+          text: '<think>Plan\n\nRecovered answer</think>\n\nThe answer was not generated completely. Please retry.',
+          isUser: false,
+          persistenceStatus: 'pending',
+          metadata: {
+            frontend_metadata: {
+              incomplete_assistant_fallback: true,
+            },
+          },
+        },
+      ],
+      currentConversationId: null,
+      currentTaskId: null,
+    });
+
+    const saveMessage = jest.fn().mockResolvedValue(true);
+    const saveStoppedAssistantMessage = jest.fn().mockResolvedValue(true);
+
+    await persistChatMessagesAfterStreaming({
+      finalDbConvUUID: 'db-1',
+      dbConversationUUID: null,
+      userMessage: {
+        id: 'user-1',
+        text: 'question',
+        isUser: true,
+        persistenceStatus: 'saved',
+      },
+      assistantMessageId: 'assistant-1',
+      assistantFallback: {
+        id: 'assistant-1',
+        text: '<think>Plan</think>\n\nRecovered answer',
+        metadata: {
+          frontend_metadata: { sequence_index: 1 },
+        },
+      },
+      setDbConversationUUID: jest.fn(),
+      finalizeStreamingMessage: jest.fn(),
+      updateMessage: jest.fn(),
+      saveMessage,
+      saveStoppedAssistantMessage,
+    });
+
+    expect(saveMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'assistant-1',
+        text: '<think>Plan</think>\n\nRecovered answer',
+        metadata: {
+          frontend_metadata: { sequence_index: 1 },
+        },
+      }),
+      'db-1'
+    );
+  });
+
   it('saves an assistant message marked saved when no db id exists', async () => {
     mockGetChatStoreState.mockReturnValue({
       messages: [

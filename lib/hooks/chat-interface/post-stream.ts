@@ -278,21 +278,18 @@ function resolveAssistantMessageForPersistence(input: {
     return latestAssistantMessage;
   }
 
-  const latestText = latestAssistantMessage.text || '';
-  const fallbackText = fallbackAssistantMessage.text || '';
-
   return {
     ...latestAssistantMessage,
     isStreaming: false,
     role: latestAssistantMessage.role || 'assistant',
     sequence_index: latestAssistantMessage.sequence_index ?? 1,
-    text: fallbackText.length > latestText.length ? fallbackText : latestText,
+    text: fallbackAssistantMessage.text || latestAssistantMessage.text || '',
     token_count:
-      latestAssistantMessage.token_count ??
-      fallbackAssistantMessage.token_count,
+      fallbackAssistantMessage.token_count ??
+      latestAssistantMessage.token_count,
     metadata: {
-      ...(fallbackAssistantMessage.metadata || {}),
       ...(latestAssistantMessage.metadata || {}),
+      ...(fallbackAssistantMessage.metadata || {}),
     },
     wasManuallyStopped:
       latestAssistantMessage.wasManuallyStopped ??
