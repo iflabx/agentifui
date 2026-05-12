@@ -543,18 +543,23 @@ function serializeThinkAwareBlocks(blocks: MessageBlock[]): string {
 
 function replaceFallbackWithRecoveredThinkAnswer(
   content: string,
-  fallbackText: string
+  fallbackText?: string
 ): {
   content: string;
   changed: boolean;
 } {
-  const trimmedFallback = fallbackText.trim();
-  if (!trimmedFallback) {
+  const trimmedFallback = fallbackText?.trim();
+  const analysis = analyzeThinkAwareContent(content);
+
+  if (trimmedFallback !== undefined && !trimmedFallback) {
     return { content, changed: false };
   }
 
-  const analysis = analyzeThinkAwareContent(content);
-  if (analysis.mainText !== trimmedFallback) {
+  if (trimmedFallback !== undefined && analysis.mainText !== trimmedFallback) {
+    return { content, changed: false };
+  }
+
+  if (trimmedFallback === undefined && !analysis.mainText) {
     return { content, changed: false };
   }
 
@@ -572,6 +577,7 @@ function replaceFallbackWithRecoveredThinkAnswer(
     return { content, changed: false };
   }
 
+  const fallbackToRemove = trimmedFallback ?? analysis.mainText;
   const nextBlocks = blocks.flatMap(block => {
     if (block === lastThinkBlock) {
       return [
@@ -584,7 +590,7 @@ function replaceFallbackWithRecoveredThinkAnswer(
       ];
     }
 
-    if (block.type === 'text' && block.content.trim() === trimmedFallback) {
+    if (block.type === 'text' && block.content.trim() === fallbackToRemove) {
       return [];
     }
 
@@ -717,4 +723,11 @@ export function parseThinkBlocks(content: string): MessageBlock[] {
  */
 export function parseStreamingThinkBlocks(content: string): MessageBlock[] {
   return parseThinkBlocksRaw(content);
+}
+
+export function normalizeIncompleteFallbackAssistantSnapshot(content: string): {
+  content: string;
+  changed: boolean;
+} {
+  return replaceFallbackWithRecoveredThinkAnswer(content);
 }

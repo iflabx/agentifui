@@ -167,6 +167,81 @@ describe('useChatMessages', () => {
     );
   });
 
+  it('normalizes assistant fallback snapshots before saving payloads', async () => {
+    useChatStore.setState(state => ({
+      ...state,
+      messages: [
+        {
+          id: 'assistant-1',
+          text: `<think>Here is a thinking process:
+
+1. 先分析用户需求。
+
+2. 再给出方案。
+
+比斯兔建议今晚可以试试二食堂的小火锅。</think>
+
+The answer was not generated completely. Please retry.`,
+          isUser: false,
+          persistenceStatus: 'pending',
+          metadata: {
+            frontend_metadata: {
+              sequence_index: 1,
+              incomplete_assistant_fallback: true,
+            },
+          },
+        },
+      ],
+    }));
+
+    const { result } = renderHook(() => useChatMessages('user-1'));
+
+    await act(async () => {
+      await expect(
+        result.current.saveMessage(
+          {
+            id: 'assistant-1',
+            text: `<think>Here is a thinking process:
+
+1. 先分析用户需求。
+
+2. 再给出方案。
+
+比斯兔建议今晚可以试试二食堂的小火锅。</think>
+
+The answer was not generated completely. Please retry.`,
+            isUser: false,
+            persistenceStatus: 'pending',
+            metadata: {
+              frontend_metadata: {
+                sequence_index: 1,
+                incomplete_assistant_fallback: true,
+              },
+            },
+          },
+          'conv-1'
+        )
+      ).resolves.toBe(true);
+    });
+
+    expect(saveMessageRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: `<think>Here is a thinking process:
+
+1. 先分析用户需求。
+
+2. 再给出方案。</think>
+
+比斯兔建议今晚可以试试二食堂的小火锅。`,
+        metadata: {
+          frontend_metadata: {
+            sequence_index: 1,
+          },
+        },
+      })
+    );
+  });
+
   it('releases the saving lock before retrying a failed save', async () => {
     jest.useFakeTimers();
     try {

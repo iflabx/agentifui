@@ -14,6 +14,7 @@ import {
 } from '@lib/services/client/messages-api';
 import { ChatMessage, useChatStore } from '@lib/stores/chat-store';
 import { resolveStoppedResponseSnapshot } from '@lib/utils/stopped-message-content';
+import { normalizeIncompleteFallbackAssistantSnapshot } from '@lib/utils/think-parser';
 
 import { useCallback, useRef, useState } from 'react';
 
@@ -93,6 +94,24 @@ function chatMessageToSavePayload(
     }
   }
 
+  let content = chatMessage.text;
+
+  if (!chatMessage.isUser) {
+    const frontendMetadata = baseMetadata.frontend_metadata as
+      | Record<string, unknown>
+      | undefined;
+
+    if (frontendMetadata?.incomplete_assistant_fallback === true) {
+      const normalizedSnapshot =
+        normalizeIncompleteFallbackAssistantSnapshot(content);
+
+      if (normalizedSnapshot.changed) {
+        content = normalizedSnapshot.content;
+        delete frontendMetadata.incomplete_assistant_fallback;
+      }
+    }
+  }
+
   if (chatMessage.attachments && chatMessage.attachments.length > 0) {
     baseMetadata.attachments = chatMessage.attachments;
   }
@@ -108,7 +127,7 @@ function chatMessageToSavePayload(
     conversation_id: conversationId,
     user_id: chatMessage.isUser ? userId || null : null,
     role: chatMessage.role || (chatMessage.isUser ? 'user' : 'assistant'),
-    content: chatMessage.text,
+    content,
     metadata: baseMetadata,
     status: chatMessage.error ? 'error' : 'sent',
     external_id: chatMessage.dify_message_id || null,
