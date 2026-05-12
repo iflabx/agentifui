@@ -280,6 +280,10 @@ export function useChatMessages(userId?: string) {
       } catch (error) {
         console.error(`[saveMessage] Error saving message:`, error);
 
+        // Release the in-flight lock before scheduling a retry; otherwise
+        // the retry re-enters saveMessage and gets skipped as a duplicate save.
+        removeSavingMessage(message.id);
+
         // If retries remain, retry with exponential backoff
         if (retryCount < RETRY_CONFIG.maxRetries) {
           const delayMs = Math.pow(2, retryCount) * RETRY_CONFIG.baseDelayMs; // Exponential backoff: 1s, 2s, 4s...

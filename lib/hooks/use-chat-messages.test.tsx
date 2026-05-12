@@ -167,6 +167,70 @@ describe('useChatMessages', () => {
     );
   });
 
+  it('releases the saving lock before retrying a failed save', async () => {
+    jest.useFakeTimers();
+    try {
+      useChatStore.setState(state => ({
+        ...state,
+        messages: [
+          {
+            id: 'assistant-1',
+            text: 'recovered reply',
+            isUser: false,
+            persistenceStatus: 'pending',
+          },
+        ],
+      }));
+
+      (saveMessageRecord as jest.Mock)
+        .mockResolvedValueOnce({
+          success: false,
+          error: { message: 'temporary failure' },
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          data: {
+            id: 'db-msg-1',
+            content: 'recovered reply',
+            external_id: null,
+          },
+        });
+
+      const { result } = renderHook(() => useChatMessages('user-1'));
+
+      await act(async () => {
+        await expect(
+          result.current.saveMessage(
+            {
+              id: 'assistant-1',
+              text: 'recovered reply',
+              isUser: false,
+              persistenceStatus: 'pending',
+            },
+            'conv-1'
+          )
+        ).resolves.toBe(false);
+      });
+
+      expect(saveMessageRecord).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        jest.advanceTimersByTime(1000);
+        await Promise.resolve();
+      });
+
+      expect(saveMessageRecord).toHaveBeenCalledTimes(2);
+      expect(useChatStore.getState().messages[0]).toEqual(
+        expect.objectContaining({
+          persistenceStatus: 'saved',
+          db_id: 'db-msg-1',
+        })
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('patches stopped metadata after an in-flight save finishes', async () => {
     useChatStore.setState(state => ({
       ...state,
