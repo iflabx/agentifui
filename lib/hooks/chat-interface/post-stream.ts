@@ -278,23 +278,21 @@ function resolveAssistantMessageForPersistence(input: {
     return latestAssistantMessage;
   }
 
+  if (latestAssistantMessage?.db_id) {
+    return latestAssistantMessage;
+  }
+
+  const fallbackPersistenceId = `${fallbackAssistantMessage.id || input.assistantMessageId || 'assistant'}-persistence-fallback`;
+
   return {
-    ...latestAssistantMessage,
-    isStreaming: false,
-    role: latestAssistantMessage.role || 'assistant',
-    sequence_index: latestAssistantMessage.sequence_index ?? 1,
-    text: fallbackAssistantMessage.text || latestAssistantMessage.text || '',
-    token_count:
-      fallbackAssistantMessage.token_count ??
-      latestAssistantMessage.token_count,
-    metadata: {
-      ...(latestAssistantMessage.metadata || {}),
-      ...(fallbackAssistantMessage.metadata || {}),
-    },
+    ...fallbackAssistantMessage,
+    id: fallbackPersistenceId,
+    dify_message_id: latestAssistantMessage?.dify_message_id,
     wasManuallyStopped:
-      latestAssistantMessage.wasManuallyStopped ??
+      latestAssistantMessage?.wasManuallyStopped ??
       fallbackAssistantMessage.wasManuallyStopped,
   };
+
 }
 
 function isMessageAlreadyPersisted(

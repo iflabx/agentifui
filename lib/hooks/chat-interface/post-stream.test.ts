@@ -127,7 +127,7 @@ describe('persistChatMessagesAfterStreaming', () => {
 
     expect(saveMessage).toHaveBeenCalledWith(
       expect.objectContaining({
-        id: 'assistant-1',
+        id: 'assistant-1-persistence-fallback',
         text: '这是完整的回答',
       }),
       'db-1'
@@ -182,7 +182,7 @@ describe('persistChatMessagesAfterStreaming', () => {
 
     expect(saveMessage).toHaveBeenCalledWith(
       expect.objectContaining({
-        id: 'assistant-1',
+        id: 'assistant-1-persistence-fallback',
         text: '<think>Plan</think>\n\nRecovered answer',
         metadata: {
           frontend_metadata: { sequence_index: 1 },
@@ -232,9 +232,9 @@ describe('persistChatMessagesAfterStreaming', () => {
 
     expect(saveMessage).toHaveBeenCalledWith(
       expect.objectContaining({
-        id: 'assistant-1',
+        id: 'assistant-1-persistence-fallback',
         text: '恢复出的真实正文',
-        persistenceStatus: 'saved',
+        persistenceStatus: 'pending',
       }),
       'db-1'
     );
@@ -499,7 +499,7 @@ describe('persistChatMessagesAfterStreaming', () => {
 
     expect(saveStoppedAssistantMessage).toHaveBeenCalledWith(
       expect.objectContaining({
-        id: 'assistant-1',
+        id: 'assistant-1-persistence-fallback',
         wasManuallyStopped: true,
         text: '<think>Plan steps\n\n**生成内容**：\n* bullet',
       }),
