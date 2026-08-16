@@ -1,4 +1,7 @@
-import type { ChatNodeEvent, ChatStreamCompletionData } from '@lib/hooks/chat-interface/types';
+import type {
+  ChatNodeEvent,
+  ChatStreamCompletionData,
+} from '@lib/hooks/chat-interface/types';
 import type { DifyChatRequestPayload } from '@lib/services/dify/types';
 
 export type CreateConversationPayload = Omit<
@@ -6,10 +9,7 @@ export type CreateConversationPayload = Omit<
   'response_mode' | 'conversation_id' | 'auto_generate_name'
 >;
 
-export type OnConversationDbIdCreated = (
-  difyId: string,
-  dbId: string
-) => void;
+export type OnConversationDbIdCreated = (difyId: string, dbId: string) => void;
 
 export type OnCreateConversationNodeEvent = (event: ChatNodeEvent) => void;
 
@@ -19,6 +19,7 @@ export interface CreateConversationResult {
   taskId?: string;
   answerStream?: AsyncGenerator<string, void, undefined>;
   completionPromise?: Promise<ChatStreamCompletionData>;
+  conversationPersistencePromise?: Promise<string | null>;
   error?: Error;
 }
 

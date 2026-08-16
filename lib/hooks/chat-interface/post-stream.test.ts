@@ -288,6 +288,46 @@ describe('persistChatMessagesAfterStreaming', () => {
     );
   });
 
+  it('awaits in-flight conversation persistence before saving the assistant', async () => {
+    const conversationPersistencePromise = Promise.resolve('db-created');
+    const saveMessage = jest.fn().mockResolvedValue(true);
+    const saveStoppedAssistantMessage = jest.fn().mockResolvedValue(true);
+    const setDbConversationUUID = jest.fn();
+
+    await persistChatMessagesAfterStreaming({
+      finalDbConvUUID: null,
+      dbConversationUUID: null,
+      conversationPersistencePromise,
+      finalRealConvId: 'real-conv-created',
+      userMessage: {
+        id: 'user-1',
+        text: 'new conversation race',
+        isUser: true,
+        persistenceStatus: 'saved',
+      },
+      assistantMessageId: 'assistant-1',
+      assistantFallback: {
+        id: 'assistant-1',
+        text: 'persisted answer',
+      },
+      setDbConversationUUID,
+      finalizeStreamingMessage: jest.fn(),
+      updateMessage: jest.fn(),
+      saveMessage,
+      saveStoppedAssistantMessage,
+    });
+
+    expect(setDbConversationUUID).toHaveBeenCalledWith('db-created');
+    expect(mockResolveDbConversationUuidByExternalId).not.toHaveBeenCalled();
+    expect(saveMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'assistant-1',
+        text: 'persisted answer',
+      }),
+      'db-created'
+    );
+  });
+
   it('falls back to the current chat path to resolve the real conversation id', async () => {
     window.history.pushState({}, '', '/chat/real-conv-from-path');
     mockResolveDbConversationUuidByExternalId.mockResolvedValue('db-4');

@@ -64,6 +64,7 @@ export function syncChatStateAfterStreaming(
 interface PersistChatMessagesAfterStreamingInput {
   finalDbConvUUID: string | null;
   dbConversationUUID: string | null;
+  conversationPersistencePromise?: Promise<string | null>;
   finalRealConvId?: string;
   userMessage: ChatMessage;
   userMessagePreviewFileIds?: string[];
@@ -292,7 +293,6 @@ function resolveAssistantMessageForPersistence(input: {
       latestAssistantMessage?.wasManuallyStopped ??
       fallbackAssistantMessage.wasManuallyStopped,
   };
-
 }
 
 function isMessageAlreadyPersisted(
@@ -386,6 +386,20 @@ export async function persistChatMessagesAfterStreaming(
   const conversationExternalId = resolveConversationExternalIdForPersistence(
     input.finalRealConvId
   );
+
+  if (!currentDbConvId && input.conversationPersistencePromise) {
+    try {
+      currentDbConvId = await input.conversationPersistencePromise;
+      if (currentDbConvId) {
+        input.setDbConversationUUID(currentDbConvId);
+      }
+    } catch (error) {
+      console.error(
+        '[handleSubmit] Failed to await conversation persistence:',
+        error
+      );
+    }
+  }
 
   if (!currentDbConvId && conversationExternalId) {
     console.log(

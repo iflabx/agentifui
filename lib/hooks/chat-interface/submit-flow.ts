@@ -209,6 +209,7 @@ export async function executeChatSubmit(
   let finalTaskId: string | undefined;
   let finalDbConvUUID: string | null = null;
   let completionPromise: Promise<ChatStreamCompletionData> | undefined;
+  let conversationPersistencePromise: Promise<string | null> | undefined;
   let answerStream: AsyncGenerator<string, void, undefined> | undefined;
   let assistantFallback: AssistantMessagePersistenceFallback | null = null;
 
@@ -271,6 +272,8 @@ export async function executeChatSubmit(
     finalTaskId = submitStartResult.finalTaskId;
     finalDbConvUUID = submitStartResult.finalDbConvUUID;
     completionPromise = submitStartResult.completionPromise;
+    conversationPersistencePromise =
+      submitStartResult.conversationPersistencePromise;
 
     if (!answerStream) {
       throw new Error('Answer stream is undefined after API call.');
@@ -318,6 +321,7 @@ export async function executeChatSubmit(
     finalDbConvUUID = await persistChatMessagesAfterStreaming({
       finalDbConvUUID,
       dbConversationUUID: input.dbConversationUUID,
+      conversationPersistencePromise,
       finalRealConvId,
       userMessage,
       userMessagePreviewFileIds: completionData?.userMessageFileIds,
