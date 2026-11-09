@@ -182,7 +182,7 @@ The supported production shape is:
 
 - `AgentifUI-Prod` - Next.js process managed by PM2
 - `AgentifUI-API-Prod` - Fastify process managed by PM2
-- deployment entrypoint: `pnpm deploy`
+- deployment entrypoint: `pnpm run deploy`
 - PM2 config: `ecosystem.prod.config.js`
 - smoke check: `scripts/smoke-prod.sh`
 

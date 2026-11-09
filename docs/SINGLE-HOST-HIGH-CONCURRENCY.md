@@ -10,6 +10,8 @@ It supplements `docs/QUICK-DEPLOYMENT.md`. Use this document when:
 2. You want better concurrency than a single-process setup.
 3. You want a production shape that still matches this repository's runtime architecture.
 
+These are optional performance recommendations, not a second deployment procedure. The bundled `ecosystem.prod.config.js` uses one `fork` process per application; it does not enable the cluster topology below. Follow [the production runbook](QUICK-DEPLOYMENT.md) for installation, upgrades and recovery.
+
 ## 2. Recommended Topology
 
 Run these components on the same host:
@@ -25,7 +27,7 @@ Recommended request flow:
 
 1. Browser traffic reaches `Nginx`
 2. Page requests go to `Next.js`
-3. `/api/*` requests go directly to `Fastify`
+3. Only Fastify-owned business API prefixes go directly to `Fastify`; auth and all remaining routes go to `Next.js`
 4. App services talk to `Redis`, `PgBouncer`, and `PostgreSQL`
 
 ## 3. Why This Shape Fits This Repository
@@ -48,7 +50,7 @@ Because of that, the recommended single-host target is not a single `next start`
 
 ### 4.1 Use a Dedicated Production Checkout
 
-Deploy production from a dedicated `main` checkout, not from the active development directory.
+Deploy the confirmed release tag and verified final `main` commit in a new version directory, not from a moving branch or the active development directory. Keep the previous release's dependencies and builds available for recovery, as described in [the production runbook](QUICK-DEPLOYMENT.md#6-deploy).
 
 Do not share these between dev and prod:
 
@@ -57,12 +59,14 @@ Do not share these between dev and prod:
 - `pm2` logs
 - runtime temp files
 
-## 4.2 Route `/api/*` Directly to Fastify
+## 4.2 Route Only Fastify-Owned API Prefixes Directly to Fastify
 
 At the proxy layer:
 
-- page requests should go to `Next.js`
-- `/api/*` should go directly to `Fastify`
+- page requests, `/api/auth/better/*` and all remaining routes should go to `Next.js`
+- only the business API prefixes owned by Fastify should go directly to `Fastify`
+
+Use `DEFAULT_FASTIFY_PROXY_PREFIXES` in `next.config.ts` as the public baseline, and review any `FASTIFY_PROXY_PREFIXES` override against the routes registered in `apps/api/src/server.ts`. Do not route all `/api/*` traffic to Fastify: it does not serve the Next.js authentication handlers or provide a catch-all proxy back to Next.js.
 
 This avoids pushing high-volume API traffic through the Next.js rewrite layer.
 
@@ -71,6 +75,8 @@ If your public proxy is doing the split, the production environment should gener
 ```env
 FASTIFY_PROXY_ENABLED=0
 ```
+
+This is a Web build setting. Rebuild after changing it, and set `DEPLOY_WEB_BASE_URL` to the public reverse-proxy entrypoint for acceptance, as required by the production runbook. If Next.js remains responsible for API rewrites, retain `FASTIFY_PROXY_ENABLED=1` instead.
 
 ## 4.3 Run PM2 in Cluster Mode
 
@@ -137,8 +143,8 @@ PG_POOL_CONNECT_MS=5000
 Nginx should:
 
 - terminate TLS
-- proxy page traffic to the web service
-- proxy `/api/*` traffic to the API service
+- proxy pages, auth and remaining routes to the web service
+- proxy only Fastify-owned business API prefixes to the API service
 - cache static assets where appropriate
 
 For streaming endpoints such as realtime and Dify stream responses, disable proxy buffering:
@@ -155,6 +161,8 @@ This is important for:
 ## 6. Production Environment Baseline
 
 Suggested baseline values:
+
+The `FASTIFY_PROXY_ENABLED=0` example assumes the explicit reverse-proxy split in section 4.2; it is not the default production topology.
 
 ```env
 NODE_ENV=production
@@ -185,15 +193,9 @@ Before load testing or production launch, tune the host at least enough to avoid
 
 ## 8. Deployment Order
 
-Recommended order on a single host:
+Use `pnpm run deploy` on the production server, following [the production runbook](QUICK-DEPLOYMENT.md#6-deploy). That procedure covers verified source in a new version directory, production configuration, stable external runtime content, explicit incremental migrations, build records, switching, acceptance and recovery. Do not replace it with a separate manual build/start sequence.
 
-1. Prepare the dedicated production checkout
-2. Install dependencies with a frozen lockfile
-3. Configure `.env.prod`
-4. Build with `pnpm build:prod`
-5. Start web and API with PM2
-6. Put Nginx in front of them
-7. Run production smoke checks
+For this optional high-concurrency topology, additionally validate the reverse-proxy route split, PM2 worker configuration and database pool limits before switching. Preserve those settings for recovery, and complete login, chat, history and streaming checks before accepting the release.
 
 ## 9. Not Recommended
 

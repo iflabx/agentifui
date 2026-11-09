@@ -18,7 +18,7 @@ AgentifUI is a monorepo for an enterprise-oriented AI application frontend built
 - Redis-backed cache invalidation, realtime broker helpers, and shared prefixes for isolation
 - MinIO/S3 avatar and content-image upload flows
 - Error-event capture pipeline for frontend and API failures
-- Production deployment via PM2, `pnpm deploy`, and smoke verification
+- Production deployment via PM2, `pnpm run deploy`, and smoke verification
 
 ## Tech Stack
 
