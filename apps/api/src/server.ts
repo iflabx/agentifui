@@ -9,6 +9,7 @@ import {
   normalizeLegacyErrorEnvelope,
 } from './lib/app-error';
 import { recordApiErrorEvent } from './lib/error-events';
+import { resolveRuntimeContentDir } from './lib/runtime-content';
 import { adminAuthFallbackPolicyRoutes } from './routes/admin-auth-fallback-policy';
 import { adminAuthFallbackPolicyUserRoutes } from './routes/admin-auth-fallback-policy-user';
 import { adminEncryptRoutes } from './routes/admin-encrypt';
@@ -98,7 +99,8 @@ export async function createApiServer(config: ApiRuntimeConfig) {
   );
 
   await app.register(cors, {
-    origin: true,
+    origin:
+      config.corsAllowedOrigins.length > 0 ? config.corsAllowedOrigins : false,
     credentials: true,
   });
   await app.register(adminAuthFallbackPolicyRoutes, { config });
@@ -175,6 +177,8 @@ export async function createApiServer(config: ApiRuntimeConfig) {
 
 async function startServer() {
   const config = loadApiRuntimeConfig();
+  resolveRuntimeContentDir('messages');
+  resolveRuntimeContentDir('content/pages');
   const app = await createApiServer(config);
   try {
     await app.listen({

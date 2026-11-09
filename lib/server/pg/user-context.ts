@@ -1,6 +1,7 @@
 import type { PoolClient, QueryResultRow } from 'pg';
 
 import { getPgPool } from './pool';
+import { resolvePgRlsStrictModeFromEnv } from './session-options';
 
 export interface PgRlsContextInput {
   userId?: string | null;
@@ -66,9 +67,16 @@ export async function runWithPgRlsContext<T>(
 
   const normalizedUserId = normalizeUserId(context.userId);
   const normalizedSystemActor = normalizeSystemActor(context.systemActor);
+  const strictMode = resolvePgRlsStrictModeFromEnv();
 
   try {
     await client.query('BEGIN');
+    if (strictMode) {
+      await client.query(
+        `SELECT set_config('app.rls_strict_mode', $1::text, true)`,
+        [strictMode]
+      );
+    }
     await client.query(
       `SELECT set_config('app.current_user_id', $1::text, true)`,
       [normalizedUserId]

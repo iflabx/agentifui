@@ -25,7 +25,7 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '18'
+        node-version: '22.22.0'
         cache: 'pnpm'
         
     - name: Install dependencies
@@ -49,26 +49,13 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
-    - name: Scan for hardcoded secrets
-      run: |
-        echo "Scanning for hardcoded secrets..."
-
-        # Check for hardcoded secrets
-        if grep -r -i -E "(api_key|apikey|secret|token|password)\s*[:=]\s*['\"][a-zA-Z0-9+/]{20,}['\"]" \
-           --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" \
-           . | grep -v node_modules | grep -v -E "(placeholder|example|test|demo|sample|mock)"; then
-          echo "Hardcoded secret detected"
-          exit 1
-        fi
-
-        # Check for accidentally committed .env files
-        if find . -name ".env" -not -path "./node_modules/*" -not -path "./.git/*" | grep -q .; then
-          echo ".env file committed to the repository"
-          exit 1
-        fi
-
-        echo "No hardcoded secrets found"
+      with:
+        fetch-depth: 0
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22.22.0'
+    - uses: ./.github/actions/publication-check
 
   security-report:
     name: Security Report Summary

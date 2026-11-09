@@ -47,20 +47,23 @@ export default getRequestConfig(async () => {
   let fallbackMessages;
 
   try {
-    messages = (await import(`../messages/${finalLocale}.json`)).default;
+    messages = (await import(`../output/build-messages/${finalLocale}.json`))
+      .default;
   } catch (error) {
     console.error(
       `Failed to load messages for locale ${finalLocale}, falling back to ${DEFAULT_LOCALE}:`,
       error
     );
-    messages = (await import(`../messages/${DEFAULT_LOCALE}.json`)).default;
+    messages = (await import(`../output/build-messages/${DEFAULT_LOCALE}.json`))
+      .default;
   }
 
   // Load English fallback messages for non-English locales
   if (finalLocale !== DEFAULT_LOCALE) {
     try {
-      fallbackMessages = (await import(`../messages/${DEFAULT_LOCALE}.json`))
-        .default;
+      fallbackMessages = (
+        await import(`../output/build-messages/${DEFAULT_LOCALE}.json`)
+      ).default;
       // Merge fallback messages with current locale messages
       messages = deepMerge(messages, fallbackMessages);
     } catch (error) {

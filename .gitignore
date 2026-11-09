@@ -75,3 +75,31 @@ local-docs/
 local_docs/
 
 .serena
+
+# Environment-owned data and credentials (defaults remain tracked).
+/runtime/
+/private/
+/private-baselines/
+/backups/
+/exports/
+/uploads/
+/.envrc
+/.npmrc.local
+/.mcp.local.json
+*.key
+*.p12
+*.pfx
+*.dump
+*.sql.gz
+id_rsa
+id_ed25519
+release-source.json
+.ssh/
+.aws/
+.gnupg/
+*.local.json
+*.local.yaml
+*.local.yml
+*.local.toml
+*.log
+*.bak

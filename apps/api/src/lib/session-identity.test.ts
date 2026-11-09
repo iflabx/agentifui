@@ -22,6 +22,7 @@ function createConfig(
     host: '0.0.0.0',
     port: 3010,
     logLevel: 'info',
+    corsAllowedOrigins: [],
     nextUpstreamBaseUrl: 'http://127.0.0.1:3000',
     proxyPrefixes: ['/api/internal'],
     realtimeSourceMode: 'db-outbox',

@@ -1,6 +1,52 @@
 /** @jest-environment node */
 import { loadApiRuntimeConfig } from './config';
 
+describe('loadApiRuntimeConfig CORS', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    delete process.env.NEXT_PUBLIC_APP_URL;
+    delete process.env.CORS_ALLOWED_ORIGINS;
+    delete process.env.DIFY_INPUT_MODERATION_ENABLED;
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it('does not allow arbitrary origins when no URLs are configured', () => {
+    expect(loadApiRuntimeConfig().corsAllowedOrigins).toEqual([]);
+  });
+
+  it('uses the app URL when no additional origins are configured', () => {
+    process.env.NEXT_PUBLIC_APP_URL = 'https://stage.example:18021';
+
+    expect(loadApiRuntimeConfig().corsAllowedOrigins).toEqual([
+      'https://stage.example:18021',
+    ]);
+  });
+
+  it('combines and deduplicates the app URL and additional origins', () => {
+    process.env.NEXT_PUBLIC_APP_URL = 'https://stage.example:18021';
+    process.env.CORS_ALLOWED_ORIGINS =
+      ' https://stage.example:18021, https://other.example, ,https://other.example ';
+
+    expect(loadApiRuntimeConfig().corsAllowedOrigins).toEqual([
+      'https://stage.example:18021',
+      'https://other.example',
+    ]);
+  });
+
+  it('loads explicit allowed origins without an app URL', () => {
+    process.env.CORS_ALLOWED_ORIGINS = 'https://other.example';
+
+    expect(loadApiRuntimeConfig().corsAllowedOrigins).toEqual([
+      'https://other.example',
+    ]);
+  });
+});
+
 describe('loadApiRuntimeConfig input moderation', () => {
   const originalEnv = process.env;
 

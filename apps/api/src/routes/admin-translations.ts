@@ -1,9 +1,10 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
-import { existsSync, promises as fs } from 'node:fs';
+import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 import type { ApiRuntimeConfig } from '../config';
 import { buildRouteErrorPayload } from '../lib/route-error';
+import { resolveRuntimeContentDir } from '../lib/runtime-content';
 import { resolveIdentityFromSession } from '../lib/session-identity';
 import { buildTranslatedLocaleMap } from './admin-translations-auto-translate';
 
@@ -30,11 +31,6 @@ const SUPPORTED_LOCALES = new Set([
 ]);
 const LOCK_TIMEOUT = 5000;
 const fileLocks = new Map<string, { timestamp: number; processId: string }>();
-const MESSAGES_DIR_CANDIDATES = [
-  path.resolve(process.cwd(), 'messages'),
-  path.resolve(process.cwd(), '..', 'messages'),
-  path.resolve(process.cwd(), '..', '..', 'messages'),
-];
 
 function getSupportedLocales(): string[] {
   return Array.from(SUPPORTED_LOCALES);
@@ -45,12 +41,7 @@ function isValidLocale(locale: string): boolean {
 }
 
 function resolveMessagesDirPath(): string {
-  for (const directoryPath of MESSAGES_DIR_CANDIDATES) {
-    if (existsSync(directoryPath)) {
-      return directoryPath;
-    }
-  }
-  return path.resolve(process.cwd(), 'messages');
+  return resolveRuntimeContentDir('messages');
 }
 
 async function acquireLock(filePath: string): Promise<void> {

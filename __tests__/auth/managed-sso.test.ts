@@ -11,12 +11,12 @@ import { SsoProvider } from '@lib/types/database';
 function createCasProvider(overrides?: Partial<SsoProvider>): SsoProvider {
   return {
     id: '11111111-1111-4111-8111-111111111111',
-    name: 'BISTU CAS',
+    name: 'Example CAS',
     protocol: 'CAS',
     settings: {
-      email_domain: 'bistu.edu.cn',
+      email_domain: 'university.example',
       protocol_config: {
-        base_url: 'https://sso.bistu.edu.cn',
+        base_url: 'https://sso.university.example',
         endpoints: {
           login: '/login',
           logout: '/logout',
@@ -33,11 +33,11 @@ function createCasProvider(overrides?: Partial<SsoProvider>): SsoProvider {
       security: {
         require_https: true,
         validate_certificates: true,
-        allowed_redirect_hosts: ['bistu.edu.cn'],
+        allowed_redirect_hosts: ['university.example'],
       },
       ui: {
         icon: '🏛️',
-        description: '北京信息科技大学统一认证系统',
+        description: '示例机构统一认证系统',
       },
     },
     client_id: null,
@@ -45,7 +45,7 @@ function createCasProvider(overrides?: Partial<SsoProvider>): SsoProvider {
     metadata_url: null,
     enabled: true,
     display_order: 0,
-    button_text: '北信科统一认证',
+    button_text: '示例机构统一认证',
     created_at: '2026-03-08T00:00:00.000Z',
     updated_at: '2026-03-08T00:00:00.000Z',
     ...overrides,
@@ -62,8 +62,8 @@ describe('managed sso helpers', () => {
         authFlow: 'managed-cas',
         mode: 'managed-cas',
         icon: '🏛️',
-        displayName: '北信科统一认证',
-        domain: 'bistu.edu.cn',
+        displayName: '示例机构统一认证',
+        domain: 'university.example',
       })
     );
   });
@@ -94,7 +94,7 @@ describe('managed sso helpers', () => {
         subject: '20260001',
         username: 'zhangsan',
         fullName: '张三',
-        email: '20260001@bistu.edu.cn',
+        email: '20260001@university.example',
         employeeNumber: '20260001',
       })
     );
@@ -105,13 +105,13 @@ describe('managed sso helpers', () => {
     expect(config).not.toBeNull();
 
     const serviceUrl =
-      'https://agent.bistu.edu.cn/api/sso/11111111-1111-4111-8111-111111111111/callback?returnUrl=%2Fchat';
+      'https://chat.university.example/api/sso/11111111-1111-4111-8111-111111111111/callback?returnUrl=%2Fchat';
 
     expect(buildManagedCasLoginUrl(config!, serviceUrl)).toBe(
-      'https://sso.bistu.edu.cn/login?service=https%3A%2F%2Fagent.bistu.edu.cn%2Fapi%2Fsso%2F11111111-1111-4111-8111-111111111111%2Fcallback%3FreturnUrl%3D%252Fchat'
+      'https://sso.university.example/login?service=https%3A%2F%2Fchat.university.example%2Fapi%2Fsso%2F11111111-1111-4111-8111-111111111111%2Fcallback%3FreturnUrl%3D%252Fchat'
     );
     expect(buildManagedCasValidateUrl(config!, serviceUrl, 'ST-123')).toBe(
-      'https://sso.bistu.edu.cn/p3/serviceValidate?service=https%3A%2F%2Fagent.bistu.edu.cn%2Fapi%2Fsso%2F11111111-1111-4111-8111-111111111111%2Fcallback%3FreturnUrl%3D%252Fchat&ticket=ST-123'
+      'https://sso.university.example/p3/serviceValidate?service=https%3A%2F%2Fchat.university.example%2Fapi%2Fsso%2F11111111-1111-4111-8111-111111111111%2Fcallback%3FreturnUrl%3D%252Fchat&ticket=ST-123'
     );
   });
 });

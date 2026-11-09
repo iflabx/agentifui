@@ -25,6 +25,7 @@ export interface ApiRuntimeConfig {
   host: string;
   port: number;
   logLevel: string;
+  corsAllowedOrigins: string[];
   nextUpstreamBaseUrl: string;
   proxyPrefixes: string[];
   realtimeSourceMode: RealtimeSourceMode;
@@ -224,6 +225,11 @@ export function loadApiRuntimeConfig(): ApiRuntimeConfig {
     host: process.env.FASTIFY_API_HOST?.trim() || '0.0.0.0',
     port: parsePort(process.env.FASTIFY_API_PORT, 3010),
     logLevel: process.env.FASTIFY_LOG_LEVEL?.trim() || 'info',
+    corsAllowedOrigins: parseCsvList(
+      [process.env.NEXT_PUBLIC_APP_URL, process.env.CORS_ALLOWED_ORIGINS]
+        .filter(Boolean)
+        .join(',')
+    ),
     nextUpstreamBaseUrl:
       process.env.NEXT_UPSTREAM_BASE_URL?.trim() || 'http://127.0.0.1:3000',
     proxyPrefixes: parseProxyPrefixes(process.env.FASTIFY_PROXY_PREFIXES),

@@ -13,21 +13,32 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: '18'
+  NODE_VERSION: '22.22.0'
 
 jobs:
+  publication-check:
+    name: Publication Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: ./.github/actions/publication-check
+
   # Check if files have changed to skip unnecessary jobs
   changes:
     name: Detect Changes
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      pull-requests: read
     outputs:
-      source: ${{ steps.filter.outputs.source }}
-      config: ${{ steps.filter.outputs.config }}
-      i18n: ${{ steps.filter.outputs.i18n }}
-      styles: ${{ steps.filter.outputs.styles }}
-      tests: ${{ steps.filter.outputs.tests }}
+      required: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.runtime == 'true' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -39,52 +50,25 @@ jobs:
         id: filter
         with:
           filters: |
-            source:
-              - 'app/**/*.{ts,tsx,js,jsx}'
-              - 'apps/**/*.{ts,tsx,js,jsx}'
-              - 'components/**/*.{ts,tsx,js,jsx}'
-              - 'lib/**/*.{ts,tsx,js,jsx}'
-              - 'packages/**/*.{ts,tsx,js,jsx}'
-              - 'middleware.ts'
-              - '*.{ts,tsx,js,jsx}'
-            config:
-              - '.github/workflows/**/*.{yml,yaml}'
-              - 'package.json'
-              - 'pnpm-workspace.yaml'
-              - 'pnpm-lock.yaml'
-              - 'tsconfig.json'
-              - 'apps/*/package.json'
-              - 'apps/*/tsconfig.json'
-              - 'packages/*/package.json'
-              - 'packages/*/tsconfig.json'
-              - 'next.config.ts'
-              - 'tailwind.config.js'
-              - 'eslint.config.mjs'
-              - 'commitlint.config.mjs'
-              - 'postcss.config.mjs'
-              - '.prettierrc.json'
+            runtime:
+              - 'app/**'
+              - 'apps/**'
+              - 'packages/**'
+              - '**/*.{ts,tsx,js,jsx,mjs,cjs,json,css,scss,sql,sh,yml,yaml}'
+              - 'public/**'
+              - 'content/**'
+              - '**/Dockerfile*'
+              - '.env*.example'
+              - '.nvmrc'
               - '.prettierignore'
-              - 'database/migrations/**/*.sql'
-              - 'scripts/check-*.mjs'
-              - 'scripts/gate-quality-verify.sh'
-            tests:
-              - '__tests__/**/*.{ts,tsx,js,jsx}'
-              - '**/*.test.{ts,tsx,js,jsx}'
-              - '**/*.spec.{ts,tsx,js,jsx}'
-            i18n:
-              - 'messages/**/*.json'
-              - 'i18n/**/*.{ts,js}'
-              - 'scripts/**/*i18n*'
-            styles:
-              - 'styles/**/*.css'
-              - 'app/globals.css'
+              - '.gitignore'
 
   # Install dependencies and cache them
   install:
     name: Install Dependencies
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.source == 'true' || needs.changes.outputs.config == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.styles == 'true'
+    if: needs.changes.outputs.required == 'true'
     permissions:
       contents: read
     steps:
@@ -119,7 +103,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs: [changes, install]
-    if: needs.changes.outputs.source == 'true' || needs.changes.outputs.config == 'true' || needs.changes.outputs.styles == 'true'
+    if: needs.changes.outputs.required == 'true'
     permissions:
       contents: read
     steps:
@@ -186,7 +170,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs: [changes, install]
-    if: needs.changes.outputs.source == 'true' || needs.changes.outputs.config == 'true'
+    if: needs.changes.outputs.required == 'true'
     permissions:
       contents: read
     steps:
@@ -218,12 +202,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [changes, install]
-    if: needs.changes.outputs.source == 'true' || needs.changes.outputs.config == 'true'
+    if: needs.changes.outputs.required == 'true'
     permissions:
       contents: read
     services:
       postgres:
-        image: postgres:18-alpine
+        image: postgres:18.6-alpine
         env:
           POSTGRES_DB: agentifui_test
           POSTGRES_USER: agentif
@@ -338,14 +322,8 @@ jobs:
             psql "$MIGRATOR_DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"
           done
 
-      - name: Build shared workspace package
-        run: pnpm --filter @agentifui/shared build
-
-      - name: Build API workspace package
-        run: pnpm --filter @agentifui/api build
-
-      - name: Build application
-        run: pnpm run build
+      - name: Build application and workspace packages
+        run: pnpm run build:all
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -360,12 +338,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [changes, install]
-    if: needs.changes.outputs.tests == 'true' || needs.changes.outputs.source == 'true'
+    if: needs.changes.outputs.required == 'true'
     permissions:
       contents: read
     services:
       postgres:
-        image: postgres:18-alpine
+        image: postgres:18.6-alpine
         env:
           POSTGRES_DB: agentifui_test
           POSTGRES_USER: agentif
@@ -480,6 +458,11 @@ jobs:
             psql "$MIGRATOR_DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"
           done
 
+      - name: Install publication test scanner
+        uses: ./.github/actions/publication-check
+        with:
+          install-only: 'true'
+
       - name: Run tests
         run: pnpm test
 
@@ -489,7 +472,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs: [changes, install]
-    if: needs.changes.outputs.source == 'true' || needs.changes.outputs.config == 'true'
+    if: needs.changes.outputs.required == 'true'
     permissions:
       contents: read
     steps:
@@ -518,24 +501,14 @@ jobs:
             echo "::warning::pnpm audit reported known dependency vulnerabilities. Keeping CI green while baseline dependency debt is being tracked separately."
           fi
 
-      - name: Scan for secrets
-        run: |
-          echo "Scanning for hardcoded secrets..."
-          # Check for potential secrets in source code
-          if grep -r -i -E "(api_key|apikey|secret|token|password)\s*[:=]\s*['\"][a-zA-Z0-9+/]{20,}['\"]" \
-             --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" \
-             app components lib | grep -v -E "(placeholder|example|test|demo|sample|mock|dummy)"; then
-            echo "⚠️ Potential hardcoded secret detected"
-            exit 1
-          fi
-          echo "✅ No hardcoded secrets found"
-
   # Final status check - all jobs must pass
   ci-status:
     name: CI Status Check
     runs-on: ubuntu-latest
     needs: 
+      - publication-check
       - changes
+      - install
       - format-and-lint
       - type-check
       - build
@@ -546,44 +519,21 @@ jobs:
       contents: read
     steps:
       - name: Check all jobs status
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
         run: |
-          echo "Checking CI pipeline status..."
-          
-          # Check if any job failed
-          if [[ "${{ needs.format-and-lint.result }}" == "failure" ]] || \
-             [[ "${{ needs.type-check.result }}" == "failure" ]] || \
-             [[ "${{ needs.build.result }}" == "failure" ]] || \
-             [[ "${{ needs.test.result }}" == "failure" ]] || \
-             [[ "${{ needs.security-check.result }}" == "failure" ]]; then
-            echo "❌ CI pipeline failed"
-            exit 1
-          fi
-          
-          # Check if any required job was skipped when it shouldn't be
-          if [[ "${{ needs.changes.outputs.source }}" == "true" ]] || \
-             [[ "${{ needs.changes.outputs.config }}" == "true" ]] || \
-             [[ "${{ needs.changes.outputs.styles }}" == "true" ]]; then
-            if [[ "${{ needs.format-and-lint.result }}" == "skipped" ]]; then
-              echo "❌ Format and lint job was skipped"
-              exit 1
-            fi
-          fi
-
-          if [[ "${{ needs.changes.outputs.source }}" == "true" ]] || [[ "${{ needs.changes.outputs.config }}" == "true" ]]; then
-            if [[ "${{ needs.type-check.result }}" == "skipped" ]] || \
-               [[ "${{ needs.build.result }}" == "skipped" ]] || \
-               [[ "${{ needs.security-check.result }}" == "skipped" ]]; then
-              echo "❌ Required job was skipped"
-              exit 1
-            fi
-          fi
-          
-          # Check test job when tests or source files changed
-          if [[ "${{ needs.changes.outputs.tests }}" == "true" ]] || [[ "${{ needs.changes.outputs.source }}" == "true" ]]; then
-            if [[ "${{ needs.test.result }}" == "skipped" ]]; then
-              echo "❌ Test job was skipped when it should run"
-              exit 1
-            fi
-          fi
-          
-          echo "✅ All CI checks passed successfully" 
+          node <<'NODE'
+          const needs = JSON.parse(process.env.CI_NEEDS);
+          if (needs['publication-check'].result !== 'success') process.exit(1);
+          if (needs.changes.result !== 'success') process.exit(1);
+          const required = needs.changes.outputs.required;
+          if (!['true', 'false'].includes(required)) process.exit(1);
+          for (const [name, job] of Object.entries(needs)) {
+            if (name === 'changes' || name === 'publication-check') continue;
+            if (job.result !== (required === 'true' ? 'success' : 'skipped')) {
+              console.error(`${name}: unexpected ${job.result}`);
+              process.exit(1);
+            }
+          }
+          console.log('All required CI checks passed');
+          NODE

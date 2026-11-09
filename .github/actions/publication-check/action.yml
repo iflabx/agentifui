@@ -1,0 +1,32 @@
+name: Publication Check
+description: Install pinned Gitleaks and run the shared publication checker
+inputs:
+  install-only:
+    description: Install the scanner for integration tests without running the publication check
+    required: false
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - name: Install Gitleaks
+      shell: bash
+      env:
+        GITLEAKS_VERSION: '8.24.3'
+      run: |
+        set -euo pipefail
+        directory="$(mktemp -d)"
+        trap 'rm -rf "$directory"' EXIT
+        cd "$directory"
+        asset="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+        base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+        curl --retry 3 -fsSLO "$base/$asset"
+        curl --retry 3 -fsSLO "$base/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+        awk -v asset="$asset" '$2 == asset' "gitleaks_${GITLEAKS_VERSION}_checksums.txt" | sha256sum -c -
+        tar -xzf "$asset" gitleaks
+        mkdir -p "$HOME/.local/bin"
+        install -m 755 gitleaks "$HOME/.local/bin/gitleaks"
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+    - name: Check outgoing publication
+      if: inputs.install-only != 'true'
+      shell: bash
+      run: node scripts/check-publication.mjs --ci

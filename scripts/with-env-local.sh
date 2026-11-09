@@ -26,4 +26,8 @@ if [[ -n "${AGENTIF_FORCE_NODE_ENV:-}" ]]; then
   export NODE_ENV="${AGENTIF_FORCE_NODE_ENV}"
 fi
 
+if [[ "${AGENTIF_PREPARE_CONTENT:-0}" == 1 ]]; then
+  node "${ROOT_DIR}/scripts/prepare-runtime-content.mjs"
+fi
+
 exec "$@"

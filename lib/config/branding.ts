@@ -27,10 +27,10 @@ const BRAND_PROFILE: BrandProfile = {
     default: 'AgentifUI',
   },
   productName: {
-    default: 'BistuCopilot',
+    default: 'AgentifUI',
   },
   publicDomain: {
-    default: 'chat.bistu.edu.cn',
+    default: 'example.com',
   },
   protectedTerms: [],
 };
@@ -72,15 +72,22 @@ export function getBrandVariableMap(
   now: Date = new Date()
 ): Record<ReservedBrandVariableName, string> {
   return {
-    productName: resolveLocalizedValue(BRAND_PROFILE.productName, locale),
+    productName:
+      process.env.NEXT_PUBLIC_BRAND_NAME?.trim() ||
+      resolveLocalizedValue(BRAND_PROFILE.productName, locale),
     projectName: resolveLocalizedValue(BRAND_PROFILE.projectName, locale),
-    publicDomain: resolveLocalizedValue(BRAND_PROFILE.publicDomain, locale),
+    publicDomain:
+      process.env.NEXT_PUBLIC_BRAND_DOMAIN?.trim() ||
+      resolveLocalizedValue(BRAND_PROFILE.publicDomain, locale),
     year: String(now.getFullYear()),
   };
 }
 
 export function getProtectedTerms(locale?: string): string[] {
   const terms = new Set<string>(BRAND_PROFILE.protectedTerms);
+  const configured = getBrandVariableMap(locale || 'en-US');
+  terms.add(configured.productName);
+  terms.add(configured.publicDomain);
 
   collectBrandValues(BRAND_PROFILE.productName).forEach(term =>
     terms.add(term)

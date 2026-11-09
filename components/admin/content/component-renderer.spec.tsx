@@ -27,7 +27,7 @@ describe('ComponentRenderer', () => {
     );
 
     expect(
-      screen.getByRole('heading', { level: 1, name: 'About BistuCopilot' })
+      screen.getByRole('heading', { level: 1, name: 'About AgentifUI' })
     ).toBeInTheDocument();
 
     rerender(
@@ -67,10 +67,10 @@ describe('ComponentRenderer', () => {
     );
 
     expect(
-      screen.getByRole('link', { name: 'Open BistuCopilot' })
+      screen.getByRole('link', { name: 'Open AgentifUI' })
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('link', { name: 'Visit chat.bistu.edu.cn' })
+      screen.getByRole('link', { name: 'Visit example.com' })
     ).toBeInTheDocument();
   });
 
@@ -94,7 +94,7 @@ describe('ComponentRenderer', () => {
     );
 
     expect(screen.getByText('Built on AgentifUI')).toBeInTheDocument();
-    expect(screen.getByText('Use BistuCopilot')).toBeInTheDocument();
+    expect(screen.getByText('Use AgentifUI')).toBeInTheDocument();
 
     rerender(
       <ComponentRenderer
@@ -111,7 +111,7 @@ describe('ComponentRenderer', () => {
       />
     );
 
-    expect(screen.getByAltText('Logo BistuCopilot')).toBeInTheDocument();
-    expect(screen.getByText('Visit chat.bistu.edu.cn')).toBeInTheDocument();
+    expect(screen.getByAltText('Logo AgentifUI')).toBeInTheDocument();
+    expect(screen.getByText('Visit example.com')).toBeInTheDocument();
   });
 });

@@ -40,6 +40,8 @@ AGENTIF_ENV_FILE=.env.test bash scripts/with-env-local.sh pnpm test
 - `CORS_ALLOWED_ORIGINS`: comma-separated allowed origins for runtime APIs
 - `DEV_ALLOWED_ORIGINS`: additional dev-only origins allowed by Next.js
 
+Fastify allows credentialed CORS only for exact origins in `NEXT_PUBLIC_APP_URL` and `CORS_ALLOWED_ORIGINS`, including the scheme and port. With neither configured, it grants no cross-origin access. Requests without an `Origin` header still work; CORS does not replace authentication or authorization.
+
 If you expose a dev container over a host-mapped port, update the URL variables above to the externally reachable address instead of leaving them at `127.0.0.1`.
 
 ## PostgreSQL
@@ -244,7 +246,31 @@ Behavior:
 - private and loopback targets stay blocked unless explicitly allowed
 - temporary config requests are forced to safe verification behavior
 
-## Profile Selection Guidance
+## Public Branding
+
+The public defaults are `AgentifUI` and `example.com`. Set `NEXT_PUBLIC_BRAND_NAME` and `NEXT_PUBLIC_BRAND_DOMAIN` in each environment's private env file to keep its actual display name and domain without modifying source. The domain is display text, without a scheme or path; it does not configure routing, CORS or authentication URLs. Keep `NEXT_PUBLIC_APP_URL`, `BETTER_AUTH_URL` and allowed origins set to the real access URL, including its port.
+
+These values are intentionally public and must not contain secrets. Next.js compiles them into the Web build, while the API uses its process environment for translation protection. Build and start both processes with matching values; rebuild when changing branding. Existing installations should record their desired branding in the private env file before upgrading. Development, Stage and production may use different values.
+
+The existing production-test Dockerfile accepts `NEXT_PUBLIC_BRAND_NAME` and `NEXT_PUBLIC_BRAND_DOMAIN` as explicit `--build-arg` inputs. Actual environment files are excluded from the build context; provide the same branding values to Web/API at container startup. Compose `env_file` alone cannot configure values already embedded during the image build. Validate the same code revision in each environment, but do not promote a Stage build containing Stage-specific public settings to production unchanged.
+
+## Editable Content Storage
+
+`AGENTIF_RUNTIME_DIR` is an absolute, environment-specific directory outside the source/release directory. It contains `content/pages/` and `messages/`; Web build preparation and API content editing must use the same environment's value. A configured missing or invalid directory fails rather than falling back to tracked defaults. Do not point Dev and Stage at production content.
+
+For a fresh configured development environment, initialize it once:
+
+```bash
+AGENTIF_ENV_FILE=.env.dev bash scripts/with-env-local.sh node scripts/prepare-runtime-content.mjs --init
+```
+
+Without this variable, the development/build commands initialize an ignored `output/runtime/` fixture from tracked defaults. This fallback is for local development and CI, not production: deployment requires a stable external directory. Development commands prepare ignored `output/build-messages/` before starting; direct `next` commands bypass this preparation and are not supported entry points.
+
+Admin edits do not change repository defaults. Translations are compiled from `output/build-messages/` and become visible after preparation and rebuilding; API save success does not mean an existing production build changed. Existing operational values override matching default keys. When testing changes to the public defaults themselves, use a fresh isolated runtime fixture rather than an existing customized environment. Pages keep their existing API-reading behavior.
+
+Production initialization, upgrade snapshots and recovery are described in [QUICK-DEPLOYMENT.md](QUICK-DEPLOYMENT.md). Publication protection is described in [PUBLICATION.md](PUBLICATION.md).
+
+## Profile Selection
 
 - Use `.env.dev` for local feature work.
 - Use `.env.test` for isolated test runs and CI-like checks.
