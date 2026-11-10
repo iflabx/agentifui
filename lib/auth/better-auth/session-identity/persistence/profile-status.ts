@@ -4,6 +4,7 @@ import {
 } from '@lib/server/pg/user-context';
 import { Result, failure, success } from '@lib/types/result';
 
+import { INTERNAL_AUTH_PROVIDER } from '../constants';
 import {
   inferProvider,
   normalizeEmail,
@@ -32,7 +33,10 @@ export async function ensureProfileStatus(
         `
         UPDATE profiles
         SET
-          full_name = COALESCE($2, full_name),
+          full_name = CASE
+            WHEN $5 = '${INTERNAL_AUTH_PROVIDER}' THEN COALESCE(full_name, $2)
+            ELSE COALESCE($2, full_name)
+          END,
           avatar_url = COALESCE($3, avatar_url),
           email = COALESCE($4, email),
           auth_source = COALESCE($5, auth_source),
@@ -116,7 +120,10 @@ export async function ensureProfileStatus(
         `
         UPDATE profiles
         SET
-          full_name = COALESCE($2, full_name),
+          full_name = CASE
+            WHEN $5 = '${INTERNAL_AUTH_PROVIDER}' THEN COALESCE(full_name, $2)
+            ELSE COALESCE($2, full_name)
+          END,
           avatar_url = COALESCE($3, avatar_url),
           email = COALESCE($4, email),
           auth_source = COALESCE($5, auth_source),

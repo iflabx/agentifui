@@ -34,6 +34,18 @@ const sizeClasses = {
   xl: 'h-16 w-16 text-lg',
 };
 
+function getStorageAvatarPath(avatarUrl?: string | null): string | null {
+  if (!avatarUrl) return null;
+  try {
+    const match = new URL(avatarUrl).pathname.match(
+      /\/avatars\/(user-[^/]+\/[^/]+)$/
+    );
+    return match ? decodeURIComponent(match[1]) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function UserAvatar({
   avatarUrl,
   userName,
@@ -44,21 +56,50 @@ export function UserAvatar({
 }: UserAvatarProps) {
   const t = useTranslations('components.ui.userAvatar');
 
-  // Use state to track whether the image fails to load
-  const [imageLoadError, setImageLoadError] = useState(false);
+  const [failedAvatar, setFailedAvatar] = useState<string | null>(null);
+  const [signedAvatar, setSignedAvatar] = useState<{
+    source: string;
+    url: string;
+  } | null>(null);
+  const storagePath = getStorageAvatarPath(avatarUrl);
 
   // Handle image loading failure
   const handleImageError = () => {
-    setImageLoadError(true);
+    setFailedAvatar(avatarUrl || null);
   };
 
-  // Reset error status when avatarUrl changes
   React.useEffect(() => {
-    setImageLoadError(false);
-  }, [avatarUrl]);
+    if (!storagePath || !avatarUrl) return;
+    const controller = new AbortController();
+    const loadAvatar = async () => {
+      try {
+        const response = await fetch(
+          `/api/internal/storage/avatar/presign?path=${encodeURIComponent(storagePath)}`,
+          { credentials: 'include', signal: controller.signal }
+        );
+        if (!response.ok) throw new Error('Avatar download is unavailable');
+        const payload = await response.json();
+        if (!payload.success || typeof payload.downloadUrl !== 'string') {
+          throw new Error('Invalid avatar download response');
+        }
+        if (!controller.signal.aborted) {
+          setSignedAvatar({ source: avatarUrl, url: payload.downloadUrl });
+        }
+      } catch {
+        if (!controller.signal.aborted) setFailedAvatar(avatarUrl);
+      }
+    };
+    void loadAvatar();
+    return () => controller.abort();
+  }, [avatarUrl, storagePath]);
 
   // Determine whether the image should be displayed
-  const shouldShowImage = avatarUrl && !imageLoadError;
+  const imageUrl = storagePath
+    ? signedAvatar && signedAvatar.source === avatarUrl
+      ? signedAvatar.url
+      : null
+    : avatarUrl;
+  const shouldShowImage = imageUrl && failedAvatar !== avatarUrl;
 
   // Generate alt text
   const altText = alt || `${userName}${t('alt')}`;
@@ -74,7 +115,7 @@ export function UserAvatar({
   if (shouldShowImage) {
     return (
       <img
-        src={avatarUrl}
+        src={imageUrl}
         alt={altText}
         className={baseClasses}
         onClick={onClick}
