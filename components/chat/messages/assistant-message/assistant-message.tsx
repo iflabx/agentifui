@@ -40,6 +40,7 @@ import { cn } from '@lib/utils';
 import {
   MessageBlock,
   normalizeCompletedAssistantReply,
+  parseStreamingThinkBlocks,
   parseThinkBlocks,
 } from '@lib/utils/think-parser';
 import { buildThinkPreviewText } from '@lib/utils/think-preview';
@@ -179,8 +180,11 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = React.memo(
 
     // Parse content into blocks
     const blocks = useMemo(
-      () => parseThinkBlocks(normalizedContent),
-      [normalizedContent]
+      () =>
+        isStreaming && !wasManuallyStopped
+          ? parseStreamingThinkBlocks(normalizedContent)
+          : parseThinkBlocks(normalizedContent),
+      [isStreaming, normalizedContent, wasManuallyStopped]
     );
 
     // Markdown rendering components for main content

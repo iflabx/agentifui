@@ -7,7 +7,9 @@ interface SyncChatRouteStateInput {
   setConversationAppId: (appId: string | null) => void;
 }
 
-function isPersistedConversationPath(pathname: string | null): pathname is string {
+function isPersistedConversationPath(
+  pathname: string | null
+): pathname is string {
   return (
     typeof pathname === 'string' &&
     pathname.startsWith('/chat/') &&
@@ -59,10 +61,16 @@ export async function syncChatRouteState(
           `[Route Listener] No conversation record found for external ID ${pathConversationId}`
         );
       } else {
-        console.error('[Route Listener] Query conversation record failed:', result.error);
+        console.error(
+          '[Route Listener] Query conversation record failed:',
+          result.error
+        );
       }
     } catch (error) {
-      console.error('[Route Listener] Exception querying conversation record:', error);
+      console.error(
+        '[Route Listener] Exception querying conversation record:',
+        error
+      );
     }
 
     input.setDbConversationUUID(null);

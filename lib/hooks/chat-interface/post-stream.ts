@@ -64,6 +64,7 @@ export function syncChatStateAfterStreaming(
 interface PersistChatMessagesAfterStreamingInput {
   finalDbConvUUID: string | null;
   dbConversationUUID: string | null;
+  conversationPersistencePromise?: Promise<string | null>;
   finalRealConvId?: string;
   userMessage: ChatMessage;
   userMessagePreviewFileIds?: string[];
@@ -278,24 +279,18 @@ function resolveAssistantMessageForPersistence(input: {
     return latestAssistantMessage;
   }
 
-  const latestText = latestAssistantMessage.text || '';
-  const fallbackText = fallbackAssistantMessage.text || '';
+  if (latestAssistantMessage?.db_id) {
+    return latestAssistantMessage;
+  }
+
+  const fallbackPersistenceId = `${fallbackAssistantMessage.id || input.assistantMessageId || 'assistant'}-persistence-fallback`;
 
   return {
-    ...latestAssistantMessage,
-    isStreaming: false,
-    role: latestAssistantMessage.role || 'assistant',
-    sequence_index: latestAssistantMessage.sequence_index ?? 1,
-    text: fallbackText.length > latestText.length ? fallbackText : latestText,
-    token_count:
-      latestAssistantMessage.token_count ??
-      fallbackAssistantMessage.token_count,
-    metadata: {
-      ...(fallbackAssistantMessage.metadata || {}),
-      ...(latestAssistantMessage.metadata || {}),
-    },
+    ...fallbackAssistantMessage,
+    id: fallbackPersistenceId,
+    dify_message_id: latestAssistantMessage?.dify_message_id,
     wasManuallyStopped:
-      latestAssistantMessage.wasManuallyStopped ??
+      latestAssistantMessage?.wasManuallyStopped ??
       fallbackAssistantMessage.wasManuallyStopped,
   };
 }
@@ -340,7 +335,6 @@ async function persistAssistantMessageAfterStreaming(input: {
 
   const needsSaving =
     !assistantMessageForPersistence.db_id &&
-    assistantMessageForPersistence.persistenceStatus !== 'saved' &&
     assistantMessageForPersistence.text.trim().length > 0;
 
   if (!needsSaving) {
@@ -392,6 +386,20 @@ export async function persistChatMessagesAfterStreaming(
   const conversationExternalId = resolveConversationExternalIdForPersistence(
     input.finalRealConvId
   );
+
+  if (!currentDbConvId && input.conversationPersistencePromise) {
+    try {
+      currentDbConvId = await input.conversationPersistencePromise;
+      if (currentDbConvId) {
+        input.setDbConversationUUID(currentDbConvId);
+      }
+    } catch (error) {
+      console.error(
+        '[handleSubmit] Failed to await conversation persistence:',
+        error
+      );
+    }
+  }
 
   if (!currentDbConvId && conversationExternalId) {
     console.log(

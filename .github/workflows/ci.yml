@@ -13,21 +13,32 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: '18'
+  NODE_VERSION: '22.22.0'
 
 jobs:
+  publication-check:
+    name: Publication Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: ./.github/actions/publication-check
+
   # Check if files have changed to skip unnecessary jobs
   changes:
     name: Detect Changes
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      pull-requests: read
     outputs:
-      source: ${{ steps.filter.outputs.source }}
-      config: ${{ steps.filter.outputs.config }}
-      i18n: ${{ steps.filter.outputs.i18n }}
-      styles: ${{ steps.filter.outputs.styles }}
-      tests: ${{ steps.filter.outputs.tests }}
+      required: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.runtime == 'true' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -39,87 +50,25 @@ jobs:
         id: filter
         with:
           filters: |
-            source:
-              - 'app/**/*.{ts,tsx,js,jsx}'
-              - 'apps/**/*.{ts,tsx,js,jsx}'
-              - 'components/**/*.{ts,tsx,js,jsx}'
-              - 'lib/**/*.{ts,tsx,js,jsx}'
-              - 'packages/**/*.{ts,tsx,js,jsx}'
-              - 'middleware.ts'
-              - '*.{ts,tsx,js,jsx}'
-            config:
-              - '.github/workflows/**/*.{yml,yaml}'
-              - 'package.json'
-              - 'pnpm-workspace.yaml'
-              - 'pnpm-lock.yaml'
-              - 'tsconfig.json'
-              - 'apps/*/package.json'
-              - 'apps/*/tsconfig.json'
-              - 'packages/*/package.json'
-              - 'packages/*/tsconfig.json'
-              - 'next.config.ts'
-              - 'tailwind.config.js'
-              - 'eslint.config.mjs'
-              - 'commitlint.config.mjs'
-              - 'postcss.config.mjs'
-              - '.prettierrc.json'
+            runtime:
+              - 'app/**'
+              - 'apps/**'
+              - 'packages/**'
+              - '**/*.{ts,tsx,js,jsx,mjs,cjs,json,css,scss,sql,sh,yml,yaml}'
+              - 'public/**'
+              - 'content/**'
+              - '**/Dockerfile*'
+              - '.env*.example'
+              - '.nvmrc'
               - '.prettierignore'
-              - 'database/migrations/**/*.sql'
-              - 'scripts/check-*.mjs'
-              - 'scripts/gate-quality-verify.sh'
-            tests:
-              - '__tests__/**/*.{ts,tsx,js,jsx}'
-              - '**/*.test.{ts,tsx,js,jsx}'
-              - '**/*.spec.{ts,tsx,js,jsx}'
-            i18n:
-              - 'messages/**/*.json'
-              - 'i18n/**/*.{ts,js}'
-              - 'scripts/**/*i18n*'
-            styles:
-              - 'styles/**/*.css'
-              - 'app/globals.css'
+              - '.gitignore'
 
-  # Install dependencies and cache them
-  install:
-    name: Install Dependencies
-    runs-on: ubuntu-latest
-    needs: changes
-    if: needs.changes.outputs.source == 'true' || needs.changes.outputs.config == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.styles == 'true'
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.pnpm-store
-            node_modules
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-
-
-  # Code formatting and linting checks
-  format-and-lint:
-    name: Format and Lint Check
+  quality:
+    name: Quality Checks
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [changes, install]
-    if: needs.changes.outputs.source == 'true' || needs.changes.outputs.config == 'true' || needs.changes.outputs.styles == 'true'
+    needs: changes
+    if: needs.changes.outputs.required == 'true'
     permissions:
       contents: read
     steps:
@@ -180,192 +129,23 @@ jobs:
             echo "No JS/TS files changed in this event"
           fi
 
-  # TypeScript type checking
-  type-check:
-    name: TypeScript Type Check
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    needs: [changes, install]
-    if: needs.changes.outputs.source == 'true' || needs.changes.outputs.config == 'true'
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
       - name: Run TypeScript type checks
         run: |
           pnpm run type-check
           pnpm --filter @agentifui/shared type-check
           pnpm --filter @agentifui/api type-check
 
-
-  # Build the application
-  build:
-    name: Build Application
+  verify:
+    name: Test and Build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: [changes, install]
-    if: needs.changes.outputs.source == 'true' || needs.changes.outputs.config == 'true'
+    timeout-minutes: 20
+    needs: changes
+    if: needs.changes.outputs.required == 'true'
     permissions:
       contents: read
     services:
       postgres:
-        image: postgres:18-alpine
-        env:
-          POSTGRES_DB: agentifui_test
-          POSTGRES_USER: agentif
-          POSTGRES_PASSWORD: agentif
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U agentif -d agentifui_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-      redis:
-        image: redis:7.4-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-    env:
-      NODE_ENV: production
-      NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
-      BETTER_AUTH_URL: http://127.0.0.1:3000
-      DATABASE_URL: postgresql://agentif:agentif@127.0.0.1:5432/agentifui_test
-      MIGRATOR_DATABASE_URL: postgresql://agentif:agentif@127.0.0.1:5432/agentifui_test
-      REDIS_URL: redis://127.0.0.1:6379/2
-      REDIS_PREFIX: agentifui-test
-      CACHE_L2_KEY_PREFIX: agentifui-test:cache:l2
-      CACHE_L2_INVALIDATION_CHANNEL: agentifui-test:cache:l2:invalidate
-      REALTIME_REDIS_CHANNEL: agentifui-test:realtime:events
-      REALTIME_REDIS_STREAM_KEY: agentifui-test:realtime:events:stream
-      S3_ENDPOINT: http://127.0.0.1:9000
-      S3_BUCKET: agentifui-test
-      S3_ACCESS_KEY_ID: minioadmin
-      S3_SECRET_ACCESS_KEY: minioadmin
-      S3_REGION: us-east-1
-      S3_ENABLE_PATH_STYLE: '1'
-      BETTER_AUTH_SECRET: ci-build-only-secret-do-not-use-in-prod
-      API_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Start MinIO
-        run: |
-          docker rm -f agentifui-ci-minio >/dev/null 2>&1 || true
-          docker run -d \
-            --name agentifui-ci-minio \
-            -p 9000:9000 \
-            -p 9001:9001 \
-            -e MINIO_ROOT_USER="$S3_ACCESS_KEY_ID" \
-            -e MINIO_ROOT_PASSWORD="$S3_SECRET_ACCESS_KEY" \
-            minio/minio:latest server /data --console-address ":9001"
-
-      - name: Initialize MinIO bucket
-        run: |
-          for _ in {1..60}; do
-            if curl -fsS "$S3_ENDPOINT/minio/health/live" >/dev/null 2>&1; then
-              break
-            fi
-            sleep 1
-          done
-          curl -fsS "$S3_ENDPOINT/minio/health/live" >/dev/null
-
-          docker run --rm --network host --entrypoint /bin/sh \
-            -e S3_ENDPOINT \
-            -e S3_BUCKET \
-            -e S3_ACCESS_KEY_ID \
-            -e S3_SECRET_ACCESS_KEY \
-            minio/mc:latest -c '
-              until mc alias set local "$S3_ENDPOINT" "$S3_ACCESS_KEY_ID" "$S3_SECRET_ACCESS_KEY"; do
-                sleep 1
-              done
-              mc mb --ignore-existing "local/$S3_BUCKET"
-            '
-        env:
-          S3_ENDPOINT: ${{ env.S3_ENDPOINT }}
-          S3_BUCKET: ${{ env.S3_BUCKET }}
-          S3_ACCESS_KEY_ID: ${{ env.S3_ACCESS_KEY_ID }}
-          S3_SECRET_ACCESS_KEY: ${{ env.S3_SECRET_ACCESS_KEY }}
-
-      - name: Ensure PostgreSQL client
-        run: |
-          if command -v psql >/dev/null 2>&1; then
-            exit 0
-          fi
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client
-
-      - name: Apply database migrations
-        run: |
-          shopt -s nullglob
-          migrations=(database/migrations/*.sql)
-          if [ ${#migrations[@]} -eq 0 ]; then
-            echo "No SQL migrations found" >&2
-            exit 1
-          fi
-          for migration in "${migrations[@]}"; do
-            psql "$MIGRATOR_DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"
-          done
-
-      - name: Build shared workspace package
-        run: pnpm --filter @agentifui/shared build
-
-      - name: Build API workspace package
-        run: pnpm --filter @agentifui/api build
-
-      - name: Build application
-        run: pnpm run build
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-artifacts
-          path: .next/
-          retention-days: 7
-
-  # Run tests
-  test:
-    name: Run Tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: [changes, install]
-    if: needs.changes.outputs.tests == 'true' || needs.changes.outputs.source == 'true'
-    permissions:
-      contents: read
-    services:
-      postgres:
-        image: postgres:18-alpine
+        image: postgres:18.6-alpine
         env:
           POSTGRES_DB: agentifui_test
           POSTGRES_USER: agentif
@@ -388,6 +168,9 @@ jobs:
           --health-retries 20
     env:
       NODE_ENV: test
+      GO_VERSION: '1.24.8'
+      MINIO_COMMIT: '9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a'
+      MC_COMMIT: '7394ce0dd2a80935aded936b09fa12cbb3cb8096'
       NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
       BETTER_AUTH_URL: http://127.0.0.1:3000
       DATABASE_URL: postgresql://agentif:agentif@127.0.0.1:5432/agentifui_test
@@ -420,18 +203,40 @@ jobs:
           cache: 'pnpm'
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --prod=false
+
+      - name: Cache CI object-storage tools
+        id: s3-tools
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/ci-s3/bin
+          key: ci-s3-${{ runner.os }}-${{ runner.arch }}-go${{ env.GO_VERSION }}-${{ env.MINIO_COMMIT }}-${{ env.MC_COMMIT }}
+
+      - name: Setup Go for CI object-storage tools
+        if: steps.s3-tools.outputs.cache-hit != 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      - name: Build pinned official object-storage tools
+        if: steps.s3-tools.outputs.cache-hit != 'true'
+        env:
+          GOBIN: ${{ runner.temp }}/ci-s3/bin
+          CGO_ENABLED: '0'
+          GOTOOLCHAIN: local
+        run: |
+          mkdir -p "$GOBIN"
+          go install "github.com/minio/minio@$MINIO_COMMIT"
+          go install "github.com/minio/mc@$MC_COMMIT"
 
       - name: Start MinIO
         run: |
-          docker rm -f agentifui-ci-minio >/dev/null 2>&1 || true
-          docker run -d \
-            --name agentifui-ci-minio \
-            -p 9000:9000 \
-            -p 9001:9001 \
-            -e MINIO_ROOT_USER="$S3_ACCESS_KEY_ID" \
-            -e MINIO_ROOT_PASSWORD="$S3_SECRET_ACCESS_KEY" \
-            minio/minio:latest server /data --console-address ":9001"
+          MINIO_ROOT_USER="$S3_ACCESS_KEY_ID" \
+          MINIO_ROOT_PASSWORD="$S3_SECRET_ACCESS_KEY" \
+          "$RUNNER_TEMP/ci-s3/bin/minio" server "$RUNNER_TEMP/minio-data" \
+            --address 127.0.0.1:9000 --console-address 127.0.0.1:9001 \
+            > "$RUNNER_TEMP/minio.log" 2>&1 &
 
       - name: Initialize MinIO bucket
         run: |
@@ -443,17 +248,9 @@ jobs:
           done
           curl -fsS "$S3_ENDPOINT/minio/health/live" >/dev/null
 
-          docker run --rm --network host --entrypoint /bin/sh \
-            -e S3_ENDPOINT \
-            -e S3_BUCKET \
-            -e S3_ACCESS_KEY_ID \
-            -e S3_SECRET_ACCESS_KEY \
-            minio/mc:latest -c '
-              until mc alias set local "$S3_ENDPOINT" "$S3_ACCESS_KEY_ID" "$S3_SECRET_ACCESS_KEY"; do
-                sleep 1
-              done
-              mc mb --ignore-existing "local/$S3_BUCKET"
-            '
+          export MC_CONFIG_DIR="$RUNNER_TEMP/mc-config"
+          "$RUNNER_TEMP/ci-s3/bin/mc" alias set ci "$S3_ENDPOINT" "$S3_ACCESS_KEY_ID" "$S3_SECRET_ACCESS_KEY"
+          "$RUNNER_TEMP/ci-s3/bin/mc" mb --ignore-existing "ci/$S3_BUCKET"
         env:
           S3_ENDPOINT: ${{ env.S3_ENDPOINT }}
           S3_BUCKET: ${{ env.S3_BUCKET }}
@@ -480,110 +277,47 @@ jobs:
             psql "$MIGRATOR_DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"
           done
 
-      - name: Run tests
-        run: pnpm test
-
-  # Security checks
-  security-check:
-    name: Security Check
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    needs: [changes, install]
-    if: needs.changes.outputs.source == 'true' || needs.changes.outputs.config == 'true'
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Install publication test scanner
+        uses: ./.github/actions/publication-check
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
+          install-only: 'true'
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Run tests
+        run: pnpm test --maxWorkers=2
 
-      - name: Run dependency audit
-        run: |
-          set +e
-          pnpm audit --audit-level=moderate
-          status=$?
-          set -e
-          if [[ $status -ne 0 ]]; then
-            echo "::warning::pnpm audit reported known dependency vulnerabilities. Keeping CI green while baseline dependency debt is being tracked separately."
-          fi
-
-      - name: Scan for secrets
-        run: |
-          echo "Scanning for hardcoded secrets..."
-          # Check for potential secrets in source code
-          if grep -r -i -E "(api_key|apikey|secret|token|password)\s*[:=]\s*['\"][a-zA-Z0-9+/]{20,}['\"]" \
-             --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" \
-             app components lib | grep -v -E "(placeholder|example|test|demo|sample|mock|dummy)"; then
-            echo "⚠️ Potential hardcoded secret detected"
-            exit 1
-          fi
-          echo "✅ No hardcoded secrets found"
+      - name: Build application and workspace packages
+        env:
+          NODE_ENV: production
+        run: pnpm run build:all
 
   # Final status check - all jobs must pass
   ci-status:
     name: CI Status Check
     runs-on: ubuntu-latest
     needs: 
+      - publication-check
       - changes
-      - format-and-lint
-      - type-check
-      - build
-      - test
-      - security-check
+      - quality
+      - verify
     if: always()
     permissions:
       contents: read
     steps:
       - name: Check all jobs status
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
         run: |
-          echo "Checking CI pipeline status..."
-          
-          # Check if any job failed
-          if [[ "${{ needs.format-and-lint.result }}" == "failure" ]] || \
-             [[ "${{ needs.type-check.result }}" == "failure" ]] || \
-             [[ "${{ needs.build.result }}" == "failure" ]] || \
-             [[ "${{ needs.test.result }}" == "failure" ]] || \
-             [[ "${{ needs.security-check.result }}" == "failure" ]]; then
-            echo "❌ CI pipeline failed"
-            exit 1
-          fi
-          
-          # Check if any required job was skipped when it shouldn't be
-          if [[ "${{ needs.changes.outputs.source }}" == "true" ]] || \
-             [[ "${{ needs.changes.outputs.config }}" == "true" ]] || \
-             [[ "${{ needs.changes.outputs.styles }}" == "true" ]]; then
-            if [[ "${{ needs.format-and-lint.result }}" == "skipped" ]]; then
-              echo "❌ Format and lint job was skipped"
-              exit 1
-            fi
-          fi
-
-          if [[ "${{ needs.changes.outputs.source }}" == "true" ]] || [[ "${{ needs.changes.outputs.config }}" == "true" ]]; then
-            if [[ "${{ needs.type-check.result }}" == "skipped" ]] || \
-               [[ "${{ needs.build.result }}" == "skipped" ]] || \
-               [[ "${{ needs.security-check.result }}" == "skipped" ]]; then
-              echo "❌ Required job was skipped"
-              exit 1
-            fi
-          fi
-          
-          # Check test job when tests or source files changed
-          if [[ "${{ needs.changes.outputs.tests }}" == "true" ]] || [[ "${{ needs.changes.outputs.source }}" == "true" ]]; then
-            if [[ "${{ needs.test.result }}" == "skipped" ]]; then
-              echo "❌ Test job was skipped when it should run"
-              exit 1
-            fi
-          fi
-          
-          echo "✅ All CI checks passed successfully" 
+          node <<'NODE'
+          const needs = JSON.parse(process.env.CI_NEEDS);
+          if (needs['publication-check'].result !== 'success') process.exit(1);
+          if (needs.changes.result !== 'success') process.exit(1);
+          const required = needs.changes.outputs.required;
+          if (!['true', 'false'].includes(required)) process.exit(1);
+          for (const name of ['quality', 'verify']) {
+            if (needs[name]?.result !== (required === 'true' ? 'success' : 'skipped')) {
+              console.error(`${name}: unexpected ${needs[name]?.result}`);
+              process.exit(1);
+            }
+          }
+          console.log('All required CI checks passed');
+          NODE

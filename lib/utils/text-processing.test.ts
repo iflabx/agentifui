@@ -18,7 +18,7 @@ describe('content variable resolution', () => {
         'Welcome to {productName} on {publicDomain} with {appName}',
         'en-US'
       )
-    ).toBe('Welcome to BistuCopilot on chat.bistu.edu.cn with {appName}');
+    ).toBe('Welcome to AgentifUI on example.com with {appName}');
   });
 
   it('resolves only whitelisted display text fields in nested CMS data', () => {
@@ -46,7 +46,7 @@ describe('content variable resolution', () => {
     expect(resolved).toEqual({
       id: '{productName}',
       props: {
-        content: 'About BistuCopilot',
+        content: 'About AgentifUI',
         url: 'https://{publicDomain}',
         items: [
           {
@@ -55,9 +55,9 @@ describe('content variable resolution', () => {
           },
         ],
         secondaryButton: {
-          text: 'Visit chat.bistu.edu.cn',
+          text: 'Visit example.com',
         },
-        alt: 'Logo BistuCopilot',
+        alt: 'Logo AgentifUI',
       },
     });
   });

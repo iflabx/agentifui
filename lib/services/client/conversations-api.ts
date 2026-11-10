@@ -19,6 +19,25 @@ const conversationLookupInflight = new Map<
   string,
   Promise<Result<Conversation | null>>
 >();
+const conversationLookupRevisions = new Map<string, number>();
+
+function getConversationLookupRevision(externalId: string): number {
+  return conversationLookupRevisions.get(externalId) || 0;
+}
+
+function bumpConversationLookupRevision(
+  externalId: string | null | undefined
+): void {
+  const normalizedExternalId = externalId?.trim();
+  if (!normalizedExternalId) {
+    return;
+  }
+
+  conversationLookupRevisions.set(
+    normalizedExternalId,
+    getConversationLookupRevision(normalizedExternalId) + 1
+  );
+}
 
 function pruneConversationLookupCache(now: number): void {
   for (const [key, entry] of conversationLookupCache.entries()) {
@@ -61,6 +80,7 @@ function writeConversationLookupCache(
 function clearConversationLookupCache(): void {
   conversationLookupCache.clear();
   conversationLookupInflight.clear();
+  conversationLookupRevisions.clear();
 }
 
 export async function getConversationByExternalId(
@@ -81,6 +101,8 @@ export async function getConversationByExternalId(
     return existing;
   }
 
+  const requestRevision = getConversationLookupRevision(normalizedExternalId);
+
   const requestPromise = callInternalDataAction<Conversation | null>(
     'conversations.getConversationByExternalId',
     {
@@ -95,7 +117,10 @@ export async function getConversationByExternalId(
         return success(null);
       }
 
-      if (result.success) {
+      if (
+        result.success &&
+        getConversationLookupRevision(normalizedExternalId) === requestRevision
+      ) {
         writeConversationLookupCache(normalizedExternalId, result.data);
       }
 
@@ -120,6 +145,7 @@ export async function createConversation(
   );
 
   if (result.success) {
+    bumpConversationLookupRevision(result.data.external_id);
     writeConversationLookupCache(result.data.external_id, result.data);
   }
 

@@ -162,11 +162,11 @@ describe('admin translation auto-translate helpers', () => {
   it('returns original text when source and target locales match', async () => {
     await expect(
       translateTextViaMyMemory({
-        text: 'BistuCopilot',
+        text: 'AgentifUI',
         sourceLocale: 'zh-CN',
         targetLocale: 'zh-CN',
       })
-    ).resolves.toBe('BistuCopilot');
+    ).resolves.toBe('AgentifUI');
   });
 
   it('restores placeholders and protected terms when the provider drifts token case and spacing', async () => {
@@ -191,11 +191,48 @@ describe('admin translation auto-translate helpers', () => {
 
     await expect(
       translateTextViaMyMemory({
-        text: '© {year} BistuCopilot',
+        text: '© {year} AgentifUI',
         sourceLocale: 'zh-CN',
         targetLocale: 'en-US',
       })
-    ).resolves.toBe('© {year} BistuCopilot');
+    ).resolves.toBe('© {year} AgentifUI');
+  });
+
+  it('protects deployment-specific branding during translation', async () => {
+    const originalName = process.env.NEXT_PUBLIC_BRAND_NAME;
+    const originalDomain = process.env.NEXT_PUBLIC_BRAND_DOMAIN;
+    process.env.NEXT_PUBLIC_BRAND_NAME = 'Example Assistant';
+    process.env.NEXT_PUBLIC_BRAND_DOMAIN = 'stage.example:18021';
+    mockedFetch.mockImplementation(
+      async input =>
+        ({
+          ok: true,
+          json: async () => ({
+            responseStatus: 200,
+            responseData: {
+              translatedText: new URL(String(input)).searchParams
+                .get('q')
+                ?.toLowerCase(),
+            },
+          }),
+        }) as Response
+    );
+
+    try {
+      await expect(
+        translateTextViaMyMemory({
+          text: 'Example Assistant on stage.example:18021',
+          sourceLocale: 'zh-CN',
+          targetLocale: 'en-US',
+        })
+      ).resolves.toBe('Example Assistant on stage.example:18021');
+    } finally {
+      if (originalName === undefined) delete process.env.NEXT_PUBLIC_BRAND_NAME;
+      else process.env.NEXT_PUBLIC_BRAND_NAME = originalName;
+      if (originalDomain === undefined)
+        delete process.env.NEXT_PUBLIC_BRAND_DOMAIN;
+      else process.env.NEXT_PUBLIC_BRAND_DOMAIN = originalDomain;
+    }
   });
 
   it('rejects untranslated internal tokens before they can be persisted', async () => {
@@ -214,7 +251,7 @@ describe('admin translation auto-translate helpers', () => {
                     id: 'comp-footer',
                     type: 'paragraph',
                     props: {
-                      content: '© {year} BistuCopilot',
+                      content: '© {year} AgentifUI',
                       textAlign: 'center',
                     },
                   },

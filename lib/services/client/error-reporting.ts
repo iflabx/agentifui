@@ -19,7 +19,10 @@ const ENDPOINT = '/api/internal/error-events/client';
 const DEDUPE_WINDOW_MS = 5000;
 const recentReports = new Map<string, number>();
 
-function sanitizeText(value: string | undefined, fallbackValue: string): string {
+function sanitizeText(
+  value: string | undefined,
+  fallbackValue: string
+): string {
   const normalized = (value || '').trim();
   return (normalized || fallbackValue).slice(0, 4000);
 }
@@ -80,11 +83,9 @@ export async function reportClientError(
   input: ClientErrorReportInput
 ): Promise<boolean> {
   const payload = buildPayload(input);
-  const dedupeKey = [
-    payload.code,
-    payload.userMessage,
-    payload.route,
-  ].join('|');
+  const dedupeKey = [payload.code, payload.userMessage, payload.route].join(
+    '|'
+  );
 
   if (!shouldReport(dedupeKey)) {
     return false;

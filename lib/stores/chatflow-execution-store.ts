@@ -21,8 +21,7 @@ import {
   createChatflowExecutionResetState,
   createChatflowExecutionStartState,
 } from './chatflow-execution-store/state';
-export type {
-  ChatflowExecutionProgress,
+import type {
   ChatflowExecutionState,
   ChatflowIteration,
   ChatflowLoop,
@@ -30,7 +29,9 @@ export type {
   ChatflowNodeEvent,
   ChatflowParallelBranch,
 } from './chatflow-execution-store/types';
-import type {
+
+export type {
+  ChatflowExecutionProgress,
   ChatflowExecutionState,
   ChatflowIteration,
   ChatflowLoop,
@@ -72,7 +73,9 @@ export const useChatflowExecutionStore = create<ChatflowExecutionState>(
         nodes: updateChatflowNodeCollection(state.nodes, nodeId, updates),
       }));
 
-      set({ executionProgress: calculateChatflowExecutionProgress(get().nodes) });
+      set({
+        executionProgress: calculateChatflowExecutionProgress(get().nodes),
+      });
     },
 
     setCurrentNode: (nodeId: string | null) => {
@@ -91,7 +94,12 @@ export const useChatflowExecutionStore = create<ChatflowExecutionState>(
       updates: Partial<ChatflowIteration>
     ) => {
       set(state => ({
-        nodes: updateChatflowIteration(state.nodes, nodeId, iterationId, updates),
+        nodes: updateChatflowIteration(
+          state.nodes,
+          nodeId,
+          iterationId,
+          updates
+        ),
       }));
     },
 

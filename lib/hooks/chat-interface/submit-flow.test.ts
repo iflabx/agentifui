@@ -183,6 +183,25 @@ describe('executeChatSubmit', () => {
     );
   });
 
+  it('passes the new conversation persistence promise into post-stream saving', async () => {
+    const conversationPersistencePromise = Promise.resolve('db-1');
+    mockStartNewChatConversation.mockResolvedValueOnce({
+      answerStream: (async function* () {})(),
+      finalRealConvId: 'conv-1',
+      finalTaskId: 'task-1',
+      finalDbConvUUID: null,
+      completionPromise: Promise.resolve({}),
+      conversationPersistencePromise,
+    });
+
+    const { input } = createInput();
+    await executeChatSubmit(input);
+
+    expect(mockPersistChatMessagesAfterStreaming).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationPersistencePromise })
+    );
+  });
+
   it('passes moderation translator into stream error recovery', async () => {
     const { input } = createInput();
     const thrownError = new Error('blocked');

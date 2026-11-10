@@ -46,21 +46,21 @@ describe('middleware unauthenticated redirect origin', () => {
   });
 
   it('redirects protected routes to the public login origin when the request URL is localhost', async () => {
-    process.env.BETTER_AUTH_URL = 'https://chat.bistu.edu.cn';
+    process.env.BETTER_AUTH_URL = 'https://chat.example.com';
     delete process.env.NEXT_PUBLIC_APP_URL;
     mockedGetSessionFromAuthApi.mockResolvedValueOnce(null);
 
     const response = await middleware(
       createRequest('https://localhost:3000/chat', {
         host: 'localhost:3000',
-        'x-forwarded-host': 'chat.bistu.edu.cn',
+        'x-forwarded-host': 'chat.example.com',
         'x-forwarded-proto': 'https',
       })
     );
 
     expect(response.status).toBe(307);
     expect(response.headers.get('location')).toBe(
-      'https://chat.bistu.edu.cn/login'
+      'https://chat.example.com/login'
     );
   });
 });

@@ -45,8 +45,8 @@ describe('middleware request-utils internal origin resolution', () => {
 
   it('prefers NEXT_UPSTREAM_BASE_URL over the public domain for internal middleware fetches', async () => {
     process.env.NEXT_UPSTREAM_BASE_URL = 'http://127.0.0.1:3000';
-    process.env.BETTER_AUTH_URL = 'https://chat.bistu.edu.cn';
-    process.env.NEXT_PUBLIC_APP_URL = 'https://chat.bistu.edu.cn';
+    process.env.BETTER_AUTH_URL = 'https://chat.example.com';
+    process.env.NEXT_PUBLIC_APP_URL = 'https://chat.example.com';
 
     const fetchMock = jest
       .fn()
@@ -56,9 +56,9 @@ describe('middleware request-utils internal origin resolution', () => {
     global.fetch = fetchMock as typeof fetch;
 
     await fetchInternalEndpoint(
-      createRequest('https://chat.bistu.edu.cn/chat', {
-        host: 'chat.bistu.edu.cn',
-        'x-forwarded-host': 'chat.bistu.edu.cn',
+      createRequest('https://chat.example.com/chat', {
+        host: 'chat.example.com',
+        'x-forwarded-host': 'chat.example.com',
         'x-forwarded-proto': 'https',
       }),
       '/api/internal/auth/profile-status',

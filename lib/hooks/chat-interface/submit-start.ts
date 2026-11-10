@@ -20,6 +20,7 @@ export interface ChatSubmitStartResult {
   finalTaskId?: string;
   finalDbConvUUID: string | null;
   completionPromise?: Promise<ChatStreamCompletionData>;
+  conversationPersistencePromise?: Promise<string | null>;
 }
 
 interface PrepareChatSubmitConversationStateInput {
@@ -140,6 +141,8 @@ export async function startNewChatConversation(
     finalTaskId,
     finalDbConvUUID,
     completionPromise: creationResult.completionPromise,
+    conversationPersistencePromise:
+      creationResult.conversationPersistencePromise,
   };
 }
 

@@ -285,6 +285,8 @@ export function useCreateConversation(): UseCreateConversationReturn {
           taskId: taskIdFromStream || undefined,
           answerStream: streamResponse.answerStream,
           completionPromise: streamResponse.completionPromise,
+          conversationPersistencePromise:
+            persistConversationPromise || undefined,
         };
       } catch (e) {
         console.error(

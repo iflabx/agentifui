@@ -68,7 +68,9 @@ export function handleChatflowNodeEvent(
           currentIteration.nodeId !== node_id
       );
       const isInLoop = Boolean(
-        currentLoop && currentLoop.status === 'running' && currentLoop.nodeId !== node_id
+        currentLoop &&
+          currentLoop.status === 'running' &&
+          currentLoop.nodeId !== node_id
       );
 
       console.log('[ChatflowExecution] node_started:', {
@@ -79,7 +81,9 @@ export function handleChatflowNodeEvent(
         isLoopContainer: currentLoop?.nodeId === node_id,
       });
 
-      const existingNode = context.getState().nodes.find(node => node.id === node_id);
+      const existingNode = context
+        .getState()
+        .nodes.find(node => node.id === node_id);
       if (existingNode) {
         context.updateNode(node_id, {
           status: 'running',
@@ -116,7 +120,9 @@ export function handleChatflowNodeEvent(
         status: nodeStatus,
         endTime: Date.now(),
         description:
-          nodeStatus === 'completed' ? 'Execution completed' : error || 'Execution failed',
+          nodeStatus === 'completed'
+            ? 'Execution completed'
+            : error || 'Execution failed',
       });
       break;
     }
@@ -144,8 +150,12 @@ export function handleChatflowNodeEvent(
       break;
 
     case 'iteration_started': {
-      const { node_id: iterNodeId, iteration_id, title: iterTitle, node_type: iterNodeType } =
-        eventData;
+      const {
+        node_id: iterNodeId,
+        iteration_id,
+        title: iterTitle,
+        node_type: iterNodeType,
+      } = eventData;
       const totalIterations =
         eventData.metadata?.iterator_length || eventData.total_iterations || 1;
       const initialIndex = 0;
@@ -161,7 +171,9 @@ export function handleChatflowNodeEvent(
         },
       });
 
-      const existingIterNode = context.getState().nodes.find(node => node.id === iterNodeId);
+      const existingIterNode = context
+        .getState()
+        .nodes.find(node => node.id === iterNodeId);
       if (!existingIterNode) {
         context.addNode({
           id: iterNodeId,
@@ -252,8 +264,15 @@ export function handleChatflowNodeEvent(
     }
 
     case 'parallel_branch_started': {
-      const { node_id: branchNodeId, branch_id, branch_index, total_branches } = eventData;
-      const branchNode = context.getState().nodes.find(node => node.id === branchNodeId);
+      const {
+        node_id: branchNodeId,
+        branch_id,
+        branch_index,
+        total_branches,
+      } = eventData;
+      const branchNode = context
+        .getState()
+        .nodes.find(node => node.id === branchNodeId);
       if (branchNode) {
         context.updateNode(branchNodeId, {
           isParallelNode: true,
@@ -285,10 +304,13 @@ export function handleChatflowNodeEvent(
         endTime: Date.now(),
         outputs: eventData.outputs,
         error: branchError,
-        description: branchStatus === 'succeeded' ? 'Branch completed' : 'Branch failed',
+        description:
+          branchStatus === 'succeeded' ? 'Branch completed' : 'Branch failed',
       });
 
-      const parallelNode = context.getState().nodes.find(node => node.id === finishedBranchNodeId);
+      const parallelNode = context
+        .getState()
+        .nodes.find(node => node.id === finishedBranchNodeId);
       if (parallelNode && parallelNode.parallelBranches) {
         const completedCount = parallelNode.parallelBranches.filter(
           branch => branch.status === 'completed' || branch.status === 'failed'
@@ -305,7 +327,9 @@ export function handleChatflowNodeEvent(
           context.updateNode(finishedBranchNodeId, {
             status: hasFailedBranches ? 'failed' : 'completed',
             endTime: Date.now(),
-            description: hasFailedBranches ? 'Some branches failed' : 'All branches completed',
+            description: hasFailedBranches
+              ? 'Some branches failed'
+              : 'All branches completed',
           });
         }
       }
@@ -313,9 +337,16 @@ export function handleChatflowNodeEvent(
     }
 
     case 'loop_started': {
-      const { id: loopId, node_id: loopNodeId, title: loopTitle, node_type: loopNodeType } =
-        eventData;
-      const maxLoops = eventData.metadata?.loop_length || eventData.inputs?.loop_count || undefined;
+      const {
+        id: loopId,
+        node_id: loopNodeId,
+        title: loopTitle,
+        node_type: loopNodeType,
+      } = eventData;
+      const maxLoops =
+        eventData.metadata?.loop_length ||
+        eventData.inputs?.loop_count ||
+        undefined;
       const initialLoopIndex = 0;
 
       console.log('[ChatflowExecution] Loop started:', {
@@ -337,14 +368,18 @@ export function handleChatflowNodeEvent(
         },
       });
 
-      const existingLoopNode = context.getState().nodes.find(node => node.id === loopNodeId);
+      const existingLoopNode = context
+        .getState()
+        .nodes.find(node => node.id === loopNodeId);
       if (!existingLoopNode) {
         context.addNode({
           id: loopNodeId,
           title: loopTitle || 'Loop',
           status: 'running',
           startTime: Date.now(),
-          description: maxLoops ? `Preparing loop (max ${maxLoops} times)` : 'Preparing loop',
+          description: maxLoops
+            ? `Preparing loop (max ${maxLoops} times)`
+            : 'Preparing loop',
           type: loopNodeType || 'loop',
           visible: true,
           isLoopNode: true,
@@ -353,7 +388,9 @@ export function handleChatflowNodeEvent(
         });
       } else {
         context.updateNode(loopNodeId, {
-          description: maxLoops ? `Preparing loop (max ${maxLoops} times)` : 'Preparing loop',
+          description: maxLoops
+            ? `Preparing loop (max ${maxLoops} times)`
+            : 'Preparing loop',
           currentLoop: initialLoopIndex,
           status: 'running',
         });
@@ -420,7 +457,10 @@ export function handleChatflowNodeEvent(
       const { currentLoop } = context.getState();
       if (currentLoop && currentLoop.nodeId === completedLoopNodeId) {
         const finalLoopCount =
-          loopOutputs?.loop_round || currentLoop.index + 1 || currentLoop.maxLoops || 0;
+          loopOutputs?.loop_round ||
+          currentLoop.index + 1 ||
+          currentLoop.maxLoops ||
+          0;
 
         context.updateNode(completedLoopNodeId, {
           status: 'completed',

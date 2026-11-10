@@ -3,6 +3,7 @@
 import { KeyCombination } from '@components/ui/adaptive-key-badge';
 import { TooltipWrapper } from '@components/ui/tooltip-wrapper';
 import { WidePanelLeft } from '@components/ui/wide-panel-left';
+import { getDisplayBrandName } from '@lib/config/branding';
 import { useChatInterface } from '@lib/hooks/use-chat-interface';
 import { useFormattedShortcut } from '@lib/hooks/use-platform-keys';
 import { useChatInputStore } from '@lib/stores/chat-input-store';
@@ -265,7 +266,7 @@ export function SidebarHeader({ isHovering = false }: SidebarHeaderProps) {
                 'from-stone-700 via-stone-800 to-stone-900 dark:from-gray-100 dark:via-gray-200 dark:to-gray-300'
               )}
             >
-              {t('appName')}
+              {getDisplayBrandName(t('appName'))}
             </span>
           </div>
         )}

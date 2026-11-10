@@ -1,0 +1,18 @@
+# Historical instructional encryption-key placeholder (not a key).
+83cae5221688dc637f8c1b5498277adf95878b89:.env.prod.example:generic-api-key:21
+# Deliberately fake sequential API key in security documentation.
+d7f8bd66ad5661ad8967a44a1b553863326f5b9f:docs/security/code-security-guidelines.md:generic-api-key:54
+43b68a0fae9ba5930b140a40b1a451abdd650d88:docs/security/code-security-guidelines.md:generic-api-key:51
+# Truncated JWT header ending in dots, not a usable signed JWT.
+721605ae901d1c9b8c3e0aebe194d6f6c3e00cf3:docs/DEPLOYMENT-GUIDE.md:generic-api-key:141
+721605ae901d1c9b8c3e0aebe194d6f6c3e00cf3:docs/DEPLOYMENT-GUIDE.md:generic-api-key:144
+# Public Supabase demo JWT: issuer supabase-demo, anon role, no project ref.
+9d08a6ba111145892a154842adff6e5ffe50a005:middleware.ts:jwt:16
+67a774d80e2eccbc14df01a9edffdc157833d486:middleware.ts:jwt:16
+# Owner-approved historical exceptions on 2026-11-09; no new occurrences exempted.
+# Owner reports these legacy integrations are no longer used (2026-11-10).
+# Credential revocation is unverified; these values must not be reused.
+fc21277629ba9f7abe2cb2e2d9fff96ccca62bc7:app/layout.tsx:generic-api-key:66
+c9015176c93664ccba202154d6afdd39a8d76d53:.env.local.example:jwt:3
+c9015176c93664ccba202154d6afdd39a8d76d53:.env.local.example:jwt:4
+c9015176c93664ccba202154d6afdd39a8d76d53:.env.local.example:generic-api-key:5

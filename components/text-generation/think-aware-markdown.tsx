@@ -7,7 +7,11 @@ import {
 } from '@components/chat/markdown-block/think-block-header';
 import { useThrottledThinkPreview } from '@lib/hooks/use-throttled-think-preview';
 import { cn } from '@lib/utils';
-import { type MessageBlock, parseThinkBlocks } from '@lib/utils/think-parser';
+import {
+  type MessageBlock,
+  parseStreamingThinkBlocks,
+  parseThinkBlocks,
+} from '@lib/utils/think-parser';
 import { buildThinkPreviewText } from '@lib/utils/think-preview';
 import 'katex/dist/katex.min.css';
 import ReactMarkdown from 'react-markdown';
@@ -139,7 +143,13 @@ export function ThinkAwareMarkdown({
   isStreaming = false,
   className,
 }: ThinkAwareMarkdownProps) {
-  const blocks = useMemo(() => parseThinkBlocks(content), [content]);
+  const blocks = useMemo(
+    () =>
+      isStreaming
+        ? parseStreamingThinkBlocks(content)
+        : parseThinkBlocks(content),
+    [content, isStreaming]
+  );
 
   return (
     <div className={cn('space-y-4', className)}>

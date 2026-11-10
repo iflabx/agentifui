@@ -179,6 +179,44 @@ function isLikelyReplyLeadParagraph(paragraph: string): boolean {
   return /[\u4e00-\u9fffA-Za-z]/.test(trimmed);
 }
 
+function tryExtractReplyAtBoundary(
+  normalizedContent: string,
+  boundary: number
+): {
+  thinkContent: string;
+  answerText: string;
+} | null {
+  const thinkContent = normalizedContent.slice(0, boundary).trimEnd();
+  const answerText = normalizedContent.slice(boundary).trim();
+
+  if (thinkContent.length < MIN_HEURISTIC_REPLY_PREFIX_LENGTH || !answerText) {
+    return null;
+  }
+
+  if (!looksLikeReasoningPrefix(thinkContent)) {
+    return null;
+  }
+
+  if (!isLikelyReplyLeadParagraph(getFirstParagraph(answerText))) {
+    return null;
+  }
+
+  return {
+    thinkContent,
+    answerText,
+  };
+}
+
+function getLastNonEmptyLineBoundary(content: string): number | null {
+  const match = content.match(/\n[^\S\n]*\S[^\n]*[^\S\n]*$/);
+
+  if (typeof match?.index !== 'number') {
+    return null;
+  }
+
+  return match.index + 1;
+}
+
 function extractReplyFromOpenThinkHeuristically(content: string): {
   thinkContent: string;
   answerText: string;
@@ -194,32 +232,17 @@ function extractReplyFromOpenThinkHeuristically(content: string): {
   }
 
   for (let index = boundaries.length - 1; index >= 0; index -= 1) {
-    const boundary = boundaries[index];
-    const thinkContent = normalized.slice(0, boundary).trimEnd();
-    const answerText = normalized.slice(boundary).trim();
+    const replySplit = tryExtractReplyAtBoundary(normalized, boundaries[index]);
 
-    if (
-      thinkContent.length < MIN_HEURISTIC_REPLY_PREFIX_LENGTH ||
-      !answerText
-    ) {
-      continue;
+    if (replySplit) {
+      return replySplit;
     }
-
-    if (!looksLikeReasoningPrefix(thinkContent)) {
-      continue;
-    }
-
-    if (!isLikelyReplyLeadParagraph(getFirstParagraph(answerText))) {
-      continue;
-    }
-
-    return {
-      thinkContent,
-      answerText,
-    };
   }
 
-  return null;
+  const lineBoundary = getLastNonEmptyLineBoundary(normalized);
+  return lineBoundary === null
+    ? null
+    : tryExtractReplyAtBoundary(normalized, lineBoundary);
 }
 
 function extractReplyFromOpenThink(content: string): {
@@ -518,6 +541,68 @@ function serializeThinkAwareBlocks(blocks: MessageBlock[]): string {
   }, '');
 }
 
+function replaceFallbackWithRecoveredThinkAnswer(
+  content: string,
+  fallbackText?: string
+): {
+  content: string;
+  changed: boolean;
+} {
+  const trimmedFallback = fallbackText?.trim();
+  const analysis = analyzeThinkAwareContent(content);
+
+  if (trimmedFallback !== undefined && !trimmedFallback) {
+    return { content, changed: false };
+  }
+
+  if (trimmedFallback !== undefined && analysis.mainText !== trimmedFallback) {
+    return { content, changed: false };
+  }
+
+  if (trimmedFallback === undefined && !analysis.mainText) {
+    return { content, changed: false };
+  }
+
+  const blocks = [...analysis.blocks];
+  const lastThinkBlock = blocks.findLast(isClosedThinkBlock);
+
+  if (!lastThinkBlock) {
+    return { content, changed: false };
+  }
+
+  const replySplit = extractReplyFromOpenThinkHeuristically(
+    lastThinkBlock.content
+  );
+  if (!replySplit) {
+    return { content, changed: false };
+  }
+
+  const fallbackToRemove = trimmedFallback ?? analysis.mainText;
+  const nextBlocks = blocks.flatMap(block => {
+    if (block === lastThinkBlock) {
+      return [
+        {
+          type: 'think' as const,
+          content: replySplit.thinkContent,
+          status: 'closed' as const,
+        },
+        { type: 'text' as const, content: replySplit.answerText },
+      ];
+    }
+
+    if (block.type === 'text' && block.content.trim() === fallbackToRemove) {
+      return [];
+    }
+
+    return [block];
+  });
+
+  return {
+    content: serializeThinkAwareBlocks(finalizeBlocks(nextBlocks)).trimEnd(),
+    changed: true,
+  };
+}
+
 export function normalizeCompletedThinkAwareContent(content: string): {
   content: string;
   changed: boolean;
@@ -560,14 +645,21 @@ export function normalizeCompletedAssistantReply(
   usedFallback: boolean;
 } {
   const normalized = normalizeCompletedThinkAwareContent(content);
-  const materialized = materializeIncompleteAssistantReply(
+  const recovered = replaceFallbackWithRecoveredThinkAnswer(
     normalized.content,
+    fallbackText
+  );
+  const materialized = materializeIncompleteAssistantReply(
+    recovered.content,
     fallbackText
   );
 
   return {
     content: materialized.content,
-    changed: normalized.changed || materialized.content !== content,
+    changed:
+      normalized.changed ||
+      recovered.changed ||
+      materialized.content !== content,
     usedFallback: materialized.usedFallback,
   };
 }
@@ -620,4 +712,22 @@ export function materializeIncompleteAssistantReply(
  */
 export function parseThinkBlocks(content: string): MessageBlock[] {
   return analyzeThinkAwareContent(content).blocks;
+}
+
+/**
+ * Parses streaming content without repairing an open think block.
+ *
+ * Completed messages may use answer-tail recovery for malformed historical
+ * payloads, but streaming content is still provisional. Keeping the full open
+ * think tail inside the think block prevents temporary body text flicker.
+ */
+export function parseStreamingThinkBlocks(content: string): MessageBlock[] {
+  return parseThinkBlocksRaw(content);
+}
+
+export function normalizeIncompleteFallbackAssistantSnapshot(content: string): {
+  content: string;
+  changed: boolean;
+} {
+  return replaceFallbackWithRecoveredThinkAnswer(content);
 }

@@ -10,6 +10,8 @@ RUN corepack enable && corepack prepare pnpm@10.14.0 --activate
 COPY . .
 
 RUN pnpm install --frozen-lockfile
+ARG NEXT_PUBLIC_BRAND_NAME
+ARG NEXT_PUBLIC_BRAND_DOMAIN
 RUN pnpm build:all
 
 EXPOSE 3000 3010

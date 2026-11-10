@@ -21,9 +21,9 @@ services:
       FASTIFY_PROXY_BASE_URL: http://api:3010
       DEPLOY_WEB_BASE_URL: http://web:3000
       DEPLOY_FASTIFY_BASE_URL: http://api:3010
-    command: ["pnpm", "start:prod"]
+    command: ['pnpm', 'start:prod']
     ports:
-      - "3000:3000"
+      - '3000:3000'
     networks:
       - test_stack
     depends_on:
@@ -44,9 +44,9 @@ services:
       REDIS_URL: redis://redis:6379/1
       S3_ENDPOINT: http://minio:9000
       NEXT_UPSTREAM_BASE_URL: http://web:3000
-    command: ["pnpm", "start:prod:api"]
+    command: ['pnpm', 'start:prod:api']
     ports:
-      - "3010:3010"
+      - '3010:3010'
     networks:
       - test_stack
 
@@ -58,7 +58,7 @@ services:
     environment:
       DEPLOY_WEB_BASE_URL: http://web:3000
       DEPLOY_FASTIFY_BASE_URL: http://api:3010
-    command: ["bash", "scripts/smoke-prod.sh"]
+    command: ['bash', 'scripts/smoke-prod.sh']
     networks:
       - test_stack
     depends_on:

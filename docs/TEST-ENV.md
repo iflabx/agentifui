@@ -26,6 +26,8 @@ You can load it with the shared wrapper:
 AGENTIF_ENV_FILE=.env.test bash scripts/with-env-local.sh <command>
 ```
 
+The M3 managed CRUD integration test uses an explicitly supplied `DATABASE_URL` (or `PGURL`), then `.env.test.local` / `.env.test` if neither is set. It never falls back to `.env.dev` or a built-in database address, and fails before CRUD operations when test configuration is missing. These tests write data: verify that the selected connection is an isolated test database, especially when inheriting environment variables from a shell.
+
 ## Minimum Isolated Values
 
 Use a dedicated namespace for every shared service:
@@ -125,6 +127,8 @@ Use targeted commands when possible, but keep the test profile loaded so runtime
 ## CI Parity
 
 GitHub Actions uses the same variable model and applies the same SQL migrations, but it starts temporary PostgreSQL, Redis, and MinIO services on the GitHub runner itself.
+
+The test/build job installs application dependencies once, runs tests, then builds all workspace packages with `NODE_ENV=production`. MinIO and its `mc` client are compiled from pinned official upstream commits on a tool-cache miss; the binaries are cached by operating system, architecture, Go version, and both source commits. This avoids relying on unavailable community images or legacy binary downloads. A cold cache takes longer; subsequent runs reuse the binaries. Object data and client configuration remain temporary and are not cached or published.
 
 That means CI does not talk to your existing dev or prod services unless you explicitly point it there.
 

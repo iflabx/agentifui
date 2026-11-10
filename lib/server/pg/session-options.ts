@@ -1,6 +1,14 @@
-function isTruthyEnv(value: string | null | undefined): boolean {
-  const normalized = (value || '').trim().toLowerCase();
-  return ['1', 'true', 'yes', 'on'].includes(normalized);
+export function resolvePgRlsStrictModeFromEnv(): 'on' | 'off' | undefined {
+  const normalized = (process.env.APP_RLS_STRICT_MODE || '')
+    .trim()
+    .toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+    return 'on';
+  }
+  if (['0', 'false', 'no', 'off'].includes(normalized)) {
+    return 'off';
+  }
+  return undefined;
 }
 
 type PgSessionOptionsInput = {
@@ -15,7 +23,7 @@ export function resolvePgSessionOptionsFromEnv(
 ): string | undefined {
   const options: string[] = [];
 
-  if (isTruthyEnv(process.env.APP_RLS_STRICT_MODE)) {
+  if (resolvePgRlsStrictModeFromEnv() === 'on') {
     options.push(`-c app.rls_strict_mode=on`);
   }
 

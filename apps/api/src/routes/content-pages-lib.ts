@@ -1,5 +1,7 @@
-import { existsSync, promises as fs } from 'node:fs';
+import { promises as fs } from 'node:fs';
 import path from 'node:path';
+
+import { resolveRuntimeContentDir } from '../lib/runtime-content';
 
 export type PageName = 'home' | 'about';
 
@@ -100,14 +102,6 @@ const DEFAULT_SOURCE_LOCALE = 'en-US';
 const LOCK_TIMEOUT = 5000;
 const fileLocks = new Map<string, { timestamp: number; processId: string }>();
 
-function getContentPagesDirCandidates(): string[] {
-  return [
-    path.resolve(process.cwd(), 'content/pages'),
-    path.resolve(process.cwd(), '..', 'content/pages'),
-    path.resolve(process.cwd(), '..', '..', 'content/pages'),
-  ];
-}
-
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
@@ -163,15 +157,7 @@ export function isValidPageName(page: string): page is PageName {
 }
 
 function resolveContentPagesDirPath(): string {
-  const candidates = getContentPagesDirCandidates();
-
-  for (const directoryPath of candidates) {
-    if (existsSync(directoryPath)) {
-      return directoryPath;
-    }
-  }
-
-  return candidates[0];
+  return resolveRuntimeContentDir('content/pages');
 }
 
 function resolveStructureFilePath(page: PageName): string {

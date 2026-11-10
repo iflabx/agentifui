@@ -1,5 +1,7 @@
 /** @jest-environment node */
-import type { FastifyReply, FastifyRequest } from 'fastify';
+import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
+import { request as httpRequest } from 'node:http';
+import { type AddressInfo, createConnection } from 'node:net';
 
 import {
   fetchWithDifyProxyResilience,
@@ -102,6 +104,63 @@ function createTargetConfig(
     },
     ...overrides,
   };
+}
+
+function readStreamConnection(port: number, connection: string) {
+  return new Promise<string>((resolve, reject) => {
+    const socket = createConnection({ host: '127.0.0.1', port });
+    let output = '';
+    let followupSent = false;
+    const timer = setTimeout(() => {
+      socket.destroy();
+      reject(new Error('Stream connection did not finish'));
+    }, 3000);
+
+    socket.on('connect', () => {
+      socket.write(
+        `POST /stream HTTP/1.1\r\nHost: localhost\r\nConnection: ${connection}\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}`
+      );
+    });
+    socket.on('data', chunk => {
+      output += chunk.toString();
+      if (
+        !followupSent &&
+        output.includes('\r\n0\r\n\r\n') &&
+        /\r\nconnection: keep-alive\r\n/i.test(output)
+      ) {
+        followupSent = true;
+        socket.write(
+          'GET /probe HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n'
+        );
+      }
+    });
+    socket.on('error', error => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    socket.on('close', () => {
+      clearTimeout(timer);
+      resolve(output);
+    });
+  });
+}
+
+function requestProbe(port: number) {
+  return new Promise<number | undefined>((resolve, reject) => {
+    const request = httpRequest(
+      { host: '127.0.0.1', port, path: '/probe', agent: false },
+      response => {
+        response.resume();
+        response.on('end', () => resolve(response.statusCode));
+        response.on('error', reject);
+      }
+    );
+    request.on('error', reject);
+    request.setTimeout(3000, () => {
+      request.destroy(new Error('Probe request timed out'));
+    });
+    request.end();
+  });
 }
 
 describe('dispatchDifyUpstreamRequest trusted user context integration', () => {
@@ -280,4 +339,68 @@ describe('dispatchDifyUpstreamRequest trusted user context integration', () => {
     );
     expect(request.log.warn).toHaveBeenCalled();
   });
+
+  it.each<[string, string | undefined]>([
+    ['close', 'keep-alive'],
+    ['close', undefined],
+    ['keep-alive', 'close'],
+    ['keep-alive', undefined],
+  ])(
+    'respects downstream Connection: %s with upstream Connection: %s over TCP',
+    async (connection, upstreamConnection) => {
+      const headers = new Headers({ 'content-type': 'text/event-stream' });
+      if (upstreamConnection) {
+        headers.set('connection', upstreamConnection);
+      }
+      mockedFetch.mockResolvedValueOnce(
+        new Response('data: {"event":"message_end"}\n\n', { headers })
+      );
+      const app = Fastify({ logger: false });
+      const parserErrors: string[] = [];
+      let probeHits = 0;
+      app.server.on('clientError', (error: NodeJS.ErrnoException) => {
+        parserErrors.push(error.code || error.name);
+      });
+      app.post('/stream', async (request, reply) => {
+        await dispatchDifyUpstreamRequest(
+          request,
+          reply,
+          createContext(),
+          createTargetConfig()
+        );
+      });
+      app.get('/probe', async () => {
+        probeHits += 1;
+        return { ok: true };
+      });
+
+      try {
+        await app.listen({ host: '127.0.0.1', port: 0 });
+        const { port } = app.server.address() as AddressInfo;
+        const output = await readStreamConnection(port, connection);
+        const statuses = Array.from(
+          output.matchAll(/HTTP\/1\.1 (\d+)/g),
+          match => Number(match[1])
+        );
+
+        expect(output).toContain('data: {"event":"message_end"}\n\n');
+        expect(output).toMatch(/x-accel-buffering: no\r\n/i);
+        expect(output).toMatch(/cache-control: no-cache, no-transform\r\n/i);
+        expect(parserErrors).toEqual([]);
+        if (connection === 'close') {
+          expect(output).toMatch(/connection: close\r\n/i);
+          expect(statuses).toEqual([200]);
+          expect(probeHits).toBe(0);
+          expect(await requestProbe(port)).toBe(200);
+          expect(probeHits).toBe(1);
+        } else {
+          expect(statuses).toEqual([200, 200]);
+          expect(probeHits).toBe(1);
+        }
+      } finally {
+        app.server.closeAllConnections();
+        await app.close();
+      }
+    }
+  );
 });

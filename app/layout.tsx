@@ -3,6 +3,7 @@ import { ClientErrorMonitor } from '@components/observability/client-error-monit
 import { DynamicTitle } from '@components/ui/dynamic-title';
 import { NotificationBar } from '@components/ui/notification-bar';
 import { TooltipContainer } from '@components/ui/tooltip';
+import { getDisplayBrandName } from '@lib/config/branding';
 import { cn } from '@lib/utils';
 import { Toaster } from 'sonner';
 
@@ -109,10 +110,12 @@ const playfair = localFont({
   display: 'swap',
 });
 
-export const metadata: Metadata = {
-  title: 'AgentifUI',
-  description: 'Enterprise-level large model application',
-};
+export function generateMetadata(): Metadata {
+  return {
+    title: getDisplayBrandName(),
+    description: 'Enterprise-level large model application',
+  };
+}
 
 export default async function RootLayout({
   children,

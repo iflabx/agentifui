@@ -35,6 +35,7 @@ function createConfig(
     host: '127.0.0.1',
     port: 3010,
     logLevel: 'silent',
+    corsAllowedOrigins: [],
     nextUpstreamBaseUrl: 'http://127.0.0.1:3000',
     proxyPrefixes: ['/api/dify'],
     realtimeSourceMode: 'db-outbox',

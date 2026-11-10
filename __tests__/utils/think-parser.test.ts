@@ -4,6 +4,7 @@ import {
   materializeIncompleteAssistantReply,
   normalizeCompletedAssistantReply,
   normalizeCompletedThinkAwareContent,
+  parseStreamingThinkBlocks,
   parseThinkBlocks,
 } from '../../lib/utils/think-parser';
 
@@ -144,6 +145,88 @@ describe('parseThinkBlocks', () => {
     ]);
   });
 
+  it('should keep apparent answer text inside an open think block while streaming', () => {
+    const content = `<think>Here is a thinking process:
+
+1. 先分析用户需求。
+
+2. 再给出方案。
+
+比斯兔建议今晚可以试试二食堂的小火锅。`;
+
+    expect(parseStreamingThinkBlocks(content)).toEqual([
+      {
+        type: 'think',
+        content: `Here is a thinking process:
+
+1. 先分析用户需求。
+
+2. 再给出方案。
+
+比斯兔建议今晚可以试试二食堂的小火锅。`,
+        status: 'open',
+      },
+    ]);
+  });
+
+  it('should keep completed parser recovery for apparent answer tails in open think content', () => {
+    const content = `<think>Here is a thinking process:
+
+1. 先分析用户需求。
+
+2. 再给出方案。
+
+比斯兔建议今晚可以试试二食堂的小火锅。`;
+
+    expect(parseThinkBlocks(content)).toEqual([
+      {
+        type: 'think',
+        content: `Here is a thinking process:
+
+1. 先分析用户需求。
+
+2. 再给出方案。`,
+        status: 'closed',
+      },
+      {
+        type: 'text',
+        content: '比斯兔建议今晚可以试试二食堂的小火锅。',
+      },
+    ]);
+  });
+
+  it('should recover a final answer line from completed open think content', () => {
+    const content = `<think>Here is a thinking process:
+1. 先分析用户需求。
+2. 再给出方案。
+比斯兔建议今晚可以试试二食堂的小火锅。`;
+
+    expect(parseStreamingThinkBlocks(content)).toEqual([
+      {
+        type: 'think',
+        content: `Here is a thinking process:
+1. 先分析用户需求。
+2. 再给出方案。
+比斯兔建议今晚可以试试二食堂的小火锅。`,
+        status: 'open',
+      },
+    ]);
+
+    expect(parseThinkBlocks(content)).toEqual([
+      {
+        type: 'think',
+        content: `Here is a thinking process:
+1. 先分析用户需求。
+2. 再给出方案。`,
+        status: 'closed',
+      },
+      {
+        type: 'text',
+        content: '比斯兔建议今晚可以试试二食堂的小火锅。',
+      },
+    ]);
+  });
+
   it('should recover a reply tail from an unclosed think block when a reply marker exists', () => {
     const result = parseThinkBlocks(
       '<think>Plan steps\n\n**生成回复**：\nVisible answer'
@@ -198,6 +281,33 @@ describe('parseThinkBlocks', () => {
       content:
         '<think>Plan steps\n\n**生成内容**：\n* bullet</think>\n\n回答未完整生成，请重试。',
       usedFallback: true,
+    });
+  });
+
+  it('should replace fallback with a recovered answer trapped inside a closed think block', () => {
+    const result = normalizeCompletedAssistantReply(
+      `<think>Here is a thinking process:
+
+1. 先分析用户需求。
+
+2. 再给出方案。
+
+比斯兔建议今晚可以试试二食堂的小火锅。</think>
+
+The answer was not generated completely. Please retry.`,
+      'The answer was not generated completely. Please retry.'
+    );
+
+    expect(result).toEqual({
+      content: `<think>Here is a thinking process:
+
+1. 先分析用户需求。
+
+2. 再给出方案。</think>
+
+比斯兔建议今晚可以试试二食堂的小火锅。`,
+      changed: true,
+      usedFallback: false,
     });
   });
 

@@ -141,6 +141,67 @@ describe('conversations-api lookup dedupe', () => {
     });
     expect(mockedCallInternalDataAction).toHaveBeenCalledTimes(1);
   });
+
+  it('does not let a stale null lookup overwrite a concurrently created conversation', async () => {
+    const { callInternalDataAction } = await import(
+      '@lib/db/internal-data-api'
+    );
+    const mockedCallInternalDataAction =
+      callInternalDataAction as jest.MockedFunction<
+        typeof callInternalDataAction
+      >;
+
+    mockedCallInternalDataAction.mockReset();
+
+    let resolveLookup:
+      | ((value: { success: true; data: Conversation | null }) => void)
+      | undefined;
+
+    mockedCallInternalDataAction.mockImplementation(action => {
+      if (action === 'conversations.getConversationByExternalId') {
+        return new Promise(resolve => {
+          resolveLookup = resolve as (value: {
+            success: true;
+            data: Conversation | null;
+          }) => void;
+        });
+      }
+
+      return Promise.resolve({
+        success: true,
+        data: createConversationRecord(),
+      });
+    });
+
+    const { createConversation, getConversationByExternalId } = await import(
+      './conversations-api'
+    );
+
+    const staleLookup = getConversationByExternalId('dify-conv-1');
+    await createConversation({
+      user_id: 'user-1',
+      ai_config_id: null,
+      title: 'Creating...',
+      summary: null,
+      settings: {},
+      status: 'active',
+      external_id: 'dify-conv-1',
+      app_id: 'app-1',
+      last_message_preview: null,
+      metadata: {},
+    });
+
+    resolveLookup?.({ success: true, data: null });
+    await staleLookup;
+
+    await expect(
+      getConversationByExternalId('dify-conv-1')
+    ).resolves.toMatchObject({
+      success: true,
+      data: expect.objectContaining({ id: 'db-conv-1' }),
+    });
+    expect(mockedCallInternalDataAction).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('conversations-api generated title sync', () => {

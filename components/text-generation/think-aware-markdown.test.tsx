@@ -9,7 +9,9 @@ import {
 
 jest.mock('react-markdown', () => ({
   __esModule: true,
-  default: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  default: ({ children }: { children: ReactNode }) => (
+    <div data-testid="react-markdown">{children}</div>
+  ),
 }));
 
 jest.mock('rehype-katex', () => ({}));
@@ -103,6 +105,50 @@ describe('ThinkAwareMarkdown', () => {
     expect(screen.getByTestId('think-header')).toHaveAttribute(
       'data-preview',
       'first line ts const a = 1'
+    );
+  });
+
+  it('keeps apparent answer text inside an open think block while streaming', () => {
+    render(
+      <ThinkAwareMarkdown
+        content={`<think>Here is a thinking process:
+
+1. 先分析用户需求。
+
+2. 再给出方案。
+
+比斯兔建议今晚可以试试二食堂的小火锅。`}
+        markdownComponents={markdownComponents}
+        isStreaming={true}
+      />
+    );
+
+    expect(screen.getByTestId('think-content')).toHaveTextContent(
+      '比斯兔建议今晚可以试试二食堂的小火锅。'
+    );
+    expect(screen.queryByTestId('react-markdown')).not.toBeInTheDocument();
+  });
+
+  it('keeps completed recovery for apparent answer text in malformed historical think content', () => {
+    render(
+      <ThinkAwareMarkdown
+        content={`<think>Here is a thinking process:
+
+1. 先分析用户需求。
+
+2. 再给出方案。
+
+比斯兔建议今晚可以试试二食堂的小火锅。`}
+        markdownComponents={markdownComponents}
+        isStreaming={false}
+      />
+    );
+
+    expect(screen.getByTestId('think-content')).not.toHaveTextContent(
+      '比斯兔建议今晚可以试试二食堂的小火锅。'
+    );
+    expect(screen.getByTestId('react-markdown')).toHaveTextContent(
+      '比斯兔建议今晚可以试试二食堂的小火锅。'
     );
   });
 

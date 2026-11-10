@@ -3,8 +3,6 @@ name: Security Checks
 on:
   schedule:
     - cron: '0 2 * * 1'  # Run every Monday at 2:00 AM
-  pull_request:
-    branches: [ main, develop ]
   workflow_dispatch:
 
 permissions:
@@ -14,6 +12,8 @@ jobs:
   dependency-scan:
     name: Dependency Security Scan
     runs-on: ubuntu-latest
+    outputs:
+      audit_status: ${{ steps.audit.outputs.status }}
     
     steps:
     - name: Checkout code
@@ -25,22 +25,47 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '18'
+        node-version: '22.22.0'
         cache: 'pnpm'
         
     - name: Install dependencies
       run: pnpm install --frozen-lockfile
         
     - name: Run pnpm audit
+      id: audit
       run: |
-        echo "Checking for dependency vulnerabilities..."
-        set +e
-        pnpm audit --audit-level=moderate
-        status=$?
-        set -e
-        if [[ $status -ne 0 ]]; then
-          echo "::warning::pnpm audit reported known dependency vulnerabilities. Tracking dependency debt separately while keeping the security workflow green."
-        fi
+        node <<'NODE'
+        const { spawnSync } = require('node:child_process');
+        const { appendFileSync } = require('node:fs');
+        const result = spawnSync('pnpm', ['audit', '--audit-level=moderate', '--json'], {
+          encoding: 'utf8',
+          timeout: 120000,
+        });
+        let status = 'error';
+        try {
+          const report = JSON.parse(result.stdout);
+          const counts = ['moderate', 'high', 'critical'].map(
+            severity => report.metadata?.vulnerabilities?.[severity]
+          );
+          if (!result.error && [0, 1].includes(result.status) && !report.error &&
+              counts.every(count => Number.isInteger(count) && count >= 0)) {
+            const total = counts.reduce((sum, count) => sum + count, 0);
+            if ((result.status === 0) === (total === 0)) {
+              status = total > 0 ? 'vulnerabilities' : 'passed';
+              console.log(`Dependency vulnerabilities (moderate or higher): ${total}`);
+            }
+          }
+        } catch {
+          status = 'error';
+        }
+        appendFileSync(process.env.GITHUB_OUTPUT, `status=${status}\n`);
+        if (status === 'error') {
+          console.error('::error::Dependency audit did not complete successfully. Check registry availability and pnpm audit output locally.');
+          process.exitCode = 1;
+        } else if (status === 'vulnerabilities') {
+          console.log('::warning::Dependency vulnerabilities detected. Run pnpm audit for details; findings remain non-blocking.');
+        }
+        NODE
 
   code-security:
     name: Source Code Security Check
@@ -49,26 +74,13 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
-    - name: Scan for hardcoded secrets
-      run: |
-        echo "Scanning for hardcoded secrets..."
-
-        # Check for hardcoded secrets
-        if grep -r -i -E "(api_key|apikey|secret|token|password)\s*[:=]\s*['\"][a-zA-Z0-9+/]{20,}['\"]" \
-           --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" \
-           . | grep -v node_modules | grep -v -E "(placeholder|example|test|demo|sample|mock)"; then
-          echo "Hardcoded secret detected"
-          exit 1
-        fi
-
-        # Check for accidentally committed .env files
-        if find . -name ".env" -not -path "./node_modules/*" -not -path "./.git/*" | grep -q .; then
-          echo ".env file committed to the repository"
-          exit 1
-        fi
-
-        echo "No hardcoded secrets found"
+      with:
+        fetch-depth: 0
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22.22.0'
+    - uses: ./.github/actions/publication-check
 
   security-report:
     name: Security Report Summary
@@ -78,14 +90,30 @@ jobs:
     
     steps:
     - name: Generate security report
+      env:
+        DEPENDENCY_RESULT: ${{ needs.dependency-scan.result }}
+        AUDIT_STATUS: ${{ needs.dependency-scan.outputs.audit_status }}
+        CODE_RESULT: ${{ needs.code-security.result }}
       run: |
-        echo "Security Check Report"
-        echo "Generated at: $(date)"
-        echo "Dependency Scan Result: ${{ needs.dependency-scan.result }}"
-        echo "Code Security Check Result: ${{ needs.code-security.result }}"
-        
-        if [ "${{ needs.dependency-scan.result }}" = "success" ] && [ "${{ needs.code-security.result }}" = "success" ]; then
-          echo "Overall Status: Secure"
-        else
-          echo "Overall Status: Issues Detected. Please check logs for details."
-        fi
+        node <<'NODE'
+        const { appendFileSync } = require('node:fs');
+        const { DEPENDENCY_RESULT, AUDIT_STATUS, CODE_RESULT } = process.env;
+        let overall;
+        if (DEPENDENCY_RESULT !== 'success' || CODE_RESULT !== 'success' ||
+            !['passed', 'vulnerabilities'].includes(AUDIT_STATUS)) {
+          overall = 'Checks failed or incomplete. See job logs.';
+          process.exitCode = 1;
+        } else if (AUDIT_STATUS === 'vulnerabilities') {
+          overall = 'Attention required: dependency vulnerabilities detected (non-blocking).';
+        } else {
+          overall = 'No findings reported by configured checks; this is not a security guarantee.';
+        }
+        const summary = [
+          '## Security Check Report',
+          `Dependency scan: ${DEPENDENCY_RESULT}; audit: ${AUDIT_STATUS || 'not completed'}`,
+          `Publication check: ${CODE_RESULT}`,
+          `Overall: ${overall}`,
+        ].join('\n\n');
+        console.log(summary);
+        appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${summary}\n`);
+        NODE

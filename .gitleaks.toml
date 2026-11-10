@@ -1,0 +1,10 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Exact public template placeholder and deterministic test encryption key; never use for real data"
+regexTarget = "secret"
+regexes = [
+  '''^your-32-byte-hex-string$''',
+  '''^(0123456789abcdef){4}$''',
+]

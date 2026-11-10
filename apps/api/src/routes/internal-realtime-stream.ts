@@ -315,7 +315,6 @@ export const internalRealtimeStreamRoutes: FastifyPluginAsync<
     reply.raw.statusCode = 200;
     reply.raw.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     reply.raw.setHeader('Cache-Control', 'no-cache, no-transform');
-    reply.raw.setHeader('Connection', 'keep-alive');
     reply.raw.setHeader('X-Accel-Buffering', 'no');
     if (typeof reply.raw.flushHeaders === 'function') {
       reply.raw.flushHeaders();

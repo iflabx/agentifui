@@ -110,6 +110,7 @@ async function seedAboutPage(root: string) {
 
 describe('content page persistence helpers', () => {
   const originalCwd = process.cwd();
+  const originalRuntime = process.env.AGENTIF_RUNTIME_DIR;
   let tempRoot = '';
 
   beforeEach(async () => {
@@ -117,10 +118,13 @@ describe('content page persistence helpers', () => {
       path.join(os.tmpdir(), 'agentifui-content-pages-')
     );
     await seedAboutPage(tempRoot);
+    process.env.AGENTIF_RUNTIME_DIR = tempRoot;
     process.chdir(tempRoot);
   });
 
   afterEach(async () => {
+    if (originalRuntime === undefined) delete process.env.AGENTIF_RUNTIME_DIR;
+    else process.env.AGENTIF_RUNTIME_DIR = originalRuntime;
     process.chdir(originalCwd);
     if (tempRoot) {
       await rm(tempRoot, { recursive: true, force: true });

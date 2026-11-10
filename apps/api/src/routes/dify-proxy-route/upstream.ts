@@ -203,15 +203,10 @@ async function sendUpstreamResponse(input: {
       targetHost: target.host,
       targetOrigin: target.origin,
       allow: key => {
-        return (
-          key === 'content-type' ||
-          key === 'cache-control' ||
-          key === 'connection'
-        );
+        return key === 'content-type' || key === 'cache-control';
       },
       defaultHeaders: {
         'Cache-Control': 'no-cache, no-transform',
-        Connection: 'keep-alive',
         'X-Accel-Buffering': 'no',
       },
     });

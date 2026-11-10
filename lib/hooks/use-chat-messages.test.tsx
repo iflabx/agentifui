@@ -167,6 +167,145 @@ describe('useChatMessages', () => {
     );
   });
 
+  it('normalizes assistant fallback snapshots before saving payloads', async () => {
+    useChatStore.setState(state => ({
+      ...state,
+      messages: [
+        {
+          id: 'assistant-1',
+          text: `<think>Here is a thinking process:
+
+1. 先分析用户需求。
+
+2. 再给出方案。
+
+比斯兔建议今晚可以试试二食堂的小火锅。</think>
+
+The answer was not generated completely. Please retry.`,
+          isUser: false,
+          persistenceStatus: 'pending',
+          metadata: {
+            frontend_metadata: {
+              sequence_index: 1,
+              incomplete_assistant_fallback: true,
+            },
+          },
+        },
+      ],
+    }));
+
+    const { result } = renderHook(() => useChatMessages('user-1'));
+
+    await act(async () => {
+      await expect(
+        result.current.saveMessage(
+          {
+            id: 'assistant-1',
+            text: `<think>Here is a thinking process:
+
+1. 先分析用户需求。
+
+2. 再给出方案。
+
+比斯兔建议今晚可以试试二食堂的小火锅。</think>
+
+The answer was not generated completely. Please retry.`,
+            isUser: false,
+            persistenceStatus: 'pending',
+            metadata: {
+              frontend_metadata: {
+                sequence_index: 1,
+                incomplete_assistant_fallback: true,
+              },
+            },
+          },
+          'conv-1'
+        )
+      ).resolves.toBe(true);
+    });
+
+    expect(saveMessageRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: `<think>Here is a thinking process:
+
+1. 先分析用户需求。
+
+2. 再给出方案。</think>
+
+比斯兔建议今晚可以试试二食堂的小火锅。`,
+        metadata: {
+          frontend_metadata: {
+            sequence_index: 1,
+          },
+        },
+      })
+    );
+  });
+
+  it('releases the saving lock before retrying a failed save', async () => {
+    jest.useFakeTimers();
+    try {
+      useChatStore.setState(state => ({
+        ...state,
+        messages: [
+          {
+            id: 'assistant-1',
+            text: 'recovered reply',
+            isUser: false,
+            persistenceStatus: 'pending',
+          },
+        ],
+      }));
+
+      (saveMessageRecord as jest.Mock)
+        .mockResolvedValueOnce({
+          success: false,
+          error: { message: 'temporary failure' },
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          data: {
+            id: 'db-msg-1',
+            content: 'recovered reply',
+            external_id: null,
+          },
+        });
+
+      const { result } = renderHook(() => useChatMessages('user-1'));
+
+      await act(async () => {
+        await expect(
+          result.current.saveMessage(
+            {
+              id: 'assistant-1',
+              text: 'recovered reply',
+              isUser: false,
+              persistenceStatus: 'pending',
+            },
+            'conv-1'
+          )
+        ).resolves.toBe(false);
+      });
+
+      expect(saveMessageRecord).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        jest.advanceTimersByTime(1000);
+        await Promise.resolve();
+      });
+
+      expect(saveMessageRecord).toHaveBeenCalledTimes(2);
+      expect(useChatStore.getState().messages[0]).toEqual(
+        expect.objectContaining({
+          persistenceStatus: 'saved',
+          db_id: 'db-msg-1',
+        })
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('patches stopped metadata after an in-flight save finishes', async () => {
     useChatStore.setState(state => ({
       ...state,

@@ -182,7 +182,7 @@ The supported production shape is:
 
 - `AgentifUI-Prod` - Next.js process managed by PM2
 - `AgentifUI-API-Prod` - Fastify process managed by PM2
-- deployment entrypoint: `pnpm deploy`
+- deployment entrypoint: `pnpm run deploy`
 - PM2 config: `ecosystem.prod.config.js`
 - smoke check: `scripts/smoke-prod.sh`
 
@@ -194,14 +194,16 @@ GitHub Actions currently runs on pushes and pull requests for both `main` and `d
 
 The pipeline does the following:
 
-- install dependencies with pnpm
+- check the outgoing publication for secrets and private paths on every run
+- skip heavy checks for documentation-only changes and cancel superseded runs
+- install dependencies once per quality or test/build job with pnpm caching
 - run format/lint checks on changed files
 - run root and workspace type checks
 - start isolated PostgreSQL, Redis, and MinIO services on the GitHub runner
 - apply SQL migrations
-- build shared, API, and web packages
-- run tests
-- run lightweight security scans
+- run tests, then build shared, API, and web packages in the same job
+
+Dependency auditing runs separately on a weekly schedule or manual request. It does not duplicate installation on every push or pull request. Build outputs are not uploaded because deployment builds from the selected source version with its own environment configuration.
 
 This matters architecturally because the repository now assumes monorepo-aware CI and explicit service startup for build/test verification.
 
