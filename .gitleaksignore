@@ -10,6 +10,8 @@ d7f8bd66ad5661ad8967a44a1b553863326f5b9f:docs/security/code-security-guidelines.
 9d08a6ba111145892a154842adff6e5ffe50a005:middleware.ts:jwt:16
 67a774d80e2eccbc14df01a9edffdc157833d486:middleware.ts:jwt:16
 # Owner-approved historical exceptions on 2026-11-09; no new occurrences exempted.
+# Owner reports these legacy integrations are no longer used (2026-11-10).
+# Credential revocation is unverified; these values must not be reused.
 fc21277629ba9f7abe2cb2e2d9fff96ccca62bc7:app/layout.tsx:generic-api-key:66
 c9015176c93664ccba202154d6afdd39a8d76d53:.env.local.example:jwt:3
 c9015176c93664ccba202154d6afdd39a8d76d53:.env.local.example:jwt:4
