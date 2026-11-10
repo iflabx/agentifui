@@ -366,7 +366,7 @@ test('refuses another deployment holding the stable lock', () => {
   expect(result.stderr).toContain('another deployment');
 });
 
-test('CI aggregation rejects failed detection/install, cancellation and missing required jobs', () => {
+test('CI aggregation rejects failed detection/checks, cancellation and missing required jobs', () => {
   const workflow = fs.readFileSync(
     path.join(repository, '.github/workflows/ci.yml'),
     'utf8'
@@ -375,14 +375,7 @@ test('CI aggregation rejects failed detection/install, cancellation and missing 
     .split("node <<'NODE'\n")[1]
     .split('\n          NODE')[0]
     .replace(/^          /gm, '');
-  const jobs = [
-    'install',
-    'format-and-lint',
-    'type-check',
-    'build',
-    'test',
-    'security-check',
-  ];
+  const jobs = ['quality', 'verify'];
   function check(required: string, changedJob?: string, result?: string) {
     const needs: Record<
       string,
@@ -393,7 +386,10 @@ test('CI aggregation rejects failed detection/install, cancellation and missing 
     };
     for (const job of jobs)
       needs[job] = { result: required === 'true' ? 'success' : 'skipped' };
-    if (changedJob) needs[changedJob].result = result!;
+    if (changedJob) {
+      if (result === undefined) delete needs[changedJob];
+      else needs[changedJob].result = result;
+    }
     return spawnSync(process.execPath, ['-e', body], {
       env: { ...process.env, CI_NEEDS: JSON.stringify(needs) },
     }).status;
@@ -403,8 +399,14 @@ test('CI aggregation rejects failed detection/install, cancellation and missing 
   expect(check('false', 'publication-check', 'skipped')).not.toBe(0);
   expect(check('true', 'publication-check', 'failure')).not.toBe(0);
   expect(check('true', 'changes', 'failure')).not.toBe(0);
-  expect(check('true', 'install', 'failure')).not.toBe(0);
-  expect(check('true', 'build', 'cancelled')).not.toBe(0);
-  expect(check('true', 'test', 'skipped')).not.toBe(0);
-  expect(check('false', 'test', 'cancelled')).not.toBe(0);
+  for (const job of jobs) {
+    expect(check('true', job, 'failure')).not.toBe(0);
+    expect(check('true', job, 'cancelled')).not.toBe(0);
+    expect(check('true', job, 'skipped')).not.toBe(0);
+    expect(check('true', job)).not.toBe(0);
+    expect(check('false', job, 'cancelled')).not.toBe(0);
+    expect(check('false', job, 'success')).not.toBe(0);
+    expect(check('false', job)).not.toBe(0);
+  }
+  expect(check('')).not.toBe(0);
 });

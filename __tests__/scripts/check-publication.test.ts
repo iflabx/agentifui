@@ -210,7 +210,7 @@ test('CI installs the shared scanner in the test runner before running tests', (
     path.join(process.cwd(), '.github/workflows/ci.yml'),
     'utf8'
   );
-  const testJob = workflow.match(/^  test:\n[\s\S]*?(?=^  [\w-]+:)/m)?.[0];
+  const testJob = workflow.match(/^  verify:\n[\s\S]*?(?=^  [\w-]+:)/m)?.[0];
   expect(testJob).toBeDefined();
   expect(testJob).toMatch(
     /uses: \.\/\.github\/actions\/publication-check\n\s+with:\n\s+install-only: 'true'[\s\S]*?run: pnpm test/
