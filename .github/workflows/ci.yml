@@ -283,7 +283,7 @@ jobs:
           install-only: 'true'
 
       - name: Run tests
-        run: pnpm test --runInBand
+        run: pnpm test --maxWorkers=2
 
       - name: Build application and workspace packages
         env:

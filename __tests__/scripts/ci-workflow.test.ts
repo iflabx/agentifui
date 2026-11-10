@@ -27,9 +27,10 @@ test('CI keeps five jobs, two dependency installs and one isolated service set',
   );
   expect(workflow.match(/^    services:$/gm)).toHaveLength(1);
   expect(workflow).not.toMatch(/actions\/upload-artifact|run: pnpm audit/);
-  expect(job('verify')).toMatch(/run: pnpm test --runInBand/);
+  expect(job('verify')).toMatch(/run: pnpm test --maxWorkers=2/);
+  expect(job('verify')).not.toContain('--forceExit');
   expect(job('verify')).toMatch(
-    /run: pnpm test --runInBand[\s\S]*?NODE_ENV: production\n\s+run: pnpm run build:all/
+    /run: pnpm test --maxWorkers=2[\s\S]*?NODE_ENV: production\n\s+run: pnpm run build:all/
   );
   expect(job('quality')).toContain('pnpm --filter @agentifui/api type-check');
 });
