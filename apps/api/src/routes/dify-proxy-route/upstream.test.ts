@@ -249,14 +249,17 @@ describe('dispatchDifyUpstreamRequest trusted user context integration', () => {
       '00000000-0000-4000-8000-000000000123'
     );
     expect(mockedInjectTrustedUserContext).toHaveBeenCalledWith(
-      createTargetConfig().rawBody,
+      {
+        ...(createTargetConfig().rawBody as object),
+        user: createContext().actor.userId,
+      },
       createContext().actor,
       expect.objectContaining({
         fullName: '张三',
       })
     );
     expect(mockedFetch).toHaveBeenCalledWith(
-      'https://dify.example.com/v1/chat-messages',
+      `https://dify.example.com/v1/chat-messages?user=${createContext().actor.userId}`,
       expect.any(Object)
     );
     const fetchInit = mockedFetch.mock.calls[0]?.[1] as RequestInit | undefined;
@@ -286,7 +289,7 @@ describe('dispatchDifyUpstreamRequest trusted user context integration', () => {
       'completion-messages'
     );
     expect(mockedFetch).toHaveBeenCalledWith(
-      'https://dify.example.com/v1/completion-messages',
+      `https://dify.example.com/v1/completion-messages?user=${createContext().actor.userId}`,
       expect.any(Object)
     );
   });
@@ -313,7 +316,7 @@ describe('dispatchDifyUpstreamRequest trusted user context integration', () => {
       'workflows/run'
     );
     expect(mockedFetch).toHaveBeenCalledWith(
-      'https://dify.example.com/v1/workflows/run',
+      `https://dify.example.com/v1/workflows/run?user=${createContext().actor.userId}`,
       expect.any(Object)
     );
   });
@@ -333,11 +336,154 @@ describe('dispatchDifyUpstreamRequest trusted user context integration', () => {
     );
 
     expect(mockedInjectTrustedUserContext).toHaveBeenCalledWith(
-      createTargetConfig().rawBody,
+      {
+        ...(createTargetConfig().rawBody as object),
+        user: createContext().actor.userId,
+      },
       createContext().actor,
       null
     );
     expect(request.log.warn).toHaveBeenCalled();
+  });
+
+  it.each(['actor-a', 'actor-b'])(
+    'binds conversation reads to %s, not the supplied user',
+    async userId => {
+      mockedShouldInjectTrustedUserContext.mockReturnValue(false);
+      await dispatchDifyUpstreamRequest(
+        createRequest({
+          method: 'GET',
+          raw: { url: '/api/dify/app-1/conversations?user=victim&limit=10' },
+        }),
+        createReply(),
+        createContext({
+          slug: ['conversations'],
+          actor: { userId, authUserId: 'different-auth-id', role: 'user' },
+        }),
+        createTargetConfig()
+      );
+      expect(mockedFetch).toHaveBeenCalledWith(
+        `https://dify.example.com/v1/conversations?user=${userId}&limit=10`,
+        expect.objectContaining({ method: 'GET' })
+      );
+      expect(mockedFetch.mock.calls[0][1]?.body).toBeUndefined();
+    }
+  );
+
+  it('binds delete identity even outside the generation routes', async () => {
+    mockedShouldInjectTrustedUserContext.mockReturnValue(false);
+    await dispatchDifyUpstreamRequest(
+      createRequest({ method: 'DELETE' }),
+      createReply(),
+      createContext({ slug: ['conversations', 'conversation-id'] }),
+      createTargetConfig({ rawBody: { user: 'victim' } })
+    );
+    const init = mockedFetch.mock.calls[0][1]!;
+    expect(JSON.parse(String(init.body))).toEqual({
+      user: createContext().actor.userId,
+    });
+  });
+
+  it('rebuilds multipart uploads with the trusted identity and a fresh boundary', async () => {
+    mockedShouldInjectTrustedUserContext.mockReturnValue(false);
+    const form = new FormData();
+    form.append('user', 'victim');
+    form.append('file', new Blob(['safe-file']), 'file.txt');
+    const upload = new Request('https://upstream.example.com', {
+      method: 'POST',
+      body: form,
+    });
+    await dispatchDifyUpstreamRequest(
+      createRequest({
+        headers: { 'content-type': upload.headers.get('content-type') },
+      }),
+      createReply(),
+      createContext({ slug: ['files', 'upload'] }),
+      createTargetConfig({ rawBody: Buffer.from(await upload.arrayBuffer()) })
+    );
+    const init = mockedFetch.mock.calls[0][1]!;
+    expect(init.body).toBeInstanceOf(FormData);
+    expect((init.body as FormData).get('user')).toBe(
+      createContext().actor.userId
+    );
+    expect((init.headers as Headers).has('content-type')).toBe(false);
+    expect(await ((init.body as FormData).get('file') as File).text()).toBe(
+      'safe-file'
+    );
+  });
+
+  it.each(['chat-messages?ignored=1', 'chat-messages#ignored', '..'])(
+    'rejects the ambiguous dispatch path %s',
+    async path => {
+      const reply = createReply();
+      await dispatchDifyUpstreamRequest(
+        createRequest(),
+        reply,
+        createContext({ slug: [path] }),
+        createTargetConfig()
+      );
+      expect(reply.status).toHaveBeenCalledWith(400);
+      expect(mockedFetch).not.toHaveBeenCalled();
+      expect(mockedLoadTrustedUserProfile).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    'text/html; charset=utf-8',
+    'image/svg+xml',
+    'application/xhtml+xml',
+    'application/xml',
+  ])('serves untrusted %s as a sandboxed download', async contentType => {
+    mockedShouldInjectTrustedUserContext.mockReturnValue(false);
+    const content = '<script>untrusted()</script>';
+    mockedFetch.mockResolvedValueOnce(
+      new Response(content, {
+        headers: {
+          'Content-Type': contentType,
+          'Content-Disposition': 'inline',
+        },
+      })
+    );
+    const app = Fastify({ logger: false });
+    app.get('/document', async (request, reply) => {
+      await dispatchDifyUpstreamRequest(
+        request,
+        reply,
+        createContext({ slug: ['files', 'file-id', 'preview'] }),
+        createTargetConfig()
+      );
+    });
+    try {
+      const response = await app.inject('/document');
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['content-type']).toBe('application/octet-stream');
+      expect(response.headers['content-disposition']).toMatch(/^attachment;/);
+      expect(response.headers['content-security-policy']).toContain('sandbox');
+      expect(response.headers['x-content-type-options']).toBe('nosniff');
+      expect(response.body).toBe(content);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('returns unknown successful non-JSON types as non-sniffable plain text', async () => {
+    mockedFetch.mockResolvedValueOnce(
+      new Response('<html>not a document</html>', {
+        headers: { 'Content-Type': 'application/x-unknown' },
+      })
+    );
+    const reply = createReply();
+    await dispatchDifyUpstreamRequest(
+      createRequest(),
+      reply,
+      createContext(),
+      createTargetConfig()
+    );
+    expect(reply.type).toHaveBeenCalledWith('text/plain; charset=utf-8');
+    expect(reply.header).toHaveBeenCalledWith(
+      'X-Content-Type-Options',
+      'nosniff'
+    );
   });
 
   it.each<[string, string | undefined]>([

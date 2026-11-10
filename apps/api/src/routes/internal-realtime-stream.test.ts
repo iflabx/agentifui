@@ -4,7 +4,10 @@ import { type IncomingMessage, request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
 import type { ApiRuntimeConfig } from '../config';
-import { subscribeRealtimeEvents } from '../lib/realtime/broker';
+import {
+  readRealtimeEventsSince,
+  subscribeRealtimeEvents,
+} from '../lib/realtime/broker';
 import { registerRealtimeSubscription } from '../lib/realtime/subscription-registry';
 import { resolveIdentityFromSession } from '../lib/session-identity';
 import { internalRealtimeStreamRoutes } from './internal-realtime-stream';
@@ -47,15 +50,41 @@ const config: ApiRuntimeConfig = {
 };
 
 describe('realtime SSE connection management', () => {
-  it.each(['close', 'keep-alive'])(
-    'respects Connection: %s without interrupting the ready event',
-    async connection => {
+  it('denies ordinary-user service-instance live and replay subscriptions', async () => {
+    jest.mocked(resolveIdentityFromSession).mockResolvedValue({
+      kind: 'ok',
+      identity: { userId: 'test-user', role: 'user' },
+    });
+    const app = Fastify({ logger: false });
+    await app.register(internalRealtimeStreamRoutes, { config });
+    try {
+      for (const suffix of ['', '&lastEventId=retained-event']) {
+        const response = await app.inject(
+          `/api/internal/realtime/stream?key=service-instances${suffix}`
+        );
+        expect(response.statusCode).toBe(403);
+      }
+      expect(subscribeRealtimeEvents).not.toHaveBeenCalled();
+      expect(readRealtimeEventsSince).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  it.each([
+    ['close', 'user', 'sidebar-conversations:test-user'],
+    ['keep-alive', 'user', 'sidebar-conversations:test-user'],
+    ['close', 'admin', 'service-instances'],
+    ['keep-alive', 'admin', 'service-instances'],
+  ])(
+    'respects Connection: %s for %s subscribing to %s',
+    async (connection, role, key) => {
       jest.clearAllMocks();
       const unsubscribe = jest.fn();
       const unregister = jest.fn();
       jest.mocked(resolveIdentityFromSession).mockResolvedValue({
         kind: 'ok',
-        identity: { userId: 'test-user', role: 'user' },
+        identity: { userId: 'test-user', role },
       });
       jest.mocked(subscribeRealtimeEvents).mockResolvedValue(unsubscribe);
       jest.mocked(registerRealtimeSubscription).mockReturnValue(unregister);
@@ -78,7 +107,7 @@ describe('realtime SSE connection management', () => {
             {
               host: '127.0.0.1',
               port,
-              path: '/api/internal/realtime/stream?key=sidebar-conversations:test-user',
+              path: `/api/internal/realtime/stream?key=${key}`,
               headers: { connection },
               agent: false,
             },

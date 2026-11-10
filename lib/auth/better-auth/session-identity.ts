@@ -1,6 +1,7 @@
 import { auth } from '@lib/auth/better-auth/server';
 import { Result, failure, success } from '@lib/types/result';
 
+import { resolveTrustedSessionUser } from './session-identity/account-provider';
 import {
   isRecoverableReadOnlyIdentityError,
   shouldInlineIdentitySync,
@@ -103,7 +104,14 @@ export async function syncSessionIdentitySideEffects(
     return success(null);
   }
 
-  const { session, sessionUser } = resolvedSession.data;
+  const { session } = resolvedSession.data;
+  const trustedUser = await resolveTrustedSessionUser(
+    resolvedSession.data.sessionUser
+  );
+  if (!trustedUser.success) {
+    return failure(trustedUser.error);
+  }
+  const sessionUser = trustedUser.data;
   const authUserId = sessionUser.id;
   const resolvedUserId = await resolveInternalUserId(authUserId, sessionUser);
   if (!resolvedUserId.success) {

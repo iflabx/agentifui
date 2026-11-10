@@ -8,12 +8,7 @@ export type MessageRole = 'user' | 'assistant' | 'system';
 export type MessageStatus = 'sent' | 'delivered' | 'error';
 export type ExecutionType = 'workflow' | 'text-generation';
 export type ExecutionStatus =
-  | 'pending'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'stopped'
-  | 'deleted';
+  'pending' | 'running' | 'completed' | 'failed' | 'stopped' | 'deleted';
 export type UserRole = 'admin' | 'manager' | 'user';
 export type AccountStatus = 'active' | 'suspended' | 'pending';
 export type AppVisibility = 'public' | 'group_only' | 'private';
@@ -376,6 +371,7 @@ export const AUTH_ACTIONS = new Set([
   'conversations.createConversation',
   'conversations.getUserConversations',
   'conversations.renameConversation',
+  'conversations.syncGeneratedTitleIfPlaceholder',
   'conversations.deleteConversation',
   'messages.getLatest',
   'messages.findDuplicate',

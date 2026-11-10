@@ -97,9 +97,24 @@ Common optional settings:
 
 - `S3_REGION`
 - `S3_ENABLE_PATH_STYLE`
+- `S3_PRESIGN_ENDPOINT`
 - `S3_PUBLIC_BASE_URL`
 - `S3_PUBLIC_READ_ENABLED`
 - `TRUSTED_AVATAR_HOSTS`
+
+`S3_ENDPOINT` is used for server-to-storage operations. Set `S3_PRESIGN_ENDPOINT`
+when browsers need a different, reachable endpoint for signed uploads/downloads;
+it defaults to `S3_ENDPOINT`. HTTPS pages require an HTTPS browser endpoint.
+The endpoint excludes the bucket name. A reverse proxy must preserve the signed
+Host (including any port), object path and query parameters; do not rewrite a URL
+after signing it. `S3_PUBLIC_BASE_URL`, when used, includes the bucket path and
+controls stored public object URLs independently. Existing stored URLs are not
+rewritten by these settings. Bucket permissions remain unchanged.
+
+For a private bucket, set `S3_PUBLIC_READ_ENABLED=0`. Application storage avatars
+use the authenticated avatar download-signing endpoint before loading an image;
+ordinary external identity-provider image URLs remain unchanged. Persist the
+stable object URL, not an expiring signed download URL.
 
 Legacy compatibility switches still supported by runtime code:
 
@@ -111,6 +126,11 @@ Use those only when you intentionally need the legacy relay upload path.
 ## Fastify Sidecar and Proxy
 
 These variables control the split runtime between Next.js and Fastify.
+
+External reverse proxies must keep Next-owned authentication routes on the Web
+service, including `/api/auth/`, `/api/sso/` and
+`/api/internal/auth/profile-status`. A catch-all `/api/` rule forwarding to
+Fastify needs a more-specific Web rule for the profile-status endpoint.
 
 - `FASTIFY_PROXY_ENABLED`
   - if unset, the current code treats proxy rewrites as enabled by default
@@ -147,6 +167,13 @@ Static provider / mock OAuth configuration:
 - `BETTER_AUTH_SSO_PROVIDERS_JSON`
 - `BETTER_AUTH_SSO_STRICT`
 - `BETTER_AUTH_GENERIC_OAUTH_PROVIDERS_JSON`
+
+Better Auth rejects SSO discovery and endpoint URLs that resolve to private
+networks unless their exact origins are explicitly trusted. For an internal
+identity provider, add only the required origins to
+`BETTER_AUTH_TRUSTED_ORIGINS` (comma-separated). Do not disable the protection
+or use a wildcard. Keep actual endpoints and credentials in private environment
+files, not in the repository.
 
 Session identity synchronization knobs:
 

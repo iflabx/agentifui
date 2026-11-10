@@ -4,7 +4,11 @@ import type { ApiRuntimeConfig } from '../../config';
 import { buildRouteErrorPayload } from '../../lib/route-error';
 import { resolveIdentityFromSession } from '../../lib/session-identity';
 import { buildAppErrorPayload } from './error-handling';
-import { extractRoutePath, resolveRequestLocale } from './helpers';
+import {
+  extractRoutePath,
+  isValidDifyPath,
+  resolveRequestLocale,
+} from './helpers';
 import type { DifyProxyRequestContext } from './types';
 
 export async function resolveProxyRequestContext(
@@ -16,8 +20,8 @@ export async function resolveProxyRequestContext(
 > {
   const params = request.params as Record<string, string | undefined>;
   const appId = (params.appId || '').trim();
-  const wildcard = (params['*'] || '').trim();
-  const slug = wildcard.length > 0 ? wildcard.split('/').filter(Boolean) : [];
+  const wildcard = params['*'] || '';
+  const slug = wildcard.length > 0 ? wildcard.split('/') : [];
   const routePath = extractRoutePath(request.raw.url, request.url);
   const requestLocale = resolveRequestLocale(
     request.headers['accept-language']
@@ -37,7 +41,7 @@ export async function resolveProxyRequestContext(
     };
   }
 
-  if (slug.length === 0) {
+  if (!isValidDifyPath(slug)) {
     return {
       ok: false,
       status: 400,

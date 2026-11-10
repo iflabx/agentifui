@@ -1,6 +1,7 @@
 /** @jest-environment node */
 import { auth, getAuthProviderIssuer } from '@lib/auth/better-auth/server';
 import { resolveSessionIdentity } from '@lib/auth/better-auth/session-identity';
+import { resolveTrustedSessionUser } from '@lib/auth/better-auth/session-identity/account-provider';
 import {
   getProfileExternalAttributes,
   getUserIdentityByIssuerSubject,
@@ -20,6 +21,13 @@ jest.mock('@lib/auth/better-auth/server', () => ({
     },
   },
   getAuthProviderIssuer: jest.fn(),
+}));
+
+jest.mock('@lib/auth/better-auth/session-identity/account-provider', () => ({
+  resolveTrustedSessionUser: jest.fn(async sessionUser => ({
+    success: true,
+    data: sessionUser,
+  })),
 }));
 
 jest.mock('@lib/db/user-identities', () => ({
@@ -83,6 +91,12 @@ describe('resolveSessionIdentity', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+    jest
+      .mocked(resolveTrustedSessionUser)
+      .mockImplementation(async sessionUser => ({
+        success: true,
+        data: sessionUser,
+      }));
     delete process.env.AUTH_IDENTITY_SYNC_INLINE;
     delete process.env.AUTH_IDENTITY_RECOVER_MISSING_MAPPING;
     delete process.env.EXTERNAL_ATTRIBUTES_SYNC_MODE;

@@ -21,7 +21,10 @@ export async function handleConversationAction(
     return null;
   }
 
-  const resolvedUserId = (actorUserId || readString(payload?.userId)).trim();
+  if (!actorUserId?.trim()) {
+    return toErrorResponse('Unauthorized', 401);
+  }
+  const resolvedUserId = actorUserId.trim();
 
   if (action === 'conversations.getUserConversations') {
     if (!resolvedUserId) {

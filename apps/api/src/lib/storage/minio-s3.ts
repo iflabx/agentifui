@@ -49,7 +49,7 @@ function parseBooleanEnv(
   return fallbackValue;
 }
 
-function resolveConfig(): S3Config {
+function resolveConfig(usePresignEndpoint = false): S3Config {
   const endpointRaw =
     process.env.S3_ENDPOINT?.trim() || process.env.MINIO_ENDPOINT?.trim() || '';
   const bucket = process.env.S3_BUCKET?.trim() || 'agentifui';
@@ -70,7 +70,10 @@ function resolveConfig(): S3Config {
   }
 
   return {
-    endpoint: new URL(endpointRaw),
+    endpoint: new URL(
+      (usePresignEndpoint && process.env.S3_PRESIGN_ENDPOINT?.trim()) ||
+        endpointRaw
+    ),
     bucket,
     region,
     accessKeyId,
@@ -116,10 +119,9 @@ function encodePath(path: string): string {
 function canonicalQueryString(query: URLSearchParams): string {
   const entries = Array.from(query.entries()).sort(
     ([aKey, aValue], [bKey, bValue]) => {
-      if (aKey === bKey) {
-        return aValue.localeCompare(bValue);
-      }
-      return aKey.localeCompare(bKey);
+      const first = aKey === bKey ? aValue : aKey;
+      const second = aKey === bKey ? bValue : bKey;
+      return first === second ? 0 : first < second ? -1 : 1;
     }
   );
 
@@ -235,12 +237,12 @@ async function signedRequest(options: {
   return fetch(url.toString(), {
     method: options.method,
     headers,
-    body: options.body,
+    body: options.body ? new Uint8Array(options.body) : undefined,
   });
 }
 
 function buildPresignedUrl(input: PresignInput): string {
-  const config = resolveConfig();
+  const config = resolveConfig(true);
   const now = new Date();
   const { amzDate, dateStamp } = formatAmzDate(now);
   const expires = resolvePresignExpires(input.expiresInSeconds);

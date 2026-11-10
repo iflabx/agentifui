@@ -1,16 +1,7 @@
 import { redisManager } from '@lib/infra/redis';
+import type { SecondaryStorage } from 'better-auth';
 
 const SECONDARY_STORAGE_PREFIX = 'better-auth:secondary';
-
-type BetterAuthSecondaryStorage = {
-  get: (key: string) => Promise<unknown>;
-  set: (
-    key: string,
-    value: string,
-    ttl?: number
-  ) => Promise<void | null | unknown>;
-  delete: (key: string) => Promise<void | null | string>;
-};
 
 function normalizeStorageKey(key: string): string {
   const normalized = key.trim();
@@ -34,11 +25,17 @@ function normalizeTtl(ttl: number | undefined): number | null {
   return normalized;
 }
 
-export function createBetterAuthSecondaryStorage(): BetterAuthSecondaryStorage {
+export function createBetterAuthSecondaryStorage(): SecondaryStorage {
   return {
     async get(key: string) {
       const storageKey = normalizeStorageKey(key);
       return redisManager.get(storageKey);
+    },
+    async getAndDelete(key: string) {
+      return redisManager.getAndDelete(normalizeStorageKey(key));
+    },
+    async increment(key: string, ttl: number) {
+      return redisManager.increment(normalizeStorageKey(key), ttl);
     },
     async set(key: string, value: string, ttl?: number) {
       const storageKey = normalizeStorageKey(key);

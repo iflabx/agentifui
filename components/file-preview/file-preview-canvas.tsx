@@ -3,7 +3,7 @@
 import type { MessageAttachment } from '@lib/stores/chat-store';
 import { useFilePreviewStore } from '@lib/stores/ui/file-preview-store';
 import { cn, formatBytes } from '@lib/utils';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, type Transition, motion } from 'framer-motion';
 import {
   AlertCircleIcon,
   DownloadIcon,
@@ -274,7 +274,7 @@ export const FilePreviewCanvas = () => {
   };
 
   // Speed up animation: reduce duration
-  const transitionConfig = {
+  const transitionConfig: Transition = {
     type: 'tween',
     duration: 0.2, // Reduce from 0.3 to 0.2
     ease: 'easeInOut',

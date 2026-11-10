@@ -23,6 +23,6 @@
   ],
   "importOrderSeparation": true,
   "importOrderSortSpecifiers": true,
-  "tailwindConfig": "./tailwind.config.js",
+  "tailwindStylesheet": "./app/globals.css",
   "tailwindFunctions": ["cn", "clsx", "cva"]
 }

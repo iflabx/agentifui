@@ -94,6 +94,107 @@ describe('POST /api/auth/better/[...all]', () => {
     expect(recordLocalLoginAudit).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    'Application/JSON',
+    'application/json; charset=UTF-8',
+    'application/vnd.api+json',
+  ])('applies local-login policy for %s', async contentType => {
+    const { POST } = await import('./route');
+    (evaluateLocalLoginByEmail as jest.Mock).mockImplementation(
+      async email => ({
+        success: true,
+        data: { allowed: !email, reason: 'blocked_auth_mode' },
+      })
+    );
+    const response = await POST(
+      new Request('http://localhost/api/auth/better/sign-in/email', {
+        method: 'POST',
+        headers: { 'content-type': contentType },
+        body: JSON.stringify({
+          email: 'user@example.com',
+          password: 'test-password',
+        }),
+      })
+    );
+    expect(evaluateLocalLoginByEmail).toHaveBeenCalledWith('user@example.com');
+    expect(response.status).toBe(403);
+    expect(mockedHandlerPost).not.toHaveBeenCalled();
+  });
+
+  it.each(['text/plain', 'multipart/form-data; boundary=test'])(
+    'does not pass unparsed credentials through for %s',
+    async contentType => {
+      const { POST } = await import('./route');
+      const response = await POST(
+        new Request('http://localhost/api/auth/better/sign-in/email', {
+          method: 'POST',
+          headers: { 'content-type': contentType },
+          body: JSON.stringify({
+            email: 'user@example.com',
+            password: 'test-password',
+          }),
+        })
+      );
+      expect(response.status).toBe(400);
+      expect(mockedHandlerPost).not.toHaveBeenCalled();
+      expect(evaluateLocalLoginByEmail).not.toHaveBeenCalled();
+    }
+  );
+
+  it('rejects conflicting form email selectors before authentication', async () => {
+    const { POST } = await import('./route');
+    const response = await POST(
+      new Request('http://localhost/api/auth/better/sign-in/email', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: 'email=local%40example.com&email=external%40example.com&password=test-only',
+      })
+    );
+    expect(response.status).toBe(400);
+    expect(evaluateLocalLoginByEmail).not.toHaveBeenCalled();
+    expect(mockedHandlerPost).not.toHaveBeenCalled();
+  });
+
+  it('checks the single email in an encoded form', async () => {
+    const { POST } = await import('./route');
+    (evaluateLocalLoginByEmail as jest.Mock).mockResolvedValue({
+      success: true,
+      data: { allowed: false, reason: 'blocked_auth_mode' },
+    });
+    const response = await POST(
+      new Request('http://localhost/api/auth/better/sign-in/email', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: 'email=External%40example.com&password=test-only',
+      })
+    );
+    expect(evaluateLocalLoginByEmail).toHaveBeenCalledWith(
+      'external@example.com'
+    );
+    expect(response.status).toBe(403);
+    expect(mockedHandlerPost).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    '{}',
+    '{invalid',
+    '{"email":null}',
+    '{"email":["user@example.com"]}',
+  ])('rejects missing or invalid JSON credentials: %s', async body => {
+    const { POST } = await import('./route');
+    (parseSignInEmailFromRequest as jest.Mock).mockReturnValue(null);
+    const response = await POST(
+      new Request('http://localhost/api/auth/better/sign-in/email', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body,
+      })
+    );
+    expect(response.status).toBe(400);
+    expect(evaluateLocalLoginByEmail).not.toHaveBeenCalled();
+    expect(mockedHandlerPost).not.toHaveBeenCalled();
+  });
+
   it('audits failed credentials when policy allows but handler fails', async () => {
     const { POST } = await import('./route');
 
