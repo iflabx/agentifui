@@ -1,5 +1,5 @@
 /** @jest-environment node */
-import { spawn, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -102,6 +102,11 @@ if [[ "$1" == build:all ]]; then
   echo test-build > .next/BUILD_ID
   echo api > apps/api/dist/server.js
   echo shared > packages/shared/dist/index.js
+  case "\${TEST_MUTATE_SOURCE:-}" in
+    modify) echo changed >> lib/config/language-config.ts ;;
+    add) echo unexpected > lib/injected.js ;;
+    delete) rm lib/config/language-config.ts ;;
+  esac
 fi
 `
   );
@@ -136,6 +141,47 @@ const client=args.some(arg=>arg.endsWith('/client'));
 if(output&&output!=='/dev/null') fs.writeFileSync(output,health?(process.env.TEST_BAD_HEALTH==='1'?'{}':'{"ok":true,"service":"agentifui-fastify-api"}'):'<script src="/_next/static/chunks/app.js"></script>');
 if(args.includes('-w')) process.stdout.write(client?'400':'200');
 `
+  );
+  fs.copyFileSync(
+    path.join(repository, '.gitignore'),
+    path.join(target, '.gitignore')
+  );
+  fs.appendFileSync(path.join(target, '.gitignore'), '\ntest-*\n');
+  const identity = path.join(temporary, 'identity');
+  const env = {
+    ...Object.fromEntries(
+      Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_'))
+    ),
+    NODE_ENV: process.env.NODE_ENV,
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_CONFIG_NOSYSTEM: '1',
+  };
+  const git = (...args: string[]) =>
+    execFileSync(
+      'git',
+      ['--git-dir', identity, '--work-tree', target, ...args],
+      { cwd: target, env, encoding: 'utf8' }
+    ).trim();
+  execFileSync(
+    'git',
+    [
+      'init',
+      '--bare',
+      '--quiet',
+      '--template=',
+      '--object-format=sha1',
+      identity,
+    ],
+    { env }
+  );
+  git('add', '--all', '--', '.');
+  fs.writeFileSync(
+    path.join(target, 'release-source.json'),
+    JSON.stringify({
+      commit: 'a'.repeat(40),
+      tree: git('write-tree'),
+      archiveSha256: 'c'.repeat(64),
+    })
   );
 });
 
@@ -275,6 +321,51 @@ test('install failure leaves existing PM2 applications untouched', () => {
   expect(result.status).toBe(41);
   expect(fs.readFileSync(calls, 'utf8')).not.toMatch(/pm2 (delete|start|save)/);
 });
+
+test('rejects an archive changed before deployment without touching applications', () => {
+  fs.appendFileSync(path.join(target, 'lib/config/language-config.ts'), '\n');
+  const result = run();
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain('does not match the verified Git tree');
+  const log = fs.readFileSync(calls, 'utf8');
+  expect(log).not.toContain('pnpm install');
+  expect(log).not.toMatch(/pm2 (delete|start|save)/);
+});
+
+test('archive verification preserves the caller Git index', () => {
+  const identity = path.join(temporary, 'identity');
+  const index = path.join(identity, 'index');
+  const before = fs.readFileSync(index);
+  const result = run({
+    GIT_DIR: identity,
+    GIT_COMMON_DIR: identity,
+    GIT_WORK_TREE: target,
+    GIT_INDEX_FILE: index,
+  });
+  expect(result.status).toBe(0);
+  expect(fs.readFileSync(index)).toEqual(before);
+  expect(fs.existsSync(path.join(target, '.git'))).toBe(false);
+});
+
+test('archive verification detects changed executable permissions', () => {
+  fs.chmodSync(path.join(target, 'lib/config/language-config.ts'), 0o755);
+  const result = run();
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain('does not match the verified Git tree');
+  expect(fs.readFileSync(calls, 'utf8')).not.toMatch(/pm2 (delete|start|save)/);
+});
+
+test.each(['modify', 'add', 'delete'])(
+  'rejects archive source %s during build before switching applications',
+  mutation => {
+    const result = run({ TEST_MUTATE_SOURCE: mutation });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('does not match the verified Git tree');
+    expect(fs.readFileSync(calls, 'utf8')).not.toMatch(
+      /pm2 (delete|start|save)/
+    );
+  }
+);
 
 test('migration failure leaves existing PM2 applications untouched', () => {
   const result = run({

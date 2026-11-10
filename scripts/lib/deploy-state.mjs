@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
+import os from 'node:os';
 import path from 'node:path';
 
 const [operation, directory, snapshot] = process.argv.slice(2);
@@ -75,6 +76,53 @@ function assertRunning() {
   }
 }
 
+function archiveTree() {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'agentifui-source-'));
+  const env = {
+    ...Object.fromEntries(
+      Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_'))
+    ),
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_CONFIG_NOSYSTEM: '1',
+  };
+  const git = (...args) =>
+    execFileSync(
+      'git',
+      [
+        '--git-dir',
+        temporary,
+        '--work-tree',
+        root,
+        '-c',
+        'core.excludesFile=/dev/null',
+        '-c',
+        'core.autocrlf=false',
+        '-c',
+        'core.filemode=true',
+        ...args,
+      ],
+      { cwd: root, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
+    ).trim();
+  try {
+    execFileSync(
+      'git',
+      [
+        'init',
+        '--bare',
+        '--quiet',
+        '--template=',
+        '--object-format=sha1',
+        temporary,
+      ],
+      { env, stdio: ['ignore', 'pipe', 'pipe'] }
+    );
+    git('add', '--all', '--', '.');
+    return git('write-tree');
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+}
+
 function source() {
   if (fs.existsSync(path.join(root, '.git'))) {
     const git = (...args) =>
@@ -110,6 +158,8 @@ function source() {
       'Invalid release-source.json; supply the verified source archive identity'
     );
   }
+  if (archiveTree() !== manifest.tree)
+    fail('Extracted source does not match the verified Git tree');
   return {
     commit: manifest.commit,
     tree: manifest.tree,

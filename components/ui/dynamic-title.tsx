@@ -1,5 +1,6 @@
 'use client';
 
+import { getDisplayBrandName } from '@lib/config/branding';
 import {
   type CombinedConversation,
   useCombinedConversations,
@@ -25,6 +26,7 @@ import { usePathname } from 'next/navigation';
 export function DynamicTitle() {
   // --- Internationalization Translation ---
   const t = useTranslations('dynamicTitle');
+  const baseTitle = getDisplayBrandName(t('base'));
 
   // --- State Acquisition ---
   const pathname = usePathname() ?? '';
@@ -36,7 +38,7 @@ export function DynamicTitle() {
   const { apps, isLoading: isAppsLoading } = useAppListStore();
 
   // --- Local State Management ---
-  const [currentTitle, setCurrentTitle] = useState<string>('AgentifUI');
+  const [currentTitle, setCurrentTitle] = useState<string>(baseTitle);
   const [_isUpdating, setIsUpdating] = useState(false);
 
   // --- State Caching ---
@@ -54,9 +56,6 @@ export function DynamicTitle() {
 
   // --- Debounce Timer ---
   const updateTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
-
-  // base application name
-  const baseTitle = t('base');
 
   // --- Helper Function: Get Settings Page Title ---
   const getSettingsTitle = useCallback(
@@ -480,7 +479,7 @@ export function DynamicTitle() {
     const { title: newTitle, priority, isStable } = titleInfo;
 
     // only update when the title really changes
-    if (newTitle !== currentTitle) {
+    if (newTitle !== currentTitle || document.title !== newTitle) {
       console.log(
         `[DynamicTitle] Title Updated: "${currentTitle}" -> "${newTitle}" (Priority: ${priority}, Stable: ${isStable})`
       );

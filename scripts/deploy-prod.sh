@@ -23,7 +23,7 @@ done
 [[ "$(realpath "${ENV_FILE}")" == "$(realpath "${ROOT_DIR}/.env.prod")" ]] || fail 'build and start must use the same .env.prod file'
 [[ -f "${PM2_CONFIG}" ]] || fail 'missing PM2 config'
 [[ "${RUN_MIGRATE}" == 0 || -n "${MIGRATION_COMMAND}" ]] || fail 'migration command is required before building'
-for command in node pnpm pm2 flock; do command -v "${command}" >/dev/null || fail "missing ${command}"; done
+for command in node pnpm pm2 flock git; do command -v "${command}" >/dev/null || fail "missing ${command}"; done
 if [[ "${ROLLBACK}" == 1 ]]; then
   [[ -n "${PREVIOUS_DIR}" ]] || fail 'rollback requires AGENTIF_DEPLOY_PREVIOUS_DIR and compatible database/content'
   PREVIOUS_DIR="$(realpath "${PREVIOUS_DIR}")"

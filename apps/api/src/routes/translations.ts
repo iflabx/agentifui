@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 import { buildRouteErrorPayload } from '../lib/route-error';
+import { resolveRuntimeContentDir } from '../lib/runtime-content';
 
 const DEFAULT_SECTIONS = ['pages.about', 'pages.home'];
 const SUPPORTED_LOCALES = new Set([
@@ -24,10 +25,6 @@ interface FileCacheEntry {
 }
 
 const fileCache = new Map<string, FileCacheEntry>();
-const messageRootCandidates = [
-  path.resolve(process.cwd(), 'messages'),
-  path.resolve(process.cwd(), '..', '..', 'messages'),
-];
 
 function isValidLocale(locale: string): boolean {
   return SUPPORTED_LOCALES.has(locale);
@@ -82,27 +79,12 @@ async function resolveMessageFile(locale: string): Promise<{
   filePath: string;
   mtimeMs: number;
 }> {
-  for (const rootPath of messageRootCandidates) {
-    const filePath = path.join(rootPath, `${locale}.json`);
-    try {
-      const stats = await fs.stat(filePath);
-      return { filePath, mtimeMs: stats.mtimeMs };
-    } catch (error) {
-      const code =
-        typeof error === 'object' && error !== null && 'code' in error
-          ? (error as { code?: unknown }).code
-          : undefined;
-      if (code !== 'ENOENT') {
-        throw error;
-      }
-    }
-  }
-
-  const notFoundError = new Error(
-    `Translation file not found for locale ${locale}`
+  const filePath = path.join(
+    resolveRuntimeContentDir('messages'),
+    `${locale}.json`
   );
-  (notFoundError as NodeJS.ErrnoException).code = 'ENOENT';
-  throw notFoundError;
+  const stats = await fs.stat(filePath);
+  return { filePath, mtimeMs: stats.mtimeMs };
 }
 
 export const translationsRoutes: FastifyPluginAsync = async app => {

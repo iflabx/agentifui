@@ -16,7 +16,7 @@ Install Gitleaks **8.24.3** on the development host's PATH using the upstream re
 
 The publication integration tests also require this scanner on PATH. CI installs it separately in the test runner through the shared action's `install-only` input; the independent publication job still runs the full check.
 
-The checker rejects private paths in the outgoing tree and paths introduced in outgoing commits. Gitleaks scans the commit range, including secrets added and subsequently deleted. New branches or unavailable bases use a broader secret scan. Deleting a ref adds no content. Scan output is redacted; do not paste raw credentials into issues or reports.
+The checker rejects private paths in the outgoing tree and paths introduced in outgoing commits, including a force-added `.dev-env.local` even if it contains no recognizable secret. Gitleaks scans the commit range, including secrets added and subsequently deleted. New branches or unavailable bases use a broader secret scan. Deleting a ref adds no content. Scan output is redacted; do not paste raw credentials into issues or reports.
 
 To verify a known range without pushing:
 

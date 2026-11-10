@@ -3,6 +3,7 @@
  */
 import {
   getBrandVariableMap,
+  getDisplayBrandName,
   getProtectedTerms,
   resolveReservedVariablesDeep,
 } from '@lib/config/branding';
@@ -124,6 +125,22 @@ describe('reserved brand variables', () => {
     });
     expect(commonJsBranding.getBrandVariableMap('en-US')).toEqual(
       getBrandVariableMap('en-US')
+    );
+  });
+
+  it('preserves translated display names unless explicitly overridden', () => {
+    expect(getDisplayBrandName('Localized Application')).toBe(
+      'Localized Application'
+    );
+    expect(commonJsBranding.getDisplayBrandName('Localized Application')).toBe(
+      'Localized Application'
+    );
+    process.env.NEXT_PUBLIC_BRAND_NAME = '  Example Assistant  ';
+    expect(getDisplayBrandName('Localized Application')).toBe(
+      'Example Assistant'
+    );
+    expect(commonJsBranding.getDisplayBrandName('Localized Application')).toBe(
+      'Example Assistant'
     );
   });
 });

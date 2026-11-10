@@ -63,6 +63,7 @@ test.each([
   'local_docs/notes.md',
   'local_scripts/helper.mjs',
   '.env.prod',
+  '.dev-env.local',
   'exports/models.json',
   'private/key.json',
   'uploads/avatar.png',
@@ -71,6 +72,19 @@ test.each([
 ])('rejects private path %s', name => {
   const head = commitFile(name, 'private fixture');
   expect(check(['--base', initial, '--head', head]).status).toBe(1);
+});
+
+test('rejects a force-added ignored local environment file', () => {
+  commitFile('.gitignore', '.dev-env.local\n');
+  fs.writeFileSync(
+    path.join(repository, '.dev-env.local'),
+    'LOCAL_APP_URL=https://private-installation.invalid\n'
+  );
+  git('add', '-f', '.dev-env.local');
+  git('commit', '-m', 'local environment fixture');
+  const result = check(['--base', initial, '--head', git('rev-parse', 'HEAD')]);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain('forbidden path: ".dev-env.local"');
 });
 
 test('rejects private paths introduced then deleted in outgoing commits', () => {

@@ -20,6 +20,7 @@ Install and prepare:
 - Node.js 22.22.0
 - Corepack or pnpm `10.14.0`
 - PM2
+- Git (also required when deploying a source archive)
 - PostgreSQL 18.6 (current production compatibility target)
 - Redis
 - MinIO or another S3-compatible object store
@@ -48,7 +49,7 @@ At minimum, set:
 - `BETTER_AUTH_URL`
 - `PORT`
 
-Optional display overrides are `NEXT_PUBLIC_BRAND_NAME` and `NEXT_PUBLIC_BRAND_DOMAIN`; without them the public defaults are `AgentifUI` and `example.com`. Before upgrading an installation that needs custom branding, set its desired values in the private production configuration. These do not change routing or authentication URLs. Use production values during the build and for both running processes, not a build containing another environment's public configuration. See [public branding](CONFIGURATION.md#public-branding).
+Optional display overrides are `NEXT_PUBLIC_BRAND_NAME` and `NEXT_PUBLIC_BRAND_DOMAIN`; without them the public defaults are `AgentifUI` and `example.com`. The name overrides document/dynamic titles and the sidebar application name; other copy needs the existing brand placeholders and is not globally replaced. Before upgrading an installation that needs custom branding, set its desired values in the private production configuration. These do not change routing or authentication URLs. Use production values during the build and for both running processes, not a build containing another environment's public configuration. See [public branding](CONFIGURATION.md#public-branding).
 
 ### PostgreSQL
 
@@ -220,6 +221,8 @@ The source can be a clean checkout of the confirmed tag, or a verified Git sourc
   "archiveSha256": "<64-character source archive SHA-256>"
 }
 ```
+
+For archive deployments, the deploy checker reconstructs the extracted source's Git tree in a temporary Git directory before and after building, and compares it with the verified `tree` above. Keep the complete source and executable permissions intact. The source's `.gitignore` excludes configuration, dependencies and generated outputs; unrelated non-ignored files cause a mismatch. No Git index or objects are written into the release or another checkout. This detects changed, added or removed source files; it does not replace checking the archive SHA-256 and release identity against the handoff.
 
 Run from the new directory:
 

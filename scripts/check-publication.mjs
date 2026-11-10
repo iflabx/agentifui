@@ -39,7 +39,7 @@ function forbidden(file) {
       !['.env.example', '.env.prod.example', '.env.test.example'].includes(
         name
       )) ||
-    /^(?:\.envrc|\.npmrc\.local|\.mcp\.local\.json|id_rsa|id_ed25519|release-source\.json)$/.test(
+    /^(?:\.dev-env\.local|\.envrc|\.npmrc\.local|\.mcp\.local\.json|id_rsa|id_ed25519|release-source\.json)$/.test(
       name
     ) ||
     /\.(?:pem|key|p12|pfx|dump|sql\.gz|log|bak|local\.(?:json|yaml|yml|toml))$/.test(
