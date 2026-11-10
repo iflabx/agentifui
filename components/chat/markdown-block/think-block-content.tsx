@@ -2,7 +2,7 @@
 
 import { cn } from '@lib/utils';
 // Remove useTheme and useThemeColors imports, use CSS variables instead
-import { motion } from 'framer-motion';
+import { type Variants, motion } from 'framer-motion';
 import 'katex/dist/katex.min.css';
 import ReactMarkdown from 'react-markdown';
 import type { Components } from 'react-markdown';
@@ -376,7 +376,7 @@ export const ThinkBlockContent: React.FC<ThinkBlockContentProps> = ({
   };
 
   // --- Optimized animation variants ---
-  const variants = {
+  const variants: Variants = {
     open: {
       opacity: 1,
       height: 'auto',

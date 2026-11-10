@@ -24,8 +24,8 @@ interface BrokerState {
   listeners: Set<RealtimeListener>;
   subscriberReady: boolean;
   subscriberInitPromise: Promise<void> | null;
-  subscriber: ReturnType<typeof createClient> | null;
-  publisher: ReturnType<typeof createClient> | null;
+  subscriber: ReturnType<typeof createRedisRuntimeClient> | null;
+  publisher: ReturnType<typeof createRedisRuntimeClient> | null;
 }
 
 function parseBooleanEnv(
@@ -148,8 +148,7 @@ function createRedisRuntimeClient() {
 async function getBaseRedisClient() {
   const globalState = globalThis as unknown as Record<string, unknown>;
   let client = globalState[BASE_REDIS_CLIENT_KEY] as
-    | ReturnType<typeof createClient>
-    | undefined;
+    ReturnType<typeof createRedisRuntimeClient> | undefined;
   if (!client) {
     client = createRedisRuntimeClient();
     globalState[BASE_REDIS_CLIENT_KEY] = client;

@@ -77,20 +77,15 @@ function toAppListItem(row: AppRow) {
   };
 }
 
-async function queryScopedAppRows(
+async function queryScopedAppRows<T extends ScopedAppRow = ScopedAppRow>(
   actor: ActorIdentity | null,
   sql: string,
   params: unknown[] = []
-): Promise<ScopedAppRow[]> {
+): Promise<T[]> {
   if (!actor) {
-    return queryRowsWithPgSystemContext<ScopedAppRow>(sql, params);
+    return queryRowsWithPgSystemContext<T>(sql, params);
   }
-  return queryRowsWithPgUserContext<ScopedAppRow>(
-    actor.userId,
-    actor.role,
-    sql,
-    params
-  );
+  return queryRowsWithPgUserContext<T>(actor.userId, actor.role, sql, params);
 }
 
 async function querySystemAppRows(
@@ -336,7 +331,8 @@ export const internalAppsRoutes: FastifyPluginAsync<
       }
 
       if (mode === 'default') {
-        const rows = await querySystemAppRows(
+        const rows = await queryScopedAppRows<AppRow>(
+          actor,
           `
               SELECT
                 si.id::text,
@@ -358,6 +354,7 @@ export const internalAppsRoutes: FastifyPluginAsync<
               WHERE p.is_active = TRUE
                 AND p.is_default = TRUE
                 AND si.is_default = TRUE
+                ${isPublicScope ? "AND si.visibility = 'public'" : ''}
               LIMIT 1
             `
         );

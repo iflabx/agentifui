@@ -106,8 +106,21 @@ export async function getProfileByEmail(
     const rows = await queryRowsWithPolicyContext<ProfileLocalLoginRow>(
       `
       SELECT
-        p.id::text AS id,
-        p.auth_source,
+        u.id::text AS id,
+        CASE WHEN EXISTS (
+            SELECT 1
+            FROM auth_accounts a
+            WHERE a.user_id = u.id
+              AND a.provider_id <> 'credential'
+          ) THEN 'external'
+          ELSE COALESCE(
+            NULLIF(p.auth_source, ''),
+            CASE WHEN EXISTS (
+              SELECT 1 FROM auth_accounts a
+              WHERE a.user_id = u.id AND a.provider_id = 'credential'
+            ) THEN 'better-auth' ELSE 'unknown' END
+          )
+        END AS auth_source,
         p.local_login_enabled
       FROM auth_users u
       LEFT JOIN profiles p

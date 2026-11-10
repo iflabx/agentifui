@@ -4,6 +4,7 @@ import {
   fetchWithDifyProxyResilience,
   getDifyProxyCircuitSnapshot,
 } from '../../lib/dify-proxy-resilience';
+import { buildRouteErrorPayload } from '../../lib/route-error';
 import {
   buildAppErrorPayload,
   logDifyProxyFailure,
@@ -11,12 +12,15 @@ import {
 } from './error-handling';
 import {
   adjustApiPathByAppType,
+  bindDifyRequestUser,
   buildScopedUpstreamQuery,
   copyHeaders,
   extractRawQuery,
   inferAgentSource,
   isMediaContentType,
+  isObjectRecord,
   isReplyCommitted,
+  isValidDifyPath,
   normalizeRequestBody,
   resolveDifyProxyTimeoutMs,
 } from './helpers';
@@ -192,6 +196,44 @@ async function sendUpstreamResponse(input: {
     upstream.headers.get('content-type') || ''
   ).toLowerCase();
 
+  const mediaType = responseContentType.split(';')[0].trim();
+  if (
+    [
+      'text/html',
+      'application/xhtml+xml',
+      'image/svg+xml',
+      'text/xml',
+      'application/xml',
+    ].includes(mediaType)
+  ) {
+    const downloadHeaders = {
+      'Content-Type': 'application/octet-stream',
+      'Content-Disposition': 'attachment; filename="upstream-document"',
+      'Content-Security-Policy': "default-src 'none'; sandbox",
+      'X-Content-Type-Options': 'nosniff',
+    };
+    for (const [key, value] of Object.entries(downloadHeaders)) {
+      reply.raw.setHeader(key, value);
+    }
+    if (!upstream.body) {
+      reply.status(upstream.status).send();
+      return;
+    }
+    await sendUpstreamStream(request, reply, upstream, {
+      appId: context.appId,
+      routePath: context.routePath,
+      slugPath,
+      streamKind: 'media',
+      requestStartedAt: upstreamRequestStartedAt,
+      responseHeaderElapsedMs,
+      targetHost: target.host,
+      targetOrigin: target.origin,
+      allow: () => false,
+      defaultHeaders: downloadHeaders,
+    });
+    return;
+  }
+
   if (upstream.body && responseContentType.includes('text/event-stream')) {
     await sendUpstreamStream(request, reply, upstream, {
       appId: context.appId,
@@ -230,6 +272,7 @@ async function sendUpstreamResponse(input: {
           key === 'vary'
         );
       },
+      defaultHeaders: { 'X-Content-Type-Options': 'nosniff' },
     });
     return;
   }
@@ -269,7 +312,8 @@ async function sendUpstreamResponse(input: {
   } catch {
     if (upstream.ok) {
       reply
-        .type(upstream.headers.get('content-type') || 'text/plain')
+        .header('X-Content-Type-Options', 'nosniff')
+        .type('text/plain; charset=utf-8')
         .status(upstream.status)
         .send(responseData);
       return;
@@ -309,12 +353,23 @@ export async function dispatchDifyUpstreamRequest(
   targetConfig: DifyProxyTargetConfig
 ): Promise<void> {
   const slugPath = adjustApiPathByAppType(context.slug, targetConfig.appType);
+  if (!isValidDifyPath(slugPath.split('/'))) {
+    reply.status(400).send(
+      buildRouteErrorPayload({
+        request,
+        statusCode: 400,
+        code: 'DIFY_PROXY_PATH_INVALID',
+        userMessage: 'Invalid Dify request path',
+      })
+    );
+    return;
+  }
   const agentSource = inferAgentSource(slugPath);
   const rawQuery = extractRawQuery(request.raw.url);
   const scopedQuery = buildScopedUpstreamQuery({
     rawQuery,
     slugPath,
-    actorUserId: context.actor.authUserId || context.actor.userId,
+    actorUserId: context.actor.userId,
   });
   const targetUrl = `${targetConfig.difyApiUrl.replace(/\/+$/, '')}/${slugPath}${scopedQuery}`;
   const target = new URL(targetUrl);
@@ -360,7 +415,41 @@ export async function dispatchDifyUpstreamRequest(
   const actualMethod = targetConfig.tempConfigUsed ? 'GET' : request.method;
   let upstreamPayload = targetConfig.rawBody;
 
+  if (actualMethod !== 'GET' && actualMethod !== 'HEAD') {
+    try {
+      upstreamPayload = await bindDifyRequestUser(
+        upstreamPayload,
+        originalContentType,
+        context.actor.userId
+      );
+    } catch {
+      reply.status(400).send(
+        buildRouteErrorPayload({
+          request,
+          statusCode: 400,
+          code: 'DIFY_PROXY_BODY_INVALID',
+          userMessage: 'Invalid Dify request body',
+        })
+      );
+      return;
+    }
+  }
+
   if (shouldInjectTrustedUserContext(actualMethod, slugPath)) {
+    if (
+      !isObjectRecord(upstreamPayload) ||
+      upstreamPayload instanceof FormData
+    ) {
+      reply.status(400).send(
+        buildRouteErrorPayload({
+          request,
+          statusCode: 400,
+          code: 'DIFY_PROXY_GENERATION_BODY_INVALID',
+          userMessage: 'Generation requires a JSON object',
+        })
+      );
+      return;
+    }
     let trustedProfile = null;
 
     try {
@@ -379,10 +468,16 @@ export async function dispatchDifyUpstreamRequest(
     }
 
     upstreamPayload = injectTrustedUserContext(
-      targetConfig.rawBody,
+      upstreamPayload,
       context.actor,
       trustedProfile
     );
+  }
+
+  if (upstreamPayload instanceof FormData) {
+    upstreamHeaders.delete('Content-Type');
+  } else if (actualMethod !== 'GET' && actualMethod !== 'HEAD') {
+    upstreamHeaders.set('Content-Type', 'application/json');
   }
 
   const finalBody =

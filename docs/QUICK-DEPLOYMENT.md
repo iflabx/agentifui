@@ -17,8 +17,8 @@ It assumes:
 
 Install and prepare:
 
-- Node.js 22.22.0
-- Corepack or pnpm `10.14.0`
+- Node.js 24.22.2 (see `.nvmrc`)
+- pnpm `10.34.9`
 - PM2
 - Git (also required when deploying a source archive)
 - PostgreSQL 18.6 (current production compatibility target)
@@ -28,10 +28,28 @@ Install and prepare:
 Clone the repository and install dependencies:
 
 ```bash
-corepack enable
-corepack prepare pnpm@10.14.0 --activate
+npm install --global --ignore-scripts pnpm@10.34.9
 pnpm install --frozen-lockfile
 ```
+
+When upgrading from a Node.js 22 release, prepare the Node.js 24 toolchain
+before installing this release. Keep the previous release's Node binary,
+dependencies, build output and PM2 configuration available for rollback.
+Verify that both PM2 applications and the startup service use the intended
+Node binary; changing a shell's Node version alone does not update a running
+PM2 daemon or its startup service.
+
+The Better Auth upgrade also requires
+`database/migrations/20261110113000_create_better_auth_sso_providers.sql`.
+Apply this additive migration using the database migration owner before
+starting the new release. It creates a separate `auth_sso_providers` table;
+it does not replace the application's existing `sso_providers` table or
+change existing users. Ensure the runtime role receives the same table DML
+permissions as the other `auth_*` tables, through the migration owner's
+default privileges or an explicit grant to that role. The old release can
+run with the additional empty table, so code rollback does not require
+dropping it. Do not run an unreviewed authentication CLI migration against
+an existing production database.
 
 ## 3. Create `.env.prod`
 

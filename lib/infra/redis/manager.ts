@@ -8,7 +8,17 @@ export interface RedisSetOptions {
   keepTtl?: boolean;
 }
 
-type RedisClient = ReturnType<typeof createClient>;
+function createRuntimeClient(url: string) {
+  return createClient({
+    url,
+    socket: {
+      connectTimeout: Number(process.env.REDIS_CONNECT_TIMEOUT_MS || 5000),
+    },
+    pingInterval: Number(process.env.REDIS_PING_INTERVAL_MS || 10000),
+  });
+}
+
+type RedisClient = ReturnType<typeof createRuntimeClient>;
 
 export class RedisManager {
   private keyPrefix: string;
@@ -48,13 +58,7 @@ export class RedisManager {
   }
 
   private createRedisClient(): RedisClient {
-    const client = createClient({
-      url: this.resolveRedisUrl(),
-      socket: {
-        connectTimeout: Number(process.env.REDIS_CONNECT_TIMEOUT_MS || 5000),
-      },
-      pingInterval: Number(process.env.REDIS_PING_INTERVAL_MS || 10000),
-    });
+    const client = createRuntimeClient(this.resolveRedisUrl());
 
     client.on('error', error => {
       console.error('[RedisManager] client error:', error);
@@ -68,8 +72,7 @@ export class RedisManager {
     const globalState = globalThis as unknown as Record<string, unknown>;
 
     let client = globalState[REDIS_CLIENT_GLOBAL_KEY] as
-      | RedisClient
-      | undefined;
+      RedisClient | undefined;
 
     if (!client) {
       client = this.createRedisClient();
@@ -119,6 +122,31 @@ export class RedisManager {
   async get(key: string): Promise<string | null> {
     const client = await this.getClient();
     return client.get(this.withPrefix(key));
+  }
+
+  async getAndDelete(key: string): Promise<string | null> {
+    const client = await this.getClient();
+    return client.getDel(this.withPrefix(key));
+  }
+
+  async increment(key: string, ttlSeconds: number): Promise<number> {
+    if (!Number.isFinite(ttlSeconds) || ttlSeconds <= 0) {
+      throw new Error('Redis counter TTL must be positive');
+    }
+    const client = await this.getClient();
+    const result = await client.eval(
+      `local count = redis.call('INCR', KEYS[1])
+       if count == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+       return count`,
+      {
+        keys: [this.withPrefix(key)],
+        arguments: [String(Math.ceil(ttlSeconds))],
+      }
+    );
+    if (typeof result !== 'number') {
+      throw new Error('Redis counter returned an invalid result');
+    }
+    return result;
   }
 
   async set(
@@ -198,8 +226,7 @@ export class RedisManager {
   async quit(): Promise<void> {
     const globalState = globalThis as unknown as Record<string, unknown>;
     const client = globalState[REDIS_CLIENT_GLOBAL_KEY] as
-      | RedisClient
-      | undefined;
+      RedisClient | undefined;
 
     if (!client) {
       return;
@@ -216,8 +243,7 @@ export class RedisManager {
 export function getRedisManager(): RedisManager {
   const globalState = globalThis as unknown as Record<string, unknown>;
   const existing = globalState[REDIS_MANAGER_GLOBAL_KEY] as
-    | RedisManager
-    | undefined;
+    RedisManager | undefined;
   if (existing) {
     return existing;
   }

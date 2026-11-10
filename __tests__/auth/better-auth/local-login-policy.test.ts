@@ -202,6 +202,31 @@ describe('local-login-policy', () => {
     expect(result.data.reason).toBe('password_account');
   });
 
+  it('uses persisted external account bindings rather than a stale local profile source', async () => {
+    queryMock.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM auth_settings'))
+        return { rows: [{ auth_mode: 'normal' }] };
+      expect(sql).toContain("a.provider_id <> 'credential'");
+      expect(sql).toContain("THEN 'external'");
+      expect(sql).toContain('u.id::text AS id');
+      return {
+        rows: [
+          {
+            id: '00000000-0000-4000-8000-000000000001',
+            auth_source: 'external',
+            local_login_enabled: false,
+          },
+        ],
+      };
+    });
+    const result = await evaluateLocalLoginByEmail('user@example.com');
+    expect(result.success).toBe(true);
+    if (!result.success) throw result.error;
+    expect(result.data.allowed).toBe(false);
+    expect(result.data.reason).toBe('blocked_auth_mode');
+    queryMock.mockReset();
+  });
+
   it('allows unknown user and lets credential check continue', async () => {
     queryMock
       .mockResolvedValueOnce({ rows: [{ auth_mode: 'normal' }] })

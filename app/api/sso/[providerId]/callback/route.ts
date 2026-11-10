@@ -91,11 +91,10 @@ async function resolveAuthUserForManagedCasLogin(input: {
   subject: string;
 }) {
   const authContext = await auth.$context;
-  const existingAccount =
-    await authContext.internalAdapter.findAccountByProviderId(
-      input.subject,
-      input.accountProviderId
-    );
+  const existingAccount = await authContext.internalAdapter.findAccountByKey({
+    accountId: input.subject,
+    providerId: input.accountProviderId,
+  });
 
   if (existingAccount) {
     const existingUser = await authContext.internalAdapter.findUserById(
@@ -128,11 +127,14 @@ async function resolveAuthUserForManagedCasLogin(input: {
     throw new Error('account_not_linked');
   }
 
-  const user = await authContext.internalAdapter.createUser({
-    email: input.email,
-    name: input.fullName,
-    emailVerified: true,
-  });
+  const user = await authContext.internalAdapter.createUser(
+    {
+      email: input.email,
+      name: input.fullName,
+      emailVerified: true,
+    },
+    { method: 'managed-cas' }
+  );
 
   return {
     authContext,
@@ -146,9 +148,7 @@ async function ensureManagedCasAccount(input: {
   authContext: Awaited<typeof auth.$context>;
   existingAccount: Awaited<
     ReturnType<
-      Awaited<
-        typeof auth.$context
-      >['internalAdapter']['findAccountByProviderId']
+      Awaited<typeof auth.$context>['internalAdapter']['findAccountByKey']
     >
   >;
   subject: string;

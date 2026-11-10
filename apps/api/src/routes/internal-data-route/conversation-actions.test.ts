@@ -2,6 +2,21 @@
 import { queryRowsWithPgSystemContext } from '../../lib/pg-context';
 import { handleConversationAction } from './conversation-actions';
 
+test('does not accept a payload user as a substitute for an authenticated actor', async () => {
+  const response = await handleConversationAction(
+    'conversations.syncGeneratedTitleIfPlaceholder',
+    {
+      userId: 'victim',
+      conversationId: 'conv-1',
+      title: 'Changed',
+      placeholderTitles: ['Creating...'],
+    },
+    undefined
+  );
+  expect(response?.statusCode).toBe(401);
+  expect(queryRowsWithPgSystemContext).not.toHaveBeenCalled();
+});
+
 jest.mock('../../lib/pg-context', () => ({
   queryRowsWithPgSystemContext: jest.fn(),
 }));

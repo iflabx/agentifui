@@ -51,8 +51,8 @@ Notes:
 
 ### Prerequisites
 
-- Node.js 22+
-- Corepack or pnpm `10.14.0`
+- Node.js `24.22.2` (see `.nvmrc`)
+- pnpm `10.34.9`
 - PostgreSQL
 - Redis
 - MinIO or another S3-compatible object store
@@ -60,8 +60,7 @@ Notes:
 ### Local Development
 
 ```bash
-corepack enable
-corepack prepare pnpm@10.14.0 --activate
+npm install --global --ignore-scripts pnpm@10.34.9
 pnpm install --frozen-lockfile
 
 cp .env.example .env.dev
@@ -71,6 +70,14 @@ pnpm dev:all
 ```
 
 Then open `http://localhost:3000`.
+
+The supported toolchain is Node.js 24 and the pnpm version pinned in
+`packageManager`; CI and the test image use the same versions. Next.js uses
+Webpack by default in this project; `dev:turbo` remains an opt-in alternative.
+TypeScript 6 and ESLint 9 are compatibility pins while upstream plugins catch
+up. ESLint 9 is an unsupported transitional version, not a long-term target.
+React Compiler is not enabled. Its newly introduced migration diagnostics are
+reported as warnings; existing Hooks correctness rules remain enabled.
 
 Useful variants:
 

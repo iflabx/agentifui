@@ -112,7 +112,12 @@ async function attachAvatarObject(
 
   if (currentAvatarUrl) {
     const oldPath = extractPathFromPublicUrl(currentAvatarUrl, 'avatars');
-    if (oldPath && oldPath !== filePath) {
+    if (
+      oldPath &&
+      oldPath !== filePath &&
+      assertOwnedObjectPath(oldPath, targetUserId).ok &&
+      new URL(currentAvatarUrl).origin === new URL(publicUrl).origin
+    ) {
       deleteObject('avatars', oldPath).catch(error => {
         console.warn(
           '[FastifyStorageAvatar] failed to delete old avatar object:',

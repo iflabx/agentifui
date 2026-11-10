@@ -2,7 +2,7 @@
 
 import { useMobile } from '@lib/hooks/use-mobile';
 import { cn } from '@lib/utils';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, type Variants, motion } from 'framer-motion';
 import ReactDOM from 'react-dom';
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -194,7 +194,7 @@ export function Popover({
     };
   }, [isOpen, close]);
 
-  const variants = {
+  const variants: Variants = {
     hidden: {
       opacity: 0,
       scale: 0.95,

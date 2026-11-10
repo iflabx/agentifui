@@ -148,6 +148,13 @@ Static provider / mock OAuth configuration:
 - `BETTER_AUTH_SSO_STRICT`
 - `BETTER_AUTH_GENERIC_OAUTH_PROVIDERS_JSON`
 
+Better Auth rejects SSO discovery and endpoint URLs that resolve to private
+networks unless their exact origins are explicitly trusted. For an internal
+identity provider, add only the required origins to
+`BETTER_AUTH_TRUSTED_ORIGINS` (comma-separated). Do not disable the protection
+or use a wildcard. Keep actual endpoints and credentials in private environment
+files, not in the repository.
+
 Session identity synchronization knobs:
 
 - `AUTH_IDENTITY_SYNC_INLINE`

@@ -14,17 +14,23 @@ function isEmailSignInRequest(request: Request): boolean {
 }
 
 async function parseLocalSignInEmail(request: Request): Promise<string | null> {
-  const contentType = request.headers.get('content-type') || '';
+  const contentType = (request.headers.get('content-type') || '')
+    .split(';')[0]
+    .trim()
+    .toLowerCase();
   const clone = request.clone();
 
   try {
-    if (contentType.includes('application/json')) {
+    if (/^application\/([a-z0-9.+-]*\+)?json$/.test(contentType)) {
       return parseSignInEmailFromRequest(await clone.json());
     }
 
-    if (contentType.includes('application/x-www-form-urlencoded')) {
+    if (contentType === 'application/x-www-form-urlencoded') {
       const body = await clone.text();
       const params = new URLSearchParams(body);
+      if (params.getAll('email').length !== 1) {
+        return null;
+      }
       return params.get('email')?.trim().toLowerCase() || null;
     }
   } catch {
@@ -87,6 +93,15 @@ export async function handleBetterAuthPost(
   }
 
   const email = await parseLocalSignInEmail(request);
+  if (!email) {
+    return Response.json(
+      {
+        code: 'INVALID_SIGN_IN_REQUEST',
+        message: 'A valid sign-in email is required.',
+      },
+      { status: 400 }
+    );
+  }
   const ipAddress = extractClientIp(request);
   const userAgent = request.headers.get('user-agent') || null;
 

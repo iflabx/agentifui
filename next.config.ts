@@ -148,12 +148,16 @@ const nextConfig: NextConfig = {
     const rules = proxyPrefixes.flatMap(prefix => [
       {
         source: prefix,
-        missing: [{ type: 'header', key: FASTIFY_REWRITE_BYPASS_HEADER }],
+        missing: [
+          { type: 'header' as const, key: FASTIFY_REWRITE_BYPASS_HEADER },
+        ],
         destination: `${normalizedBaseUrl}${prefix}`,
       },
       {
         source: `${prefix}/:path*`,
-        missing: [{ type: 'header', key: FASTIFY_REWRITE_BYPASS_HEADER }],
+        missing: [
+          { type: 'header' as const, key: FASTIFY_REWRITE_BYPASS_HEADER },
+        ],
         destination: `${normalizedBaseUrl}${prefix}/:path*`,
       },
     ]);
@@ -182,10 +186,6 @@ const nextConfig: NextConfig = {
         : false,
   },
 
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-
   typescript: {
     ignoreBuildErrors: false,
   },
@@ -208,7 +208,6 @@ const nextConfig: NextConfig = {
       config.externals = config.externals || [];
       config.externals.push({
         bufferutil: 'bufferutil',
-        'utf-8-validate': 'utf-8-validate',
       });
     }
 

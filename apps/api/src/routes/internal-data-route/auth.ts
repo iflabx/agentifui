@@ -86,7 +86,7 @@ export async function ensureActionPermission(
     return { error: null, actorUserId: resolved.identity.userId };
   }
 
-  return { error: null };
+  return { error: toErrorResponse('Unsupported or unauthorized action', 403) };
 }
 
 export async function loadConversationOwnedByActor(

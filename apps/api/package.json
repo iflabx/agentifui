@@ -9,13 +9,13 @@
     "type-check": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@fastify/cors": "^11.1.0",
-    "@fastify/reply-from": "^12.6.1",
-    "fastify": "^5.6.1",
-    "pg": "^8.18.0"
+    "@fastify/cors": "11.4.1",
+    "@fastify/reply-from": "12.8.1",
+    "fastify": "5.12.8",
+    "pg": "8.23.1"
   },
   "devDependencies": {
     "ts-node": "^10.9.2",
-    "typescript": "^5.8.3"
+    "typescript": "6.0.3"
   }
 }

@@ -235,7 +235,7 @@ async function signedRequest(options: {
   return fetch(url.toString(), {
     method: options.method,
     headers,
-    body: options.body,
+    body: options.body ? new Uint8Array(options.body) : undefined,
   });
 }
 

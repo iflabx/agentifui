@@ -102,7 +102,7 @@ function getKeyScope(key: string): KeyScope | null {
     return { type: 'authenticated' };
   }
   if (key === SubscriptionKeys.serviceInstances()) {
-    return { type: 'authenticated' };
+    return { type: 'admin-only' };
   }
   if (key === SubscriptionKeys.apiKeys()) {
     return { type: 'admin-only' };

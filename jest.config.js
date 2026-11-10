@@ -46,11 +46,16 @@ const customJestConfig = {
   transform: {
     '^.+\\.(js|jsx|ts|tsx)$': ['babel-jest', { presets: ['next/babel'] }],
   },
-  transformIgnorePatterns: [
-    '/node_modules/',
-    '^.+\\.module\\.(css|sass|scss)$',
-  ],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
 };
 
-module.exports = createJestConfig(customJestConfig);
+const getJestConfig = createJestConfig(customJestConfig);
+
+module.exports = async () => ({
+  ...(await getJestConfig()),
+  transformIgnorePatterns: [
+    '/node_modules/(?!\\.pnpm/|cookie/)',
+    '/node_modules/\\.pnpm/(?!cookie@)',
+    '^.+\\.module\\.(css|sass|scss)$',
+  ],
+});

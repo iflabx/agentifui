@@ -131,21 +131,65 @@ export function buildScopedUpstreamQuery(input: {
   slugPath: string;
   actorUserId?: string;
 }): string {
-  const { rawQuery, slugPath, actorUserId } = input;
+  const { rawQuery, actorUserId } = input;
 
-  if (!actorUserId || !/^files\/[^/]+\/preview$/.test(slugPath)) {
+  if (!actorUserId) {
     return rawQuery;
   }
 
   const searchParams = new URLSearchParams(normalizeRawQuery(rawQuery));
 
-  // Dify file previews are scoped to the end user who uploaded / attached the file.
-  if (!searchParams.get('user')) {
-    searchParams.set('user', actorUserId);
-  }
+  searchParams.set('user', actorUserId);
 
   const queryString = searchParams.toString();
   return queryString ? `?${queryString}` : '';
+}
+
+export function isValidDifyPath(slug: string[]): boolean {
+  return (
+    slug.length > 0 &&
+    slug.every(
+      segment =>
+        /^[A-Za-z0-9._~-]+$/.test(segment) &&
+        segment !== '.' &&
+        segment !== '..'
+    )
+  );
+}
+
+export async function bindDifyRequestUser(
+  rawBody: unknown,
+  contentType: string | undefined,
+  userId: string
+): Promise<Record<string, unknown> | FormData> {
+  if (/^multipart\/form-data(?:;|$)/i.test(contentType || '')) {
+    if (!(rawBody instanceof Uint8Array) && typeof rawBody !== 'string') {
+      throw new Error('Invalid multipart body');
+    }
+    const form = await new Response(
+      typeof rawBody === 'string' ? rawBody : new Uint8Array(rawBody),
+      { headers: { 'Content-Type': contentType! } }
+    ).formData();
+    form.set('user', userId);
+    return form;
+  }
+
+  let body = rawBody;
+  if (typeof body === 'string') {
+    if (
+      !/^application\/(?:[\w.+-]+\+)?json(?:\s*;|\s*$)/i.test(contentType || '')
+    ) {
+      throw new Error('Unsupported request body type');
+    }
+    body = JSON.parse(body);
+  }
+  if (body == null) {
+    return { user: userId };
+  }
+  if (!isObjectRecord(body) || body instanceof Uint8Array) {
+    throw new Error('Invalid JSON body');
+  }
+  return { ...body, user: userId };
 }
 
 export function isMediaContentType(contentType: string): boolean {
@@ -209,11 +253,14 @@ export function normalizeRequestBody(payload: unknown): BodyInit | null {
   if (payload === null || typeof payload === 'undefined') {
     return null;
   }
-  if (Buffer.isBuffer(payload)) {
+  if (payload instanceof FormData) {
     return payload;
   }
+  if (Buffer.isBuffer(payload)) {
+    return new Uint8Array(payload);
+  }
   if (payload instanceof Uint8Array) {
-    return payload;
+    return new Uint8Array(payload);
   }
   if (typeof payload === 'string') {
     return payload;

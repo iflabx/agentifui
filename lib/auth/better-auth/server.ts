@@ -36,6 +36,7 @@ export const auth = betterAuth({
   database: getAuthDatabaseConfig(),
   secondaryStorage: getAuthSecondaryStorage(),
   rateLimit: getAuthRateLimitConfig(),
+  disabledPaths: ['/sso/register'],
   user: {
     modelName: 'auth_users',
     fields: {
@@ -84,7 +85,6 @@ export const auth = betterAuth({
     revokeSessionsOnPasswordReset: true,
   },
   plugins: [
-    nextCookies(),
     ...(isPhoneNumberAuthEnabled()
       ? [phoneNumber(getPhoneNumberPluginOptions())]
       : []),
@@ -92,7 +92,21 @@ export const auth = betterAuth({
       ? [genericOAuth({ config: getGenericOAuthProviders() })]
       : []),
     sso({
+      providersLimit: 0,
       defaultSSO: getSsoPluginConfig(),
+      schema: {
+        ssoProvider: {
+          modelName: 'auth_sso_providers',
+          fields: {
+            oidcConfig: 'oidc_config',
+            samlConfig: 'saml_config',
+            userId: 'user_id',
+            providerId: 'provider_id',
+            organizationId: 'organization_id',
+          },
+        },
+      },
     }),
+    nextCookies(),
   ],
 });
