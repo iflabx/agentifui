@@ -1,8 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import vm from 'node:vm';
 
 const workflow = fs.readFileSync(
   path.join(process.cwd(), '.github/workflows/ci.yml'),
+  'utf8'
+);
+
+const security = fs.readFileSync(
+  path.join(process.cwd(), '.github/workflows/security.yml'),
   'utf8'
 );
 
@@ -81,12 +87,109 @@ test('publication checks remain unconditional while heavy jobs keep change gatin
 });
 
 test('security auditing remains weekly and manual rather than duplicating every PR', () => {
-  const security = fs.readFileSync(
-    path.join(process.cwd(), '.github/workflows/security.yml'),
-    'utf8'
-  );
   expect(security).toMatch(/^  schedule:$/m);
   expect(security).toMatch(/^  workflow_dispatch:$/m);
   expect(security).not.toMatch(/^  (?:pull_request|push):$/m);
-  expect(security).toContain('pnpm audit --audit-level=moderate');
+  expect(security).toContain("['audit', '--audit-level=moderate', '--json']");
 });
+
+function runSecurityScript(
+  index: number,
+  env: Record<string, string> = {},
+  auditResult = { status: 0, stdout: '' }
+) {
+  const scripts = [...security.matchAll(/node <<'NODE'\n([\s\S]*?)\n\s*NODE/g)];
+  expect(scripts).toHaveLength(2);
+  const output: string[] = [];
+  const scriptProcess: {
+    env: Record<string, string>;
+    exitCode?: number;
+  } = {
+    env: {
+      GITHUB_OUTPUT: 'test-output',
+      GITHUB_STEP_SUMMARY: 'test-summary',
+      ...env,
+    },
+  };
+  vm.runInNewContext(scripts[index][1], {
+    require: (moduleName: string) => {
+      if (moduleName === 'node:child_process') {
+        return { spawnSync: () => auditResult };
+      }
+      if (moduleName === 'node:fs') {
+        return {
+          appendFileSync: (_file: string, value: string) => output.push(value),
+        };
+      }
+      throw new Error(`Unexpected module: ${moduleName}`);
+    },
+    process: scriptProcess,
+    console: { log: jest.fn(), error: jest.fn() },
+  });
+  return { output: output.join('\n'), exitCode: scriptProcess.exitCode };
+}
+
+test.each([
+  [
+    'passed',
+    0,
+    { metadata: { vulnerabilities: { moderate: 0, high: 0, critical: 0 } } },
+  ],
+  [
+    'vulnerabilities',
+    1,
+    { metadata: { vulnerabilities: { moderate: 2, high: 1, critical: 0 } } },
+  ],
+  ['error', 1, { error: { code: 'ECONNRESET' } }],
+  ['error', 1, {}],
+  [
+    'error',
+    0,
+    { metadata: { vulnerabilities: { moderate: 1, high: 0, critical: 0 } } },
+  ],
+  [
+    'error',
+    1,
+    { metadata: { vulnerabilities: { moderate: 0, high: 0, critical: 0 } } },
+  ],
+] as const)(
+  'dependency audit reports %s for exit %s and %j',
+  (status, exitCode, report) => {
+    const result = runSecurityScript(
+      0,
+      {},
+      {
+        status: exitCode,
+        stdout: JSON.stringify(report),
+      }
+    );
+    expect(result.output).toBe(`status=${status}\n`);
+    expect(result.exitCode).toBe(status === 'error' ? 1 : undefined);
+  }
+);
+
+test('dependency audit treats invalid JSON as an incomplete audit', () => {
+  const result = runSecurityScript(0, {}, { status: 1, stdout: 'Unavailable' });
+  expect(result.output).toBe('status=error\n');
+  expect(result.exitCode).toBe(1);
+});
+
+test.each([
+  ['passed', 'success', 'success', 'No findings reported', undefined],
+  ['vulnerabilities', 'success', 'success', 'Attention required', undefined],
+  ['error', 'failure', 'success', 'Checks failed or incomplete', 1],
+  ['passed', 'success', 'failure', 'Checks failed or incomplete', 1],
+  ['', 'skipped', 'success', 'Checks failed or incomplete', 1],
+] as const)(
+  'security summary handles %s / %s / %s',
+  (auditStatus, dependencyResult, codeResult, message, exitCode) => {
+    const result = runSecurityScript(1, {
+      AUDIT_STATUS: auditStatus,
+      DEPENDENCY_RESULT: dependencyResult,
+      CODE_RESULT: codeResult,
+    });
+    expect(result.output).toContain(message);
+    expect(result.output).not.toContain('Overall Status: Secure');
+    expect(result.exitCode).toBe(exitCode);
+  }
+);
