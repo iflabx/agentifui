@@ -1,9 +1,9 @@
 import type {
   ChatflowExecutionProgress,
-  ChatflowNode,
-  ChatflowParallelBranch,
   ChatflowIteration,
   ChatflowLoop,
+  ChatflowNode,
+  ChatflowParallelBranch,
 } from './types';
 
 function mapChatflowNodeById(
@@ -27,7 +27,9 @@ export function markRunningChatflowNodesStopped(
 export function calculateChatflowExecutionProgress(
   nodes: ChatflowNode[]
 ): ChatflowExecutionProgress {
-  const completedNodes = nodes.filter(node => node.status === 'completed').length;
+  const completedNodes = nodes.filter(
+    node => node.status === 'completed'
+  ).length;
   const totalNodes = nodes.length;
 
   return {
@@ -84,7 +86,9 @@ export function removeChatflowIteration(
 ): ChatflowNode[] {
   return mapChatflowNodeById(nodes, nodeId, node => ({
     ...node,
-    iterations: node.iterations?.filter(iteration => iteration.id !== iterationId),
+    iterations: node.iterations?.filter(
+      iteration => iteration.id !== iterationId
+    ),
   }));
 }
 
@@ -120,7 +124,9 @@ export function removeChatflowParallelBranch(
 ): ChatflowNode[] {
   return mapChatflowNodeById(nodes, nodeId, node => ({
     ...node,
-    parallelBranches: node.parallelBranches?.filter(branch => branch.id !== branchId),
+    parallelBranches: node.parallelBranches?.filter(
+      branch => branch.id !== branchId
+    ),
   }));
 }
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -29,7 +28,11 @@ async function walk(dir, results) {
       await walk(fullPath, results);
       continue;
     }
-    if (entry.isFile() && isTsFile(fullPath) && !fullPath.endsWith('.test.ts')) {
+    if (
+      entry.isFile() &&
+      isTsFile(fullPath) &&
+      !fullPath.endsWith('.test.ts')
+    ) {
       results.push(fullPath);
     }
   }

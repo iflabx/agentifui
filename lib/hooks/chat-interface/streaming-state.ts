@@ -1,7 +1,7 @@
+import type { ChatMessage } from '@lib/stores/chat-store';
+
 import { useCallback, useEffect, useRef } from 'react';
 import type { MutableRefObject } from 'react';
-
-import type { ChatMessage } from '@lib/stores/chat-store';
 
 import { runStreamingStateConsistencyCheck } from './streaming-check';
 import type { ChatStreamingCheckSnapshot } from './types';

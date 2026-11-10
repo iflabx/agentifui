@@ -5,7 +5,11 @@ import { resolve } from 'node:path';
 const rootDir = process.cwd();
 const nextConfigFile = resolve(rootDir, 'next.config.ts');
 const apiConfigFile = resolve(rootDir, 'apps/api/src/config.ts');
-const NEXT_AUTH_OWNED_PREFIXES = ['/api/auth', '/api/sso', '/api/internal/auth'];
+const NEXT_AUTH_OWNED_PREFIXES = [
+  '/api/auth',
+  '/api/sso',
+  '/api/internal/auth',
+];
 
 function extractPrefixList(sourceText, variableName, filePath) {
   const pattern = new RegExp(

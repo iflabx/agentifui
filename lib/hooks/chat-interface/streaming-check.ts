@@ -1,7 +1,7 @@
-import type { MutableRefObject } from 'react';
-
 import type { ChatMessage } from '@lib/stores/chat-store';
 import { useChatStore } from '@lib/stores/chat-store';
+
+import type { MutableRefObject } from 'react';
 
 import type { ChatStreamingCheckSnapshot } from './types';
 

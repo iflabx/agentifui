@@ -14,14 +14,20 @@ describe('useChatConversationState', () => {
 
   it('syncs state from the current pathname and clears it on demand', async () => {
     (syncChatRouteState as jest.Mock).mockImplementation(
-      async ({ setDifyConversationId, setDbConversationUUID, setConversationAppId }) => {
+      async ({
+        setDifyConversationId,
+        setDbConversationUUID,
+        setConversationAppId,
+      }) => {
         setDifyConversationId('conv-1');
         setDbConversationUUID('db-1');
         setConversationAppId('app-1');
       }
     );
 
-    const { result } = renderHook(() => useChatConversationState('/chat/conv-1'));
+    const { result } = renderHook(() =>
+      useChatConversationState('/chat/conv-1')
+    );
 
     await waitFor(() => {
       expect(result.current.difyConversationId).toBe('conv-1');
