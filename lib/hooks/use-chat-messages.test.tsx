@@ -4,6 +4,7 @@ import {
   updateMessageMetadataRecord,
 } from '@lib/services/client/messages-api';
 import { useChatStore } from '@lib/stores/chat-store';
+import type { ChatMessage } from '@lib/stores/chat-store';
 import { act, renderHook } from '@testing-library/react';
 
 import { useChatMessages } from './use-chat-messages';
@@ -91,6 +92,7 @@ describe('useChatMessages', () => {
       conversationId: 'conv-1',
       messageId: 'db-msg-1',
       metadata: expect.objectContaining({
+        client_message_id: 'assistant-1',
         stopped_manually: true,
         stopped_at: expect.any(String),
         stopped_response_text: 'partial reply',
@@ -234,6 +236,7 @@ The answer was not generated completely. Please retry.`,
 
 比斯兔建议今晚可以试试二食堂的小火锅。`,
         metadata: {
+          client_message_id: 'assistant-1',
           frontend_metadata: {
             sequence_index: 1,
           },
@@ -402,5 +405,141 @@ The answer was not generated completely. Please retry.`,
         db_id: 'db-msg-1',
       })
     );
+  });
+
+  it('joins concurrent saves before duplicate lookup completes', async () => {
+    const message: ChatMessage = {
+      id: 'user-message-1',
+      text: 'hello',
+      isUser: true,
+    };
+    const lookup = Promise.withResolvers<{ success: true; data: null }>();
+    (findDuplicateMessage as jest.Mock).mockReturnValue(lookup.promise);
+    const { result } = renderHook(() => useChatMessages('user-1'));
+
+    await act(async () => {
+      const first = result.current.saveMessage(message, 'conv-1');
+      const second = result.current.saveMessage(message, 'conv-1');
+      await Promise.resolve();
+      expect(findDuplicateMessage).toHaveBeenCalledTimes(1);
+      lookup.resolve({ success: true, data: null });
+      await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
+    });
+
+    expect(saveMessageRecord).toHaveBeenCalledTimes(1);
+    expect(saveMessageRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: { client_message_id: message.id },
+      })
+    );
+    expect(result.current.isMessageSaving(message.id)).toBe(false);
+  });
+
+  it('joins an in-flight save after the original hook unmounts', async () => {
+    const message: ChatMessage = {
+      id: 'user-message-1',
+      text: 'hello',
+      isUser: true,
+    };
+    const lookup = Promise.withResolvers<{ success: true; data: null }>();
+    (findDuplicateMessage as jest.Mock).mockReturnValue(lookup.promise);
+    const original = renderHook(() => useChatMessages('user-1'));
+    let first!: Promise<boolean>;
+    act(() => {
+      first = original.result.current.saveMessage(message, 'conv-1');
+    });
+    original.unmount();
+    const replacement = renderHook(() => useChatMessages('user-1'));
+
+    await act(async () => {
+      const second = replacement.result.current.saveMessage(message, 'conv-1');
+      lookup.resolve({ success: true, data: null });
+      await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
+    });
+
+    expect(findDuplicateMessage).toHaveBeenCalledTimes(1);
+    expect(saveMessageRecord).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not collapse different messages with identical text', async () => {
+    const { result } = renderHook(() => useChatMessages('user-1'));
+    await act(async () => {
+      await result.current.saveMessage(
+        { id: 'turn-1', text: 'hello', isUser: true },
+        'conv-1'
+      );
+      await result.current.saveMessage(
+        { id: 'turn-2', text: 'hello', isUser: true },
+        'conv-1'
+      );
+    });
+    expect(findDuplicateMessage).toHaveBeenNthCalledWith(
+      1,
+      'hello',
+      'user',
+      'conv-1',
+      'turn-1'
+    );
+    expect(findDuplicateMessage).toHaveBeenNthCalledWith(
+      2,
+      'hello',
+      'user',
+      'conv-1',
+      'turn-2'
+    );
+    expect(saveMessageRecord).toHaveBeenCalledTimes(2);
+  });
+
+  it('skips a stale snapshot when the store already has the saved identity', async () => {
+    const message: ChatMessage = {
+      id: 'user-message-1',
+      text: 'hello',
+      isUser: true,
+    };
+    useChatStore.setState({
+      messages: [{ ...message, db_id: 'saved-1', persistenceStatus: 'saved' }],
+    });
+    const { result } = renderHook(() => useChatMessages('user-1'));
+    await act(async () => {
+      await expect(result.current.saveMessage(message, 'conv-1')).resolves.toBe(
+        true
+      );
+    });
+    expect(saveMessageRecord).not.toHaveBeenCalled();
+    expect(findDuplicateMessage).not.toHaveBeenCalled();
+  });
+
+  it('retries from the captured snapshot when route loading clears the store', async () => {
+    jest.useFakeTimers();
+    try {
+      const message: ChatMessage = {
+        id: 'assistant-removed',
+        text: 'reply',
+        isUser: false,
+      };
+      (saveMessageRecord as jest.Mock).mockResolvedValueOnce({
+        success: false,
+        error: new Error('temporary failure'),
+      });
+      const { result } = renderHook(() => useChatMessages('user-1'));
+      await act(async () => {
+        await expect(
+          result.current.saveMessage(message, 'conv-1')
+        ).resolves.toBe(false);
+      });
+      act(() => useChatStore.getState().clearMessages());
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1000);
+      });
+      expect(saveMessageRecord).toHaveBeenCalledTimes(2);
+      expect(saveMessageRecord).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          content: 'reply',
+          metadata: { client_message_id: 'assistant-removed' },
+        })
+      );
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

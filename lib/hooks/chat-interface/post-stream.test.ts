@@ -127,7 +127,7 @@ describe('persistChatMessagesAfterStreaming', () => {
 
     expect(saveMessage).toHaveBeenCalledWith(
       expect.objectContaining({
-        id: 'assistant-1-persistence-fallback',
+        id: 'assistant-1',
         text: '这是完整的回答',
       }),
       'db-1'
@@ -182,7 +182,7 @@ describe('persistChatMessagesAfterStreaming', () => {
 
     expect(saveMessage).toHaveBeenCalledWith(
       expect.objectContaining({
-        id: 'assistant-1-persistence-fallback',
+        id: 'assistant-1',
         text: '<think>Plan</think>\n\nRecovered answer',
         metadata: {
           frontend_metadata: { sequence_index: 1 },
@@ -232,7 +232,7 @@ describe('persistChatMessagesAfterStreaming', () => {
 
     expect(saveMessage).toHaveBeenCalledWith(
       expect.objectContaining({
-        id: 'assistant-1-persistence-fallback',
+        id: 'assistant-1',
         text: '恢复出的真实正文',
         persistenceStatus: 'pending',
       }),
@@ -539,7 +539,7 @@ describe('persistChatMessagesAfterStreaming', () => {
 
     expect(saveStoppedAssistantMessage).toHaveBeenCalledWith(
       expect.objectContaining({
-        id: 'assistant-1-persistence-fallback',
+        id: 'assistant-1',
         wasManuallyStopped: true,
         text: '<think>Plan steps\n\n**生成内容**：\n* bullet',
       }),
@@ -613,5 +613,101 @@ describe('persistChatMessagesAfterStreaming', () => {
     (resolveStoppedSave as (value: boolean) => void)(true);
     await expect(persistencePromise).resolves.toBe('db-6');
     expect(saveMessage).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])(
+    'waits for both saves without ending streaming early (late lookup: %s)',
+    async lateLookup => {
+      const userSave = Promise.withResolvers<void>();
+      const assistantSave = Promise.withResolvers<boolean>();
+      mockPersistUserMessageIfNeeded.mockReturnValue(userSave.promise);
+      if (lateLookup) {
+        mockResolveDbConversationUuidByExternalId
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce('db-1');
+      }
+      mockGetChatStoreState.mockReturnValue({
+        messages: [
+          {
+            id: 'assistant-1',
+            text: 'reply',
+            isUser: false,
+            isStreaming: true,
+          },
+        ],
+        currentConversationId: 'conversation-1',
+      });
+      const saveMessage = jest.fn().mockReturnValue(assistantSave.promise);
+      const finalizeStreamingMessage = jest.fn();
+      let settled = false;
+      const persistence = persistChatMessagesAfterStreaming({
+        finalDbConvUUID: lateLookup ? null : 'db-1',
+        dbConversationUUID: null,
+        userMessage: {
+          id: 'user-1',
+          text: 'question',
+          isUser: true,
+          persistenceStatus: 'pending',
+        },
+        assistantMessageId: 'assistant-1',
+        assistantFallback: { id: 'assistant-1', text: 'reply' },
+        setDbConversationUUID: jest.fn(),
+        finalizeStreamingMessage,
+        updateMessage: jest.fn(),
+        saveMessage,
+        saveStoppedAssistantMessage: jest.fn(),
+      }).then(value => {
+        settled = true;
+        return value;
+      });
+      for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
+      expect(mockPersistUserMessageIfNeeded).toHaveBeenCalledTimes(1);
+      expect(saveMessage).not.toHaveBeenCalled();
+      expect(finalizeStreamingMessage).not.toHaveBeenCalled();
+      expect(settled).toBe(false);
+      userSave.resolve();
+      for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
+      expect(saveMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'assistant-1' }),
+        'db-1'
+      );
+      expect(finalizeStreamingMessage).not.toHaveBeenCalled();
+      expect(settled).toBe(false);
+      assistantSave.resolve(true);
+      await expect(persistence).resolves.toBe('db-1');
+    }
+  );
+
+  it('assigns distinct fallback identities to turns whose store message is missing', async () => {
+    const saveMessage = jest.fn().mockResolvedValue(true);
+    for (const userMessageId of ['turn-1', 'turn-2']) {
+      await persistChatMessagesAfterStreaming({
+        finalDbConvUUID: 'db-1',
+        dbConversationUUID: null,
+        userMessage: {
+          id: userMessageId,
+          text: 'question',
+          isUser: true,
+          persistenceStatus: 'saved',
+        },
+        assistantMessageId: null,
+        assistantFallback: { id: null, text: 'same reply' },
+        setDbConversationUUID: jest.fn(),
+        finalizeStreamingMessage: jest.fn(),
+        updateMessage: jest.fn(),
+        saveMessage,
+        saveStoppedAssistantMessage: jest.fn(),
+      });
+    }
+    expect(saveMessage).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ id: 'turn-1-assistant' }),
+      'db-1'
+    );
+    expect(saveMessage).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ id: 'turn-2-assistant' }),
+      'db-1'
+    );
   });
 });

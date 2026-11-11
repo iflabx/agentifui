@@ -1,12 +1,52 @@
 /** @jest-environment node */
+import type { FastifyReply } from 'fastify';
+
 import {
   adjustApiPathByAppType,
   bindDifyRequestUser,
   buildScopedUpstreamQuery,
+  copyHeaders,
+  copyRawHeaders,
   isDifyFilePreviewPath,
   isValidDifyPath,
   normalizeRequestBody,
 } from './helpers';
+
+describe.each([
+  ['reply headers', copyHeaders],
+  ['raw response headers', copyRawHeaders],
+] as const)('upstream %s', (_name, copy) => {
+  it('filters hop-by-hop and Connection-nominated headers before applying the allow list', () => {
+    const setHeader = jest.fn();
+    const reply = {
+      header: setHeader,
+      raw: { setHeader },
+    } as unknown as FastifyReply;
+    const source = new Headers({
+      Connection: 'keep-alive, X-Upstream-Only, x-Second',
+      'Keep-Alive': 'timeout=10',
+      'Proxy-Authenticate': 'Basic',
+      'Proxy-Authorization': 'synthetic',
+      TE: 'trailers',
+      Trailer: 'x-checksum',
+      'Transfer-Encoding': 'chunked',
+      Upgrade: 'websocket',
+      'X-Upstream-Only': 'private-to-upstream',
+      'X-Second': 'private-to-upstream',
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
+      ETag: '"synthetic-etag"',
+      'X-End-To-End': 'kept',
+    });
+
+    copy(reply, source, key => key !== 'content-type');
+
+    expect(setHeader).toHaveBeenCalledTimes(3);
+    expect(setHeader).toHaveBeenCalledWith('cache-control', 'no-store');
+    expect(setHeader).toHaveBeenCalledWith('etag', '"synthetic-etag"');
+    expect(setHeader).toHaveBeenCalledWith('x-end-to-end', 'kept');
+  });
+});
 
 describe('workflow API path mapping', () => {
   it.each([

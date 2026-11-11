@@ -44,9 +44,9 @@ interface PersistUserMessageIfNeededInput {
   errorLog: string;
 }
 
-export function persistUserMessageIfNeeded(
+export async function persistUserMessageIfNeeded(
   input: PersistUserMessageIfNeededInput
-): void {
+): Promise<void> {
   if (
     !input.conversationId ||
     !input.userMessage ||
@@ -55,14 +55,15 @@ export function persistUserMessageIfNeeded(
     return;
   }
 
-  void input
-    .saveMessage(input.userMessage, input.conversationId)
-    .then(() => {
-      if (input.successLog) {
-        console.log(`${input.successLog}${input.userMessage?.id}`);
-      }
-    })
-    .catch(error => {
-      console.error(input.errorLog, error);
-    });
+  try {
+    const saved = await input.saveMessage(
+      input.userMessage,
+      input.conversationId
+    );
+    if (saved && input.successLog) {
+      console.log(`${input.successLog}${input.userMessage.id}`);
+    }
+  } catch (error) {
+    console.error(input.errorLog, error);
+  }
 }

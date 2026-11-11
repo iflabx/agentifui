@@ -231,13 +231,32 @@ export function isMediaContentType(contentType: string): boolean {
   );
 }
 
+function getHopByHopHeaders(source: Headers): Set<string> {
+  return new Set([
+    'connection',
+    'keep-alive',
+    'proxy-authenticate',
+    'proxy-authorization',
+    'te',
+    'trailer',
+    'transfer-encoding',
+    'upgrade',
+    ...(source.get('connection') || '')
+      .split(',')
+      .map(header => header.trim().toLowerCase())
+      .filter(Boolean),
+  ]);
+}
+
 export function copyHeaders(
   reply: FastifyReply,
   source: Headers,
   allow: (key: string) => boolean
 ): void {
+  const hopByHopHeaders = getHopByHopHeaders(source);
   source.forEach((value, key) => {
-    if (allow(key.toLowerCase())) {
+    const normalizedKey = key.toLowerCase();
+    if (!hopByHopHeaders.has(normalizedKey) && allow(normalizedKey)) {
       reply.header(key, value);
     }
   });
@@ -248,8 +267,10 @@ export function copyRawHeaders(
   source: Headers,
   allow: (key: string) => boolean
 ): void {
+  const hopByHopHeaders = getHopByHopHeaders(source);
   source.forEach((value, key) => {
-    if (allow(key.toLowerCase())) {
+    const normalizedKey = key.toLowerCase();
+    if (!hopByHopHeaders.has(normalizedKey) && allow(normalizedKey)) {
       reply.raw.setHeader(key, value);
     }
   });

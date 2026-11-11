@@ -224,6 +224,7 @@ async function patchPersistedUserMessageMetadata(input: {
 function buildAssistantFallbackMessage(input: {
   assistantMessageId: string | null;
   assistantFallback?: AssistantMessagePersistenceFallback | null;
+  fallbackMessageId: string;
 }): ChatMessage | null {
   const fallback = input.assistantFallback;
   const fallbackText = fallback?.text?.trim();
@@ -233,7 +234,7 @@ function buildAssistantFallbackMessage(input: {
   }
 
   return {
-    id: fallback.id || input.assistantMessageId || 'assistant-fallback',
+    id: fallback.id || input.assistantMessageId || input.fallbackMessageId,
     text: fallback.text,
     isUser: false,
     isStreaming: false,
@@ -249,21 +250,8 @@ function buildAssistantFallbackMessage(input: {
 function resolveAssistantMessageForPersistence(input: {
   assistantMessageId: string | null;
   assistantFallback?: AssistantMessagePersistenceFallback | null;
-  finalizeStreamingMessage: (id: string) => void;
+  fallbackMessageId: string;
 }): ChatMessage | null {
-  if (input.assistantMessageId) {
-    const assistantMessage = useChatStore
-      .getState()
-      .messages.find(message => message.id === input.assistantMessageId);
-
-    if (assistantMessage?.isStreaming) {
-      console.log(
-        `[handleSubmit] Assistant message still streaming, finalize first: ${input.assistantMessageId}`
-      );
-      input.finalizeStreamingMessage(input.assistantMessageId);
-    }
-  }
-
   const latestAssistantMessage = input.assistantMessageId
     ? useChatStore
         .getState()
@@ -283,11 +271,9 @@ function resolveAssistantMessageForPersistence(input: {
     return latestAssistantMessage;
   }
 
-  const fallbackPersistenceId = `${fallbackAssistantMessage.id || input.assistantMessageId || 'assistant'}-persistence-fallback`;
-
   return {
     ...fallbackAssistantMessage,
-    id: fallbackPersistenceId,
+    id: latestAssistantMessage.id,
     dify_message_id: latestAssistantMessage?.dify_message_id,
     wasManuallyStopped:
       latestAssistantMessage?.wasManuallyStopped ??
@@ -304,6 +290,7 @@ function isMessageAlreadyPersisted(
 async function persistAssistantMessageAfterStreaming(input: {
   assistantMessageId: string | null;
   assistantFallback?: AssistantMessagePersistenceFallback | null;
+  userMessageId: string;
   conversationId: string;
   finalizeStreamingMessage: (id: string) => void;
   updateMessage: (id: string, updates: ChatMessageUpdates) => void;
@@ -325,7 +312,7 @@ async function persistAssistantMessageAfterStreaming(input: {
   const assistantMessageForPersistence = resolveAssistantMessageForPersistence({
     assistantMessageId: input.assistantMessageId,
     assistantFallback: input.assistantFallback,
-    finalizeStreamingMessage: input.finalizeStreamingMessage,
+    fallbackMessageId: `${input.userMessageId}-assistant`,
   });
 
   if (!assistantMessageForPersistence) {
@@ -439,7 +426,7 @@ export async function persistChatMessagesAfterStreaming(
         userMessage: latestUserMessageForPersistence,
       });
     } else if (latestUserMessageForPersistence) {
-      persistUserMessageIfNeeded({
+      await persistUserMessageIfNeeded({
         userMessage: latestUserMessageForPersistence,
         conversationId: currentDbConvId,
         saveMessage: input.saveMessage,
@@ -455,6 +442,7 @@ export async function persistChatMessagesAfterStreaming(
       await persistAssistantMessageAfterStreaming({
         assistantMessageId: input.assistantMessageId,
         assistantFallback: input.assistantFallback,
+        userMessageId: input.userMessage.id,
         conversationId: currentDbConvId,
         finalizeStreamingMessage: input.finalizeStreamingMessage,
         updateMessage: input.updateMessage,
@@ -515,7 +503,7 @@ export async function persistChatMessagesAfterStreaming(
       userMessage: latestUserMessageForPersistence,
     });
   } else if (latestUserMessageForPersistence) {
-    persistUserMessageIfNeeded({
+    await persistUserMessageIfNeeded({
       userMessage: latestUserMessageForPersistence,
       conversationId: currentDbConvId,
       saveMessage: input.saveMessage,
@@ -532,6 +520,7 @@ export async function persistChatMessagesAfterStreaming(
     await persistAssistantMessageAfterStreaming({
       assistantMessageId: input.assistantMessageId,
       assistantFallback: input.assistantFallback,
+      userMessageId: input.userMessage.id,
       conversationId: currentDbConvId,
       finalizeStreamingMessage: input.finalizeStreamingMessage,
       updateMessage: input.updateMessage,

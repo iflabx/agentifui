@@ -106,26 +106,31 @@ function createTargetConfig(
   };
 }
 
-function readStreamConnection(port: number, connection: string) {
+function readProxyConnection(
+  port: number,
+  connection: string,
+  requestLine = 'POST /stream',
+  responseEnd = '\r\n0\r\n\r\n'
+) {
   return new Promise<string>((resolve, reject) => {
     const socket = createConnection({ host: '127.0.0.1', port });
     let output = '';
     let followupSent = false;
     const timer = setTimeout(() => {
       socket.destroy();
-      reject(new Error('Stream connection did not finish'));
+      reject(new Error('Proxy connection did not finish'));
     }, 3000);
 
     socket.on('connect', () => {
       socket.write(
-        `POST /stream HTTP/1.1\r\nHost: localhost\r\nConnection: ${connection}\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}`
+        `${requestLine} HTTP/1.1\r\nHost: localhost\r\nConnection: ${connection}\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}`
       );
     });
     socket.on('data', chunk => {
       output += chunk.toString();
       if (
         !followupSent &&
-        output.includes('\r\n0\r\n\r\n') &&
+        output.includes(responseEnd) &&
         /\r\nconnection: keep-alive\r\n/i.test(output)
       ) {
         followupSent = true;
@@ -698,7 +703,7 @@ describe('dispatchDifyUpstreamRequest trusted user context integration', () => {
       try {
         await app.listen({ host: '127.0.0.1', port: 0 });
         const { port } = app.server.address() as AddressInfo;
-        const output = await readStreamConnection(port, connection);
+        const output = await readProxyConnection(port, connection);
         const statuses = Array.from(
           output.matchAll(/HTTP\/1\.1 (\d+)/g),
           match => Number(match[1])
@@ -716,6 +721,80 @@ describe('dispatchDifyUpstreamRequest trusted user context integration', () => {
           expect(probeHits).toBe(1);
         } else {
           expect(statuses).toEqual([200, 200]);
+          expect(probeHits).toBe(1);
+        }
+      } finally {
+        app.server.closeAllConnections();
+        await app.close();
+      }
+    }
+  );
+
+  it.each<[string, string | undefined]>([
+    ['close', 'keep-alive'],
+    ['close', undefined],
+    ['keep-alive', 'close'],
+    ['keep-alive', 'keep-alive'],
+    ['keep-alive', undefined],
+  ])(
+    'respects downstream Connection: %s for 204 with upstream Connection: %s over TCP',
+    async (connection, upstreamConnection) => {
+      const headers = new Headers({ 'keep-alive': 'timeout=10' });
+      if (upstreamConnection) {
+        headers.set('connection', upstreamConnection);
+      }
+      mockedFetch.mockResolvedValueOnce(
+        new Response(null, { status: 204, headers })
+      );
+      mockedShouldInjectTrustedUserContext.mockReturnValue(false);
+      const app = Fastify({ logger: false });
+      const parserErrors: string[] = [];
+      let probeHits = 0;
+      app.server.on('clientError', (error: NodeJS.ErrnoException) => {
+        parserErrors.push(error.code || error.name);
+      });
+      app.delete('/delete', async (request, reply) => {
+        await dispatchDifyUpstreamRequest(
+          request,
+          reply,
+          createContext({
+            slug: ['conversations', '00000000-0000-4000-8000-000000000456'],
+            routePath: '/delete',
+          }),
+          createTargetConfig({ rawBody: {} })
+        );
+      });
+      app.get('/probe', async () => {
+        probeHits += 1;
+        return { ok: true };
+      });
+
+      try {
+        await app.listen({ host: '127.0.0.1', port: 0 });
+        const { port } = app.server.address() as AddressInfo;
+        const output = await readProxyConnection(
+          port,
+          connection,
+          'DELETE /delete',
+          '\r\n\r\n'
+        );
+        const statuses = Array.from(
+          output.matchAll(/HTTP\/1\.1 (\d+)/g),
+          match => Number(match[1])
+        );
+
+        expect(parserErrors).toEqual([]);
+        expect(output).toMatch(
+          new RegExp(`connection: ${connection}\\r\\n`, 'i')
+        );
+        expect(output).not.toMatch(/keep-alive: timeout=10\r\n/i);
+        if (connection === 'close') {
+          expect(statuses).toEqual([204]);
+          expect(probeHits).toBe(0);
+          expect(await requestProbe(port)).toBe(200);
+          expect(probeHits).toBe(1);
+        } else {
+          expect(statuses).toEqual([204, 200]);
           expect(probeHits).toBe(1);
         }
       } finally {
