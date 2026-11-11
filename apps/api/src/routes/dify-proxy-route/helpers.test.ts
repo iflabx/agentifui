@@ -1,10 +1,98 @@
 /** @jest-environment node */
 import {
+  adjustApiPathByAppType,
   bindDifyRequestUser,
   buildScopedUpstreamQuery,
+  isDifyFilePreviewPath,
   isValidDifyPath,
   normalizeRequestBody,
 } from './helpers';
+
+describe('workflow API path mapping', () => {
+  it.each([
+    'info',
+    'parameters',
+    'meta',
+    'site',
+    'files/upload',
+    'files/file-1/preview',
+    'audio-to-text',
+    'text-to-audio',
+    'workflows/run',
+    'workflows/logs',
+    'workflows/run/run-1',
+    'workflows/tasks/task-1/stop',
+    'workflows/version-1/run',
+  ])('preserves the canonical endpoint %s', path => {
+    expect(adjustApiPathByAppType(path.split('/'), 'workflow')).toBe(path);
+  });
+
+  it.each([
+    ['run', 'workflows/run'],
+    ['logs', 'workflows/logs'],
+    ['run/run-1', 'workflows/run/run-1'],
+    ['tasks/task-1/stop', 'workflows/tasks/task-1/stop'],
+    ['version-1/run', 'workflows/version-1/run'],
+  ])('maps only the explicit workflow alias %s', (path, expected) => {
+    expect(adjustApiPathByAppType(path.split('/'), 'workflow')).toBe(expected);
+  });
+
+  it.each([
+    'information',
+    'parameters-extra',
+    'meta/extra',
+    'site/extra',
+    'files/upload-extra',
+    'files/file-1/preview/extra',
+    'audio-to-text-extra',
+    'text-to-audio-extra',
+    'workflows/run/run-1/extra',
+    'workflows/unknown',
+    'workflow/run-1/events',
+    'form/human_input/token',
+  ])('rejects unsupported workflow paths without exposing %s', path => {
+    const adjustedPath = adjustApiPathByAppType(path.split('/'), 'workflow');
+    expect(isValidDifyPath(adjustedPath.split('/'))).toBe(false);
+  });
+
+  it.each([
+    'files/../preview',
+    'files//preview',
+    'files/file-1/preview?user=victim',
+    'run/run-1#ignored',
+    'tasks/task-1%2Fother/stop',
+  ])('keeps bad workflow paths invalid: %s', path => {
+    const adjustedPath = adjustApiPathByAppType(path.split('/'), 'workflow');
+    expect(isValidDifyPath(adjustedPath.split('/'))).toBe(false);
+  });
+
+  it('leaves other app routing unchanged', () => {
+    expect(
+      adjustApiPathByAppType(['files', 'file-1', 'preview'], 'chatbot')
+    ).toBe('files/file-1/preview');
+    expect(adjustApiPathByAppType(['chat-messages'], 'text-generation')).toBe(
+      'completion-messages'
+    );
+    expect(adjustApiPathByAppType(['unknown'], undefined)).toBe('unknown');
+  });
+});
+
+describe('file preview path matching', () => {
+  it('matches only a valid canonical file preview path', () => {
+    expect(isDifyFilePreviewPath('files/file-1/preview')).toBe(true);
+  });
+
+  it.each([
+    'files/upload',
+    'files/file-1/preview/extra',
+    'workflows/files/file-1/preview',
+    'files/../preview',
+    'files//preview',
+    'files/file-1/preview?ignored=1',
+  ])('does not treat %s as a preview', path => {
+    expect(isDifyFilePreviewPath(path)).toBe(false);
+  });
+});
 
 describe('buildScopedUpstreamQuery', () => {
   it('adds the actor user to file preview requests when missing', () => {

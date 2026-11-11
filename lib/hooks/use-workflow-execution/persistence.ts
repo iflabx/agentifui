@@ -57,6 +57,8 @@ function buildCompleteWorkflowMetadata(
   return {
     dify_response: {
       workflow_id: finalResult.workflow_id || null,
+      status: finalResult.status,
+      exceptions_count: finalResult.exceptions_count ?? null,
       created_at: finalResult.created_at || null,
       finished_at: finalResult.finished_at || null,
     },
@@ -244,7 +246,11 @@ export async function saveCompleteWorkflowExecutionData({
   console.log('[Workflow Execution] nodeExecutionData:', nodeExecutionData);
 
   try {
-    const finalResultError = finalResult.error || null;
+    const finalResultError =
+      finalResult.error ||
+      (finalResult.status === 'partial-succeeded'
+        ? 'Dify workflow partially succeeded; some nodes failed.'
+        : null);
     const normalizedFinalError = finalResultError
       ? toUserFacingAgentError({
           source: 'dify-workflow',
@@ -253,7 +259,11 @@ export async function saveCompleteWorkflowExecutionData({
         })
       : null;
     const finalStatus: ExecutionStatus =
-      finalResult.status === 'succeeded' ? 'completed' : 'failed';
+      finalResult.status === 'succeeded'
+        ? 'completed'
+        : finalResult.status === 'stopped'
+          ? 'stopped'
+          : 'failed';
     const completedAt = new Date().toISOString();
 
     console.log('[Workflow Execution] Ready to save complete data to database');
@@ -263,7 +273,7 @@ export async function saveCompleteWorkflowExecutionData({
       external_execution_id: workflowRunId,
       task_id: taskId,
       outputs: finalResult.outputs,
-      total_steps: finalResult.total_steps,
+      total_steps: finalResult.total_steps ?? undefined,
       total_tokens: finalResult.total_tokens ?? undefined,
       elapsed_time: finalResult.elapsed_time ?? undefined,
       error_message: normalizedFinalError?.userMessage || finalResultError,

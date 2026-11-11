@@ -17,6 +17,7 @@ import {
   copyHeaders,
   extractRawQuery,
   inferAgentSource,
+  isDifyFilePreviewPath,
   isMediaContentType,
   isObjectRecord,
   isReplyCommitted,
@@ -234,7 +235,13 @@ async function sendUpstreamResponse(input: {
     return;
   }
 
-  if (upstream.body && responseContentType.includes('text/event-stream')) {
+  const successfulFilePreview = upstream.ok && isDifyFilePreviewPath(slugPath);
+
+  if (
+    upstream.body &&
+    !successfulFilePreview &&
+    responseContentType.includes('text/event-stream')
+  ) {
     await sendUpstreamStream(request, reply, upstream, {
       appId: context.appId,
       routePath: context.routePath,
@@ -255,7 +262,10 @@ async function sendUpstreamResponse(input: {
     return;
   }
 
-  if (upstream.body && isMediaContentType(responseContentType)) {
+  if (
+    upstream.body &&
+    (successfulFilePreview || isMediaContentType(responseContentType))
+  ) {
     await sendUpstreamStream(request, reply, upstream, {
       appId: context.appId,
       routePath: context.routePath,
@@ -272,7 +282,10 @@ async function sendUpstreamResponse(input: {
           key === 'vary'
         );
       },
-      defaultHeaders: { 'X-Content-Type-Options': 'nosniff' },
+      defaultHeaders: {
+        'Content-Type': 'application/octet-stream',
+        'X-Content-Type-Options': 'nosniff',
+      },
     });
     return;
   }

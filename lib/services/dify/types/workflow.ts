@@ -5,7 +5,16 @@ import type {
   DifySseLoopCompletedEvent,
   DifySseLoopNextEvent,
   DifySseLoopStartedEvent,
+  DifySseWorkflowPausedEvent,
 } from './sse';
+
+export type DifyWorkflowStatus =
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'stopped'
+  | 'partial-succeeded'
+  | 'paused';
 
 export interface DifyWorkflowInputFile {
   type: 'document' | 'image' | 'audio' | 'video' | 'custom';
@@ -29,14 +38,15 @@ export interface DifyWorkflowCompletionResponse {
 export interface DifyWorkflowFinishedData {
   id: string;
   workflow_id: string;
-  status: 'running' | 'succeeded' | 'failed' | 'stopped';
+  status: DifyWorkflowStatus;
   outputs?: Record<string, unknown> | null;
   error?: string | null;
   elapsed_time?: number | null;
   total_tokens?: number | null;
-  total_steps: number;
-  created_at: number;
-  finished_at: number;
+  total_steps: number | null;
+  created_at: number | null;
+  finished_at: number | null;
+  exceptions_count?: number;
 }
 
 export interface DifyWorkflowSseStartedEvent {
@@ -112,6 +122,7 @@ export type DifyWorkflowSseEvent =
   | DifyWorkflowSseNodeStartedEvent
   | DifyWorkflowSseNodeFinishedEvent
   | DifyWorkflowSseErrorEvent
+  | DifySseWorkflowPausedEvent
   | DifySseIterationStartedEvent
   | DifySseIterationNextEvent
   | DifySseIterationCompletedEvent
@@ -137,22 +148,18 @@ export type DifyWorkflowErrorCode =
 export interface DifyWorkflowRunDetailResponse {
   id: string;
   workflow_id: string;
-  status: 'running' | 'succeeded' | 'failed' | 'stopped';
-  inputs: string;
+  status: DifyWorkflowStatus;
+  inputs: unknown;
   outputs: Record<string, unknown> | null;
   error: string | null;
-  total_steps: number;
-  total_tokens: number;
-  created_at: number;
+  total_steps: number | null;
+  total_tokens: number | null;
+  created_at: number | null;
   finished_at: number | null;
   elapsed_time: number | null;
 }
 
-export type DifyWorkflowLogStatus =
-  | 'succeeded'
-  | 'failed'
-  | 'stopped'
-  | 'running';
+export type DifyWorkflowLogStatus = 'succeeded' | 'failed' | 'stopped';
 
 export interface GetDifyWorkflowLogsParams {
   keyword?: string;
@@ -163,16 +170,25 @@ export interface GetDifyWorkflowLogsParams {
 
 export interface DifyWorkflowLogEntry {
   id: string;
-  workflow_id: string;
-  status: DifyWorkflowLogStatus;
-  inputs: string;
-  outputs: Record<string, unknown> | null;
-  error: string | null;
-  total_steps: number;
-  total_tokens: number;
-  created_at: number;
-  finished_at: number | null;
-  elapsed_time: number | null;
+  workflow_run: {
+    id: string;
+    version?: string | null;
+    status?: DifyWorkflowStatus | null;
+    triggered_from?: string | null;
+    error?: string | null;
+    total_steps?: number | null;
+    total_tokens?: number | null;
+    created_at?: number | null;
+    finished_at?: number | null;
+    elapsed_time?: number | null;
+    exceptions_count?: number | null;
+  } | null;
+  details?: unknown;
+  created_from?: string | null;
+  created_by_role?: string | null;
+  created_by_account?: Record<string, unknown> | null;
+  created_by_end_user?: Record<string, unknown> | null;
+  created_at: number | null;
 }
 
 export interface GetDifyWorkflowLogsResponse {

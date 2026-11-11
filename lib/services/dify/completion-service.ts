@@ -4,13 +4,14 @@
  * @description Handles API interactions related to Dify text generation applications.
  * The text generation app uses the completion-messages endpoint instead of chat-messages.
  */
+import { parseSseStream } from '@lib/utils/sse-parser';
+
+import { extractUsage } from './chat-service/helpers';
 import type {
   DifyApiError,
   DifyCompletionRequestPayload,
   DifyCompletionResponse,
   DifyCompletionStreamResponse,
-  DifySseEvent,
-  DifyUsage,
 } from './types';
 
 /**
@@ -33,7 +34,7 @@ export async function executeDifyCompletion(
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ ...payload, response_mode: 'blocking' }),
     });
 
     if (!response.ok) {
@@ -63,7 +64,10 @@ export async function executeDifyCompletion(
       answerLength: result.answer.length,
     });
 
-    return result;
+    return {
+      ...result,
+      usage: extractUsage(result.metadata?.usage) ?? extractUsage(result.usage),
+    };
   } catch (error) {
     console.error(
       '[Dify Completion Service] Error occurred during text generation:',
@@ -127,182 +131,132 @@ export async function streamDifyCompletion(
     const stream = response.body;
     let messageId: string | null = null;
     let taskId: string | null = null;
+    let hasPreferredMessageId = false;
+    let completionSettled = false;
+    let streamStarted = false;
 
-    // Create completion Promise
-    let completionResolve: (value: {
-      usage?: DifyUsage;
-      metadata?: Record<string, unknown>;
-    }) => void;
+    type CompletionResult = Awaited<
+      DifyCompletionStreamResponse['completionPromise']
+    >;
+    let completionResolve: (value: CompletionResult) => void;
     let completionReject: (reason: unknown) => void;
 
-    const completionPromise = new Promise<{
-      usage?: DifyUsage;
-      metadata?: Record<string, unknown>;
-    }>((resolve, reject) => {
-      completionResolve = resolve;
-      completionReject = reject;
-    });
+    const completionPromise = new Promise<CompletionResult>(
+      (resolve, reject) => {
+        completionResolve = resolve;
+        completionReject = reject;
+      }
+    );
+    void completionPromise.catch(() => undefined);
 
-    /**
-     * Async generator for answer stream.
-     */
+    const rejectIncompleteCompletion = () => {
+      if (!completionSettled) {
+        completionSettled = true;
+        completionReject(
+          new Error('Completion stream was closed before completion.')
+        );
+      }
+    };
+
     async function* generateAnswerStream(): AsyncGenerator<
       string,
       void,
       undefined
     > {
-      const reader = stream.getReader();
-      const decoder = new TextDecoder();
+      streamStarted = true;
       let hasReceivedContent = false;
-      let completionResolved = false;
+
+      const resolveCompletion = (
+        metadata: Record<string, unknown>,
+        usage?: CompletionResult['usage']
+      ) => {
+        completionSettled = true;
+        completionResolve({
+          usage,
+          metadata: {
+            ...metadata,
+            has_content: hasReceivedContent,
+            message_id: messageId,
+            task_id: taskId,
+          },
+        });
+      };
 
       try {
-        while (true) {
-          const { done, value } = await reader.read();
-
-          if (done) {
-            console.log('[Dify Completion Service] Stream reading finished');
-            break;
+        for await (const result of parseSseStream(stream)) {
+          if (result.type === 'error') {
+            throw result.error;
           }
 
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
+          const event = result.event;
+          if (typeof event.task_id === 'string' && event.task_id) {
+            taskId = event.task_id;
+          }
 
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = line.slice(6);
+          if (event.event === 'error') {
+            throw new Error(event.message || 'Dify completion stream failed.');
+          }
 
-              if (data === '[DONE]') {
-                console.log('[Dify Completion Service] Received [DONE] signal');
-                // If message_end event not received, resolve manually
-                if (!completionResolved) {
-                  console.log(
-                    '[Dify Completion Service] message_end not received, completing manually'
-                  );
-                  completionResolve({
-                    usage: undefined,
-                    metadata: {
-                      stream_ended: true,
-                      has_content: hasReceivedContent,
-                    },
-                  });
-                  completionResolved = true;
-                }
-                return;
-              }
+          if (event.event !== 'message' && event.event !== 'message_end') {
+            continue;
+          }
 
-              try {
-                const event: DifySseEvent = JSON.parse(data);
+          const preferredId =
+            'message_id' in event ? event.message_id : undefined;
+          if (typeof preferredId === 'string' && preferredId) {
+            messageId = preferredId;
+            hasPreferredMessageId = true;
+          } else if (
+            !hasPreferredMessageId &&
+            typeof event.id === 'string' &&
+            event.id
+          ) {
+            messageId = event.id;
+          }
 
-                // Extract messageId and taskId
-                if ('id' in event && event.id) {
-                  messageId = event.id;
-                  console.log(
-                    '[Dify Completion Service] Extracted messageId:',
-                    messageId
-                  );
-                }
-                if ('task_id' in event && event.task_id) {
-                  taskId = event.task_id;
-                  console.log(
-                    '[Dify Completion Service] Extracted taskId:',
-                    taskId
-                  );
-                }
-
-                // Handle different event types
-                if (event.event === 'message' && 'answer' in event) {
-                  if (event.answer && event.answer.length > 0) {
-                    hasReceivedContent = true;
-                  }
-                  yield event.answer;
-                } else if (event.event === 'message_end') {
-                  console.log(
-                    '[Dify Completion Service] Received message_end event:',
-                    {
-                      usage: event.usage,
-                      metadata: event.metadata,
-                      hasContent: hasReceivedContent,
-                    }
-                  );
-
-                  // Resolve completion Promise
-                  if (!completionResolved) {
-                    completionResolve({
-                      usage: event.usage,
-                      metadata: {
-                        ...event.metadata,
-                        has_content: hasReceivedContent,
-                        message_id: messageId,
-                        task_id: taskId,
-                      },
-                    });
-                    completionResolved = true;
-                  }
-                } else if (event.event === 'error') {
-                  console.error(
-                    '[Dify Completion Service] Received error event:',
-                    event.message
-                  );
-                  if (!completionResolved) {
-                    completionReject(new Error(event.message));
-                    completionResolved = true;
-                  }
-                  return;
-                } else {
-                  // Log other event types
-                  console.log(
-                    '[Dify Completion Service] Received other event:',
-                    event.event
-                  );
-                }
-              } catch (parseError) {
-                console.warn(
-                  '[Dify Completion Service] Failed to parse SSE event:',
-                  parseError,
-                  'Raw data:',
-                  data
-                );
-              }
+          if (event.event === 'message') {
+            if (typeof event.answer !== 'string') {
+              throw new Error(
+                'Invalid completion message: answer must be a string.'
+              );
             }
+            hasReceivedContent ||= event.answer.length > 0;
+            yield event.answer;
+          } else {
+            resolveCompletion(
+              event.metadata || {},
+              extractUsage(event.metadata?.usage) ?? extractUsage(event.usage)
+            );
+            return;
           }
         }
 
-        // Stream ended normally but no explicit completion signal received
-        if (!completionResolved) {
-          console.log(
-            '[Dify Completion Service] Stream ended normally, completing manually'
-          );
-          completionResolve({
-            usage: undefined,
-            metadata: {
-              stream_completed: true,
-              has_content: hasReceivedContent,
-              message_id: messageId,
-              task_id: taskId,
-            },
-          });
-          completionResolved = true;
-        }
+        resolveCompletion({ stream_completed: true });
       } catch (error) {
-        console.error(
-          '[Dify Completion Service] Stream processing error:',
-          error
-        );
-        if (!completionResolved) {
-          completionReject(
-            error instanceof Error ? error : new Error(String(error))
-          );
-          completionResolved = true;
+        const streamError =
+          error instanceof Error ? error : new Error(String(error));
+        if (!completionSettled) {
+          completionSettled = true;
+          completionReject(streamError);
         }
-        throw error;
+        throw streamError;
       } finally {
-        reader.releaseLock();
+        rejectIncompleteCompletion();
       }
     }
 
+    const answerStream = generateAnswerStream();
+    const returnAnswerStream = answerStream.return.bind(answerStream);
+    answerStream.return = async value => {
+      if (!streamStarted && !completionSettled) {
+        rejectIncompleteCompletion();
+        await stream.cancel();
+      }
+      return returnAnswerStream(value);
+    };
+
     return {
-      answerStream: generateAnswerStream(),
+      answerStream,
       getMessageId: () => messageId,
       getTaskId: () => taskId,
       completionPromise,

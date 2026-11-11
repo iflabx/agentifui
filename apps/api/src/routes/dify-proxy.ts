@@ -18,12 +18,46 @@ const PROXY_METHODS: HTTPMethods[] = [
   'PUT',
 ];
 
+function resolveUploadBodyLimit(): number {
+  const rawValue = process.env.DIFY_UPLOAD_MAX_BYTES;
+  if (rawValue === undefined) {
+    return 16 * 1024 * 1024;
+  }
+
+  const normalizedValue = rawValue.trim();
+  const bodyLimit = Number(normalizedValue);
+  if (
+    !/^\d+$/.test(normalizedValue) ||
+    !Number.isSafeInteger(bodyLimit) ||
+    bodyLimit < 1024
+  ) {
+    throw new Error(
+      'DIFY_UPLOAD_MAX_BYTES must be a decimal safe integer of at least 1024 bytes'
+    );
+  }
+  return bodyLimit;
+}
+
 export const difyProxyRoutes: FastifyPluginAsync<
   DifyProxyRoutesOptions
 > = async (app, options) => {
+  const uploadBodyLimit = resolveUploadBodyLimit();
+
   app.get('/api/internal/ops/dify-resilience', async (request, reply) =>
     handleDifyResilienceOps(request, reply, options.config)
   );
+
+  for (const slug of ['files/upload', 'audio-to-text']) {
+    app.post(
+      `/api/dify/:appId/${slug}`,
+      { bodyLimit: uploadBodyLimit },
+      async (request, reply) => {
+        const params = request.params as Record<string, string>;
+        params['*'] = slug;
+        return handleDifyProxy(request, reply, options.config);
+      }
+    );
+  }
 
   for (const url of ['/api/dify/:appId', '/api/dify/:appId/*']) {
     app.route({

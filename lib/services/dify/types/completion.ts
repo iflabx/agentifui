@@ -21,7 +21,7 @@ export interface DifyCompletionResponse {
   mode: string;
   answer: string;
   metadata: Record<string, unknown>;
-  usage: DifyUsage;
+  usage?: DifyUsage;
   created_at: number;
 }
 
