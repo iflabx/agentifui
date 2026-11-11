@@ -42,6 +42,124 @@ describe('streamDifyChat agent_thought handling', () => {
     jest.restoreAllMocks();
   });
 
+  it.each([false, true])(
+    'settles both promises and releases the body on consumer cancellation (started: %s)',
+    async started => {
+      const cancel = jest.fn();
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              `data: ${JSON.stringify({ event: 'message', answer: 'hello' })}\n\n`
+            )
+          );
+        },
+        cancel,
+      });
+      (global.fetch as jest.Mock).mockResolvedValue({ ok: true, body });
+      const response = await streamDifyChat(
+        { query: 'hello', user: 'user-1', response_mode: 'streaming' },
+        'app-1'
+      );
+      const completion = response.completionPromise!.catch(error => error);
+      if (started) await response.answerStream.next();
+      await response.answerStream.return();
+
+      const result = await Promise.race([
+        completion,
+        new Promise(resolve => setTimeout(() => resolve('pending'), 50)),
+      ]);
+      expect(result).toBeInstanceOf(Error);
+      expect((result as Error).message).toBe(
+        'Chat stream was closed before completion.'
+      );
+      await expect(response.firstAnswerPromise).resolves.toBe(started);
+      expect(cancel).toHaveBeenCalledTimes(1);
+      expect(body.locked).toBe(false);
+    }
+  );
+
+  it('uses the official message_id from message_end for persistence', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      body: createSseBody([
+        {
+          event: 'message',
+          conversation_id: 'conversation',
+          task_id: 'task',
+          message_id: 'official-id',
+          answer: 'hello',
+        },
+        {
+          event: 'message_end',
+          conversation_id: 'conversation',
+          task_id: 'task',
+          message_id: 'official-id',
+          id: 'legacy-id',
+          metadata: { usage: { total_tokens: 3 } },
+        },
+      ]),
+    });
+    const response = await streamDifyChat(
+      { query: 'hello', user: 'user-1', response_mode: 'streaming' },
+      'app-1'
+    );
+    expect(await collectStream(response.answerStream)).toBe('hello');
+    await expect(response.completionPromise).resolves.toMatchObject({
+      messageId: 'official-id',
+      usage: { total_tokens: 3 },
+    });
+  });
+
+  it('does not silently succeed when a chatflow requires Human Input', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      body: createSseBody([
+        {
+          event: 'workflow_paused',
+          conversation_id: 'conversation',
+          task_id: 'task',
+          workflow_run_id: 'run',
+          data: { status: 'paused' },
+        },
+      ]),
+    });
+    const response = await streamDifyChat(
+      { query: 'hello', user: 'user-1', response_mode: 'streaming' },
+      'app-1'
+    );
+    const completion = expect(response.completionPromise).rejects.toThrow(
+      'Human Input'
+    );
+    await expect(collectStream(response.answerStream)).rejects.toThrow(
+      'Human Input'
+    );
+    await completion;
+  });
+
+  it('keeps a pause rejection observable when completion is awaited after stream failure', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      body: createSseBody([
+        {
+          event: 'workflow_paused',
+          conversation_id: 'conversation',
+          workflow_run_id: 'run',
+          data: { status: 'paused' },
+        },
+      ]),
+    });
+    const response = await streamDifyChat(
+      { query: 'test', user: 'user-1', response_mode: 'streaming' },
+      'app-1'
+    );
+    await expect(collectStream(response.answerStream)).rejects.toThrow(
+      'Human Input'
+    );
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await expect(response.completionPromise).rejects.toThrow('Human Input');
+  });
+
   it('should stream agent thoughts into a think block before the final answer', async () => {
     (global.fetch as jest.Mock).mockResolvedValue({
       ok: true,

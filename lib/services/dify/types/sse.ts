@@ -1,9 +1,11 @@
 import type { DifyMessageFile } from './messages';
 import type { DifyRetrieverResource, DifyUsage } from './shared';
+import type { DifyWorkflowStatus } from './workflow';
 
 interface DifySseBaseEvent {
   task_id: string;
   id?: string;
+  message_id?: string;
   conversation_id: string;
   event: string;
 }
@@ -27,7 +29,7 @@ export interface DifySseMessageEndEvent extends DifySseBaseEvent {
   event: 'message_end';
   id: string;
   metadata: Record<string, unknown>;
-  usage: DifyUsage;
+  usage?: DifyUsage;
   retriever_resources?: DifyRetrieverResource[];
 }
 
@@ -106,14 +108,33 @@ export interface DifySseWorkflowFinishedEvent extends DifySseBaseEvent {
   data: {
     id: string;
     workflow_id: string;
-    status: 'running' | 'succeeded' | 'failed' | 'stopped';
+    status: DifyWorkflowStatus;
     outputs?: unknown;
     error?: string;
     elapsed_time?: number;
     total_tokens?: number;
     total_steps: number;
     created_at: number;
-    finished_at: number;
+    finished_at: number | null;
+  };
+}
+
+export interface DifySseWorkflowPausedEvent {
+  event: 'workflow_paused';
+  task_id?: string;
+  workflow_run_id: string;
+  conversation_id?: string;
+  message_id?: string;
+  data: {
+    workflow_run_id: string;
+    status: 'paused';
+    paused_nodes: string[];
+    reasons?: Record<string, unknown>[];
+    outputs?: Record<string, unknown>;
+    created_at: number;
+    elapsed_time: number;
+    total_tokens: number;
+    total_steps: number;
   };
 }
 
@@ -265,6 +286,7 @@ export interface DifySseLoopCompletedEvent extends DifySseBaseEvent {
 }
 
 export type DifySseEvent =
+  | DifySseWorkflowPausedEvent
   | DifySseMessageEvent
   | DifySseMessageFileEvent
   | DifySseMessageEndEvent

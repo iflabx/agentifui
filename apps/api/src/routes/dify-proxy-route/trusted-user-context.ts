@@ -1,5 +1,5 @@
 import { queryRowsWithPgSystemContext } from '../../lib/pg-context';
-import { isObjectRecord } from './helpers';
+import { isObjectRecord, isValidDifyPath } from './helpers';
 import type { DifyProxyActor } from './types';
 
 const TRUSTED_USER_INPUT_PREFIX = 'agentifui_user_';
@@ -67,7 +67,12 @@ export function shouldInjectTrustedUserContext(
   method: string,
   slugPath: string
 ): boolean {
-  return method.toUpperCase() === 'POST' && TRUSTED_ROUTE_PATHS.has(slugPath);
+  return (
+    method.toUpperCase() === 'POST' &&
+    (TRUSTED_ROUTE_PATHS.has(slugPath) ||
+      (isValidDifyPath(slugPath.split('/')) &&
+        /^workflows\/[^/]+\/run$/.test(slugPath)))
+  );
 }
 
 export async function loadTrustedUserProfile(

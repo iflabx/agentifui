@@ -3,6 +3,15 @@ import type { FastifyReply } from 'fastify';
 import type { AgentErrorSource } from '../../lib/agent-error';
 
 const DEFAULT_DIFY_PROXY_TIMEOUT_MS = 30000;
+const WORKFLOW_COMMON_API_PATHS = new Set([
+  'info',
+  'parameters',
+  'meta',
+  'site',
+  'files/upload',
+  'audio-to-text',
+  'text-to-audio',
+]);
 
 export function resolveDifyProxyTimeoutMs(): number {
   const raw = process.env.DIFY_PROXY_TIMEOUT_MS?.trim();
@@ -32,22 +41,41 @@ function isTextGenerationAppType(appType?: string): boolean {
   return (appType || '').trim().toLowerCase() === 'text-generation';
 }
 
+export function isDifyFilePreviewPath(path: string): boolean {
+  const segments = path.split('/');
+  return (
+    isValidDifyPath(segments) &&
+    segments.length === 3 &&
+    segments[0] === 'files' &&
+    segments[2] === 'preview'
+  );
+}
+
 export function adjustApiPathByAppType(
   slug: string[],
   appType: string | undefined
 ): string {
   const originalPath = slug.join('/');
 
-  if (!appType) {
+  if (!appType || !isValidDifyPath(slug)) {
     return originalPath;
   }
 
   if (isWorkflowAppType(appType)) {
-    const commonApis = ['info', 'parameters', 'files/upload', 'audio-to-text'];
-    const isCommonApi = commonApis.some(api => originalPath.startsWith(api));
-    if (!isCommonApi && !originalPath.startsWith('workflows/')) {
-      return `workflows/${originalPath}`;
+    if (
+      WORKFLOW_COMMON_API_PATHS.has(originalPath) ||
+      isDifyFilePreviewPath(originalPath)
+    ) {
+      return originalPath;
     }
+    const workflowPath = originalPath.startsWith('workflows/')
+      ? originalPath.slice('workflows/'.length)
+      : originalPath;
+    return /^(?:run(?:\/[^/]+)?|logs|tasks\/[^/]+\/stop|[^/]+\/run)$/.test(
+      workflowPath
+    )
+      ? `workflows/${workflowPath}`
+      : '';
   }
 
   if (isTextGenerationAppType(appType)) {
