@@ -1,10 +1,14 @@
 /** @jest-environment node */
 import { conversationEvents } from '@lib/hooks/use-combined-conversations';
-import { saveFailedWorkflowExecutionData } from '@lib/hooks/use-workflow-execution/persistence';
+import {
+  saveCompleteWorkflowExecutionData,
+  saveFailedWorkflowExecutionData,
+} from '@lib/hooks/use-workflow-execution/persistence';
 import {
   updateCompleteExecutionData,
   updateExecutionStatus,
 } from '@lib/services/client/app-executions-api';
+import type { DifyWorkflowFinishedData } from '@lib/services/dify/types';
 import type { AppExecution } from '@lib/types/database';
 
 jest.mock('@lib/hooks/use-combined-conversations', () => ({
@@ -17,6 +21,59 @@ jest.mock('@lib/services/client/app-executions-api', () => ({
   updateCompleteExecutionData: jest.fn(),
   updateExecutionStatus: jest.fn(),
 }));
+
+describe('workflow final-status compatibility', () => {
+  afterEach(() => jest.clearAllMocks());
+
+  it.each([
+    ['succeeded', 'completed'],
+    ['stopped', 'stopped'],
+    ['partial-succeeded', 'failed'],
+  ] as const)(
+    'stores %s without misrepresenting its original status',
+    async (upstreamStatus, localStatus) => {
+      const finalResult: DifyWorkflowFinishedData = {
+        id: 'run-1',
+        workflow_id: 'workflow-1',
+        status: upstreamStatus,
+        outputs: { answer: 'result' },
+        error: null,
+        total_steps: 2,
+        created_at: 1,
+        finished_at: 3,
+      };
+      jest.mocked(updateCompleteExecutionData).mockResolvedValue({
+        success: true,
+        data: { id: 'execution-1', status: localStatus } as AppExecution,
+      });
+      await saveCompleteWorkflowExecutionData({
+        executionId: 'execution-1',
+        finalResult,
+        taskId: 'task-1',
+        workflowRunId: 'run-1',
+        instanceId: 'app-1',
+        updateCurrentExecution: jest.fn(),
+        addExecutionToHistory: jest.fn(),
+      });
+      expect(updateCompleteExecutionData).toHaveBeenCalledWith(
+        'execution-1',
+        expect.objectContaining({
+          status: localStatus,
+          outputs: { answer: 'result' },
+          metadata: expect.objectContaining({
+            dify_response: expect.objectContaining({ status: upstreamStatus }),
+          }),
+        })
+      );
+      if (upstreamStatus === 'partial-succeeded') {
+        expect(
+          jest.mocked(updateCompleteExecutionData).mock.calls.at(-1)?.[1]
+            .error_message
+        ).toBeTruthy();
+      }
+    }
+  );
+});
 
 describe('saveFailedWorkflowExecutionData', () => {
   const mockedUpdateCompleteExecutionData = jest.mocked(

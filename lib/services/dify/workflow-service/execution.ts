@@ -9,7 +9,10 @@ import {
   DifyWorkflowStreamResponse,
 } from '../types';
 import { DIFY_API_BASE_URL } from './constants';
-import { handleWorkflowApiError } from './errors';
+import {
+  createUnsupportedWorkflowPauseError,
+  handleWorkflowApiError,
+} from './errors';
 import { getDifyWorkflowRunDetail } from './query';
 
 function emitProgressUpdate(
@@ -36,7 +39,12 @@ const WORKFLOW_RUN_DETAIL_RETRY_DELAYS_MS = [0, 400, 1200] as const;
 function isTerminalWorkflowStatus(
   status: DifyWorkflowFinishedData['status']
 ): boolean {
-  return status === 'succeeded' || status === 'failed' || status === 'stopped';
+  return (
+    status === 'succeeded' ||
+    status === 'failed' ||
+    status === 'stopped' ||
+    status === 'partial-succeeded'
+  );
 }
 
 function toWorkflowFinishedData(
@@ -52,7 +60,7 @@ function toWorkflowFinishedData(
     total_tokens: runDetail.total_tokens,
     total_steps: runDetail.total_steps,
     created_at: runDetail.created_at,
-    finished_at: runDetail.finished_at ?? runDetail.created_at,
+    finished_at: runDetail.finished_at,
   };
 }
 
@@ -100,6 +108,9 @@ export async function executeDifyWorkflow(
     }
 
     const result: DifyWorkflowCompletionResponse = await response.json();
+    if (result.data.status === 'paused') {
+      throw createUnsupportedWorkflowPauseError();
+    }
     console.log(
       '[Dify Workflow Service] Workflow execution completed:',
       result.data.status
@@ -160,6 +171,7 @@ export async function streamDifyWorkflow(
     let workflowRunId: string | null = null;
     let taskId: string | null = null;
     let completionSettled = false;
+    let streamStarted = false;
     let completionResolve: (value: DifyWorkflowFinishedData) => void;
     let completionReject: (reason: unknown) => void;
 
@@ -169,6 +181,7 @@ export async function streamDifyWorkflow(
         completionReject = reject;
       }
     );
+    void completionPromise.catch(() => undefined);
 
     const resolveCompletion = (value: DifyWorkflowFinishedData) => {
       if (completionSettled) {
@@ -210,6 +223,10 @@ export async function streamDifyWorkflow(
                 workflowRunId
               );
 
+              if (runDetail.status === 'paused') {
+                throw createUnsupportedWorkflowPauseError();
+              }
+
               if (isTerminalWorkflowStatus(runDetail.status)) {
                 console.warn(
                   '[Dify Workflow Service] Recovered terminal workflow status from run detail:',
@@ -223,6 +240,12 @@ export async function streamDifyWorkflow(
                 runDetail.status
               );
             } catch (recoveryError) {
+              if (
+                recoveryError instanceof Error &&
+                recoveryError.name === 'DifyWorkflowPauseUnsupported'
+              ) {
+                throw recoveryError;
+              }
               console.warn(
                 '[Dify Workflow Service] Failed to recover workflow run detail:',
                 recoveryError
@@ -241,6 +264,7 @@ export async function streamDifyWorkflow(
       void,
       undefined
     > {
+      streamStarted = true;
       try {
         for await (const result of parseSseStream(stream)) {
           if (result.type === 'error') {
@@ -270,6 +294,11 @@ export async function streamDifyWorkflow(
           }
 
           switch (event.event) {
+            case 'workflow_paused': {
+              const error = createUnsupportedWorkflowPauseError();
+              rejectCompletion(error);
+              throw error;
+            }
             case 'workflow_started':
               console.log(
                 '[Dify Workflow Service] Workflow started:',
@@ -328,10 +357,15 @@ export async function streamDifyWorkflow(
         }
       } catch (error) {
         if (!completionSettled) {
-          const recoveredResult = await recoverTerminalResult();
-          if (recoveredResult) {
-            resolveCompletion(recoveredResult);
-            return;
+          try {
+            const recoveredResult = await recoverTerminalResult();
+            if (recoveredResult) {
+              resolveCompletion(recoveredResult);
+              return;
+            }
+          } catch (recoveryError) {
+            rejectCompletion(recoveryError);
+            throw recoveryError;
           }
         }
 
@@ -341,11 +375,27 @@ export async function streamDifyWorkflow(
         );
         rejectCompletion(error);
         throw error;
+      } finally {
+        rejectCompletion(
+          new Error('Workflow stream was closed before completion.')
+        );
       }
     }
 
+    const progressStream = processProgressStream();
+    const returnProgressStream = progressStream.return.bind(progressStream);
+    progressStream.return = async value => {
+      if (!streamStarted && !completionSettled) {
+        rejectCompletion(
+          new Error('Workflow stream was closed before completion.')
+        );
+        await stream.cancel();
+      }
+      return returnProgressStream(value);
+    };
+
     return {
-      progressStream: processProgressStream(),
+      progressStream,
       getWorkflowRunId: () => workflowRunId,
       getTaskId: () => taskId,
       completionPromise,

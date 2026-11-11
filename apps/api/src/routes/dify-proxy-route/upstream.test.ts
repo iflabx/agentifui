@@ -106,26 +106,31 @@ function createTargetConfig(
   };
 }
 
-function readStreamConnection(port: number, connection: string) {
+function readProxyConnection(
+  port: number,
+  connection: string,
+  requestLine = 'POST /stream',
+  responseEnd = '\r\n0\r\n\r\n'
+) {
   return new Promise<string>((resolve, reject) => {
     const socket = createConnection({ host: '127.0.0.1', port });
     let output = '';
     let followupSent = false;
     const timer = setTimeout(() => {
       socket.destroy();
-      reject(new Error('Stream connection did not finish'));
+      reject(new Error('Proxy connection did not finish'));
     }, 3000);
 
     socket.on('connect', () => {
       socket.write(
-        `POST /stream HTTP/1.1\r\nHost: localhost\r\nConnection: ${connection}\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}`
+        `${requestLine} HTTP/1.1\r\nHost: localhost\r\nConnection: ${connection}\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}`
       );
     });
     socket.on('data', chunk => {
       output += chunk.toString();
       if (
         !followupSent &&
-        output.includes('\r\n0\r\n\r\n') &&
+        output.includes(responseEnd) &&
         /\r\nconnection: keep-alive\r\n/i.test(output)
       ) {
         followupSent = true;
@@ -321,6 +326,55 @@ describe('dispatchDifyUpstreamRequest trusted user context integration', () => {
     );
   });
 
+  it.each(['workflows/version-1/run', 'version-1/run'])(
+    'strips forged trusted inputs when dispatching %s',
+    async path => {
+      const actualTrustedContext = jest.requireActual<
+        typeof import('./trusted-user-context')
+      >('./trusted-user-context');
+      mockedShouldInjectTrustedUserContext.mockImplementation(
+        actualTrustedContext.shouldInjectTrustedUserContext
+      );
+      mockedInjectTrustedUserContext.mockImplementation(
+        actualTrustedContext.injectTrustedUserContext
+      );
+      mockedLoadTrustedUserProfile.mockResolvedValue(null);
+      await dispatchDifyUpstreamRequest(
+        createRequest({ raw: { url: `/api/dify/app-1/${path}` } }),
+        createReply(),
+        createContext({ slug: path.split('/') }),
+        createTargetConfig({
+          appType: 'workflow',
+          rawBody: {
+            user: 'victim',
+            response_mode: 'blocking',
+            inputs: {
+              business_value: 0,
+              agentifui_user_id: 'victim',
+              agentifui_user_role: 'admin',
+              agentifui_user_department: 'forged',
+              agentifui_user_custom: 'forged',
+            },
+          },
+        })
+      );
+      const actor = createContext().actor;
+      expect(mockedFetch).toHaveBeenCalledWith(
+        `https://dify.example.com/v1/workflows/version-1/run?user=${actor.userId}`,
+        expect.objectContaining({ method: 'POST', redirect: 'manual' })
+      );
+      expect(JSON.parse(String(mockedFetch.mock.calls[0][1]?.body))).toEqual({
+        user: actor.userId,
+        response_mode: 'blocking',
+        inputs: {
+          business_value: 0,
+          agentifui_user_id: actor.userId,
+          agentifui_user_role: actor.role,
+        },
+      });
+    }
+  );
+
   it('falls back to minimal actor context when profile lookup fails', async () => {
     mockedLoadTrustedUserProfile.mockRejectedValueOnce(
       new Error('profile db unavailable')
@@ -399,7 +453,14 @@ describe('dispatchDifyUpstreamRequest trusted user context integration', () => {
       }),
       createReply(),
       createContext({ slug: ['files', 'upload'] }),
-      createTargetConfig({ rawBody: Buffer.from(await upload.arrayBuffer()) })
+      createTargetConfig({
+        appType: 'workflow',
+        rawBody: Buffer.from(await upload.arrayBuffer()),
+      })
+    );
+    expect(mockedFetch).toHaveBeenCalledWith(
+      `https://dify.example.com/v1/files/upload?user=${createContext().actor.userId}`,
+      expect.objectContaining({ method: 'POST' })
     );
     const init = mockedFetch.mock.calls[0][1]!;
     expect(init.body).toBeInstanceOf(FormData);
@@ -429,42 +490,161 @@ describe('dispatchDifyUpstreamRequest trusted user context integration', () => {
   );
 
   it.each([
-    'text/html; charset=utf-8',
-    'image/svg+xml',
-    'application/xhtml+xml',
-    'application/xml',
-  ])('serves untrusted %s as a sandboxed download', async contentType => {
-    mockedShouldInjectTrustedUserContext.mockReturnValue(false);
-    const content = '<script>untrusted()</script>';
-    mockedFetch.mockResolvedValueOnce(
-      new Response(content, {
-        headers: {
-          'Content-Type': contentType,
-          'Content-Disposition': 'inline',
-        },
-      })
+    'files/file-id/preview?ignored=1',
+    'files/../preview',
+    'files//preview',
+    'files/upload-extra',
+    'workflow/run-id/events',
+    'form/human_input/token',
+  ])('does not dispatch unsupported workflow path %s', async path => {
+    const reply = createReply();
+    await dispatchDifyUpstreamRequest(
+      createRequest({ method: 'GET' }),
+      reply,
+      createContext({ slug: path.split('/') }),
+      createTargetConfig({ appType: 'workflow' })
     );
-    const app = Fastify({ logger: false });
-    app.get('/document', async (request, reply) => {
-      await dispatchDifyUpstreamRequest(
-        request,
-        reply,
-        createContext({ slug: ['files', 'file-id', 'preview'] }),
-        createTargetConfig()
-      );
-    });
-    try {
-      const response = await app.inject('/document');
-      expect(response.statusCode).toBe(200);
-      expect(response.headers['content-type']).toBe('application/octet-stream');
-      expect(response.headers['content-disposition']).toMatch(/^attachment;/);
-      expect(response.headers['content-security-policy']).toContain('sandbox');
-      expect(response.headers['x-content-type-options']).toBe('nosniff');
-      expect(response.body).toBe(content);
-    } finally {
-      await app.close();
-    }
+    expect(reply.status).toHaveBeenCalledWith(400);
+    expect(mockedFetch).not.toHaveBeenCalled();
+    expect(mockedLoadTrustedUserProfile).not.toHaveBeenCalled();
   });
+
+  it.each([
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/zip',
+    'text/plain; charset=utf-8',
+    'application/json',
+    'text/event-stream',
+    'application/x-unknown',
+    undefined,
+  ])(
+    'streams successful workflow file preview bytes for %s',
+    async contentType => {
+      mockedShouldInjectTrustedUserContext.mockReturnValue(false);
+      const content = Buffer.from([0, 80, 75, 255, 128, 13, 10]);
+      const headers = new Headers({
+        'Content-Length': String(content.length),
+        'Content-Disposition': 'attachment; filename="report.bin"',
+      });
+      if (contentType) {
+        headers.set('Content-Type', contentType);
+      }
+      mockedFetch.mockResolvedValueOnce(
+        new Response(content, { status: 200, headers })
+      );
+      const app = Fastify({ logger: false });
+      app.get(
+        '/api/dify/app-1/files/file-id/preview',
+        async (request, reply) => {
+          await dispatchDifyUpstreamRequest(
+            request,
+            reply,
+            createContext({ slug: ['files', 'file-id', 'preview'] }),
+            createTargetConfig({ appType: 'workflow', rawBody: null })
+          );
+        }
+      );
+      try {
+        const response = await app.inject(
+          '/api/dify/app-1/files/file-id/preview?as_attachment=true&user=victim&user=other'
+        );
+        expect(response.statusCode).toBe(200);
+        expect(response.rawPayload).toEqual(content);
+        expect(response.headers['content-type']).toBe(
+          contentType || 'application/octet-stream'
+        );
+        expect(response.headers['content-length']).toBe(String(content.length));
+        expect(response.headers['content-disposition']).toBe(
+          'attachment; filename="report.bin"'
+        );
+        expect(response.headers['x-content-type-options']).toBe('nosniff');
+        expect(response.headers['x-accel-buffering']).toBeUndefined();
+        expect(mockedFetch).toHaveBeenCalledWith(
+          `https://dify.example.com/v1/files/file-id/preview?as_attachment=true&user=${createContext().actor.userId}`,
+          expect.objectContaining({ method: 'GET', redirect: 'manual' })
+        );
+        expect(mockedFetch.mock.calls[0][1]?.body).toBeUndefined();
+        expect(mockedLoadTrustedUserProfile).not.toHaveBeenCalled();
+      } finally {
+        await app.close();
+      }
+    }
+  );
+
+  it('keeps unsuccessful preview responses on the JSON error path', async () => {
+    mockedShouldInjectTrustedUserContext.mockReturnValue(false);
+    mockedFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ code: 'file_access_denied', message: 'Denied' }),
+        {
+          status: 403,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      )
+    );
+    const reply = createReply();
+    await dispatchDifyUpstreamRequest(
+      createRequest({ method: 'GET' }),
+      reply,
+      createContext({ slug: ['files', 'file-id', 'preview'] }),
+      createTargetConfig({ appType: 'workflow', rawBody: null })
+    );
+    expect(reply.status).toHaveBeenCalledWith(403);
+    expect(reply.type).toHaveBeenCalledWith('application/json');
+    expect(reply.send).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'file_access_denied' })
+    );
+  });
+
+  it.each(
+    ['workflow', 'chatbot'].flatMap(appType =>
+      [
+        'text/html; charset=utf-8',
+        'image/svg+xml',
+        'application/xhtml+xml',
+        'application/xml',
+        'text/xml',
+      ].map(contentType => ({ appType, contentType }))
+    )
+  )(
+    'serves untrusted $contentType for $appType as a sandboxed download',
+    async ({ appType, contentType }) => {
+      mockedShouldInjectTrustedUserContext.mockReturnValue(false);
+      const content = '<script>untrusted()</script>';
+      mockedFetch.mockResolvedValueOnce(
+        new Response(content, {
+          headers: {
+            'Content-Type': contentType,
+            'Content-Disposition': 'inline',
+          },
+        })
+      );
+      const app = Fastify({ logger: false });
+      app.get('/document', async (request, reply) => {
+        await dispatchDifyUpstreamRequest(
+          request,
+          reply,
+          createContext({ slug: ['files', 'file-id', 'preview'] }),
+          createTargetConfig({ appType })
+        );
+      });
+      try {
+        const response = await app.inject('/document');
+        expect(response.statusCode).toBe(200);
+        expect(response.headers['content-type']).toBe(
+          'application/octet-stream'
+        );
+        expect(response.headers['content-disposition']).toMatch(/^attachment;/);
+        expect(response.headers['content-security-policy']).toContain(
+          'sandbox'
+        );
+        expect(response.headers['x-content-type-options']).toBe('nosniff');
+        expect(response.body).toBe(content);
+      } finally {
+        await app.close();
+      }
+    }
+  );
 
   it('returns unknown successful non-JSON types as non-sniffable plain text', async () => {
     mockedFetch.mockResolvedValueOnce(
@@ -523,7 +703,7 @@ describe('dispatchDifyUpstreamRequest trusted user context integration', () => {
       try {
         await app.listen({ host: '127.0.0.1', port: 0 });
         const { port } = app.server.address() as AddressInfo;
-        const output = await readStreamConnection(port, connection);
+        const output = await readProxyConnection(port, connection);
         const statuses = Array.from(
           output.matchAll(/HTTP\/1\.1 (\d+)/g),
           match => Number(match[1])
@@ -541,6 +721,80 @@ describe('dispatchDifyUpstreamRequest trusted user context integration', () => {
           expect(probeHits).toBe(1);
         } else {
           expect(statuses).toEqual([200, 200]);
+          expect(probeHits).toBe(1);
+        }
+      } finally {
+        app.server.closeAllConnections();
+        await app.close();
+      }
+    }
+  );
+
+  it.each<[string, string | undefined]>([
+    ['close', 'keep-alive'],
+    ['close', undefined],
+    ['keep-alive', 'close'],
+    ['keep-alive', 'keep-alive'],
+    ['keep-alive', undefined],
+  ])(
+    'respects downstream Connection: %s for 204 with upstream Connection: %s over TCP',
+    async (connection, upstreamConnection) => {
+      const headers = new Headers({ 'keep-alive': 'timeout=10' });
+      if (upstreamConnection) {
+        headers.set('connection', upstreamConnection);
+      }
+      mockedFetch.mockResolvedValueOnce(
+        new Response(null, { status: 204, headers })
+      );
+      mockedShouldInjectTrustedUserContext.mockReturnValue(false);
+      const app = Fastify({ logger: false });
+      const parserErrors: string[] = [];
+      let probeHits = 0;
+      app.server.on('clientError', (error: NodeJS.ErrnoException) => {
+        parserErrors.push(error.code || error.name);
+      });
+      app.delete('/delete', async (request, reply) => {
+        await dispatchDifyUpstreamRequest(
+          request,
+          reply,
+          createContext({
+            slug: ['conversations', '00000000-0000-4000-8000-000000000456'],
+            routePath: '/delete',
+          }),
+          createTargetConfig({ rawBody: {} })
+        );
+      });
+      app.get('/probe', async () => {
+        probeHits += 1;
+        return { ok: true };
+      });
+
+      try {
+        await app.listen({ host: '127.0.0.1', port: 0 });
+        const { port } = app.server.address() as AddressInfo;
+        const output = await readProxyConnection(
+          port,
+          connection,
+          'DELETE /delete',
+          '\r\n\r\n'
+        );
+        const statuses = Array.from(
+          output.matchAll(/HTTP\/1\.1 (\d+)/g),
+          match => Number(match[1])
+        );
+
+        expect(parserErrors).toEqual([]);
+        expect(output).toMatch(
+          new RegExp(`connection: ${connection}\\r\\n`, 'i')
+        );
+        expect(output).not.toMatch(/keep-alive: timeout=10\r\n/i);
+        if (connection === 'close') {
+          expect(statuses).toEqual([204]);
+          expect(probeHits).toBe(0);
+          expect(await requestProbe(port)).toBe(200);
+          expect(probeHits).toBe(1);
+        } else {
+          expect(statuses).toEqual([204, 200]);
           expect(probeHits).toBe(1);
         }
       } finally {

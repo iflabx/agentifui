@@ -221,6 +221,7 @@ Do not reuse production secrets in dev or test profiles.
 Supported runtime controls:
 
 - `DIFY_PROXY_TIMEOUT_MS`
+- `DIFY_UPLOAD_MAX_BYTES` (file/audio multipart requests only; default 16 MiB)
 - `DIFY_PROXY_CIRCUIT_ENABLED`
 - `DIFY_PROXY_CIRCUIT_FAILURE_THRESHOLD`
 - `DIFY_PROXY_CIRCUIT_FAILURE_WINDOW_MS`
@@ -229,6 +230,9 @@ Supported runtime controls:
 - `DIFY_PROXY_CIRCUIT_FAILURE_STATUSES`
 - `DIFY_PROXY_CIRCUIT_SHARED_STATE_ENABLED`
 - `DIFY_PROXY_CIRCUIT_SHARED_METRICS_ENABLED`
+
+See [Dify Service API compatibility](DIFY-INTEGRATION.md) for upload-limit scope,
+version-specific endpoint behavior and currently unsupported features.
 
 ## Dify Input Moderation
 

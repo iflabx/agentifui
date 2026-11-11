@@ -35,6 +35,7 @@ const RETRY_CONFIG = {
 
 const STOPPED_PATCH_WAIT_MS = 1200;
 const STOPPED_PATCH_POLL_MS = 25;
+const inFlightMessageSaves = new Map<string, Promise<boolean>>();
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -74,6 +75,7 @@ function chatMessageToSavePayload(
 ): MessageSavePayload {
   const baseMetadata: Record<string, unknown> = {
     ...(chatMessage.metadata || {}),
+    client_message_id: chatMessage.id,
   };
 
   if (chatMessage.wasManuallyStopped && !baseMetadata.stopped_manually) {
@@ -98,8 +100,7 @@ function chatMessageToSavePayload(
 
   if (!chatMessage.isUser) {
     const frontendMetadata = baseMetadata.frontend_metadata as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
 
     if (frontendMetadata?.incomplete_assistant_fallback === true) {
       const normalizedSnapshot =
@@ -154,22 +155,14 @@ export function useChatMessages(userId?: string) {
 
   // Add a message to the saving set
   const addSavingMessage = useCallback((messageId: string) => {
-    setSavingMessages(prev => {
-      const newSet = new Set(prev);
-      newSet.add(messageId);
-      savingMessagesRef.current = newSet;
-      return newSet;
-    });
+    savingMessagesRef.current.add(messageId);
+    setSavingMessages(new Set(savingMessagesRef.current));
   }, []);
 
   // Remove a message from the saving set
   const removeSavingMessage = useCallback((messageId: string) => {
-    setSavingMessages(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(messageId);
-      savingMessagesRef.current = newSet;
-      return newSet;
-    });
+    savingMessagesRef.current.delete(messageId);
+    setSavingMessages(new Set(savingMessagesRef.current));
   }, []);
 
   // Check if a message is currently being saved
@@ -219,137 +212,132 @@ export function useChatMessages(userId?: string) {
       }
 
       // Check if message is already being saved to avoid duplicate saves
-      if (isMessageSaving(message.id)) {
-        console.log(
-          `[saveMessage] Message ${message.id} is already being saved, skipping duplicate request`
-        );
-        return false;
+      const saveKey = JSON.stringify([userId, conversationId, message.id]);
+      const pendingSave = inFlightMessageSaves.get(saveKey);
+      if (pendingSave) {
+        return pendingSave;
       }
 
       // Check if message has already been saved successfully
-      if (message.persistenceStatus === 'saved' && message.db_id) {
+      const latestMessage = useChatStore
+        .getState()
+        .messages.find(item => item.id === message.id);
+      if (message.db_id || latestMessage?.db_id) {
         console.log(
           `[saveMessage] Message ${message.id} already saved, db ID: ${message.db_id}`
         );
         return true;
       }
 
-      try {
-        // Check if a duplicate message exists in the database to avoid duplicate saves
-        // Uses the new Result type interface
-        const duplicateResult = await findDuplicateMessage(
-          message.text,
-          message.isUser ? 'user' : 'assistant',
-          conversationId
-        );
-
-        if (duplicateResult.success && duplicateResult.data) {
-          console.log(
-            `[saveMessage] Message content already exists in database, updating UI state to avoid duplicate save`
+      addSavingMessage(message.id);
+      const savePromise = Promise.resolve().then(async (): Promise<boolean> => {
+        try {
+          // Check if a duplicate message exists in the database to avoid duplicate saves
+          // Uses the new Result type interface
+          const duplicateResult = await findDuplicateMessage(
+            message.text,
+            message.isUser ? 'user' : 'assistant',
+            conversationId,
+            message.id
           );
+
+          if (duplicateResult.success && duplicateResult.data) {
+            console.log(
+              `[saveMessage] Message content already exists in database, updating UI state to avoid duplicate save`
+            );
+            updateMessage(message.id, {
+              persistenceStatus: 'saved',
+              db_id: duplicateResult.data.id,
+              dify_message_id: duplicateResult.data.external_id || undefined,
+            });
+            return true;
+          }
+
+          // Update UI state to saving
+          updateMessage(message.id, { persistenceStatus: 'saving' });
+
+          console.log(
+            `[saveMessage] Start saving message, conversationId=${conversationId}, messageId=${message.id}, contentLength=${message.text.length}, retryCount=${retryCount}`
+          );
+
+          // Convert to database format and save
+          // Uses internal API + Result type
+          const dbMessageData = chatMessageToSavePayload(
+            message,
+            conversationId,
+            userId
+          );
+          const saveResult = await saveMessageRecord(dbMessageData);
+
+          if (!saveResult.success) {
+            throw new Error(
+              `Failed to save message: ${saveResult.error?.message || 'Unknown error'}, conversationId=${conversationId}`
+            );
+          }
+
+          const savedMessage = saveResult.data;
+
+          // Save successful, update UI state
           updateMessage(message.id, {
             persistenceStatus: 'saved',
-            db_id: duplicateResult.data.id,
-            dify_message_id: duplicateResult.data.external_id || undefined,
+            db_id: savedMessage.id,
+            dify_message_id: savedMessage.external_id || undefined,
+            metadata: savedMessage.metadata || dbMessageData.metadata,
           });
-          return true;
-        }
 
-        // Mark message as being saved
-        addSavingMessage(message.id);
-
-        // Update UI state to saving
-        updateMessage(message.id, { persistenceStatus: 'saving' });
-
-        console.log(
-          `[saveMessage] Start saving message, conversationId=${conversationId}, messageId=${message.id}, contentLength=${message.text.length}, retryCount=${retryCount}`
-        );
-
-        // Convert to database format and save
-        // Uses internal API + Result type
-        const dbMessageData = chatMessageToSavePayload(
-          message,
-          conversationId,
-          userId
-        );
-        const saveResult = await saveMessageRecord(dbMessageData);
-
-        if (!saveResult.success) {
-          throw new Error(
-            `Failed to save message: ${saveResult.error?.message || 'Unknown error'}, conversationId=${conversationId}`
-          );
-        }
-
-        const savedMessage = saveResult.data;
-
-        // Save successful, update UI state
-        updateMessage(message.id, {
-          persistenceStatus: 'saved',
-          db_id: savedMessage.id,
-          dify_message_id: savedMessage.external_id || undefined,
-        });
-
-        console.log(
-          `[saveMessage] Message saved successfully, db message ID=${savedMessage.id}, contentLength=${savedMessage.content.length}`
-        );
-
-        // Remove from saving set
-        removeSavingMessage(message.id);
-        return true;
-      } catch (error) {
-        console.error(`[saveMessage] Error saving message:`, error);
-
-        // Release the in-flight lock before scheduling a retry; otherwise
-        // the retry re-enters saveMessage and gets skipped as a duplicate save.
-        removeSavingMessage(message.id);
-
-        // If retries remain, retry with exponential backoff
-        if (retryCount < RETRY_CONFIG.maxRetries) {
-          const delayMs = Math.pow(2, retryCount) * RETRY_CONFIG.baseDelayMs; // Exponential backoff: 1s, 2s, 4s...
           console.log(
-            `[saveMessage] Retrying in ${delayMs}ms, attempt #${retryCount + 1}`
+            `[saveMessage] Message saved successfully, db message ID=${savedMessage.id}, contentLength=${savedMessage.content.length}`
           );
 
-          // Retry after delay, using current state
-          setTimeout(() => {
-            // Get latest message state to ensure content is up to date
-            const currentMessage = useChatStore
-              .getState()
-              .messages.find(m => m.id === message.id);
-            if (currentMessage) {
-              saveMessage(currentMessage, conversationId, retryCount + 1).catch(
-                err => {
-                  console.error(
-                    `[saveMessage] Retry #${retryCount + 1} failed:`,
-                    err
-                  );
-                }
-              );
-            }
-          }, delayMs);
+          return true;
+        } catch (error) {
+          console.error(`[saveMessage] Error saving message:`, error);
 
-          // Do not immediately set status to error, wait for retry result
+          // If retries remain, retry with exponential backoff
+          if (retryCount < RETRY_CONFIG.maxRetries) {
+            const delayMs = Math.pow(2, retryCount) * RETRY_CONFIG.baseDelayMs; // Exponential backoff: 1s, 2s, 4s...
+            console.log(
+              `[saveMessage] Retrying in ${delayMs}ms, attempt #${retryCount + 1}`
+            );
+
+            // Retry after delay, using current state
+            setTimeout(() => {
+              // Get latest message state to ensure content is up to date
+              const currentMessage = useChatStore
+                .getState()
+                .messages.find(m => m.id === message.id);
+              saveMessage(
+                currentMessage || message,
+                conversationId,
+                retryCount + 1
+              ).catch(err => {
+                console.error(
+                  `[saveMessage] Retry #${retryCount + 1} failed:`,
+                  err
+                );
+              });
+            }, delayMs);
+
+            // Do not immediately set status to error, wait for retry result
+            return false;
+          }
+
+          // Max retries reached, update UI state to error
+          updateMessage(message.id, { persistenceStatus: 'error' });
+          console.error(
+            `[saveMessage] Max retries reached (${RETRY_CONFIG.maxRetries}), message save failed`
+          );
+
           return false;
+        } finally {
+          removeSavingMessage(message.id);
+          inFlightMessageSaves.delete(saveKey);
         }
-
-        // Max retries reached, update UI state to error
-        updateMessage(message.id, { persistenceStatus: 'error' });
-        console.error(
-          `[saveMessage] Max retries reached (${RETRY_CONFIG.maxRetries}), message save failed`
-        );
-
-        // Remove from saving set
-        removeSavingMessage(message.id);
-        return false;
-      }
+      });
+      inFlightMessageSaves.set(saveKey, savePromise);
+      return savePromise;
     },
-    [
-      userId,
-      updateMessage,
-      isMessageSaving,
-      addSavingMessage,
-      removeSavingMessage,
-    ]
+    [userId, updateMessage, addSavingMessage, removeSavingMessage]
   );
 
   /**
@@ -379,7 +367,8 @@ export function useChatMessages(userId?: string) {
           const duplicateResult = await findDuplicateMessage(
             stoppedMessage.text,
             'assistant',
-            conversationId
+            conversationId,
+            message.id
           );
 
           if (duplicateResult.success && duplicateResult.data) {

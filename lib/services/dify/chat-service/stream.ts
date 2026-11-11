@@ -17,6 +17,7 @@ import {
   DifyUsage,
 } from '../types';
 import { DifyRetrieverResource } from '../types';
+import { createUnsupportedWorkflowPauseError } from '../workflow-service/errors';
 import { DIFY_API_BASE_URL } from './constants';
 import {
   extractRetrieverResources,
@@ -514,6 +515,7 @@ export async function streamDifyChat(
     }) => void;
     let completionReject: (reason?: unknown) => void;
     let completionResolved = false;
+    let streamStarted = false;
     let firstAnswerResolve: (value: boolean) => void;
     let firstAnswerResolved = false;
 
@@ -527,6 +529,7 @@ export async function streamDifyChat(
       completionResolve = resolve;
       completionReject = reject;
     });
+    void completionPromise.catch(() => undefined);
 
     const firstAnswerPromise = new Promise<boolean>(resolve => {
       firstAnswerResolve = resolve;
@@ -541,7 +544,18 @@ export async function streamDifyChat(
       firstAnswerResolved = true;
     };
 
+    const rejectIncompleteStream = () => {
+      resolveFirstAnswer(false);
+      if (!completionResolved) {
+        completionResolved = true;
+        completionReject(
+          new Error('Chat stream was closed before completion.')
+        );
+      }
+    };
+
     async function* processStream(): AsyncGenerator<string, void, undefined> {
+      streamStarted = true;
       let syntheticThinkBlockOpen = false;
       let normalizedContent = '';
       let answerContent = '';
@@ -658,6 +672,12 @@ export async function streamDifyChat(
           }
 
           switch (event.event) {
+            case 'workflow_paused': {
+              const error = createUnsupportedWorkflowPauseError();
+              resolveFirstAnswer(false);
+              completionReject(error);
+              throw error;
+            }
             case 'agent_thought': {
               const {
                 reasoningText,
@@ -929,7 +949,7 @@ export async function streamDifyChat(
               }
 
               const completionData = {
-                messageId: event.id,
+                messageId: event.message_id || event.id,
                 userMessageFileIds: [...userMessageFileIds],
                 usage: extractUsage(event.metadata?.usage || event.usage),
                 metadata: event.metadata || {},
@@ -1012,16 +1032,29 @@ export async function streamDifyChat(
         console.error('[Dify Service] Error in processStream:', error);
         resolveFirstAnswer(false);
         if (completionReject) {
+          completionResolved = true;
           completionReject(
             error instanceof Error ? error : new Error(String(error))
           );
         }
         throw error;
+      } finally {
+        rejectIncompleteStream();
       }
     }
 
+    const answerStream = processStream();
+    const returnAnswerStream = answerStream.return.bind(answerStream);
+    answerStream.return = async value => {
+      if (!streamStarted && !completionResolved) {
+        rejectIncompleteStream();
+        await stream.cancel();
+      }
+      return returnAnswerStream(value);
+    };
+
     return {
-      answerStream: processStream(),
+      answerStream,
       getConversationId: () => conversationId,
       getTaskId: () => taskId,
       firstAnswerPromise,

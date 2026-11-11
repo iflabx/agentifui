@@ -27,12 +27,14 @@ export function getLatestMessages(
 export function findDuplicateMessage(
   content: string,
   role: 'user' | 'assistant' | 'system',
-  conversationId: string
+  conversationId: string,
+  clientMessageId?: string
 ): Promise<Result<Message | null>> {
   return callInternalDataAction<Message | null>('messages.findDuplicate', {
     content,
     role,
     conversationId,
+    clientMessageId,
   });
 }
 

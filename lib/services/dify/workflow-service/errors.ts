@@ -1,5 +1,13 @@
 import { DifyApiError, DifyWorkflowErrorCode } from '../types';
 
+export function createUnsupportedWorkflowPauseError(): Error {
+  const error = new Error(
+    'This Dify run is paused for Human Input. Human Input forms and resuming runs are not supported by this client yet; continue in a compatible Dify client.'
+  );
+  error.name = 'DifyWorkflowPauseUnsupported';
+  return error;
+}
+
 export function handleWorkflowApiError(
   status: number,
   errorBody: string

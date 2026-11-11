@@ -40,6 +40,30 @@ describe('trusted-user-context helpers', () => {
     expect(shouldInjectTrustedUserContext('POST', 'files/upload')).toBe(false);
   });
 
+  it.each(['POST', 'post'])(
+    'matches official versioned workflow generation for %s',
+    method => {
+      expect(
+        shouldInjectTrustedUserContext(method, 'workflows/version-1/run')
+      ).toBe(true);
+    }
+  );
+
+  it.each([
+    ['GET', 'workflows/version-1/run'],
+    ['POST', 'workflows/run/run-1'],
+    ['POST', 'workflows/tasks/task-1/stop'],
+    ['POST', 'workflows/version-1/run/extra'],
+    ['POST', 'workflows/../run'],
+    ['POST', 'workflows//run'],
+    ['POST', 'workflows/version-1%2Fother/run'],
+    ['POST', 'workflows/version-1/run?ignored=1'],
+    ['POST', 'workflow/run-1/events'],
+    ['POST', 'form/human_input/token'],
+  ])('does not inject into %s %s', (method, path) => {
+    expect(shouldInjectTrustedUserContext(method, path)).toBe(false);
+  });
+
   it('loads optional trusted user profile fields from the database', async () => {
     mockedQueryRowsWithPgSystemContext.mockResolvedValueOnce([
       {

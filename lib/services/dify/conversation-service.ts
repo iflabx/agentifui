@@ -54,8 +54,7 @@ export async function getConversations(
   if (params.limit !== undefined) {
     queryParams.append('limit', String(params.limit));
   }
-  if (params.last_id !== undefined && params.last_id !== null) {
-    // Only add last_id if it exists and is not null
+  if (params.last_id) {
     queryParams.append('last_id', params.last_id);
   }
   if (params.sort_by !== undefined) {
@@ -212,7 +211,8 @@ export async function deleteConversation(
     }
 
     // On success, parse JSON data
-    const data: DeleteConversationResponse = await response.json();
+    const data: DeleteConversationResponse =
+      response.status === 204 ? { result: 'success' } : await response.json();
     console.log(
       '[Dify Conversation Service] Successfully deleted conversation.',
       data
@@ -391,8 +391,7 @@ export async function getConversationVariables(
   if (params.limit !== undefined) {
     queryParams.append('limit', String(params.limit));
   }
-  if (params.last_id !== undefined && params.last_id !== null) {
-    // Only add last_id if it exists and is not null
+  if (params.last_id) {
     queryParams.append('last_id', params.last_id);
   }
 

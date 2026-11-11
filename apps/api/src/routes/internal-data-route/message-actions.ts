@@ -75,6 +75,7 @@ export async function handleMessageAction(
     const conversationId = readString(payload?.conversationId);
     const content = readString(payload?.content);
     const role = parseMessageRole(payload?.role);
+    const clientMessageId = readString(payload?.clientMessageId) || null;
 
     if (!conversationId || !content || !role) {
       return toErrorResponse('Missing required fields', 400);
@@ -106,11 +107,14 @@ export async function handleMessageAction(
         FROM messages
         WHERE conversation_id = $1::uuid
           AND role = $2::message_role
-          AND content = $3
+          AND (
+            ($4::text IS NOT NULL AND metadata ->> 'client_message_id' = $4)
+            OR ($4::text IS NULL AND content = $3)
+          )
         ORDER BY created_at DESC, sequence_index DESC, id DESC
         LIMIT 1
       `,
-      [conversationId, role, content]
+      [conversationId, role, content, clientMessageId]
     );
 
     return toSuccessResponse(rows[0] ? sanitizeMessage(rows[0]) : null);
