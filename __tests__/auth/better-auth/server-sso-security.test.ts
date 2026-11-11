@@ -20,6 +20,9 @@ jest.mock('better-auth/plugins/phone-number', () => ({
 jest.mock('@lib/auth/better-auth/password-reset', () => ({
   sendResetPasswordEmail: jest.fn(),
 }));
+jest.mock('@lib/auth/better-auth/email', () => ({
+  sendVerificationEmail: jest.fn(),
+}));
 jest.mock('@lib/auth/better-auth/phone-otp', () => ({
   getPhoneNumberPluginOptions: jest.fn(),
 }));
@@ -81,5 +84,22 @@ describe('native SSO registration security', () => {
         }),
       })
     );
+  });
+
+  it('wires registration and reset emails without enforcing verification on existing logins', async () => {
+    const { sendVerificationEmail } =
+      await import('@lib/auth/better-auth/email');
+    const { sendResetPasswordEmail } =
+      await import('@lib/auth/better-auth/password-reset');
+    expect(authOptions.emailVerification).toEqual({
+      sendVerificationEmail,
+      sendOnSignUp: true,
+      autoSignInAfterVerification: false,
+    });
+    expect(authOptions.emailAndPassword).toEqual({
+      enabled: true,
+      sendResetPassword: sendResetPasswordEmail,
+      revokeSessionsOnPasswordReset: true,
+    });
   });
 });

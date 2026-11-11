@@ -183,8 +183,52 @@ Session identity synchronization knobs:
 - `AUTH_IDENTITY_SYNC_RETRY_ATTEMPTS`
 - `AUTH_IDENTITY_SYNC_RETRY_DELAY_MS`
 
-Password reset settings:
+Registration verification and password reset emails share the existing Nodemailer
+SMTP transport. Set `AUTH_EMAIL_VERIFICATION_MODE=smtp` and
+`AUTH_RESET_PASSWORD_MODE=smtp` to send both email types. Configure `SMTP_FROM`
+with a sender authorized by your email provider. Keep actual credentials and
+environment files outside version control; examples contain placeholders only.
 
+Registration sends the authentication library's verification link, valid for one
+hour by default. This does not require all existing users to verify their email
+before signing in, or change social/SSO login policy. Password reset uses the
+existing reset page and revokes existing sessions after a successful reset.
+Changing a password while already signed in does not send a notification.
+
+Both modes default to `dev-log`, which writes the link and token to server logs
+instead of sending mail. Use it only for development, not a public deployment.
+The sender rejects SMTP failures and never falls back to `dev-log`. The
+authentication library can catch and log those failures while returning a
+successful signup or a generic password-reset response; an HTTP success response
+is not proof of sending. Monitor authentication delivery errors and verify actual
+receipt and both links with a test account before enabling production email.
+Even SMTP acceptance is not proof of inbox delivery.
+
+SMTP authentication emails also use the existing Redis connection to limit each
+recipient, independently of the authentication API's IP-based request limits:
+
+- At most one email per purpose (verification or password reset) every 60 seconds.
+- At most five emails across both purposes in a fixed 3600-second window starting
+  with the first reserved send. This is not a rolling-hour limit.
+- Recipient addresses are trimmed and lowercased before hashing into Redis keys;
+  raw addresses and tokens are not included in those keys. Provider-specific
+  aliases are not merged.
+- Reservations are atomic and shared across processes using the same Redis
+  database and `REDIS_PREFIX`. Rejected attempts do not consume quota or extend
+  expiry. SMTP failures still consume their reservation to prevent retry abuse.
+- When a limit is reached, no email is sent; the authentication endpoint retains
+  its normal response rather than revealing whether an address exists. Wait for
+  the relevant window before requesting another link. Redis failure prevents
+  sending rather than bypassing the limit; monitor authentication errors.
+
+These limits apply automatically in `smtp` mode, not `dev-log`, require no new
+service or settings, and do not change the existing verification/login policy.
+
+Authentication email settings:
+
+- `AUTH_EMAIL_VERIFICATION_MODE`: `dev-log` or `smtp`
+- `AUTH_EMAIL_VERIFICATION_SUBJECT`
+- `AUTH_EMAIL_VERIFICATION_EMAIL_FROM`: overrides `SMTP_FROM` for verification
 - `AUTH_RESET_PASSWORD_MODE`
 - `AUTH_RESET_PASSWORD_SUBJECT`
 - `AUTH_RESET_PASSWORD_EMAIL_FROM`

@@ -2,7 +2,7 @@
 
 ## Scope
 
-This document summarizes the current PostgreSQL schema used by AgentifUI as of March 12, 2026.
+This document summarizes the current PostgreSQL schema used by AgentifUI as of November 11, 2026.
 
 The source of truth is the SQL migration set under `database/migrations/`. This document intentionally describes the current schema shape and operating model rather than copying every column from every table.
 
@@ -26,6 +26,7 @@ The repository currently bootstraps and evolves the schema with these public SQL
 - `20260216012000_create_migration_sync_checkpoints.sql`
 - `20260216023000_preserve_explicit_updated_at_in_trigger.sql`
 - `20260217153000_add_error_events_table.sql`
+- `20261110113000_create_better_auth_sso_providers.sql`
 
 ## Key Design Facts
 
@@ -45,6 +46,7 @@ The repository currently bootstraps and evolves the schema with these public SQL
 - `auth_sessions`
 - `auth_accounts`
 - `auth_verifications`
+- `auth_sso_providers`
 
 Purpose:
 
@@ -57,6 +59,7 @@ Notes:
 - `auth_sessions.token` is unique
 - `auth_accounts(provider_id, account_id)` is unique
 - phone-number support is added by `20260214192000_add_better_auth_phone_fields.sql`
+- `auth_sso_providers` is the Better Auth SSO plugin's persistence table, added by `20261110113000_create_better_auth_sso_providers.sql`; it is distinct from the application's `sso_providers` table and does not replace it
 
 #### Business-facing identity tables
 

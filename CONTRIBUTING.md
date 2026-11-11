@@ -9,8 +9,8 @@
 
 ### Prerequisites
 
-- Node.js 22+
-- Corepack or pnpm `10.14.0`
+- Node.js `24.22.2` (see `.nvmrc` and `package.json` engines)
+- pnpm `10.34.9` (see `packageManager` in `package.json`)
 - Git
 - PostgreSQL, Redis, and MinIO if you want to run the full stack locally
 
@@ -20,8 +20,7 @@
 git clone https://github.com/iflabx/agentifui.git
 cd agentifui
 
-corepack enable
-corepack prepare pnpm@10.14.0 --activate
+npm install --global --ignore-scripts pnpm@10.34.9
 pnpm install --frozen-lockfile
 ```
 
@@ -66,12 +65,13 @@ Run the relevant checks locally:
 ```bash
 pnpm format:check
 pnpm gate:quality:verify
-pnpm test
-pnpm build:all
+AGENTIF_ENV_FILE=.env.test bash scripts/with-env-local.sh pnpm test
+AGENTIF_ENV_FILE=.env.test bash scripts/with-env-local.sh pnpm build:all
 ```
 
 Notes:
 
+- Prepare the isolated profile and services described in [the test environment guide](docs/TEST-ENV.md) before these test/build commands. Integration tests write data; do not use development or production connections.
 - `pnpm build` only covers the Next.js app. Use `pnpm build:all` before a PR so shared and Fastify packages are checked too.
 - If you only run targeted tests, explain that in the PR description.
 - If you change runtime behavior, public routes, configuration, or deployment flow, update `README.md` and the relevant files under `docs/` in the same PR.

@@ -123,6 +123,11 @@ Authentication is provided by better-auth, backed by PostgreSQL tables in `publi
 - `auth_sessions`
 - `auth_accounts`
 - `auth_verifications`
+- `auth_sso_providers`
+
+`auth_sso_providers` belongs to the Better Auth SSO plugin and is separate from
+the application's `sso_providers` table. See [database design](DATABASE-DESIGN.md)
+for the corresponding migration and table roles.
 
 Business-facing profile and identity data are separate:
 
