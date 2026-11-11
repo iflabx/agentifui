@@ -11,7 +11,7 @@ AgentifUI uses next-intl for internationalization with unified JSON configuratio
 
 - **Default Language**: English (en-US) as source language
 - **Supported Languages**: 10 languages (zh-CN, en-US, es-ES, zh-TW, ja-JP, de-DE, fr-FR, ru-RU, it-IT, pt-PT)
-- **Framework**: next-intl with Next.js 15 App Router
+- **Framework**: next-intl with Next.js 16 App Router
 - **Validation Tools**: Python scripts wrapped in pnpm scripts for structural consistency validation
 
 ## Directory Structure

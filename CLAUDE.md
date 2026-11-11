@@ -8,13 +8,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Start development server (Ask before running - developer usually has this running)
-pnpm dev
+pnpm dev:all
 
 # Type checking (Recommended for validation)
 pnpm type-check
 
-# Build project (Safe to run for verification)
-pnpm build
+# Build shared, API and Web with an isolated test profile
+AGENTIF_ENV_FILE=.env.test bash scripts/with-env-local.sh pnpm build:all
 
 # Format code
 pnpm format
@@ -23,6 +23,11 @@ pnpm format:check
 # Create PR (Read .github/PULL_REQUEST_TEMPLATE.md first, push branch, then use --head, --title, --body)
 gh pr create --head <branch-name> --title "fix(scope): description" --body "$(cat <<'EOF'\n<PR content>\nEOF\n)"
 ```
+
+Use [CONTRIBUTING.md](CONTRIBUTING.md) for the supported toolchain and validation
+commands, and [docs/TEST-ENV.md](docs/TEST-ENV.md) to prepare isolated services.
+Do not overwrite build output used by a running service; use a separate source
+directory for validation when necessary.
 
 ### I18n Commands
 
@@ -39,11 +44,12 @@ pnpm i18n:detect
 
 ## Architecture Overview
 
-AgentifUI is a Next.js 15 App Router application with the following key architectural layers:
+AgentifUI uses a Next.js 16 App Router Web app and a Fastify API sidecar. See
+[docs/architecture.md](docs/architecture.md) for runtime ownership and boundaries.
 
 ### Tech Stack
 
-- **Framework**: Next.js 15 (App Router), React 19, TypeScript
+- **Framework**: Next.js 16 (App Router), React 19, TypeScript; Fastify API sidecar
 - **Database**: PostgreSQL 18 + Drizzle ORM + Redis + S3-compatible storage (MinIO)
 - **State Management**: Zustand
 - **UI**: Tailwind CSS 4, Radix UI components
@@ -54,7 +60,7 @@ AgentifUI is a Next.js 15 App Router application with the following key architec
 
 ```
 app/                    # Next.js routes and pages
-├── api/               # API routes (Dify proxy, auth, admin)
+├── api/               # Auth handlers and compatibility API stubs
 ├── admin/             # Admin dashboard pages
 ├── chat/              # Chat interface pages
 ├── apps/              # App launcher pages
@@ -76,6 +82,9 @@ lib/                   # Core business logic
 ├── db/                # Database access layer
 └── utils/             # Utility functions
 
+apps/api/              # Fastify business APIs and Dify proxy
+packages/shared/       # Cross-runtime helpers
+
 database/              # Database schema/migrations and ops scripts
 └── migrations/        # SQL migration files
 ```
@@ -92,7 +101,7 @@ database/              # Database schema/migrations and ops scripts
 
 The Dify API integration follows a 3-layer pattern:
 
-1. **Proxy Layer**: `app/api/dify/[appId]/[...slug]/route.ts` - Handles authentication and request forwarding
+1. **Proxy Layer**: `apps/api/src/routes/dify-proxy.ts` and `apps/api/src/routes/dify-proxy-route/` - Authenticate and forward requests in Fastify; the legacy Next.js route is a disabled compatibility stub
 2. **Service Layer**: `lib/services/dify/*.ts` - Business logic and API calls
 3. **Type Layer**: `lib/services/dify/types.ts` - TypeScript definitions
 
@@ -112,8 +121,8 @@ The Dify API integration follows a 3-layer pattern:
 
 ### Before Starting Development
 
-1. **Never run `pnpm dev`** unless explicitly asked - developers usually have this running
-2. Use `pnpm type-check` and `pnpm build` for validation
+1. **Never start development services** unless explicitly asked - developers usually have these running
+2. Use `pnpm type-check` and the isolated test/build commands in `CONTRIBUTING.md` for validation; `pnpm build` alone only checks Web
 3. Follow the development workflow rule in `.cursor/rules/development-workflow-rule.mdc`
 
 ### Code Quality
@@ -179,7 +188,7 @@ Example JSDoc:
 - **Database**: Uses PostgreSQL with comprehensive RLS policies
 - **Authentication**: better-auth with SSO + local password fallback
 - **Styling**: Tailwind CSS 4 with custom theme configuration
-- **File Structure**: Follows Next.js 15 App Router conventions
+- **File Structure**: Next.js 16 App Router with a separate Fastify API workspace
 - **Error Handling**: Comprehensive error boundaries and user feedback systems
 - **Development Rules**: Follow `.cursor/rules/cursor-rules.mdc` for rule management
 

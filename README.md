@@ -3,7 +3,7 @@
 > Community Edition: Apache 2.0
 > Commercial licensing and support: contact [license@iflabx.com](mailto:license@iflabx.com)
 
-AgentifUI is a monorepo for an enterprise-oriented AI application frontend built on Next.js 15, React 19, Fastify, PostgreSQL, Redis, MinIO, better-auth, and Dify. The current codebase uses a split runtime:
+AgentifUI is a monorepo for an enterprise-oriented AI application frontend built on Next.js 16, React 19, Fastify, PostgreSQL, Redis, MinIO, better-auth, and Dify. The current codebase uses a split runtime:
 
 - `app/` serves the Next.js UI, auth handlers, and compatibility API stubs.
 - `apps/api/` runs the Fastify sidecar for business APIs and proxy-heavy routes.
@@ -24,7 +24,7 @@ AgentifUI is a monorepo for an enterprise-oriented AI application frontend built
 
 | Layer          | Current Stack                                      |
 | -------------- | -------------------------------------------------- |
-| Web app        | Next.js 15 App Router, React 19, TypeScript        |
+| Web app        | Next.js 16 App Router, React 19, TypeScript        |
 | API sidecar    | Fastify 5 in `apps/api`                            |
 | Shared package | `packages/shared` for cross-runtime helpers        |
 | Data           | PostgreSQL, Redis, MinIO / S3-compatible storage   |
@@ -72,7 +72,8 @@ pnpm dev:all
 Then open `http://localhost:3000`.
 
 The supported toolchain is Node.js 24 and the pnpm version pinned in
-`packageManager`; CI and the test image use the same versions. Next.js uses
+`packageManager`; CI and the test image use the same versions. Exact dependency
+versions are pinned in `package.json` and `pnpm-lock.yaml`. Next.js uses
 Webpack by default in this project; `dev:turbo` remains an opt-in alternative.
 TypeScript 6 and ESLint 9 are compatibility pins while upstream plugins catch
 up. ESLint 9 is an unsupported transitional version, not a long-term target.
@@ -123,6 +124,8 @@ pnpm smoke:prod
 - `CONTRIBUTING.md`
 - `docs/architecture.md`
 - `docs/DATABASE-DESIGN.md`
+- `docs/DIFY-INTEGRATION.md`
+- `docs/PUBLICATION.md`
 - `docs/FONTS.md`
 - `docs/SINGLE-HOST-HIGH-CONCURRENCY.md`
 

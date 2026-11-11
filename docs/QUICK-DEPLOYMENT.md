@@ -98,6 +98,15 @@ Optional display overrides are `NEXT_PUBLIC_BRAND_NAME` and `NEXT_PUBLIC_BRAND_D
 - `BETTER_AUTH_SECRET`
 - `API_ENCRYPTION_KEY`
 
+If registration verification or password-reset email is needed, configure the
+corresponding `AUTH_EMAIL_VERIFICATION_MODE=smtp` or
+`AUTH_RESET_PASSWORD_MODE=smtp`, SMTP credentials and an authorized `SMTP_FROM`
+in the private production configuration. The default `dev-log` mode writes links
+and tokens to logs and is not suitable for a public deployment. See
+[authentication email configuration](CONFIGURATION.md#better-auth-and-sso) for
+delivery behavior and Redis-backed recipient limits. Sending verification mail
+does not by itself require verification before login.
+
 ### Fastify sidecar
 
 - `FASTIFY_PROXY_ENABLED=1` when Next proxies API requests; use `0` when your reverse proxy routes them directly to Fastify
@@ -350,6 +359,12 @@ Expected results:
 - `/api/internal/error-events/client` returns `400` in the normal proxied production path
 
 Also verify HTTPS login/session cookies, a complete chat and persisted history after refresh, and the release's changed functionality. Staging should match the production database major version, pool behavior, API routing and SSE buffering/timeouts. Readiness uses `/healthz` with HTTP 200 and the expected `ok`/`service` JSON fields.
+
+When first enabling email or changing its delivery/authentication flow, use a
+controlled test account and recipient to confirm receipt, the verification link,
+and password reset followed by login with the new password. Check the recipient
+limits when relevant. HTTP success or SMTP acceptance alone does not prove inbox
+delivery; real email sending is not required on every unrelated deployment.
 
 For manual application recovery, first confirm schema compatibility and prepare compatible content, then start the previous retained directory's actual PM2 config without rebuilding. Verify health and business behavior before `pm2 save`. Restore auxiliary-job paths along with the application.
 

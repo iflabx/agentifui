@@ -118,11 +118,21 @@ Examples:
 
 ```bash
 AGENTIF_ENV_FILE=.env.test bash scripts/with-env-local.sh pnpm test
-AGENTIF_ENV_FILE=.env.test bash scripts/with-env-local.sh pnpm build
-AGENTIF_ENV_FILE=.env.test bash scripts/with-env-local.sh pnpm --filter @agentifui/api build
+AGENTIF_ENV_FILE=.env.test bash scripts/with-env-local.sh pnpm build:all
 ```
 
 Use targeted commands when possible, but keep the test profile loaded so runtime assumptions match the isolated namespace.
+
+`build:all` builds shared, API and Web. Environment isolation does not isolate
+build output: if a running service uses that output, validate from a separate
+source directory instead of overwriting its artifacts.
+
+Authentication email automation should mock or capture the SMTP transport and
+must not load real SMTP credentials. The default `dev-log` mode does not send
+mail, but logs test links and tokens; it is not a substitute for testing the SMTP
+callback. Use isolated Redis keys when testing recipient limits. Real inbox and
+link verification is a separate controlled acceptance step, not part of ordinary
+test runs. See [email configuration](CONFIGURATION.md#better-auth-and-sso).
 
 ## CI Parity
 

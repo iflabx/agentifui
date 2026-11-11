@@ -4,6 +4,7 @@ import { nextCookies } from 'better-auth/next-js';
 import { genericOAuth } from 'better-auth/plugins/generic-oauth';
 import { phoneNumber } from 'better-auth/plugins/phone-number';
 
+import { sendVerificationEmail } from './email';
 import { sendResetPasswordEmail } from './password-reset';
 import { getPhoneNumberPluginOptions } from './phone-otp';
 import {
@@ -83,6 +84,11 @@ export const auth = betterAuth({
     enabled: true,
     sendResetPassword: sendResetPasswordEmail,
     revokeSessionsOnPasswordReset: true,
+  },
+  emailVerification: {
+    sendVerificationEmail,
+    sendOnSignUp: true,
+    autoSignInAfterVerification: false,
   },
   plugins: [
     ...(isPhoneNumberAuthEnabled()
