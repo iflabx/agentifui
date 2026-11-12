@@ -5,6 +5,54 @@ All notable changes to AgentifUI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-11-12
+
+This release aligns the application package version with `v0.3.1`. It includes the accumulated changes since `v0.2.0` (354 non-merge commits), summarized below by functional area.
+
+### Added
+
+- Better Auth GitHub OAuth using server-side `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`; GitHub login is explicitly opt-in with `NEXT_PUBLIC_GITHUB_LOGIN_ENABLED`.
+- Email verification and password-reset email delivery with recipient-level rate limits.
+- Public page content contracts, storage and APIs; admin content editing and translate-all support.
+- Dify input moderation with localized feedback, recent workflow execution views, and improved thinking-content presentation.
+- Trusted authenticated-user context for Dify proxy operations and safer file-preview handling.
+
+### Changed
+
+- Align Dify Service API behavior with Dify 1.19.
+- Improve chat stream recovery, assistant-message persistence, history synchronization, generated titles, stop-state recovery and attachment previews.
+- Preserve SSE connection lifetimes and improve aborted/long-running upstream request handling.
+- Strengthen session identity and authentication boundaries across Better Auth, Next.js and Fastify while preserving strict account-linking rules.
+- Refactor chat, workflow, API, data/cache, auth, storage and admin modules into smaller responsibility-focused units.
+- Refresh configuration, deployment, security and contributor documentation.
+
+### Fixed
+
+- Prevent missing, duplicate or incomplete assistant replies in chat history, including interrupted and malformed thinking streams.
+- Ensure persistence completes before history synchronization and retain normalized fallback output and stopped metadata.
+- Bind signed upload grants to the declared MIME type and file size; improve private avatar and storage authorization behavior.
+- Bound Dify response lifetimes and sanitize failure records.
+- Harden Markdown rendering and update KaTeX consistently across math-rendering dependencies.
+- Fix profile-name preservation, auth redirects, app selection, workflow input/file state and cache invalidation/lifecycle issues.
+
+### Security
+
+- Scope Dify file preview and proxy identity to the authenticated actor; avoid exposing injected identity fields in user forms.
+- Tighten authentication, SSO, publication and test-data isolation boundaries.
+- Keep GitHub OAuth credentials server-side and deployment-local; never put them in `NEXT_PUBLIC_*`, source control or container images.
+
+### Operations
+
+- Improve isolated build outputs, production deployment/smoke/rollback safeguards, bounded CI workers, pinned object-storage test tooling and publication checks.
+- Require explicit isolated database configuration for integration tests and expand architecture, localization and content validation.
+- Preserve separate deployment configuration and runtime data; this release does not change the existing PM2 production deployment method.
+
+### Upgrade notes
+
+- GitHub login is hidden unless explicitly enabled. Configure both server-side OAuth credentials and register `https://<your-domain>/api/auth/better/callback/github`; rebuild the Web application after changing the public flag.
+- Configure and test the supported SMTP/email transport if using email verification or password reset.
+- Review the deployment and database migration documentation when upgrading. No new database migration was required for this release candidate.
+
 ## [0.2.0] - 2025-12-12
 
 ### Security
