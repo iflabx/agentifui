@@ -23,6 +23,24 @@ For the exhaustive variable list, treat these template files as the source of tr
 
 The helper `scripts/with-env-local.sh` loads `.env.dev` by default, or the file pointed to by `AGENTIF_ENV_FILE`.
 
+For [Docker Compose](DOCKER.md), pass `--env-file .env.prod` explicitly. Compose
+reads dotenv `KEY=value` entries, not shell `export`, `source` or command
+substitutions. It interpolates the file into an explicit application-variable
+allowlist; Web/API do not receive migration or data-service administrator
+credentials. Container entrypoints read process environment directly and do not
+require a configuration file inside the image. Optional variables not mapped by
+`compose.yaml` need an explicit private Compose override.
+
+For optional Linux host-network Web/API replicas, use the single
+[manual capacity command](DOCKER-CAPACITY.md). It preserves the selected image,
+runtime configuration and shared data; it is not a version deployment command.
+
+`NEXT_PUBLIC_*`, Next.js rewrite destinations and compiled UI translations are
+build inputs. Rebuild for changes to them; changing only a running container's
+environment is insufficient. Server credentials are runtime-only and must not
+be build arguments. Operational pages remain runtime content; see the Docker
+runbook for exporting translations before rebuilding an existing installation.
+
 Example:
 
 ```bash

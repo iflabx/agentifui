@@ -25,6 +25,7 @@ interface OutboxRow {
 
 interface DispatcherState {
   started: boolean;
+  paused: boolean;
   startPromise: Promise<void> | null;
   draining: boolean;
   pollTimer: ReturnType<typeof setInterval> | null;
@@ -121,14 +122,14 @@ function computeRetryDelayMs(attemptCount: number): number {
 function getDispatcherState(): DispatcherState {
   const globalState = globalThis as unknown as Record<string, unknown>;
   const existing = globalState[OUTBOX_DISPATCHER_STATE_KEY] as
-    | DispatcherState
-    | undefined;
+    DispatcherState | undefined;
   if (existing) {
     return existing;
   }
 
   const created: DispatcherState = {
     started: false,
+    paused: false,
     startPromise: null,
     draining: false,
     pollTimer: null,
@@ -263,7 +264,7 @@ async function processOutboxRow(row: OutboxRow): Promise<void> {
 
 async function drainOutboxEvents(): Promise<void> {
   const state = getDispatcherState();
-  if (state.draining) {
+  if (state.draining || state.paused) {
     return;
   }
   if (Date.now() < state.tableMissingBackoffUntil) {
@@ -317,6 +318,7 @@ export function ensureRealtimeOutboxDispatcher(): void {
   }
 
   const state = getDispatcherState();
+  if (state.paused) return;
   if (state.started) {
     return;
   }
@@ -326,6 +328,7 @@ export function ensureRealtimeOutboxDispatcher(): void {
 
   state.startPromise = (async () => {
     await drainOutboxEvents();
+    if (state.paused) return;
     if (!state.pollTimer) {
       state.pollTimer = setInterval(() => {
         void drainOutboxEvents();
@@ -340,4 +343,21 @@ export function ensureRealtimeOutboxDispatcher(): void {
     .finally(() => {
       state.startPromise = null;
     });
+}
+
+export function setRealtimeOutboxPaused(paused: boolean): void {
+  const state = getDispatcherState();
+  const wasPaused = state.paused;
+  state.paused = paused;
+  if (paused) {
+    if (state.pollTimer) clearInterval(state.pollTimer);
+    state.pollTimer = null;
+    state.started = false;
+  } else if (wasPaused) {
+    ensureRealtimeOutboxDispatcher();
+  }
+}
+
+export function isRealtimeOutboxBusy(): boolean {
+  return getDispatcherState().draining;
 }
