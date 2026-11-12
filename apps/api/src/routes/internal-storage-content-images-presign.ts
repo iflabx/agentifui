@@ -135,6 +135,8 @@ export const internalStorageContentImagesPresignRoutes: FastifyPluginAsync<
         contentType
       );
       const uploadUrl = createPresignedUploadUrl('content-images', path, {
+        contentType,
+        sizeBytes: fileSize,
         expiresInSeconds: Number(request.body?.expiresInSeconds || 300),
       });
 

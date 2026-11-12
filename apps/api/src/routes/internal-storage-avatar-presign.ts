@@ -134,6 +134,8 @@ export const internalStorageAvatarPresignRoutes: FastifyPluginAsync<
         contentType
       );
       const uploadUrl = createPresignedUploadUrl('avatars', path, {
+        contentType,
+        sizeBytes: fileSize,
         expiresInSeconds: Number(request.body?.expiresInSeconds || 300),
       });
 

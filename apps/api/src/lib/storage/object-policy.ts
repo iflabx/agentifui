@@ -70,7 +70,7 @@ export function validateUploadInput(
     };
   }
 
-  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
+  if (!Number.isSafeInteger(sizeBytes) || sizeBytes <= 0) {
     return {
       ok: false,
       error: 'Invalid file size',

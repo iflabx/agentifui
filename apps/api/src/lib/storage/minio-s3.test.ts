@@ -4,7 +4,11 @@ import crypto from 'node:crypto';
 import * as webStorage from '../../../../../lib/server/storage/minio-s3';
 import * as apiStorage from './minio-s3';
 
-function expectedSignature(url: URL, method: string): string {
+function expectedSignature(
+  url: URL,
+  method: string,
+  uploadHeaders = { 'content-length': '10', 'content-type': 'image/png' }
+): string {
   const dateTime = url.searchParams.get('X-Amz-Date')!;
   const dateStamp = dateTime.slice(0, 8);
   const scope = `${dateStamp}/us-east-1/s3/aws4_request`;
@@ -17,12 +21,17 @@ function expectedSignature(url: URL, method: string): string {
         `${encodeURIComponent(key)}=${encodeURIComponent(value)}`
     )
     .join('&');
+  const headers: Record<string, string> =
+    method === 'PUT'
+      ? { ...uploadHeaders, host: url.host }
+      : { host: url.host };
+  const signedHeaders = Object.keys(headers).sort();
   const canonicalRequest = [
     method,
     url.pathname,
     canonicalQuery,
-    `host:${url.host}\n`,
-    'host',
+    signedHeaders.map(key => `${key}:${headers[key]}\n`).join(''),
+    signedHeaders.join(';'),
     'UNSIGNED-PAYLOAD',
   ].join('\n');
   const requestHash = crypto
@@ -90,7 +99,10 @@ describe.each([
 
   it('keeps the internal endpoint as the backwards-compatible signing default', () => {
     const url = new URL(
-      storage.createPresignedUploadUrl('avatars', 'user-test/avatar.png')
+      storage.createPresignedUploadUrl('avatars', 'user-test/avatar.png', {
+        contentType: 'image/png',
+        sizeBytes: 10,
+      })
     );
     expect(url.origin).toBe('http://storage.internal:9000');
     expect(url.searchParams.get('X-Amz-Signature')).toBe(
@@ -106,7 +118,8 @@ describe.each([
         method === 'PUT'
           ? storage.createPresignedUploadUrl(
               'avatars',
-              'user-test/avatar one.png'
+              'user-test/avatar one.png',
+              { contentType: 'image/png', sizeBytes: 10 }
             )
           : storage.createPresignedDownloadUrl(
               'avatars',
@@ -143,6 +156,43 @@ describe.each([
     );
     expect(fetchMock.mock.calls[0][1]?.method).toBe('HEAD');
   });
+
+  it('binds PUT signatures to exact byte length and content type', () => {
+    const url = new URL(
+      storage.createPresignedUploadUrl('avatars', 'user-test/avatar.png', {
+        contentType: 'image/png',
+        sizeBytes: 10,
+      })
+    );
+    expect(url.searchParams.get('X-Amz-SignedHeaders')).toBe(
+      'content-length;content-type;host'
+    );
+    const signature = url.searchParams.get('X-Amz-Signature');
+    expect(signature).not.toBe(
+      expectedSignature(url, 'PUT', {
+        'content-length': '11',
+        'content-type': 'image/png',
+      })
+    );
+    expect(signature).not.toBe(
+      expectedSignature(url, 'PUT', {
+        'content-length': '10',
+        'content-type': 'text/html',
+      })
+    );
+  });
+
+  it.each([0, -1, 1.5, Infinity, Number.MAX_SAFE_INTEGER + 1])(
+    'rejects invalid signed byte length %s',
+    sizeBytes => {
+      expect(() =>
+        storage.createPresignedUploadUrl('avatars', 'user-test/avatar.png', {
+          contentType: 'image/png',
+          sizeBytes,
+        })
+      ).toThrow('exact positive size');
+    }
+  );
 
   it('keeps public object URLs independent of the presign endpoint', () => {
     process.env.S3_PRESIGN_ENDPOINT = 'https://uploads.example.com';

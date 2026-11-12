@@ -15,6 +15,7 @@ type PresignInput = {
   key: string;
   expiresInSeconds?: number;
   query?: URLSearchParams;
+  headers?: Record<string, string>;
 };
 
 export type HeadObjectResult = {
@@ -254,17 +255,23 @@ function buildPresignedUrl(input: PresignInput): string {
   query.set('X-Amz-Credential', `${config.accessKeyId}/${credentialScope}`);
   query.set('X-Amz-Date', amzDate);
   query.set('X-Amz-Expires', String(expires));
-  query.set('X-Amz-SignedHeaders', 'host');
 
   const canonicalUri = buildCanonicalUri(config, input.key);
   const url = buildObjectUrl(config, input.key, query);
+  const headers: Record<string, string> = { ...input.headers, host: url.host };
+  const signedHeaderKeys = Object.keys(headers).sort();
+  const signedHeaders = signedHeaderKeys.join(';');
+  query.set('X-Amz-SignedHeaders', signedHeaders);
+  const canonicalHeaders = signedHeaderKeys
+    .map(key => `${key}:${headers[key].trim()}\n`)
+    .join('');
 
   const canonicalRequest = [
     input.method,
     canonicalUri,
     canonicalQueryString(query),
-    `host:${url.host}\n`,
-    'host',
+    canonicalHeaders,
+    signedHeaders,
     'UNSIGNED-PAYLOAD',
   ].join('\n');
 
@@ -396,12 +403,25 @@ export async function headObject(
 export function createPresignedUploadUrl(
   namespace: string,
   filePath: string,
-  options: { expiresInSeconds?: number } = {}
+  options: { expiresInSeconds?: number; contentType: string; sizeBytes: number }
 ): string {
+  if (
+    !Number.isSafeInteger(options.sizeBytes) ||
+    options.sizeBytes <= 0 ||
+    !/^[\w.+-]+\/[\w.+-]+$/.test(options.contentType)
+  ) {
+    throw new Error(
+      'Upload signing requires an exact positive size and MIME type'
+    );
+  }
   return buildPresignedUrl({
     method: 'PUT',
     key: `${namespace}/${filePath}`,
     expiresInSeconds: options.expiresInSeconds,
+    headers: {
+      'content-length': String(options.sizeBytes),
+      'content-type': options.contentType,
+    },
   });
 }
 
