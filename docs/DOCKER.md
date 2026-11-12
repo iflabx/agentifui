@@ -17,9 +17,13 @@ this installer.
 One image runs two separate non-root services: Web (Next.js) and API (Fastify).
 The first implementation retains installed dependencies, including build tools
 needed by `next.config.ts`, rather than relying on incomplete standalone tracing.
-The optional data profile provides PostgreSQL 18.6, Redis 7.4 and digest-pinned
-MinIO. Review upstream image security/support notices when choosing an object
-store; a pinned digest ensures reproducibility, not absence of vulnerabilities.
+The optional data profile provides PostgreSQL 18.6, Redis 7.4 and MinIO built
+from pinned official source, alongside its client. Historical upstream MinIO
+container images may no longer be anonymously downloadable; a locally cached
+image is not proof that another installation can pull it. Review upstream
+security/support notices when choosing an object store; a source pin ensures
+traceability, not absence of vulnerabilities. Existing external S3-compatible
+storage remains supported and does not need replacement.
 
 ### Contributor Validation
 
@@ -40,7 +44,9 @@ page assets and anonymous access control, then removes only its own containers
 and volumes and checks that existing containers were not restarted or replaced.
 It never loads an installation's private environment or sends real email. Port
 23300 must be unused; select another with `--web-port PORT` and match the public
-build argument. Docker must be able to obtain the declared data-service images.
+build argument. Docker must be able to obtain the declared base/data-service
+images. The first check builds the pinned-source storage images if absent; CI
+prepares and caches them separately. No storage image is pushed to a registry.
 
 This is not business acceptance, an upgrade rehearsal or a scale test. Before
 releasing deployment changes, run the candidate with the intended deployment
@@ -114,6 +120,7 @@ the same `--env-file` and project name. There are no migrations at app startup.
 ```bash
 docker compose --env-file .env.prod config --quiet
 docker compose --env-file .env.prod build web
+docker compose --env-file .env.prod build minio storage-init
 docker compose --env-file .env.prod --profile data up -d --wait postgres redis
 docker compose --env-file .env.prod --profile data up -d minio
 docker compose --env-file .env.prod run --rm db-init
@@ -130,6 +137,15 @@ reset an existing password. `content-init` refuses nonempty content. Storage
 setup refuses an existing bucket/identity, creates a private bucket and grants
 the separate application identity access only to that bucket. A partially failed
 storage setup needs inspection and repair; it is not an automatic retry loop.
+
+Build the optional storage services only for a new bundled installation. They
+use `docker/Dockerfile.storage` with separate server/client targets and include
+the upstream AGPL license and source identity. Building needs access to the Go
+module proxy/checksum service and base-image registry; subsequent builds reuse
+BuildKit caches. Do not rebuild or replace an existing storage service as part
+of an application upgrade. Operators providing reviewed prebuilt equivalents
+can set `AGENTIF_MINIO_IMAGE` and `AGENTIF_MC_IMAGE` privately and skip their
+source builds; these images are not application Web/API build arguments.
 
 Content and snapshots share the `content` volume at `/data`; logs, database,
 Redis and objects have separate named volumes. The PostgreSQL 18 volume is

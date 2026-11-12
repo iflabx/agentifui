@@ -68,6 +68,7 @@ test('Docker and runtime filters cover image inputs without rebuilding for docum
     'messages/**',
     'styles/**',
     'database/**',
+    'docker/**',
     'scripts/**',
     '.github/workflows/**',
     '__tests__/scripts/**',
@@ -135,6 +136,38 @@ test('Docker builds once into a local single-platform image with GHA caching', (
     /local_scripts\/|secrets\s*(?:\.|\[)|\.env\.prod\b/
   );
   expect(workflow).not.toMatch(/continue-on-error: true/);
+});
+
+test('CI preloads both source storage images with shared caching before smoke', () => {
+  const docker = job('docker');
+  const builds = docker
+    .split('      - name: ')
+    .filter(step => step.includes('uses: docker/build-push-action@v6'));
+  expect(builds).toHaveLength(3);
+  const compose = fs.readFileSync(
+    path.join(process.cwd(), 'compose.yaml'),
+    'utf8'
+  );
+  for (const [target, variable, image] of [
+    ['minio', 'AGENTIF_MINIO_IMAGE', 'agentifui-minio:source-9e49d5e7'],
+    ['mc', 'AGENTIF_MC_IMAGE', 'agentifui-mc:source-7394ce0d'],
+  ]) {
+    const build = builds.find(step => step.includes(`target: ${target}\n`));
+    expect(build).toBeDefined();
+    expect(build).toContain('context: .');
+    expect(build).toContain('file: docker/Dockerfile.storage');
+    expect(build).toContain('platforms: linux/amd64');
+    expect(build).toContain('load: true');
+    expect(build).toContain('push: false');
+    expect(build).toContain(`tags: ${image}`);
+    expect(build).toContain('cache-from: type=gha,scope=storage');
+    expect(build).toContain('cache-to: type=gha,scope=storage,mode=max');
+    expect(compose).toContain(`image: \${${variable}:-${image}}`);
+    expect(docker.indexOf(build!)).toBeLessThan(
+      docker.indexOf('      - name: Smoke test CI image')
+    );
+  }
+  expect(docker).not.toMatch(/(?:quay\.io\/)?minio\/(?:minio|mc)[:@]/);
 });
 
 test('verify always runs the full suite but defers builds to Docker when required', () => {

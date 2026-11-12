@@ -62,6 +62,7 @@ jobs:
               - 'messages/**'
               - 'styles/**'
               - 'database/**'
+              - 'docker/**'
               - 'scripts/**'
               - '.github/workflows/**'
               - '__tests__/scripts/**'
@@ -345,6 +346,32 @@ jobs:
             NEXT_PUBLIC_APP_URL=http://127.0.0.1:23300
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Build source MinIO image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.storage
+          target: minio
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: agentifui-minio:source-9e49d5e7
+          cache-from: type=gha,scope=storage
+          cache-to: type=gha,scope=storage,mode=max
+
+      - name: Build source MinIO client image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.storage
+          target: mc
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: agentifui-mc:source-7394ce0d
+          cache-from: type=gha,scope=storage
+          cache-to: type=gha,scope=storage,mode=max
 
       - name: Smoke test CI image
         run: node scripts/smoke-docker.mjs --image agentifui:ci

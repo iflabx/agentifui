@@ -186,7 +186,12 @@ services:
       timeout: 5s
       retries: 20
   minio:
-    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    image: ${AGENTIF_MINIO_IMAGE:-agentifui-minio:source-9e49d5e7}
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.storage
+      target: minio
     profiles: [data]
     restart: unless-stopped
     command: [server, /data, --console-address, ':9001']
@@ -199,7 +204,12 @@ services:
     ports:
       - '${STORAGE_BIND_IP:-127.0.0.1}:${STORAGE_PORT:-9000}:9000'
   storage-init:
-    image: minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+    image: ${AGENTIF_MC_IMAGE:-agentifui-mc:source-7394ce0d}
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.storage
+      target: mc
     profiles: [tools]
     entrypoint: [sh, /scripts/docker-storage-init.sh]
     volumes:

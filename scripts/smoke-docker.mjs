@@ -115,13 +115,13 @@ export async function smokeDocker(options) {
       .filter(name => process.env[name])
       .map(name => [name, process.env[name]])
   );
-  const docker = args => {
+  const docker = (args, timeout = 300000) => {
     try {
       return execFileSync('docker', args, {
         cwd: root,
         env: childEnvironment,
         encoding: 'utf8',
-        timeout: 300000,
+        timeout,
         maxBuffer: 16 * 1024 * 1024,
         stdio: ['ignore', 'pipe', 'pipe'],
       }).trim();
@@ -139,7 +139,7 @@ export async function smokeDocker(options) {
     '-f',
     path.join(root, 'compose.yaml'),
   ];
-  const compose = args => docker([...composeArgs, ...args]);
+  const compose = (args, timeout) => docker([...composeArgs, ...args], timeout);
   const snapshot = () => {
     const ids = docker(['ps', '-aq']).split(/\s+/).filter(Boolean);
     return ids.length
@@ -177,6 +177,16 @@ export async function smokeDocker(options) {
     compose(['config', '--quiet']);
     owned = true;
     console.log('Starting an isolated Docker smoke project');
+    for (const [service, image] of [
+      ['minio', 'agentifui-minio:source-9e49d5e7'],
+      ['storage-init', 'agentifui-mc:source-7394ce0d'],
+    ]) {
+      try {
+        docker(['image', 'inspect', image]);
+      } catch {
+        compose(['build', service], 900000);
+      }
+    }
     compose([
       '--profile',
       'data',
