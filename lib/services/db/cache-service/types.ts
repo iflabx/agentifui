@@ -20,6 +20,7 @@ export interface RedisSetCommandOptions {
 export interface RedisClientLike {
   isOpen: boolean;
   connect: () => Promise<void>;
+  destroy: () => void;
   duplicate?: () => RedisClientLike;
   get: (key: string) => Promise<string | null>;
   set: (
@@ -50,10 +51,7 @@ export type RedisModule = {
 };
 
 export type CacheInvalidationOperation =
-  | 'set'
-  | 'delete'
-  | 'delete-pattern'
-  | 'clear';
+  'set' | 'delete' | 'delete-pattern' | 'clear';
 
 export interface CacheInvalidationMessage {
   origin: string;

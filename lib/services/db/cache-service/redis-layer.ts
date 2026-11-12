@@ -19,8 +19,10 @@ interface CacheRedisLayerOptions {
 
 export class CacheRedisLayer {
   private redisClient: RedisClientLike | null | undefined;
+  private redisClientInitPromise: Promise<RedisClientLike | null> | null = null;
   private redisSubscriber: RedisClientLike | null | undefined;
   private redisSubscriberInitPromise: Promise<void> | null = null;
+  private destroyed = false;
   private redisLoadWarned = false;
   private redisRuntimeWarned = false;
   private redisInvalidationWarned = false;
@@ -37,7 +39,7 @@ export class CacheRedisLayer {
   constructor(private readonly options: CacheRedisLayerOptions) {}
 
   isL2Enabled(): boolean {
-    return this.isServerRuntime() && this.options.enabled;
+    return !this.destroyed && this.isServerRuntime() && this.options.enabled;
   }
 
   getMetrics(): Pick<
@@ -164,12 +166,17 @@ export class CacheRedisLayer {
   }
 
   destroy(): void {
-    if (this.redisSubscriber && this.redisSubscriber.isOpen) {
-      void this.redisSubscriber.quit?.().catch(() => {
-        // best effort shutdown
-      });
-    }
+    this.destroyed = true;
+    this.closeRedisClients();
+  }
+
+  private closeRedisClients(): void {
+    const clients = new Set([this.redisClient, this.redisSubscriber]);
+    this.redisClient = null;
     this.redisSubscriber = null;
+    for (const client of clients) {
+      if (client?.isOpen) client.destroy();
+    }
   }
 
   private isServerRuntime(): boolean {
@@ -200,7 +207,7 @@ export class CacheRedisLayer {
     operation: string,
     error: unknown
   ): void {
-    if (!this.redisRuntimeWarned) {
+    if (!this.destroyed && !this.redisRuntimeWarned) {
       this.redisRuntimeWarned = true;
       console.warn(
         `[CacheService] Redis L2 disabled after ${operation} failure:`,
@@ -208,11 +215,11 @@ export class CacheRedisLayer {
       );
     }
 
-    this.redisClient = null;
+    this.closeRedisClients();
   }
 
   private warnRedisInvalidationOnce(operation: string, error: unknown): void {
-    if (this.redisInvalidationWarned) {
+    if (this.destroyed || this.redisInvalidationWarned) {
       return;
     }
 
@@ -226,7 +233,11 @@ export class CacheRedisLayer {
   private async ensureInvalidationSubscriber(
     redis: RedisClientLike
   ): Promise<void> {
-    if (!this.options.invalidationEnabled || !this.isServerRuntime()) {
+    if (
+      !this.options.invalidationEnabled ||
+      !this.isL2Enabled() ||
+      this.redisClient !== redis
+    ) {
       return;
     }
 
@@ -244,16 +255,23 @@ export class CacheRedisLayer {
     this.redisSubscriberInitPromise = (async () => {
       try {
         const subscriber = redis.duplicate!();
+        if (typeof subscriber.subscribe !== 'function') {
+          if (subscriber.isOpen) subscriber.destroy();
+          return;
+        }
+        this.redisSubscriber = subscriber;
         if (!subscriber.isOpen) {
           await subscriber.connect();
         }
-        if (typeof subscriber.subscribe !== 'function') {
+        if (this.destroyed || this.redisClient !== redis) {
+          if (subscriber.isOpen) subscriber.destroy();
           return;
         }
 
         await subscriber.subscribe(
           this.options.invalidationChannel,
           rawMessage => {
+            if (this.destroyed || this.redisClient !== redis) return;
             try {
               const parsed = JSON.parse(rawMessage) as CacheInvalidationMessage;
               if (parsed.origin === this.options.invalidationOrigin) {
@@ -268,9 +286,12 @@ export class CacheRedisLayer {
             }
           }
         );
-        this.redisSubscriber = subscriber;
       } catch (error) {
-        this.warnRedisInvalidationOnce('invalidation subscribe', error);
+        if (this.redisSubscriber?.isOpen) this.redisSubscriber.destroy();
+        this.redisSubscriber = null;
+        if (!this.destroyed && this.redisClient === redis) {
+          this.warnRedisInvalidationOnce('invalidation subscribe', error);
+        }
       }
     })();
 
@@ -282,45 +303,44 @@ export class CacheRedisLayer {
   }
 
   private async getRedisClient(): Promise<RedisClientLike | null> {
-    if (!this.isServerRuntime() || !this.options.enabled) {
+    if (!this.isL2Enabled()) {
       return null;
     }
 
     const redisUrl = resolveRedisUrl();
     if (!redisUrl) {
-      this.redisClient = null;
+      this.closeRedisClients();
       return null;
     }
 
-    if (this.redisClient !== undefined) {
-      if (this.redisClient && !this.redisClient.isOpen) {
-        try {
-          await this.redisClient.connect();
-        } catch (error) {
-          this.disableRedisL2AfterRuntimeFailure('redis connect', error);
-          return null;
-        }
-      }
-
-      if (this.redisClient) {
-        void this.ensureInvalidationSubscriber(this.redisClient);
-      }
+    if (this.redisClientInitPromise) return this.redisClientInitPromise;
+    if (this.redisClient === null) return null;
+    if (this.redisClient?.isOpen) {
+      void this.ensureInvalidationSubscriber(this.redisClient);
       return this.redisClient;
     }
 
-    try {
-      const client = createRedisClient(redisUrl);
-      if (!client.isOpen) {
-        await client.connect();
+    this.redisClientInitPromise = (async () => {
+      try {
+        const client = this.redisClient ?? createRedisClient(redisUrl);
+        this.redisClient = client;
+        if (!client.isOpen) {
+          await client.connect();
+        }
+        if (this.destroyed) return null;
+        void this.ensureInvalidationSubscriber(client);
+        return client;
+      } catch (error) {
+        if (!this.destroyed) this.warnRedisLoadFailureOnce(error);
+        this.closeRedisClients();
+        return null;
       }
+    })();
 
-      this.redisClient = client;
-      void this.ensureInvalidationSubscriber(client);
-      return client;
-    } catch (error) {
-      this.warnRedisLoadFailureOnce(error);
-      this.redisClient = null;
-      return null;
+    try {
+      return await this.redisClientInitPromise;
+    } finally {
+      this.redisClientInitPromise = null;
     }
   }
 
