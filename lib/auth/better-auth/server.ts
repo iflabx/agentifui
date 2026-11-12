@@ -26,6 +26,7 @@ import {
   getPublicSsoProviders,
   getSsoPluginConfig,
 } from './server/providers';
+import { getSocialProviders } from './server/social-providers';
 
 export { getAuthProviderIssuer, getPublicSsoProviders };
 
@@ -34,6 +35,7 @@ export const auth = betterAuth({
   basePath: BETTER_AUTH_BASE_PATH,
   trustedOrigins: getTrustedOrigins(),
   secret: getSecret(),
+  socialProviders: getSocialProviders(),
   database: getAuthDatabaseConfig(),
   secondaryStorage: getAuthSecondaryStorage(),
   rateLimit: getAuthRateLimitConfig(),

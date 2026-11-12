@@ -35,6 +35,26 @@ describe('SocialAuthButtons', () => {
     ).toBeInTheDocument();
   });
 
+  it('hides GitHub login by default when the display flag is absent', () => {
+    delete process.env.NEXT_PUBLIC_GITHUB_LOGIN_ENABLED;
+
+    render(<SocialAuthButtons type="login" />);
+
+    expect(
+      screen.queryByRole('button', { name: 'pages.auth.social.github.login' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('does not enable GitHub login for an invalid display flag', () => {
+    process.env.NEXT_PUBLIC_GITHUB_LOGIN_ENABLED = 'invalid';
+
+    render(<SocialAuthButtons type="login" />);
+
+    expect(
+      screen.queryByRole('button', { name: 'pages.auth.social.github.login' })
+    ).not.toBeInTheDocument();
+  });
+
   it('hides GitHub register actions when GitHub social login is disabled', () => {
     process.env.NEXT_PUBLIC_GITHUB_LOGIN_ENABLED = 'false';
 

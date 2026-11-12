@@ -177,8 +177,12 @@ Core switches:
 - `BETTER_AUTH_ENABLED`
 - `AUTH_BACKEND`
 - `BETTER_AUTH_SECRET`
-- `NEXT_PUBLIC_GITHUB_LOGIN_ENABLED`: set `false` to hide GitHub social-login
-  entry points while keeping the generic capability available in mainline
+- `NEXT_PUBLIC_GITHUB_LOGIN_ENABLED`: explicitly set `true` to show GitHub
+  social-login entry points after configuring the server credentials; defaults
+  to `false`. Rebuild the Web application after changing this public variable.
+- `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`: private GitHub OAuth App
+  credentials. The built-in GitHub provider is registered only when both are
+  nonempty. Never prefix these variables with `NEXT_PUBLIC_` or commit their values.
 - `NEXT_PUBLIC_SSO_ONLY_MODE`
 - `DEFAULT_SSO_EMAIL_DOMAIN`
 
@@ -187,6 +191,17 @@ Static provider / mock OAuth configuration:
 - `BETTER_AUTH_SSO_PROVIDERS_JSON`
 - `BETTER_AUTH_SSO_STRICT`
 - `BETTER_AUTH_GENERIC_OAUTH_PROVIDERS_JSON`
+
+GitHub login uses Better Auth's built-in `/api/auth/better/sign-in/social`
+endpoint, not the generic OAuth plugin. Register the OAuth App callback as
+`https://your-domain.com/api/auth/better/callback/github`, using your actual
+`BETTER_AUTH_URL` origin. Keep separate OAuth Apps for environments with different
+callback origins when necessary. A GitHub repository access token is not an OAuth
+App client secret. Existing Supabase OAuth settings are not automatically reused.
+Enable the public button only in environments where both private credentials are
+configured; the display flag does not validate credentials or register a provider.
+Existing account-linking restrictions remain unchanged, including restrictions
+on signing in with a different provider for an existing account email.
 
 Better Auth rejects SSO discovery and endpoint URLs that resolve to private
 networks unless their exact origins are explicitly trusted. For an internal
