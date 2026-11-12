@@ -95,7 +95,9 @@
       "fast-xml-parser": "5.12.0",
       "node-forge": "1.4.3",
       "js-yaml": "4.3.2",
-      "mdast-util-to-hast": "13.2.1"
+      "mdast-util-to-hast": "13.2.1",
+      "rehype-katex>katex": "0.18.10",
+      "micromark-extension-math>katex": "0.18.10"
     }
   },
   "knip": {
@@ -133,7 +135,7 @@
     "dotenv": "18.0.10",
     "drizzle-orm": "0.45.4",
     "framer-motion": "14.12.0",
-    "katex": "0.16.47",
+    "katex": "0.18.10",
     "kysely": "0.29.8",
     "lodash": "4.18.1",
     "lucide-react": "1.71.0",
