@@ -466,17 +466,30 @@ test('CI aggregation rejects failed detection/checks, cancellation and missing r
     .split("node <<'NODE'\n")[1]
     .split('\n          NODE')[0]
     .replace(/^          /gm, '');
-  const jobs = ['quality', 'verify'];
-  function check(required: string, changedJob?: string, result?: string) {
+  const jobs = ['quality', 'verify', 'docker'];
+  function check(
+    required: string,
+    changedJob?: string,
+    result?: string,
+    dockerRequired = required
+  ) {
     const needs: Record<
       string,
-      { result: string; outputs?: { required: string } }
+      {
+        result: string;
+        outputs?: { required: string; docker_required: string };
+      }
     > = {
-      changes: { result: 'success', outputs: { required } },
+      changes: {
+        result: 'success',
+        outputs: { required, docker_required: dockerRequired },
+      },
       'publication-check': { result: 'success' },
     };
-    for (const job of jobs)
-      needs[job] = { result: required === 'true' ? 'success' : 'skipped' };
+    for (const job of jobs) {
+      const flag = job === 'docker' ? dockerRequired : required;
+      needs[job] = { result: flag === 'true' ? 'success' : 'skipped' };
+    }
     if (changedJob) {
       if (result === undefined) delete needs[changedJob];
       else needs[changedJob].result = result;
@@ -487,6 +500,8 @@ test('CI aggregation rejects failed detection/checks, cancellation and missing r
   }
   expect(check('true')).toBe(0);
   expect(check('false')).toBe(0);
+  expect(check('true', undefined, undefined, 'false')).toBe(0);
+  expect(check('false', undefined, undefined, 'true')).toBe(0);
   expect(check('false', 'publication-check', 'skipped')).not.toBe(0);
   expect(check('true', 'publication-check', 'failure')).not.toBe(0);
   expect(check('true', 'changes', 'failure')).not.toBe(0);
@@ -500,4 +515,5 @@ test('CI aggregation rejects failed detection/checks, cancellation and missing r
     expect(check('false', job)).not.toBe(0);
   }
   expect(check('')).not.toBe(0);
+  expect(check('true', undefined, undefined, '')).not.toBe(0);
 });

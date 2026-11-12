@@ -8,6 +8,7 @@ import {
   buildApiErrorEnvelope,
   normalizeLegacyErrorEnvelope,
 } from './lib/app-error';
+import { installCapacityControl } from './lib/capacity-control';
 import { recordApiErrorEvent } from './lib/error-events';
 import { resolveRuntimeContentDir } from './lib/runtime-content';
 import { adminAuthFallbackPolicyRoutes } from './routes/admin-auth-fallback-policy';
@@ -87,6 +88,7 @@ export async function createApiServer(config: ApiRuntimeConfig) {
     },
     trustProxy: true,
   });
+  installCapacityControl(app);
 
   // Keep legacy multipart requests reachable so storage routes can return
   // explicit compatibility errors (410/501) instead of Fastify's default 415.
@@ -180,6 +182,19 @@ async function startServer() {
   resolveRuntimeContentDir('messages');
   resolveRuntimeContentDir('content/pages');
   const app = await createApiServer(config);
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    process.once(signal, () => {
+      const deadline = setTimeout(() => process.exit(1), 55000);
+      deadline.unref();
+      void app.close().then(
+        () => process.exit(0),
+        error => {
+          app.log.error({ err: error }, '[FastifyAPI] shutdown failed');
+          process.exit(1);
+        }
+      );
+    });
+  }
   try {
     await app.listen({
       host: config.host,

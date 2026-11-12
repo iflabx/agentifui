@@ -89,6 +89,7 @@ Useful variants:
 
 Use the public runbooks:
 
+- [Docker Compose installation](docs/DOCKER.md) (build locally; no registry account needed)
 - `docs/CONFIGURATION.md`
 - `docs/QUICK-DEPLOYMENT.md`
 - `docs/SINGLE-HOST-HIGH-CONCURRENCY.md`

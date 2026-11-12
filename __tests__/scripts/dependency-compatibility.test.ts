@@ -68,10 +68,13 @@ test('Node and pnpm versions agree across CI, the test image and runbooks', () =
   expect(readFile('.github/workflows/security.yml')).toContain(
     `node-version: '${nodeVersion}'`
   );
-  expect(readFile('Dockerfile.prod-test')).toContain(
-    `FROM node:${nodeVersion}-bookworm-slim`
-  );
+  for (const dockerfile of ['Dockerfile', 'Dockerfile.prod-test']) {
+    expect(readFile(dockerfile)).toContain(
+      `FROM node:${nodeVersion}-bookworm-slim`
+    );
+  }
   for (const relative of [
+    'Dockerfile',
     'Dockerfile.prod-test',
     'README.md',
     'docs/QUICK-DEPLOYMENT.md',
