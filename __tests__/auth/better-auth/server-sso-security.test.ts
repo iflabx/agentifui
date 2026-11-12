@@ -34,6 +34,14 @@ jest.mock('@lib/auth/better-auth/server/config', () => ({
 jest.mock('@lib/auth/better-auth/server/database', () => ({
   getAuthDatabaseConfig: () => ({}),
 }));
+jest.mock('@lib/auth/better-auth/server/social-providers', () => ({
+  getSocialProviders: () => ({
+    github: {
+      clientId: 'example-client-id',
+      clientSecret: 'example-client-secret',
+    },
+  }),
+}));
 jest.mock('@lib/auth/better-auth/server/env', () => ({
   getBaseUrl: () => 'https://app.example.com',
   getSecret: () => 'test-only-not-a-production-secret',
@@ -64,6 +72,15 @@ describe('native SSO registration security', () => {
       expect.objectContaining({ disabledPaths: ['/sso/register'] })
     );
     expect(ssoOptions).toEqual(expect.objectContaining({ providersLimit: 0 }));
+  });
+
+  it('registers GitHub on the built-in social sign-in configuration', () => {
+    expect(authOptions.socialProviders).toEqual({
+      github: {
+        clientId: 'example-client-id',
+        clientSecret: 'example-client-secret',
+      },
+    });
   });
 
   it('preserves configured SSO providers and strict account linking', () => {
