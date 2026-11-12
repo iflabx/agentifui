@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import {
+  DifyProxyRequestError,
   fetchWithDifyProxyResilience,
   getDifyProxyCircuitSnapshot,
 } from '../../lib/dify-proxy-resilience';
@@ -506,9 +507,19 @@ export async function dispatchDifyUpstreamRequest(
     upstreamHeaders.set('Content-Type', 'application/json');
   }
 
+  const downstream = new AbortController();
+  const abortDownstream = () => downstream.abort();
+  const onResponseClose = () => {
+    if (!reply.raw.writableEnded) abortDownstream();
+  };
+  request.raw.once('aborted', abortDownstream);
+  reply.raw.once('close', onResponseClose);
+  if (request.raw.aborted || reply.raw.destroyed) abortDownstream();
+
   try {
     const resilienceResult = await fetchWithDifyProxyResilience({
       circuitKey,
+      requestSignal: downstream.signal,
       execute: async signal => {
         const requestInit: RequestInit = {
           method: actualMethod,
@@ -557,6 +568,29 @@ export async function dispatchDifyUpstreamRequest(
       resilienceElapsedMs: resilienceResult.elapsedMs,
     });
   } catch (error) {
+    if (
+      error instanceof DifyProxyRequestError &&
+      error.reason !== 'network-error' &&
+      !isReplyCommitted(reply)
+    ) {
+      await handleResilienceFailure({
+        request,
+        reply,
+        context,
+        targetConfig,
+        slugPath,
+        agentSource,
+        routePath: context.routePath,
+        resilienceResult: {
+          ok: false,
+          reason: error.reason,
+          error,
+          elapsedMs: Date.now() - upstreamRequestStartedAt,
+          circuitStatus: getDifyProxyCircuitSnapshot(circuitKey).status,
+        },
+      });
+      return;
+    }
     logDifyProxyFailure(request, {
       appId: context.appId,
       routePath: context.routePath,
@@ -570,10 +604,10 @@ export async function dispatchDifyUpstreamRequest(
     if (isReplyCommitted(reply)) {
       request.log.warn(
         {
+          requestId: request.id,
           appId: context.appId,
           route: context.routePath,
           slugPath,
-          err: error,
         },
         '[FastifyDifyProxy] reply already committed, skip fallback error payload'
       );
@@ -598,5 +632,8 @@ export async function dispatchDifyUpstreamRequest(
     );
 
     reply.status(502).send(payload);
+  } finally {
+    request.raw.removeListener('aborted', abortDownstream);
+    reply.raw.removeListener('close', onResponseClose);
   }
 }

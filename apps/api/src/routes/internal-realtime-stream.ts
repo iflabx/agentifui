@@ -336,6 +336,10 @@ export const internalRealtimeStreamRoutes: FastifyPluginAsync<
         return;
       }
       closed = true;
+      request.raw.removeListener('close', close);
+      request.raw.removeListener('aborted', close);
+      request.raw.removeListener('error', close);
+      reply.raw.removeListener('close', close);
 
       if (keepAliveTimer) {
         clearInterval(keepAliveTimer);
@@ -395,6 +399,7 @@ export const internalRealtimeStreamRoutes: FastifyPluginAsync<
     request.raw.on('close', close);
     request.raw.on('aborted', close);
     request.raw.on('error', close);
+    reply.raw.on('close', close);
 
     send(
       'ready',
@@ -407,53 +412,68 @@ export const internalRealtimeStreamRoutes: FastifyPluginAsync<
       })
     );
 
+    if (closed) return reply;
+
     keepAliveTimer = setInterval(() => {
       send('ping', JSON.stringify({ ts: Date.now() }));
     }, KEEPALIVE_INTERVAL_MS);
 
-    unsubscribe = await subscribeRealtimeEvents(event => {
-      if (closed || event.key !== key) {
-        return;
-      }
-      if (!matchesSubscriptionConfig(config, event.payload)) {
-        return;
-      }
-      sendEnvelope(event);
-    });
-
-    if (lastEventId) {
-      const replayEventsWithProbe = await readRealtimeEventsSince({
-        sinceId: lastEventId,
-        key,
-        limit: REPLAY_MAX_EVENTS + 1,
+    try {
+      const release = await subscribeRealtimeEvents(event => {
+        if (closed || event.key !== key) {
+          return;
+        }
+        if (!matchesSubscriptionConfig(config, event.payload)) {
+          return;
+        }
+        sendEnvelope(event);
       });
-      const replayOverflow = replayEventsWithProbe.length > REPLAY_MAX_EVENTS;
-      const replayEvents = replayOverflow
-        ? replayEventsWithProbe.slice(0, REPLAY_MAX_EVENTS)
-        : replayEventsWithProbe;
-
-      if (replayOverflow) {
-        send(
-          'replay-gap',
-          JSON.stringify({
-            key,
-            reason: 'replay_window_truncated',
-            lastEventId,
-            replayLimit: REPLAY_MAX_EVENTS,
-            ts: Date.now(),
-          })
-        );
+      if (closed) {
+        release();
+        return reply;
       }
+      unsubscribe = release;
 
-      for (const replayEvent of replayEvents) {
-        if (closed || replayEvent.key !== key) {
-          continue;
+      if (lastEventId) {
+        const replayEventsWithProbe = await readRealtimeEventsSince({
+          sinceId: lastEventId,
+          key,
+          limit: REPLAY_MAX_EVENTS + 1,
+        });
+        const replayOverflow = replayEventsWithProbe.length > REPLAY_MAX_EVENTS;
+        const replayEvents = replayOverflow
+          ? replayEventsWithProbe.slice(0, REPLAY_MAX_EVENTS)
+          : replayEventsWithProbe;
+
+        if (replayOverflow) {
+          send(
+            'replay-gap',
+            JSON.stringify({
+              key,
+              reason: 'replay_window_truncated',
+              lastEventId,
+              replayLimit: REPLAY_MAX_EVENTS,
+              ts: Date.now(),
+            })
+          );
         }
-        if (!matchesSubscriptionConfig(config, replayEvent.payload)) {
-          continue;
+
+        for (const replayEvent of replayEvents) {
+          if (closed || replayEvent.key !== key) {
+            continue;
+          }
+          if (!matchesSubscriptionConfig(config, replayEvent.payload)) {
+            continue;
+          }
+          sendEnvelope(replayEvent);
         }
-        sendEnvelope(replayEvent);
       }
+    } catch (error) {
+      request.log.warn(
+        { err: error },
+        '[FastifyRealtimeStream] subscription failed'
+      );
+      close();
     }
 
     return reply;

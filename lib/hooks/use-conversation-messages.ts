@@ -11,7 +11,7 @@
  * Updated to use new unified data service and messageService
  */
 import { getConversationByExternalId } from '@lib/services/client/conversations-api';
-import { getLatestMessages } from '@lib/services/client/messages-api';
+import { getMessagePage } from '@lib/services/client/messages-api';
 import { useChatScrollStore } from '@lib/stores/chat-scroll-store';
 import { useChatStore } from '@lib/stores/chat-store';
 
@@ -22,7 +22,6 @@ import { usePathname } from 'next/navigation';
 import {
   dbMessageToChatMessage,
   getConversationIdFromPath,
-  organizeMessages,
   shouldHandleScrollLoad,
   shouldLoadMoreMessages,
   shouldPreserveMessagesOnRouteTransition,
@@ -64,6 +63,7 @@ export function useConversationMessages() {
 
   // Helper function to start loading
   const startLoading = useCallback((type: 'initial' | 'more') => {
+    setError(null);
     setLoading(prev => ({ ...prev, state: 'loading', type, isLocked: true }));
   }, []);
 
@@ -88,6 +88,7 @@ export function useConversationMessages() {
     cancelCurrentRequest();
     loaderState.current.page = 1;
     loaderState.current.totalMessages = 0;
+    loaderState.current.nextCursor = null;
     loaderState.current.currentId = null;
     setLoading(createIdleLoadingStatus());
     setError(null);
@@ -103,6 +104,9 @@ export function useConversationMessages() {
       );
 
       const result = await getConversationByExternalId(externalId);
+      if (loaderState.current.currentId !== externalId) {
+        return null;
+      }
 
       if (result.success && result.data) {
         console.log(
@@ -128,6 +132,7 @@ export function useConversationMessages() {
         return null;
       }
     } catch (error) {
+      if (loaderState.current.currentId !== externalId) return null;
       console.error(
         `[useConversationMessages] Exception when querying conversation record:`,
         error
@@ -143,9 +148,7 @@ export function useConversationMessages() {
    */
   const loadInitialMessages = useCallback(
     async (dbConvId: string) => {
-      // Prevent duplicate loading or loading a changed conversation
-      // Use the unified loading state object to check if loading is in progress
-      if (!dbConvId || loading.isLocked) {
+      if (!dbConvId) {
         return;
       }
 
@@ -178,14 +181,15 @@ export function useConversationMessages() {
         setDbConversationId(dbConvId);
 
         // Use the new messageService to get the latest messages
-        const result = await getLatestMessages(dbConvId, MESSAGES_PER_PAGE);
+        const result = await getMessagePage(dbConvId, {
+          limit: MESSAGES_PER_PAGE,
+        });
 
         // If the request has been cancelled or the conversation ID has changed, discard the result
         if (signal.aborted || loaderState.current.currentId !== dbConvId) {
           console.log(
             `[useConversationMessages] Request cancelled or conversation ID changed, discard loading result`
           );
-          finishLoading('idle'); // Reset the loading state
           return;
         }
 
@@ -199,17 +203,13 @@ export function useConversationMessages() {
           return;
         }
 
-        const dbMessages = result.data;
+        const dbMessages = result.data.messages;
+        loaderState.current.nextCursor = result.data.nextCursor;
 
         // Record the total number of messages
         loaderState.current.totalMessages = dbMessages.length;
 
-        // If the total number of messages is less than one page, no need to show "Load more" button
-        if (dbMessages.length <= MESSAGES_PER_PAGE) {
-          setHasMoreMessages(false);
-        } else {
-          setHasMoreMessages(true);
-        }
+        setHasMoreMessages(result.data.hasMore);
 
         if (dbMessages.length === 0) {
           console.log(
@@ -219,17 +219,11 @@ export function useConversationMessages() {
           return;
         }
 
-        // Sort by time and organize message order
-        const organizedMessages = organizeMessages(dbMessages);
-
-        // Get the last MESSAGES_PER_PAGE messages
-        const latestMessages = organizedMessages.slice(-MESSAGES_PER_PAGE);
-
         // Convert database messages to frontend message objects
-        const chatMessages = latestMessages.map(dbMessageToChatMessage);
+        const chatMessages = dbMessages.map(dbMessageToChatMessage);
 
         console.log(
-          `[useConversationMessages] Loaded ${latestMessages.length} latest messages`
+          `[useConversationMessages] Loaded ${dbMessages.length} latest messages`
         );
 
         // Optimize state update logic to ensure the skeleton screen disappears and new messages are displayed directly, avoiding flickering
@@ -240,28 +234,17 @@ export function useConversationMessages() {
 
         // Use requestAnimationFrame to ensure the DOM is updated before
         requestAnimationFrame(() => {
+          if (signal.aborted || loaderState.current.currentId !== dbConvId)
+            return;
           // Ensure the scroll is at the bottom, using a reliable method
           resetScrollState();
 
           // Use requestAnimationFrame again to ensure the above operation is completed
           requestAnimationFrame(() => {
+            if (signal.aborted || loaderState.current.currentId !== dbConvId)
+              return;
             // Set the loading success state
             finishLoading('success');
-
-            // Record that this conversation has been loaded successfully to avoid duplicate loading
-            if (dbConvId) {
-              loaderState.current.loadedConversations.add(dbConvId);
-
-              // Get the conversation ID in the current path
-              const pathConversationId = getConversationIdFromPath(pathname);
-              if (
-                pathConversationId &&
-                pathConversationId !== 'new' &&
-                !pathConversationId.includes('temp-')
-              ) {
-                loaderState.current.loadedConversations.add(pathConversationId);
-              }
-            }
           });
         });
       } catch (error) {
@@ -274,17 +257,13 @@ export function useConversationMessages() {
         );
         setError(error instanceof Error ? error : new Error(String(error)));
         finishLoading('error');
+      } finally {
+        if (loaderState.current.abortController === controller) {
+          loaderState.current.abortController = null;
+        }
       }
     },
-    [
-      clearMessages,
-      organizeMessages,
-      cancelCurrentRequest,
-      finishLoading,
-      loading.isLocked,
-      pathname,
-      startLoading,
-    ]
+    [clearMessages, cancelCurrentRequest, finishLoading, startLoading]
   );
 
   /**
@@ -292,6 +271,7 @@ export function useConversationMessages() {
    */
   const loadMoreMessages = useCallback(async () => {
     if (
+      loaderState.current.abortController ||
       !shouldLoadMoreMessages({
         dbConversationId,
         hasMoreMessages,
@@ -301,11 +281,10 @@ export function useConversationMessages() {
       return;
     }
     const activeConversationId = dbConversationId;
-    if (!activeConversationId) {
+    const beforeMessageId = loaderState.current.nextCursor;
+    if (!activeConversationId || !beforeMessageId) {
       return;
     }
-
-    // Record the current scroll position to prevent the scroll position from being lost after loading
 
     // Cancel any ongoing requests
     cancelCurrentRequest();
@@ -320,17 +299,16 @@ export function useConversationMessages() {
       // Only set the state type to 'more' when loading more messages
       startLoading('more');
 
-      // Calculate the number
       const currentPage = loaderState.current.page;
-      const skip = currentPage * MESSAGES_PER_PAGE;
 
       console.log(
-        `[useConversationMessages] Loading more historical messages, page=${currentPage + 1}, skip=${skip}`
+        `[useConversationMessages] Loading more historical messages, page=${currentPage + 1}`
       );
 
-      // Use the new messageService to get all messages, then manually paginate
-      // This is a temporary solution, and the real cursor pagination can be optimized later
-      const result = await getLatestMessages(activeConversationId, 1000);
+      const result = await getMessagePage(activeConversationId, {
+        limit: MESSAGES_PER_PAGE,
+        beforeMessageId,
+      });
 
       // If the request has been cancelled or the conversation ID has changed, discard the result
       if (
@@ -353,33 +331,10 @@ export function useConversationMessages() {
         return;
       }
 
-      const allMessages = result.data;
-
-      // Update the total number of messages
-      loaderState.current.totalMessages = allMessages.length;
-
-      // If all messages have been loaded
-      if (skip >= allMessages.length) {
-        setHasMoreMessages(false);
-        finishLoading('complete');
-        console.log(`[useConversationMessages] No more historical messages`);
-        return;
-      }
-
-      // Sort by time and organize message order
-      const organizedMessages = organizeMessages(allMessages);
-
-      // Get the messages on the current page
-      const endIndex = Math.max(0, organizedMessages.length - skip);
-      const startIndex = Math.max(0, endIndex - MESSAGES_PER_PAGE);
-      const pageMessages = organizedMessages.slice(startIndex, endIndex);
-
-      // Check if there are more messages to load
-      if (startIndex === 0) {
-        setHasMoreMessages(false);
-        // If there are no more messages, set the loading state to complete
-        finishLoading('complete');
-      }
+      const pageMessages = result.data.messages;
+      loaderState.current.totalMessages += pageMessages.length;
+      loaderState.current.nextCursor = result.data.nextCursor;
+      setHasMoreMessages(result.data.hasMore);
 
       // Record the current scroll position
       const scrollContainer = messagesContainerRef.current;
@@ -393,7 +348,13 @@ export function useConversationMessages() {
       const currentMessages = useChatStore.getState().messages;
 
       // Batch add to the existing messages
-      const updatedMessages = [...newChatMessages, ...currentMessages];
+      const existingIds = new Set(
+        currentMessages.map(message => message.db_id)
+      );
+      const updatedMessages = [
+        ...newChatMessages.filter(message => !existingIds.has(message.db_id)),
+        ...currentMessages,
+      ];
       useChatStore.setState({ messages: updatedMessages });
 
       // Increase the page number
@@ -410,6 +371,11 @@ export function useConversationMessages() {
       if (scrollContainer) {
         // Use requestAnimationFrame to ensure that the DOM is updated
         requestAnimationFrame(() => {
+          if (
+            signal.aborted ||
+            loaderState.current.currentId !== activeConversationId
+          )
+            return;
           if (scrollContainer) {
             // Calculate the difference in height
             const newScrollHeight = scrollContainer.scrollHeight;
@@ -438,14 +404,14 @@ export function useConversationMessages() {
       setError(error instanceof Error ? error : new Error(String(error)));
       finishLoading('error');
     } finally {
-      // Unlock the loading state
-      finishLoading('idle');
+      if (loaderState.current.abortController === controller) {
+        loaderState.current.abortController = null;
+      }
     }
   }, [
     dbConversationId,
     loading,
     hasMoreMessages,
-    organizeMessages,
     cancelCurrentRequest,
     finishLoading,
     startLoading,
@@ -525,21 +491,10 @@ export function useConversationMessages() {
       // Skip resetting state and clearing messages, directly set loading to complete
       finishLoading('success');
 
-      // Record that this conversation has been loaded successfully to avoid duplicate loading
-      if (externalId) {
-        loaderState.current.loadedConversations.add(externalId);
-      }
+      setHasMoreMessages(false);
 
       // Ensure the scroll is at the bottom
       resetScrollState();
-      return;
-    }
-
-    // Check if this conversation has already been loaded
-    if (externalId && loaderState.current.loadedConversations.has(externalId)) {
-      console.log(
-        `[useConversationMessages] Conversation ${externalId} already loaded, skip duplicate loading`
-      );
       return;
     }
 
@@ -555,7 +510,8 @@ export function useConversationMessages() {
 
     // Defer heavy operations to next tick to avoid blocking sidebar highlight updates
     // This ensures sidebar responds immediately while content loading happens in background
-    requestAnimationFrame(() => {
+    const routeFrame = requestAnimationFrame(() => {
+      if (loaderState.current.currentId !== externalId) return;
       clearMessages();
       resetScrollState();
     });
@@ -593,12 +549,11 @@ export function useConversationMessages() {
     // Clean up function
     const loaderStateForCleanup = loaderState.current;
     return () => {
+      cancelAnimationFrame(routeFrame);
       // Clean up loading state
       // If the component is unmounted or the route changes, mark the current loaded ID as null
       // This can be used to know that the context has changed after the asynchronous operation is completed
-      if (loaderStateForCleanup.currentId === externalId) {
-        loaderStateForCleanup.currentId = null;
-      }
+      loaderStateForCleanup.currentId = null;
 
       // Cancel any ongoing requests
       cancelCurrentRequest();

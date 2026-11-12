@@ -61,6 +61,14 @@ Optional / deployment-specific variables:
 - `PG_POOL_IDLE_MS`
 - `PG_POOL_CONNECT_MS`
 
+Current Better Auth accounts use persisted UUID identifiers. Unknown non-UUID
+session identifiers are not automatically provisioned into new profiles. Existing
+legacy mappings can still be read, but an older non-UUID authentication deployment
+must migrate its authentication accounts and sessions to the UUID schema before
+using identity synchronization; changing an email or inventing a mapping at login
+is not an account migration. No request holds a session-level advisory lock for
+this fallback.
+
 ## Redis and Realtime
 
 Minimum:
@@ -110,6 +118,18 @@ Host (including any port), object path and query parameters; do not rewrite a UR
 after signing it. `S3_PUBLIC_BASE_URL`, when used, includes the bucket path and
 controls stored public object URLs independently. Existing stored URLs are not
 rewritten by these settings. Bucket permissions remain unchanged.
+
+Direct PUT grants bind both the exact declared byte length and `Content-Type` in
+the S3 signature. Send the original `File`/`Blob` with the same MIME type; browsers
+set `Content-Length` automatically, so do not set that forbidden header manually.
+The storage gateway must preserve both signed headers, reject invalid signatures,
+and allow the application's origin and PUT/GET in its CORS policy. Requests with
+different sizes/types or a missing signed header fail at storage before profile
+commit. Existing commit-time object checks remain in place. This does not inspect
+file magic bytes, make URLs single-use, or add a storage quota: a reused grant can
+only replace the same key with the same size/type until expiry. Keep presign rate
+limits and operator-managed quotas/unreferenced-object cleanup; do not expire all
+objects in an active avatar/content prefix indiscriminately.
 
 For a private bucket, set `S3_PUBLIC_READ_ENABLED=0`. Application storage avatars
 use the authenticated avatar download-signing endpoint before loading an image;
@@ -274,6 +294,25 @@ Supported runtime controls:
 - `DIFY_PROXY_CIRCUIT_FAILURE_STATUSES`
 - `DIFY_PROXY_CIRCUIT_SHARED_STATE_ENABLED`
 - `DIFY_PROXY_CIRCUIT_SHARED_METRICS_ENABLED`
+
+In the Fastify Dify proxy, `DIFY_PROXY_TIMEOUT_MS` covers the complete ordinary
+response, including body consumption. SSE responses switch to an idle deadline
+reset by each upstream chunk, so active long-running conversations are not cut
+off by a fixed total duration. The same setting is the SSE idle limit; configure
+it to tolerate the upstream's longest normal pause/heartbeat interval. Downstream
+disconnects cancel outstanding upstream work. Body timeout before sending a
+response returns 504; failures after streaming starts close the stream instead
+of attempting a second JSON response. Success metrics are recorded when the
+body finishes, not merely when response headers arrive.
+
+Dify failure logs keep request identifiers, normalized error codes, status,
+response byte counts, and timing instead of response previews or raw exceptions.
+Input-moderation failures follow the same policy. Error events written to the
+database and local mirror keep generic messages and fixed diagnostic context,
+not upstream error text or free-form upstream context. Existing client-facing
+error fields remain unchanged; captured responses can still contain sensitive
+upstream details and must not be shared as ordinary diagnostic logs. This policy
+does not retroactively remove data from existing logs or error records.
 
 See [Dify Service API compatibility](DIFY-INTEGRATION.md) for upload-limit scope,
 version-specific endpoint behavior and currently unsupported features.

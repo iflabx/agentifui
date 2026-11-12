@@ -51,19 +51,12 @@ function extractErrorMessage(payload: unknown): string | null {
   return null;
 }
 
-function buildLogPreview(content: string, maxLength = 240): string | null {
-  const normalized = content.replace(/\s+/g, ' ').trim();
-  if (!normalized) {
-    return null;
-  }
-  return normalized.slice(0, maxLength);
-}
-
 export function logDifyProxyFailure(
   request: FastifyRequest,
   input: LogDifyProxyFailureInput
 ): void {
   const logPayload: Record<string, unknown> = {
+    requestId: request.id,
     appId: input.appId,
     route: input.routePath,
     slugPath: input.slugPath,
@@ -72,36 +65,22 @@ export function logDifyProxyFailure(
     failureKind: input.failureKind,
     upstreamStatus: input.upstreamStatus,
     upstreamContentType: input.upstreamContentType,
-    upstreamErrorCode: input.upstreamErrorCode,
+    errorCode: toUserFacingAgentError({
+      source: input.agentSource,
+      status: input.upstreamStatus,
+      code: input.upstreamErrorCode,
+      message: input.responseBody,
+    }).code,
     retryAfterSeconds: input.retryAfterSeconds,
     elapsedMs: input.elapsedMs,
   };
 
   if (typeof input.responseBody === 'string') {
     logPayload.responseBytes = Buffer.byteLength(input.responseBody);
-    const responsePreview = buildLogPreview(input.responseBody);
-    if (responsePreview) {
-      logPayload.responsePreview = responsePreview;
-    }
   }
 
   if (input.level === 'error') {
-    if (input.error) {
-      request.log.error(
-        { err: input.error, ...logPayload },
-        '[FastifyDifyProxy] non-stream failure'
-      );
-      return;
-    }
     request.log.error(logPayload, '[FastifyDifyProxy] non-stream failure');
-    return;
-  }
-
-  if (input.error) {
-    request.log.warn(
-      { err: input.error, ...logPayload },
-      '[FastifyDifyProxy] non-stream failure'
-    );
     return;
   }
 
@@ -133,34 +112,42 @@ export async function withAgentErrorEnvelope(
     message: rawMessage,
     locale: context.locale,
   });
-  const appError = buildApiErrorDetail({
+  const eventDetail = buildApiErrorDetail({
     status: context.status,
     code: agentError.code,
     source: 'dify-proxy',
     requestId: context.requestId,
     userMessage: agentError.userMessage,
-    developerMessage: rawMessage,
     retryable: agentError.retryable,
     context: {
       agent_source: agentError.source,
       agent_kind: agentError.kind,
       suggestion: agentError.suggestion,
-      ...(context.extraContext || {}),
     },
   });
 
-  const appEnvelope = buildApiErrorEnvelope(appError, rawMessage);
+  const appEnvelope = buildApiErrorEnvelope(
+    {
+      ...eventDetail,
+      developerMessage: rawMessage,
+      context: {
+        ...eventDetail.context,
+        ...(context.extraContext || {}),
+      },
+    },
+    rawMessage
+  );
   void recordApiErrorEvent({
-    detail: appError,
+    detail: eventDetail,
     statusCode: context.status,
     method: context.method,
     route: context.route,
     actorUserId: context.actorUserId,
-  }).catch(error => {
-    console.warn(
-      '[FastifyDifyProxy] failed to record error event:',
-      error instanceof Error ? error.message : String(error)
-    );
+  }).catch(() => {
+    console.warn('[FastifyDifyProxy] failed to record error event', {
+      requestId: context.requestId,
+      code: agentError.code,
+    });
   });
 
   const normalizedPayload = isObjectRecord(payload)

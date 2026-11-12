@@ -7,6 +7,7 @@ import {
   type ActorIdentity,
   resolveIdentityFromSession,
 } from '../lib/session-identity';
+import { resolveEditableProfileColumns } from './internal-data-route/helpers';
 
 interface InternalProfileRoutesOptions {
   config: ApiRuntimeConfig;
@@ -233,6 +234,31 @@ export const internalProfileRoutes: FastifyPluginAsync<
         `${PROFILE_SELECT_SQL} WHERE p.id = $1::uuid LIMIT 1`,
         [targetUserId]
       );
+      const currentProfile = oldProfileRows[0];
+      if (!currentProfile) {
+        return reply.status(404).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 404,
+            code: 'PROFILE_NOT_FOUND',
+            userMessage: 'Profile not found',
+          })
+        );
+      }
+      const editableColumns = resolveEditableProfileColumns(
+        currentProfile.auth_source
+      );
+      if (entries.some(([column]) => !editableColumns.has(column))) {
+        return reply.status(400).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 400,
+            code: 'PROFILE_FIELDS_READ_ONLY',
+            userMessage:
+              'Requested profile fields are managed by the identity provider',
+          })
+        );
+      }
 
       const updateRows = await queryRowsWithPgSystemContext<{ id: string }>(
         `

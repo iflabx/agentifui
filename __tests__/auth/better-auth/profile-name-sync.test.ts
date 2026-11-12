@@ -31,6 +31,7 @@ describe('profile name synchronization', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+    query.mockResolvedValueOnce({ rows: [{ id: userId }] });
     jest
       .mocked(runWithPgUserContext)
       .mockImplementation(async (_userId, operation) =>
@@ -41,10 +42,10 @@ describe('profile name synchronization', () => {
   it('preserves the existing local profile name while still filling missing names', async () => {
     query.mockResolvedValueOnce({ rows: [row] });
     expect((await ensureProfileStatus(userId, sessionUser)).success).toBe(true);
-    expect(query.mock.calls[0][0]).toContain(
+    expect(query.mock.calls[1][0]).toContain(
       "WHEN $5 = 'better-auth' THEN COALESCE(full_name, $2)"
     );
-    expect(query.mock.calls[0][1]).toEqual([
+    expect(query.mock.calls[1][1]).toEqual([
       userId,
       'Registration Name',
       null,
@@ -56,8 +57,8 @@ describe('profile name synchronization', () => {
   it('retains authoritative external-provider name synchronization', async () => {
     query.mockResolvedValueOnce({ rows: [row] });
     await ensureProfileStatus(userId, { ...sessionUser, provider: 'oidc' });
-    expect(query.mock.calls[0][0]).toContain('ELSE COALESCE($2, full_name)');
-    expect(query.mock.calls[0][1][4]).toBe('oidc');
+    expect(query.mock.calls[1][0]).toContain('ELSE COALESCE($2, full_name)');
+    expect(query.mock.calls[1][1][4]).toBe('oidc');
   });
 
   it('initializes new profiles with the session name', async () => {
@@ -66,8 +67,8 @@ describe('profile name synchronization', () => {
       .mockResolvedValueOnce({ rows: [row] });
     const result = await ensureProfileStatus(userId, sessionUser);
     expect(result.success && result.data.created).toBe(true);
-    expect(query.mock.calls[1][0]).toContain('INSERT INTO profiles');
-    expect(query.mock.calls[1][1][1]).toBe('Registration Name');
+    expect(query.mock.calls[2][0]).toContain('INSERT INTO profiles');
+    expect(query.mock.calls[2][1][1]).toBe('Registration Name');
   });
 
   it('also preserves local edits when the initial insert loses a race', async () => {
@@ -77,7 +78,7 @@ describe('profile name synchronization', () => {
       .mockResolvedValueOnce({ rows: [row] });
     const result = await ensureProfileStatus(userId, sessionUser);
     expect(result.success && result.data.created).toBe(false);
-    expect(query.mock.calls[2][0]).toContain(
+    expect(query.mock.calls[3][0]).toContain(
       "WHEN $5 = 'better-auth' THEN COALESCE(full_name, $2)"
     );
   });

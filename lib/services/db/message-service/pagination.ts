@@ -122,7 +122,7 @@ export async function getLatestMessages(
         SELECT *
         FROM messages
         WHERE conversation_id = $1
-        ORDER BY created_at ASC, sequence_index ASC, id ASC
+        ORDER BY created_at DESC, COALESCE(sequence_index, 0) DESC, id DESC
         LIMIT $2
       `,
         [conversationId, limit]
@@ -131,7 +131,7 @@ export async function getLatestMessages(
         throw queryResult.error;
       }
 
-      return queryResult.data;
+      return [...queryResult.data].reverse();
     },
     cache
       ? `conversation:messages:latest:${conversationId}:${limit}`

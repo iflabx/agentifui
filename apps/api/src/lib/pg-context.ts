@@ -154,6 +154,12 @@ export async function runWithPgRlsContext<T>(
   }
 }
 
+export async function runWithPgSystemContext<T>(
+  operation: (client: PoolClient) => Promise<T>
+): Promise<T> {
+  return runWithPgRlsContext({ systemActor: true }, operation);
+}
+
 export async function queryRowsWithPgRlsContext<
   T extends QueryResultRow = QueryResultRow,
 >(

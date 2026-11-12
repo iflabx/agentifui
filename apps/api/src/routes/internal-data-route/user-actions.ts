@@ -1,6 +1,7 @@
 import {
   queryRowsWithPgSystemContext,
   queryRowsWithPgUserContext,
+  runWithPgSystemContext,
 } from '../../lib/pg-context';
 import { loadGroupsByUserIdMap } from './domain-helpers';
 import {
@@ -373,15 +374,24 @@ export async function handleUserAction(
       return toErrorResponse('cannot delete current actor', 403);
     }
 
-    const rows = await queryRowsWithPgSystemContext<{ id: string }>(
-      `
-        DELETE FROM profiles
-        WHERE id = $1::uuid
-        RETURNING id::text
-      `,
-      [userId]
-    );
-    if (!rows[0]?.id) {
+    const deleted = await runWithPgSystemContext(async client => {
+      await client.query(
+        'SELECT id FROM auth_users WHERE id = $1::uuid FOR UPDATE',
+        [userId]
+      );
+      const { rows } = await client.query<{ id: string }>(
+        `DELETE FROM profiles WHERE id = $1::uuid RETURNING id::text`,
+        [userId]
+      );
+      if (!rows[0]?.id) {
+        return false;
+      }
+      await client.query('DELETE FROM auth_users WHERE id = $1::uuid', [
+        userId,
+      ]);
+      return true;
+    });
+    if (!deleted) {
       return toErrorResponse('User not found', 404);
     }
 

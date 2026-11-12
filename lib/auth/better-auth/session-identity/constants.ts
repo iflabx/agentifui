@@ -3,12 +3,13 @@ import type { IdentityPersistenceContext } from '@lib/db/user-identities';
 export const INTERNAL_AUTH_ISSUER = 'urn:agentifui:better-auth';
 export const INTERNAL_AUTH_PROVIDER = 'better-auth';
 export const PROVIDER_ISSUER_PREFIX = 'urn:better-auth:provider:';
-export const LEGACY_MAPPING_LOCK_PREFIX = 'legacy-auth-user';
 const DEFAULT_EXTERNAL_ATTRIBUTES_SYNC_INTERVAL_MS = 15 * 60 * 1000;
 export const MISSING_IDENTITY_MAPPING_ERROR_MESSAGE =
   'Missing identity mapping for non-UUID auth session user';
 export const MISSING_PROFILE_ROW_ERROR_MESSAGE =
   'Missing profile row for session user';
+export const MISSING_AUTH_ACCOUNT_ERROR_MESSAGE =
+  'Authentication account no longer exists';
 
 export const SYSTEM_CONTEXT: IdentityPersistenceContext = {
   useSystemActor: true,

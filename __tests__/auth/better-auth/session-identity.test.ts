@@ -105,7 +105,10 @@ describe('resolveSessionIdentity', () => {
     mockedRunWithPgUserContext.mockImplementation(
       async (_userId: string | null | undefined, operation) =>
         operation({
-          query: queryMock,
+          query: (sql: string, parameters: unknown[]) =>
+            sql.includes('FROM auth_users')
+              ? Promise.resolve({ rows: [{ id: parameters[0] }] })
+              : queryMock(sql, parameters),
         } as never)
     );
     mockedRunWithPgSystemContext.mockImplementation(async operation =>
@@ -213,7 +216,7 @@ describe('resolveSessionIdentity', () => {
     expect(mockedUpsertProfileExternalAttributes).not.toHaveBeenCalled();
   });
 
-  it('recovers non-UUID user mapping by running side-effect sync in read-only mode', async () => {
+  it('does not auto-create an account from an unmapped non-UUID session', async () => {
     process.env.AUTH_IDENTITY_RECOVER_MISSING_MAPPING = '1';
     mockedGetSession
       .mockResolvedValueOnce({
@@ -260,15 +263,10 @@ describe('resolveSessionIdentity', () => {
     const result = await resolveSessionIdentity(new Headers());
 
     expect(result.success).toBe(true);
-    if (!result.success || !result.data) {
-      throw new Error('Expected resolved identity data');
-    }
-    expect(result.data.userId).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-    );
-    expect(result.data.role).toBe('user');
-    expect(result.data.status).toBe('active');
-    expect(mockedUpsertUserIdentity).toHaveBeenCalledTimes(1);
+    expect(result.success && result.data).toBeNull();
+    expect(mockedUpsertUserIdentity).not.toHaveBeenCalled();
+    expect(poolConnectMock).not.toHaveBeenCalled();
+    expect(queryMock).not.toHaveBeenCalled();
   });
 
   it('recovers missing profile rows by running side-effect sync in read-only mode', async () => {
@@ -423,14 +421,14 @@ describe('resolveSessionIdentity', () => {
     expect(mockedUpsertProfileExternalAttributes).not.toHaveBeenCalled();
   });
 
-  it('creates legacy mapping and syncs external attributes', async () => {
+  it('creates an identity and syncs external attributes for a persisted UUID account', async () => {
     process.env.AUTH_IDENTITY_SYNC_INLINE = '1';
     mockedGetSession.mockResolvedValueOnce({
       session: {
         id: 'session-id',
       },
       user: {
-        id: 'legacy-user-id',
+        id: '00000000-0000-4000-8000-000000000004',
         email: 'new.user@example.com',
         name: 'New User',
         employee_number: 'EMP-1001',
@@ -470,8 +468,8 @@ describe('resolveSessionIdentity', () => {
     const firstUpsert = mockedUpsertUserIdentity.mock.calls[0][0];
 
     expect(firstUpsert.issuer).toBe('urn:agentifui:better-auth');
-    expect(firstUpsert.provider).toBe('better-auth');
-    expect(firstUpsert.subject).toBe('legacy-user-id');
+    expect(firstUpsert.provider).toBe('github');
+    expect(firstUpsert.subject).toBe('00000000-0000-4000-8000-000000000004');
     expect(firstUpsert.user_id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
     );
@@ -488,9 +486,9 @@ describe('resolveSessionIdentity', () => {
     ).toBe('EMP-1001');
   });
 
-  it('uses mapped owner returned by upsert during concurrent legacy mapping race', async () => {
+  it('rejects concurrent unmapped legacy sessions without borrowing a lock connection', async () => {
     process.env.AUTH_IDENTITY_SYNC_INLINE = '1';
-    mockedGetSession.mockResolvedValueOnce({
+    mockedGetSession.mockResolvedValue({
       session: {
         id: 'session-id',
       },
@@ -501,7 +499,6 @@ describe('resolveSessionIdentity', () => {
       },
     } as never);
 
-    const conflictOwner = '00000000-0000-4000-8000-000000000003';
     mockedGetUserIdentityByIssuerSubject
       .mockResolvedValueOnce({
         success: true,
@@ -511,35 +508,17 @@ describe('resolveSessionIdentity', () => {
         success: true,
         data: null,
       });
-    mockedUpsertUserIdentity.mockResolvedValueOnce({
-      success: true,
-      data: {
-        user_id: conflictOwner,
-      } as never,
-    });
-    queryMock
-      .mockResolvedValueOnce({
-        rows: [],
-      })
-      .mockResolvedValueOnce({
-        rows: [{ role: 'user', status: 'active' }],
-      })
-      .mockResolvedValueOnce({
-        rows: [],
-      })
-      .mockResolvedValueOnce({
-        rows: [{ role: 'user', status: 'active' }],
-      });
-
-    const result = await resolveSessionIdentity(new Headers());
-
-    expect(result.success).toBe(true);
-    if (!result.success || !result.data) {
-      throw new Error('Expected resolved identity data');
-    }
-
-    expect(result.data.userId).toBe(conflictOwner);
-    expect(queryMock).toHaveBeenCalledTimes(4);
+    const results = await Promise.all([
+      resolveSessionIdentity(new Headers()),
+      resolveSessionIdentity(new Headers()),
+    ]);
+    expect(results).toEqual([
+      { success: true, data: null },
+      { success: true, data: null },
+    ]);
+    expect(poolConnectMock).not.toHaveBeenCalled();
+    expect(queryMock).not.toHaveBeenCalled();
+    expect(mockedUpsertUserIdentity).not.toHaveBeenCalled();
     expect(mockedUpsertProfileExternalAttributes).not.toHaveBeenCalled();
   });
 });

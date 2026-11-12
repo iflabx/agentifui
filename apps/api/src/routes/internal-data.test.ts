@@ -17,6 +17,10 @@ import { handleServiceInstanceAction } from './internal-data-route/service-insta
 import { handleSsoAction } from './internal-data-route/sso-actions';
 import { handleUserAction } from './internal-data-route/user-actions';
 
+jest.mock('../lib/error-events', () => ({
+  recordApiErrorEvent: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock('./internal-data-route/auth', () => ({
   ensureActionPermission: jest.fn(),
 }));

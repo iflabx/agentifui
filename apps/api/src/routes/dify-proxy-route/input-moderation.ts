@@ -355,10 +355,11 @@ export async function runInputModeration(input: {
     if (!response.ok) {
       request.log.warn(
         {
+          requestId: request.id,
           appId: context.appId,
           route: context.routePath,
           moderationStatus: response.status,
-          moderationBody: responseText.slice(0, 240),
+          responseBytes: Buffer.byteLength(responseText),
         },
         '[FastifyDifyProxy] input moderation request failed'
       );
@@ -380,9 +381,11 @@ export async function runInputModeration(input: {
     if (!result) {
       request.log.warn(
         {
+          requestId: request.id,
           appId: context.appId,
           route: context.routePath,
-          moderationBody: responseText.slice(0, 240),
+          moderationStatus: response.status,
+          responseBytes: Buffer.byteLength(responseText),
         },
         '[FastifyDifyProxy] input moderation response could not be parsed'
       );
@@ -398,9 +401,9 @@ export async function runInputModeration(input: {
   } catch (error) {
     request.log.warn(
       {
+        requestId: request.id,
         appId: context.appId,
         route: context.routePath,
-        err: error,
       },
       '[FastifyDifyProxy] input moderation request errored'
     );

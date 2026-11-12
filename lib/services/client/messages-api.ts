@@ -24,6 +24,22 @@ export function getLatestMessages(
   });
 }
 
+export type ConversationMessagePage = {
+  messages: Message[];
+  hasMore: boolean;
+  nextCursor: string | null;
+};
+
+export function getMessagePage(
+  conversationId: string,
+  options: { limit: number; beforeMessageId?: string }
+): Promise<Result<ConversationMessagePage>> {
+  return callInternalDataAction<ConversationMessagePage>('messages.getPage', {
+    conversationId,
+    ...options,
+  });
+}
+
 export function findDuplicateMessage(
   content: string,
   role: 'user' | 'assistant' | 'system',

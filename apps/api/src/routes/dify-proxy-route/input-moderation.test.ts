@@ -38,6 +38,7 @@ function createConfig(
 
 function createRequest(method = 'POST'): FastifyRequest {
   return {
+    id: 'moderation-test-request',
     method,
     log: {
       warn: jest.fn(),
@@ -305,6 +306,62 @@ describe('input moderation helpers', () => {
       outcome: 'block',
       categories: ['Violent'],
     });
+  });
+
+  it.each([200, 503])(
+    'does not log failed moderation bodies with status %s',
+    async status => {
+      const body = 'sensitive-moderation-fixture';
+      const request = createRequest();
+      mockedFetch.mockResolvedValueOnce(new Response(body, { status }));
+
+      const result = await runInputModeration({
+        request,
+        config: createConfig(),
+        context: createContext(),
+        targetConfig: createTargetConfig(),
+      });
+
+      expect(result.outcome).toBe('unavailable');
+      expect(request.log.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestId: 'moderation-test-request',
+          moderationStatus: status,
+          responseBytes: Buffer.byteLength(body),
+        }),
+        expect.any(String)
+      );
+      expect(
+        JSON.stringify(jest.mocked(request.log.warn).mock.calls)
+      ).not.toContain(body);
+      expect(jest.mocked(request.log.warn).mock.calls[0][0]).not.toHaveProperty(
+        'moderationBody'
+      );
+    }
+  );
+
+  it('does not serialize moderation exceptions into logs', async () => {
+    const privateFixture = 'sensitive-moderation-exception';
+    const request = createRequest();
+    mockedFetch.mockRejectedValueOnce(
+      new Error(privateFixture, {
+        cause: new Error(privateFixture),
+      })
+    );
+    const result = await runInputModeration({
+      request,
+      config: createConfig(),
+      context: createContext(),
+      targetConfig: createTargetConfig(),
+    });
+
+    expect(result).toEqual({ outcome: 'unavailable', reason: privateFixture });
+    expect(jest.mocked(request.log.warn).mock.calls[0][0]).not.toHaveProperty(
+      'err'
+    );
+    expect(
+      JSON.stringify(jest.mocked(request.log.warn).mock.calls)
+    ).not.toContain(privateFixture);
   });
 
   it('returns unavailable when moderation upstream fails', async () => {
