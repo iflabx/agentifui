@@ -7,6 +7,10 @@ import {
   resetDifyProxyResilienceState,
 } from './proxy-resilience';
 
+jest.mock('@lib/infra/redis', () => ({
+  redisManager: { del: jest.fn().mockResolvedValue(0) },
+}));
+
 function resolveConfigOverride(
   override: Partial<DifyProxyResilienceConfig> = {}
 ): Partial<DifyProxyResilienceConfig> {

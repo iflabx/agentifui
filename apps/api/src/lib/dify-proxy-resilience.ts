@@ -42,10 +42,17 @@ export interface DifyProxyResilienceRequest {
 }
 
 type DifyProxyFailureReason =
-  | 'circuit-open'
-  | 'timeout'
-  | 'network-error'
-  | 'client-abort';
+  'circuit-open' | 'timeout' | 'network-error' | 'client-abort';
+
+export class DifyProxyRequestError extends Error {
+  constructor(
+    public readonly reason: Exclude<DifyProxyFailureReason, 'circuit-open'>,
+    options?: ErrorOptions
+  ) {
+    super(`dify_proxy_${reason}`, options);
+    this.name = 'DifyProxyRequestError';
+  }
+}
 
 export type DifyProxyResilienceResult =
   | {
@@ -364,27 +371,53 @@ export async function fetchWithDifyProxyResilience(
 
   const controller = new AbortController();
   const startedAt = now();
-  let timeoutFired = false;
-  let requestAbortListener: (() => void) | null = null;
+  let finished = false;
+  let timeoutId: ReturnType<typeof setTimeout>;
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  let bodyController: ReadableStreamDefaultController<Uint8Array> | undefined;
+  let requestError: DifyProxyRequestError | undefined;
+  let rejectAborted!: (error: Error) => void;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    rejectAborted = reject;
+  });
 
-  const timeoutId = setTimeout(() => {
-    timeoutFired = true;
-    controller.abort(new Error('dify_proxy_timeout'));
-  }, config.timeoutMs);
-
-  if (request.requestSignal) {
-    requestAbortListener = () => {
-      controller.abort(new Error('dify_proxy_client_abort'));
-    };
-    request.requestSignal.addEventListener('abort', requestAbortListener, {
-      once: true,
-    });
-  }
-
-  try {
-    const response = await request.execute(controller.signal);
-    const elapsedMs = Math.max(0, now() - startedAt);
-
+  const cleanup = () => {
+    clearTimeout(timeoutId);
+    request.requestSignal?.removeEventListener('abort', onClientAbort);
+    if (state.status === 'half-open') {
+      state.halfOpenInFlight = Math.max(0, state.halfOpenInFlight - 1);
+    }
+  };
+  const fail = (reason: DifyProxyRequestError['reason'], cause?: unknown) => {
+    if (finished) return;
+    finished = true;
+    requestError = new DifyProxyRequestError(reason, { cause });
+    cleanup();
+    controller.abort(requestError);
+    rejectAborted(requestError);
+    bodyController?.error(requestError);
+    void reader?.cancel(requestError).catch(() => undefined);
+    bumpMetric(
+      metrics,
+      reason === 'timeout'
+        ? 'timeoutRejects'
+        : reason === 'client-abort'
+          ? 'clientAbortRejects'
+          : 'networkRejects'
+    );
+    if (config.circuitEnabled && reason !== 'client-abort') {
+      markFailure(state, now(), config);
+    }
+  };
+  const onClientAbort = () => fail('client-abort');
+  const armTimeout = () => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => fail('timeout'), config.timeoutMs);
+  };
+  const complete = (response: Response) => {
+    if (finished) return;
+    finished = true;
+    cleanup();
     if (
       config.circuitEnabled &&
       shouldCountFailureStatus(response.status, config.failureStatuses)
@@ -398,49 +431,76 @@ export async function fetchWithDifyProxyResilience(
         markSuccess(state);
       }
     }
+  };
 
-    if (state.status === 'half-open') {
-      state.halfOpenInFlight = Math.max(0, state.halfOpenInFlight - 1);
+  request.requestSignal?.addEventListener('abort', onClientAbort, {
+    once: true,
+  });
+  armTimeout();
+  if (request.requestSignal?.aborted) onClientAbort();
+
+  try {
+    const response = await Promise.race([
+      controller.signal.aborted
+        ? Promise.reject(requestError)
+        : request.execute(controller.signal),
+      aborted,
+    ]);
+    let guardedResponse = response;
+    if (!response.body) {
+      complete(response);
+    } else {
+      const eventStream =
+        response.headers
+          .get('content-type')
+          ?.toLowerCase()
+          .includes('text/event-stream') === true;
+      if (eventStream) armTimeout();
+      reader = response.body.getReader();
+      const body = new ReadableStream<Uint8Array>({
+        start(streamController) {
+          bodyController = streamController;
+        },
+        async pull(streamController) {
+          try {
+            const chunk = await reader!.read();
+            if (finished) return;
+            if (chunk.done) {
+              complete(response);
+              reader!.releaseLock();
+              streamController.close();
+            } else {
+              if (eventStream) armTimeout();
+              streamController.enqueue(chunk.value);
+            }
+          } catch (error) {
+            fail('network-error', error);
+          }
+        },
+        cancel(reason) {
+          fail('client-abort', reason);
+        },
+      });
+      guardedResponse = new Response(body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
     }
 
     return {
       ok: true,
-      response,
-      elapsedMs,
+      response: guardedResponse,
+      elapsedMs: Math.max(0, now() - startedAt),
       circuitStatus: state.status,
     };
   } catch (error) {
-    const elapsedMs = Math.max(0, now() - startedAt);
-    const clientAborted = request.requestSignal?.aborted === true;
-    const reason: DifyProxyFailureReason = clientAborted
-      ? 'client-abort'
-      : timeoutFired
-        ? 'timeout'
-        : 'network-error';
-
-    if (reason === 'timeout') {
-      bumpMetric(metrics, 'timeoutRejects');
-    } else if (reason === 'network-error') {
-      bumpMetric(metrics, 'networkRejects');
-    } else if (reason === 'client-abort') {
-      bumpMetric(metrics, 'clientAbortRejects');
-    }
-
-    if (config.circuitEnabled) {
-      if (reason === 'client-abort') {
-        if (state.status === 'half-open') {
-          state.halfOpenInFlight = Math.max(0, state.halfOpenInFlight - 1);
-        }
-      } else {
-        markFailure(state, now(), config);
-      }
-    }
-
+    fail('network-error', error);
     return {
       ok: false,
-      reason,
-      error: toError(error),
-      elapsedMs,
+      reason: requestError!.reason,
+      error: requestError || toError(error),
+      elapsedMs: Math.max(0, now() - startedAt),
       circuitStatus: state.status,
       retryAfterSeconds: toRetryAfterSeconds(
         state.openedAt,
@@ -448,10 +508,5 @@ export async function fetchWithDifyProxyResilience(
         config.openDurationMs
       ),
     };
-  } finally {
-    clearTimeout(timeoutId);
-    if (request.requestSignal && requestAbortListener) {
-      request.requestSignal.removeEventListener('abort', requestAbortListener);
-    }
   }
 }

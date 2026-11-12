@@ -270,7 +270,7 @@ export async function sendUpstreamStream(
   } catch (error) {
     request.log.warn(
       {
-        err: error,
+        requestId: request.id,
         appId: options.appId,
         route: options.routePath,
         slugPath: options.slugPath,

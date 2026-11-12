@@ -21,6 +21,8 @@ jest.mock('../lib/dify-config', () => ({
 }));
 
 jest.mock('../lib/dify-proxy-resilience', () => ({
+  DifyProxyRequestError: jest.requireActual('../lib/dify-proxy-resilience')
+    .DifyProxyRequestError,
   fetchWithDifyProxyResilience: jest.fn(),
   getDifyProxyCircuitSnapshot: jest.fn().mockReturnValue({}),
 }));

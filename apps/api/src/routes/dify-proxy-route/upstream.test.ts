@@ -1,5 +1,6 @@
 /** @jest-environment node */
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
+import { EventEmitter } from 'node:events';
 import { request as httpRequest } from 'node:http';
 import { type AddressInfo, createConnection } from 'node:net';
 
@@ -16,6 +17,8 @@ import type { DifyProxyRequestContext, DifyProxyTargetConfig } from './types';
 import { dispatchDifyUpstreamRequest } from './upstream';
 
 jest.mock('../../lib/dify-proxy-resilience', () => ({
+  DifyProxyRequestError: jest.requireActual('../../lib/dify-proxy-resilience')
+    .DifyProxyRequestError,
   fetchWithDifyProxyResilience: jest.fn(),
   getDifyProxyCircuitSnapshot: jest.fn(),
 }));
@@ -40,27 +43,30 @@ function createRequest(
       'content-type': 'application/json',
       accept: 'application/json',
     },
-    raw: {
+    raw: Object.assign(new EventEmitter(), {
       url: '/api/dify/app-1/chat-messages',
-    },
+      ...(overrides.raw as object),
+    }),
     log: {
       info: jest.fn(),
       warn: jest.fn(),
       error: jest.fn(),
     },
-    ...overrides,
+    ...Object.fromEntries(
+      Object.entries(overrides).filter(([key]) => key !== 'raw')
+    ),
   } as unknown as FastifyRequest;
 }
 
 function createReply(): FastifyReply {
   const reply = {
     sent: false,
-    raw: {
+    raw: Object.assign(new EventEmitter(), {
       headersSent: false,
       writableEnded: false,
       destroyed: false,
       setHeader: jest.fn(),
-    },
+    }),
     header: jest.fn().mockReturnThis(),
     type: jest.fn().mockReturnThis(),
     status: jest.fn().mockReturnThis(),
@@ -237,6 +243,51 @@ describe('dispatchDifyUpstreamRequest trusted user context integration', () => {
   afterAll(() => {
     global.fetch = originalFetch;
   });
+
+  it.each(['timeout', 'client-abort'] as const)(
+    'handles %s during JSON body consumption and removes downstream listeners',
+    async reason => {
+      jest.useFakeTimers();
+      const request = createRequest();
+      const reply = createReply();
+      const cancel = jest.fn();
+      const realFetch = jest.requireActual<
+        typeof import('../../lib/dify-proxy-resilience')
+      >('../../lib/dify-proxy-resilience').fetchWithDifyProxyResilience;
+      mockedFetchWithDifyProxyResilience.mockImplementation(input =>
+        realFetch({
+          ...input,
+          configOverride: { timeoutMs: 1000, circuitEnabled: false },
+        })
+      );
+      mockedFetch.mockResolvedValue(
+        new Response(new ReadableStream({ cancel }), {
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+      try {
+        const pending = dispatchDifyUpstreamRequest(
+          request,
+          reply,
+          createContext(),
+          createTargetConfig()
+        );
+        await jest.advanceTimersByTimeAsync(0);
+        if (reason === 'client-abort') request.raw.emit('aborted');
+        else await jest.advanceTimersByTimeAsync(1001);
+        await pending;
+        expect(reply.status).toHaveBeenCalledWith(
+          reason === 'timeout' ? 504 : 499
+        );
+        expect(cancel).toHaveBeenCalledTimes(1);
+        expect(request.raw.listenerCount('aborted')).toBe(0);
+        expect(reply.raw.listenerCount('close')).toBe(0);
+        expect(jest.getTimerCount()).toBe(0);
+      } finally {
+        jest.useRealTimers();
+      }
+    }
+  );
 
   it('injects trusted user context for chat requests before dispatch', async () => {
     await dispatchDifyUpstreamRequest(
