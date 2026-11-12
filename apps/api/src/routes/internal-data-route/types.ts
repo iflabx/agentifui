@@ -227,6 +227,7 @@ export const LOCAL_CONVERSATION_ACTIONS = new Set([
 
 export const LOCAL_MESSAGE_ACTIONS = new Set([
   'messages.getLatest',
+  'messages.getPage',
   'messages.findDuplicate',
   'messages.save',
   'messages.updateMetadata',
@@ -374,6 +375,7 @@ export const AUTH_ACTIONS = new Set([
   'conversations.syncGeneratedTitleIfPlaceholder',
   'conversations.deleteConversation',
   'messages.getLatest',
+  'messages.getPage',
   'messages.findDuplicate',
   'messages.save',
   'messages.updateMetadata',

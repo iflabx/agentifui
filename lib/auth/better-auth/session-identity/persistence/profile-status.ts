@@ -4,7 +4,10 @@ import {
 } from '@lib/server/pg/user-context';
 import { Result, failure, success } from '@lib/types/result';
 
-import { INTERNAL_AUTH_PROVIDER } from '../constants';
+import {
+  INTERNAL_AUTH_PROVIDER,
+  MISSING_AUTH_ACCOUNT_ERROR_MESSAGE,
+} from '../constants';
 import {
   inferProvider,
   normalizeEmail,
@@ -28,9 +31,18 @@ export async function ensureProfileStatus(
   const profileAuthSource = inferProvider(sessionUser);
 
   try {
-    const touchedExisting = await runWithPgUserContext(userId, client =>
-      client.query<ProfileStatusRow>(
-        `
+    const ensured = await runWithPgUserContext(userId, async client => {
+      const account = await client.query<{ id: string }>(
+        'SELECT id::text FROM auth_users WHERE id::text = $1 FOR KEY SHARE',
+        [sessionUser.id]
+      );
+      if (!account.rows[0]) {
+        throw new Error(MISSING_AUTH_ACCOUNT_ERROR_MESSAGE);
+      }
+
+      const touchProfile = () =>
+        client.query<ProfileStatusRow>(
+          `
         UPDATE profiles
         SET
           full_name = CASE
@@ -54,26 +66,17 @@ export async function ensureProfileStatus(
           role::text AS role,
           status::text AS status
         `,
-        [userId, profileName, profileAvatar, profileEmail, profileAuthSource]
-      )
-    );
+          [userId, profileName, profileAvatar, profileEmail, profileAuthSource]
+        );
 
-    const profile = touchedExisting.rows[0];
-    if (profile) {
-      await publishProfileChangeBestEffort({
-        eventType: 'UPDATE',
-        oldRow: null,
-        newRow: toProfileRealtimeRow(profile),
-      });
-      return success({
-        role: profile.role,
-        status: profile.status,
-        created: false,
-      });
-    }
+      const touchedExisting = await touchProfile();
 
-    const inserted = await runWithPgUserContext(userId, client =>
-      client.query<ProfileStatusRow>(
+      const profile = touchedExisting.rows[0];
+      if (profile) {
+        return { profile, created: false };
+      }
+
+      const inserted = await client.query<ProfileStatusRow>(
         `
         INSERT INTO profiles (
           id,
@@ -98,65 +101,32 @@ export async function ensureProfileStatus(
           status::text AS status
         `,
         [userId, profileName, profileAvatar, profileEmail, profileAuthSource]
-      )
-    );
+      );
 
-    const createdProfile = inserted.rows[0];
-    if (createdProfile) {
-      await publishProfileChangeBestEffort({
-        eventType: 'INSERT',
-        oldRow: null,
-        newRow: toProfileRealtimeRow(createdProfile),
-      });
-      return success({
-        role: createdProfile.role,
-        status: createdProfile.status,
-        created: true,
-      });
-    }
+      const createdProfile = inserted.rows[0];
+      if (createdProfile) {
+        return { profile: createdProfile, created: true };
+      }
 
-    const touchedAfterConflict = await runWithPgUserContext(userId, client =>
-      client.query<ProfileStatusRow>(
-        `
-        UPDATE profiles
-        SET
-          full_name = CASE
-            WHEN $5 = '${INTERNAL_AUTH_PROVIDER}' THEN COALESCE(full_name, $2)
-            ELSE COALESCE($2, full_name)
-          END,
-          avatar_url = COALESCE($3, avatar_url),
-          email = COALESCE($4, email),
-          auth_source = COALESCE($5, auth_source),
-          last_login = NOW(),
-          updated_at = NOW()
-        WHERE id = $1
-        RETURNING
-          id::text AS id,
-          full_name,
-          avatar_url,
-          email,
-          auth_source,
-          last_login::text AS last_login,
-          updated_at::text AS updated_at,
-          role::text AS role,
-          status::text AS status
-        `,
-        [userId, profileName, profileAvatar, profileEmail, profileAuthSource]
-      )
-    );
-    const profileAfterConflict = touchedAfterConflict.rows[0];
-    if (profileAfterConflict) {
-      await publishProfileChangeBestEffort({
-        eventType: 'UPDATE',
-        oldRow: null,
-        newRow: toProfileRealtimeRow(profileAfterConflict),
-      });
-      return success({
-        role: profileAfterConflict.role,
-        status: profileAfterConflict.status,
-        created: false,
-      });
-    }
+      const touchedAfterConflict = await touchProfile();
+      const profileAfterConflict = touchedAfterConflict.rows[0];
+      if (profileAfterConflict) {
+        return { profile: profileAfterConflict, created: false };
+      }
+
+      throw new Error('Failed to resolve profile status for session user');
+    });
+
+    await publishProfileChangeBestEffort({
+      eventType: ensured.created ? 'INSERT' : 'UPDATE',
+      oldRow: null,
+      newRow: toProfileRealtimeRow(ensured.profile),
+    });
+    return success({
+      role: ensured.profile.role,
+      status: ensured.profile.status,
+      created: ensured.created,
+    });
   } catch (error) {
     return failure(
       error instanceof Error
@@ -164,10 +134,6 @@ export async function ensureProfileStatus(
         : new Error('Failed to ensure profile row for session user')
     );
   }
-
-  return failure(
-    new Error('Failed to resolve profile status for session user')
-  );
 }
 
 export async function cleanupUnlinkedProfile(userId: string): Promise<void> {

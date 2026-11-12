@@ -1,11 +1,7 @@
 export const MESSAGES_PER_PAGE = 20;
 
 export type LoadingState =
-  | 'idle'
-  | 'loading'
-  | 'success'
-  | 'error'
-  | 'complete';
+  'idle' | 'loading' | 'success' | 'error' | 'complete';
 
 export type LoadingStatus = {
   state: LoadingState;
@@ -17,7 +13,7 @@ export type ConversationLoaderState = {
   page: number;
   currentId: string | null;
   totalMessages: number;
-  loadedConversations: Set<string>;
+  nextCursor: string | null;
   abortController: AbortController | null;
   previousPath: string | null;
 };
@@ -35,7 +31,7 @@ export function createConversationLoaderState(): ConversationLoaderState {
     page: 1,
     currentId: null,
     totalMessages: 0,
-    loadedConversations: new Set(),
+    nextCursor: null,
     abortController: null,
     previousPath: null,
   };

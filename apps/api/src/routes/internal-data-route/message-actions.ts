@@ -30,11 +30,27 @@ export async function handleMessageAction(
     return toErrorResponse('Unauthorized', 401);
   }
 
-  if (action === 'messages.getLatest') {
+  if (action === 'messages.getLatest' || action === 'messages.getPage') {
     const conversationId = readString(payload?.conversationId);
-    const limit = Math.min(parsePositiveInt(payload?.limit, 1000), 5000);
+    const paginated = action === 'messages.getPage';
+    const limit = Math.min(
+      parsePositiveInt(payload?.limit, paginated ? 20 : 1000),
+      paginated ? 100 : 5000
+    );
+    const beforeMessageId = paginated
+      ? readString(payload?.beforeMessageId)
+      : '';
     if (!conversationId) {
       return toErrorResponse('Missing conversationId', 400);
+    }
+    if (
+      paginated &&
+      payload?.beforeMessageId !== undefined &&
+      !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(
+        beforeMessageId
+      )
+    ) {
+      return toErrorResponse('Invalid message cursor', 400);
     }
 
     const owned = await loadConversationOwnedByActor(
@@ -62,13 +78,31 @@ export async function handleMessageAction(
           sequence_index
         FROM messages
         WHERE conversation_id = $1::uuid
-        ORDER BY created_at ASC, sequence_index ASC, id ASC
+          AND (
+            $3::uuid IS NULL
+            OR (created_at, COALESCE(sequence_index, 0), id) < (
+              SELECT created_at, COALESCE(sequence_index, 0), id
+              FROM messages
+              WHERE conversation_id = $1::uuid AND id = $3::uuid
+            )
+          )
+        ORDER BY created_at DESC, COALESCE(sequence_index, 0) DESC, id DESC
         LIMIT $2
       `,
-      [conversationId, limit]
+      [conversationId, paginated ? limit + 1 : limit, beforeMessageId || null]
     );
 
-    return toSuccessResponse(rows.map(sanitizeMessage));
+    const hasMore = paginated && rows.length > limit;
+    const messages = rows.slice(0, limit).reverse().map(sanitizeMessage);
+    return toSuccessResponse(
+      paginated
+        ? {
+            messages,
+            hasMore,
+            nextCursor: hasMore ? messages[0]?.id : null,
+          }
+        : messages
+    );
   }
 
   if (action === 'messages.findDuplicate') {

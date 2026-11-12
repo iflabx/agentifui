@@ -3,6 +3,7 @@ import { Result, failure, success } from '@lib/types/result';
 
 import { resolveTrustedSessionUser } from './session-identity/account-provider';
 import {
+  MISSING_AUTH_ACCOUNT_ERROR_MESSAGE,
   isRecoverableReadOnlyIdentityError,
   shouldInlineIdentitySync,
   shouldRecoverMissingMappingOnReadOnlyResolve,
@@ -115,6 +116,9 @@ export async function syncSessionIdentitySideEffects(
   const authUserId = sessionUser.id;
   const resolvedUserId = await resolveInternalUserId(authUserId, sessionUser);
   if (!resolvedUserId.success) {
+    if (resolvedUserId.error.message === MISSING_AUTH_ACCOUNT_ERROR_MESSAGE) {
+      return success(null);
+    }
     return failure(resolvedUserId.error);
   }
 
@@ -125,6 +129,9 @@ export async function syncSessionIdentitySideEffects(
       sessionUser
     );
     if (!ensuredProfile.success) {
+      if (ensuredProfile.error.message === MISSING_AUTH_ACCOUNT_ERROR_MESSAGE) {
+        return success(null);
+      }
       return failure(ensuredProfile.error);
     }
     ensuredProfileData = ensuredProfile.data;
