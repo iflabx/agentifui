@@ -7,6 +7,23 @@ Keep the Dify API URL and application API keys in private deployment
 configuration. No Dify server upgrade or AgentifUI database migration is needed
 for these client changes.
 
+## Implementation Boundaries
+
+- The authenticated proxy lives in `apps/api/src/routes/dify-proxy.ts` and
+  `apps/api/src/routes/dify-proxy-route/`. The legacy Next.js Dify route is a
+  disabled compatibility stub; add proxy behavior in Fastify rather than
+  restoring the old handler.
+- Keep client operations, streaming handling, and result processing in the
+  relevant modules under `lib/services/dify/`. Browser requests use the
+  authenticated AgentifUI proxy and never carry an upstream application API key.
+- Define upstream request, response, and event types under
+  `lib/services/dify/types/`, with exports through `lib/services/dify/types.ts`.
+  Reuse existing error and stream-handling patterns.
+- When adding an operation, verify its route and behavior against the supported
+  Dify release, cover the affected app types, and update this compatibility
+  document. Parsing a new event does not by itself implement the corresponding
+  UI feature.
+
 ## Existing Interfaces
 
 | Application or operation                    | Service API path                                     |

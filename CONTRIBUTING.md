@@ -76,6 +76,28 @@ Notes:
 - If you only run targeted tests, explain that in the PR description.
 - If you change runtime behavior, public routes, configuration, or deployment flow, update `README.md` and the relevant files under `docs/` in the same PR.
 
+## Development Guidelines
+
+### Runtime and Data Boundaries
+
+- Follow [the architecture guide](docs/architecture.md) for Next.js, Fastify, service, and data-access responsibilities. Keep database access and upstream credentials on the server.
+- Follow [the database design](docs/DATABASE-DESIGN.md) and [deployment guide](docs/QUICK-DEPLOYMENT.md) for SQL migrations under `database/migrations/`. Include affected types and access code in the same change, and preserve RLS-aware user context.
+- Follow [the Dify integration guide](docs/DIFY-INTEGRATION.md) when adding upstream operations or changing streaming behavior.
+- Check for existing development services before starting or restarting them. Validate from a separate source directory when a running service uses the build output; loading a test environment alone does not isolate build artifacts.
+
+### Code and Tests
+
+- Follow existing TypeScript types and ESLint rules; keep comments concise, in English, and focused on reasons or non-obvious behavior. Use JSDoc when a public contract needs explanation rather than adding boilerplate to every function.
+- Put Jest tests alongside the source or under `__tests__/`, and reuse the relevant setup and mocking patterns. Use React Testing Library for component behavior.
+- Cover changed behavior and important regressions. Prefer focused tests during development and run broader checks when shared code or the affected scope requires them.
+- For UI changes, check the affected desktop/mobile layout, keyboard interaction, labels, focus, and error states.
+
+### Internationalization
+
+- Use `next-intl` translation keys for application UI text; preserve existing translation calls instead of replacing them with hardcoded text.
+- Add new keys to `messages/en-US.json` and maintain matching key structure in the other supported locale files.
+- Run `pnpm i18n:check` when translations change. Keep translation work within the affected feature.
+
 ## Pull Request Expectations
 
 1. Keep each PR focused on one change set.
