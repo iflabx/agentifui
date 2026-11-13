@@ -5,6 +5,23 @@ All notable changes to AgentifUI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] - 2026-11-13
+
+### Fixed
+
+- Honor `AUTH_PHONE_OTP_ENABLED` on login and registration pages: hide phone-login links when disabled and redirect direct phone-login visits to the normal login page.
+- Use the existing server-side flag for both phone authentication and its UI; configuration changes require a Web service restart, not a new public build variable.
+
+### Changed
+
+- Remove unused Claude, Cursor, Spec Kit, VS Code and repository MCP configuration, along with the replaced Python locale validator and obsolete Claude lint command.
+- Preserve reusable contributor guidelines and Dify implementation boundaries in the public documentation.
+
+### Upgrade notes
+
+- No database migration or dependency-version change is required. Phone authentication remains enabled by default for compatibility.
+- Set `AUTH_PHONE_OTP_ENABLED=false` in private runtime configuration and restart the Web service to turn off phone login. Other login methods and existing data are unchanged.
+
 ## [0.3.2] - 2026-11-13
 
 ### Added
