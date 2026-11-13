@@ -34,7 +34,6 @@
     "fix": "eslint --cache --cache-location node_modules/.cache/eslint/.eslint-cache . --fix",
     "fix:eslint": "eslint --cache --cache-location node_modules/.cache/eslint/.eslint-cache . --fix",
     "fix:eslint:quiet": "eslint --cache --cache-location node_modules/.cache/eslint/.eslint-cache . --fix --quiet",
-    "lint:claude": "claude -p 'you are a linter. please look at the changes vs. main and report any issues related to typos. report the filename and line number on one line, and a description of the issue on the second line. do not return any other text.'",
     "format": "prettier --write .",
     "format:files": "prettier --write",
     "format:check": "prettier --check .",
@@ -110,7 +109,6 @@
       "eslint-config-next"
     ],
     "ignoreBinaries": [
-      "claude",
       "only-allow",
       "python3",
       "pm2"
