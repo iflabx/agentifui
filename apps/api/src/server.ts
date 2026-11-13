@@ -100,46 +100,6 @@ export async function createApiServer(config: ApiRuntimeConfig) {
     },
     trustProxy: true,
   });
-  installCapacityControl(app);
-
-  // Keep legacy multipart requests reachable so storage routes can return
-  // explicit compatibility errors (410/501) instead of Fastify's default 415.
-  app.addContentTypeParser(
-    /^multipart\/form-data(?:;.*)?$/i,
-    { parseAs: 'buffer' },
-    (_request, body, done) => {
-      done(null, body);
-    }
-  );
-
-  await app.register(cors, {
-    origin:
-      config.corsAllowedOrigins.length > 0 ? config.corsAllowedOrigins : false,
-    credentials: true,
-  });
-  await app.register(adminAuthFallbackPolicyRoutes, { config });
-  await app.register(adminAuthFallbackPolicyUserRoutes, { config });
-  await app.register(adminEncryptRoutes, { config });
-  await app.register(adminStatusRoutes, { config });
-  await app.register(adminTranslationsRoutes, { config });
-  await app.register(adminUsersRoutes, { config });
-  await app.register(adminUsersForGroupRoutes, { config });
-  await app.register(contentPagesRoutes, { config });
-  await app.register(difyProxyRoutes, { config });
-  await app.register(healthRoutes, { config });
-  await app.register(internalAppsRoutes, { config });
-  await app.register(internalDataRoutes, { config });
-  await app.register(internalDifyConfigRoutes, { config });
-  await app.register(internalErrorEventsClientRoutes, { config });
-  await app.register(internalProfileRoutes, { config });
-  await app.register(internalRealtimeStreamRoutes, { config });
-  await app.register(internalRealtimeStatsRoutes, { config });
-  await app.register(internalStorageAvatarPresignRoutes, { config });
-  await app.register(internalStorageAvatarRoutes, { config });
-  await app.register(internalStorageContentImagesPresignRoutes, { config });
-  await app.register(internalStorageContentImagesRoutes, { config });
-  await app.register(translationsRoutes);
-
   app.addHook('preSerialization', (request, reply, payload, done) => {
     try {
       const normalized = normalizeLegacyErrorEnvelope({
@@ -185,6 +145,46 @@ export async function createApiServer(config: ApiRuntimeConfig) {
     reply.header(REQUEST_ID_HEADER, request.id);
     reply.status(statusCode).send(payload);
   });
+
+  installCapacityControl(app);
+
+  // Keep legacy multipart requests reachable so storage routes can return
+  // explicit compatibility errors (410/501) instead of Fastify's default 415.
+  app.addContentTypeParser(
+    /^multipart\/form-data(?:;.*)?$/i,
+    { parseAs: 'buffer' },
+    (_request, body, done) => {
+      done(null, body);
+    }
+  );
+
+  await app.register(cors, {
+    origin:
+      config.corsAllowedOrigins.length > 0 ? config.corsAllowedOrigins : false,
+    credentials: true,
+  });
+  await app.register(adminAuthFallbackPolicyRoutes, { config });
+  await app.register(adminAuthFallbackPolicyUserRoutes, { config });
+  await app.register(adminEncryptRoutes, { config });
+  await app.register(adminStatusRoutes, { config });
+  await app.register(adminTranslationsRoutes, { config });
+  await app.register(adminUsersRoutes, { config });
+  await app.register(adminUsersForGroupRoutes, { config });
+  await app.register(contentPagesRoutes, { config });
+  await app.register(difyProxyRoutes, { config });
+  await app.register(healthRoutes, { config });
+  await app.register(internalAppsRoutes, { config });
+  await app.register(internalDataRoutes, { config });
+  await app.register(internalDifyConfigRoutes, { config });
+  await app.register(internalErrorEventsClientRoutes, { config });
+  await app.register(internalProfileRoutes, { config });
+  await app.register(internalRealtimeStreamRoutes, { config });
+  await app.register(internalRealtimeStatsRoutes, { config });
+  await app.register(internalStorageAvatarPresignRoutes, { config });
+  await app.register(internalStorageAvatarRoutes, { config });
+  await app.register(internalStorageContentImagesPresignRoutes, { config });
+  await app.register(internalStorageContentImagesRoutes, { config });
+  await app.register(translationsRoutes);
 
   return app;
 }
