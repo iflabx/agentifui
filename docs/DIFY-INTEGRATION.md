@@ -90,10 +90,23 @@ and query data. Generation inputs under `agentifui_user_` are server-controlled,
 including version-specific Workflow execution paths.
 
 An upstream `user` parameter is not a universal resource-ownership check: some
-Dify operations are application-scoped. Do not treat app-wide workflow logs or
-knowledge of a run/task/file identifier as proof of end-user authorization.
-Full server-observed per-resource ownership enforcement is a separate pending
-security task; this compatibility work does not claim to complete it.
+Dify operations are application-scoped. Workflow logs, Workflow run details,
+Workflow task stopping and proxied file previews currently require an AgentifUI
+administrator. Other authenticated roles receive HTTP 403 before an upstream
+request is sent. This also applies to the shortened Workflow route aliases.
+Normal chat requests and user-scoped chat stop operations retain their existing
+behavior. Workflow execution itself is still available to authorized users, but
+the restricted follow-up operations are not available to ordinary users.
+
+This is an interim restriction, not full per-resource ownership enforcement.
+Restoring these operations for ordinary users requires trusted server-observed
+ownership records; client-supplied run/task/file identifiers or locally saved
+execution records are not sufficient proof. Existing signed file URLs remain
+subject to their own authorization and expiration rules.
+
+Authenticated proxy requests resolve the exact requested application under the
+current user's permissions. An unavailable or unauthorized application does not
+fall back to another application's default configuration.
 
 ## References
 

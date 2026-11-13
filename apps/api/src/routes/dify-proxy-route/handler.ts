@@ -5,6 +5,7 @@ import { REQUEST_ID_HEADER } from '../../lib/app-error';
 import { buildAppErrorPayload } from './error-handling';
 import { runInputModeration } from './input-moderation';
 import { resolveProxyRequestContext } from './request-context';
+import { requiresDifyResourceAdmin } from './resource-access';
 import { resolveDifyTargetConfig } from './target-config';
 import { dispatchDifyUpstreamRequest } from './upstream';
 
@@ -33,6 +34,29 @@ export async function handleDifyProxy(
   );
   if (!targetConfigResult.ok) {
     reply.status(targetConfigResult.status).send(targetConfigResult.payload);
+    return;
+  }
+
+  if (
+    contextResult.context.actor.role !== 'admin' &&
+    requiresDifyResourceAdmin(
+      contextResult.context.slug,
+      targetConfigResult.targetConfig.appType
+    )
+  ) {
+    reply.status(403).send(
+      await buildAppErrorPayload({
+        request,
+        status: 403,
+        source: 'dify-proxy',
+        route: contextResult.context.routePath,
+        method: request.method,
+        actorUserId: contextResult.context.actor.userId,
+        code: 'DIFY_RESOURCE_ADMIN_REQUIRED',
+        message:
+          'This operation requires administrator access until resource ownership can be verified.',
+      })
+    );
     return;
   }
 

@@ -2,6 +2,10 @@
 import type { ApiRuntimeConfig } from './config';
 import { createApiServer } from './server';
 
+jest.mock('./lib/error-events', () => ({
+  recordApiErrorEvent: jest.fn().mockResolvedValue(undefined),
+}));
+
 function createConfig(
   overrides: Partial<ApiRuntimeConfig> = {}
 ): ApiRuntimeConfig {
@@ -40,6 +44,27 @@ describe('createApiServer realtime mode guard', () => {
   it('allows db-outbox mode for realtime-sensitive proxied routes', async () => {
     const app = await createApiServer(createConfig());
     await app.close();
+  });
+});
+
+describe('unhandled error privacy', () => {
+  it('returns a request identifier without exposing exception text', async () => {
+    const app = await createApiServer(createConfig());
+    const sensitiveValue = 'synthetic-private-exception-value';
+    app.get('/privacy-error', async () => {
+      throw new Error(`Authorization: Bearer ${sensitiveValue}`);
+    });
+    try {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/privacy-error',
+      });
+      expect(response.statusCode).toBe(500);
+      expect(response.body).not.toContain(sensitiveValue);
+      expect(response.json().request_id).toBeTruthy();
+    } finally {
+      await app.close();
+    }
   });
 });
 

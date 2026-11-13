@@ -114,26 +114,7 @@ async function resolveScopedServiceInstance(
       [appId]
     );
 
-  if (directRows[0]) {
-    return directRows[0];
-  }
-
-  const fallbackRows =
-    await queryRowsWithPgUserContext<ServiceInstanceSummaryRow>(
-      actorUserId,
-      actorRole,
-      `
-        SELECT
-          si.id::text AS id,
-          si.instance_id
-        FROM service_instances si
-        WHERE si.is_default = TRUE
-        ORDER BY si.created_at ASC, si.id ASC
-        LIMIT 1
-      `
-    );
-
-  return fallbackRows[0] || null;
+  return directRows[0] || null;
 }
 
 async function resolveServiceInstanceWithProvider(
