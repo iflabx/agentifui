@@ -11,6 +11,8 @@ import {
   resolveManagedCasProfile,
   toManagedCasProviderConfig,
 } from '@lib/auth/managed-sso';
+import { getManagedSsoPublicOrigin } from '@lib/auth/managed-sso-origin';
+import { getSafeManagedSsoReturnUrl } from '@lib/auth/managed-sso-return-url';
 import { getManagedSsoProviderForLoginById } from '@lib/auth/managed-sso-server';
 import { upsertProfileExternalAttributes } from '@lib/db/user-identities';
 import { updateUserProfile } from '@lib/db/users';
@@ -20,34 +22,6 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const MANAGED_CAS_PROFILE_AUTH_SOURCE = 'managed-cas';
 
-function getSafeReturnUrl(value: string | null): string {
-  return typeof value === 'string' && value.startsWith('/') ? value : '/chat';
-}
-
-function getPublicOrigin(request: NextRequest): string {
-  const envOrigin =
-    process.env.BETTER_AUTH_URL?.trim() ||
-    process.env.NEXT_PUBLIC_APP_URL?.trim();
-
-  if (envOrigin) {
-    try {
-      return new URL(envOrigin).origin;
-    } catch {}
-  }
-
-  const forwardedHost =
-    request.headers.get('x-forwarded-host') || request.headers.get('host');
-  const forwardedProto =
-    request.headers.get('x-forwarded-proto') ||
-    request.nextUrl.protocol.replace(':', '');
-
-  if (forwardedHost) {
-    return `${forwardedProto || 'http'}://${forwardedHost}`;
-  }
-
-  return new URL(request.url).origin;
-}
-
 function buildServiceUrl(
   request: NextRequest,
   providerId: string,
@@ -55,7 +29,7 @@ function buildServiceUrl(
 ): string {
   const serviceUrl = new URL(
     `/api/sso/${providerId}/callback`,
-    getPublicOrigin(request)
+    getManagedSsoPublicOrigin(request)
   );
   serviceUrl.search = '';
   serviceUrl.searchParams.set('returnUrl', returnUrl);
@@ -68,7 +42,7 @@ function redirectToLoginError(
   returnUrl: string,
   errorCode: string
 ) {
-  const redirectUrl = new URL('/login', getPublicOrigin(request));
+  const redirectUrl = new URL('/login', getManagedSsoPublicOrigin(request));
   redirectUrl.searchParams.set('error', errorCode);
   redirectUrl.searchParams.set('provider', providerId);
   redirectUrl.searchParams.set('callback', returnUrl);
@@ -320,7 +294,7 @@ export async function GET(
   { params }: { params: Promise<{ providerId: string }> }
 ) {
   const { providerId } = await params;
-  const returnUrl = getSafeReturnUrl(
+  const returnUrl = getSafeManagedSsoReturnUrl(
     request.nextUrl.searchParams.get('returnUrl')
   );
   const ticket = request.nextUrl.searchParams.get('ticket');
@@ -433,7 +407,7 @@ export async function GET(
     });
 
     const response = NextResponse.redirect(
-      new URL(returnUrl, getPublicOrigin(request))
+      new URL(returnUrl, getManagedSsoPublicOrigin(request))
     );
     response.headers.append('set-cookie', sessionCookie);
 

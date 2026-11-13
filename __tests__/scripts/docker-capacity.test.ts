@@ -162,9 +162,18 @@ test('routes authentication to Web, content writes to one API, and includes only
   expect(result).not.toContain('server 127.0.0.1:23103');
   expect(result).not.toContain('server 127.0.0.1:23002');
   expect(result).toContain('proxy_set_header Host chat.example.com:8443;');
+  expect(result).toContain(
+    'proxy_set_header X-Forwarded-Host chat.example.com:8443;'
+  );
+  expect(result).toContain('set_real_ip_from 127.0.0.1;');
+  expect(result).toContain('real_ip_recursive on;');
+  expect(result).toContain('proxy_set_header X-Real-IP $remote_addr;');
   expect(result).toContain('proxy_set_header X-Forwarded-Proto https;');
   expect(result).toContain('proxy_next_upstream off;');
   expect(result).toContain('location ^~ /__agentifui/ { return 404; }');
+  expect(result).toContain(
+    'location = /healthz { proxy_pass http://agentifui_capacity_api;'
+  );
 });
 
 test('counts established inbound sockets, not idle listeners or client-side sockets', () => {

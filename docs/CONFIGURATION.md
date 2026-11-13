@@ -279,6 +279,14 @@ service or settings, and do not change the existing verification/login policy.
 
 Authentication email settings:
 
+- `AUTH_EMAIL_DISABLED`: defaults to `0`. Set exactly `1` to disable self-service
+  email signup, verification and password reset endpoints, and all authentication
+  email sending (including development logging). Existing password, GitHub and
+  SSO sign-in remain available. Restart Web after changing this server-side flag;
+  no rebuild is required. Keep the registration policy in the administration UI
+  consistent; this flag does not rewrite page content or enable another login
+  method. SMTP is optional only while email flows are disabled. Leave this unset
+  or `0` to retain the normal SMTP configuration and delivery requirements.
 - `AUTH_EMAIL_VERIFICATION_MODE`: `dev-log` or `smtp`
 - `AUTH_EMAIL_VERIFICATION_SUBJECT`
 - `AUTH_EMAIL_VERIFICATION_EMAIL_FROM`: overrides `SMTP_FROM` for verification

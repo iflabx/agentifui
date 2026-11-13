@@ -1,4 +1,6 @@
 import { auth } from '@lib/auth/better-auth/server';
+import { getManagedSsoPublicOrigin } from '@lib/auth/managed-sso-origin';
+import { getSafeManagedSsoReturnUrl } from '@lib/auth/managed-sso-return-url';
 
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -39,9 +41,13 @@ export async function GET(
   { params }: { params: Promise<{ providerId: string }> }
 ) {
   const { providerId } = await params;
-  const returnUrl = request.nextUrl.searchParams.get('returnUrl') || '/login';
-  const safeReturnUrl = returnUrl.startsWith('/') ? returnUrl : '/login';
-  const redirect = NextResponse.redirect(new URL(safeReturnUrl, request.url));
+  const safeReturnUrl = getSafeManagedSsoReturnUrl(
+    request.nextUrl.searchParams.get('returnUrl'),
+    '/login'
+  );
+  const redirect = NextResponse.redirect(
+    new URL(safeReturnUrl, getManagedSsoPublicOrigin(request))
+  );
   redirect.headers.set('x-legacy-provider', providerId);
   return withSignOutHeaders(request, redirect);
 }

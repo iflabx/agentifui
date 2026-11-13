@@ -181,15 +181,22 @@ export function renderCapacityNginx(
     proxy_http_version 1.1;
     proxy_set_header Connection "";
     proxy_set_header Host ${url.host};
+    proxy_set_header X-Forwarded-Host ${url.host};
     proxy_set_header X-Forwarded-Proto ${url.protocol.slice(0, -1)};
     proxy_set_header X-Forwarded-Port ${url.port || (url.protocol === 'https:' ? '443' : '80')};
     proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Real-IP $remote_addr;
     proxy_buffering off;
     proxy_read_timeout 3600s;
     proxy_next_upstream off;`;
-  const internal = (port, target) => `server {
+  const internal = (port, target, health = false) => `server {
   listen 127.0.0.1:${port};
+  set_real_ip_from 127.0.0.1;
+  set_real_ip_from ::1;
+  real_ip_header X-Forwarded-For;
+  real_ip_recursive on;
   location ^~ /__agentifui/ { return 404; }
+${health ? `  location = /healthz { ${proxy(`${prefix}_api`)} }\n` : ''}
   location / {
     ${proxy(target)}
   }
@@ -206,7 +213,7 @@ ${['/api/auth', '/api/sso', '/api/internal/auth'].map(route => `  ~^${route}(?:/
 ${prefixes.map(route => `  ~^${route}(?:/|$) ${prefix}_api;`).join('\n')}
 }\n`,
     internal(config.webGatewayPort, `${prefix}_web`),
-    internal(config.apiGatewayPort, `$${prefix}_backend`),
+    internal(config.apiGatewayPort, `$${prefix}_backend`, true),
   ].join('\n');
 }
 

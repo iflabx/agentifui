@@ -39,7 +39,19 @@ export const auth = betterAuth({
   database: getAuthDatabaseConfig(),
   secondaryStorage: getAuthSecondaryStorage(),
   rateLimit: getAuthRateLimitConfig(),
-  disabledPaths: ['/sso/register'],
+  disabledPaths: [
+    '/sso/register',
+    ...(process.env.AUTH_EMAIL_DISABLED === '1'
+      ? [
+          '/sign-up/email',
+          '/request-password-reset',
+          '/forget-password',
+          '/reset-password',
+          '/send-verification-email',
+          '/verify-email',
+        ]
+      : []),
+  ],
   user: {
     modelName: 'auth_users',
     fields: {
@@ -89,7 +101,7 @@ export const auth = betterAuth({
   },
   emailVerification: {
     sendVerificationEmail,
-    sendOnSignUp: true,
+    sendOnSignUp: process.env.AUTH_EMAIL_DISABLED !== '1',
     autoSignInAfterVerification: false,
   },
   plugins: [

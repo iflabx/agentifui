@@ -38,6 +38,23 @@ test('accepts a complete synthetic runtime environment without an env file', () 
   expect(validate().status).toBe(0);
 });
 
+test('accepts explicit disabled email without SMTP but still enforces other runtime safeguards', () => {
+  const environment = {
+    AUTH_EMAIL_DISABLED: '1',
+    SMTP_HOST: '',
+    SMTP_FROM: '',
+    AUTH_EMAIL_VERIFICATION_MODE: '',
+    AUTH_RESET_PASSWORD_MODE: '',
+  };
+  expect(validate(environment).status).toBe(0);
+  expect(validate({ ...environment, AUTH_EMAIL_DISABLED: '0' }).status).toBe(1);
+  expect(validate({ ...environment, APP_RLS_STRICT_MODE: '0' }).status).toBe(1);
+  expect(validate({ ...environment, BETTER_AUTH_SECRET: '' }).status).toBe(1);
+  expect(
+    validate({ ...environment, POSTGRES_PASSWORD: 'forbidden' }).status
+  ).toBe(1);
+});
+
 test.each([
   ['BETTER_AUTH_SECRET', 'build-only-not-a-runtime-secret-00000000'],
   ['BETTER_AUTH_SECRET', 'replace_with_32_plus_random_chars'],
@@ -78,6 +95,9 @@ test('Compose does not forward administrative credentials to applications', () =
   expect(compose).not.toContain('depends_on:');
   expect(compose).toContain('postgres:/var/lib/postgresql');
   expect(compose).toMatch(/S3_PUBLIC_READ_ENABLED: ['"]false['"]/);
+  expect(environment).toContain(
+    'AUTH_EMAIL_DISABLED: ${AUTH_EMAIL_DISABLED:-0}'
+  );
 });
 
 test.each([

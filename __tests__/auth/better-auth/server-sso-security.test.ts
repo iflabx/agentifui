@@ -120,3 +120,42 @@ describe('native SSO registration security', () => {
     });
   });
 });
+
+describe('deployment email policy', () => {
+  const originalDisabled = process.env.AUTH_EMAIL_DISABLED;
+
+  afterEach(() => {
+    if (originalDisabled === undefined) delete process.env.AUTH_EMAIL_DISABLED;
+    else process.env.AUTH_EMAIL_DISABLED = originalDisabled;
+  });
+
+  it.each([undefined, '0', '1'])(
+    'restricts email routes only when AUTH_EMAIL_DISABLED is 1, not %s',
+    async value => {
+      if (value === undefined) delete process.env.AUTH_EMAIL_DISABLED;
+      else process.env.AUTH_EMAIL_DISABLED = value;
+      await jest.isolateModulesAsync(async () => {
+        const { auth } = await import('@lib/auth/better-auth/server');
+        const options = auth as unknown as Record<string, unknown>;
+        expect(options.disabledPaths).toEqual([
+          '/sso/register',
+          ...(value === '1'
+            ? [
+                '/sign-up/email',
+                '/request-password-reset',
+                '/forget-password',
+                '/reset-password',
+                '/send-verification-email',
+                '/verify-email',
+              ]
+            : []),
+        ]);
+        expect(options.emailVerification).toMatchObject({
+          sendOnSignUp: value !== '1',
+        });
+        expect(options.emailAndPassword).toMatchObject({ enabled: true });
+        expect(options.socialProviders).toHaveProperty('github');
+      });
+    }
+  );
+});
