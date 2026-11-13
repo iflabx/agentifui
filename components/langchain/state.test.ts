@@ -1,6 +1,7 @@
 import { agentRunSaved } from '@lib/services/client/langchain-api';
 
 import {
+  historyConversationPath,
   isCurrentLangchainConversation,
   langchainConversationPath,
 } from './routing';
@@ -13,6 +14,27 @@ import type { AgentViewState } from './state';
 
 describe('server-managed agent state', () => {
   const initial: AgentViewState = { messages: [], tools: [] };
+  it('opens LangChain from global history without routing through Dify', () => {
+    expect(
+      historyConversationPath('local-id', [
+        {
+          id: 'local-id',
+          app_id: 'app-uuid',
+          metadata: { backend_type: 'langchain' },
+        },
+      ])
+    ).toBe('/apps/langchain/app-uuid?conversationId=local-id');
+    expect(
+      historyConversationPath('external-dify', [
+        {
+          id: 'local-dify',
+          external_id: 'external-dify',
+          app_id: 'dify-app',
+        },
+      ])
+    ).toBe('/chat/external-dify');
+    expect(historyConversationPath('not-loaded', [])).toBe('/chat/not-loaded');
+  });
   it('does not redirect the active page when another conversation is deleted', () => {
     expect(
       isCurrentLangchainConversation(

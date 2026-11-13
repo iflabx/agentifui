@@ -1,5 +1,6 @@
 'use client';
 
+import { historyConversationPath } from '@components/langchain/routing';
 import { ConfirmDialog, SearchInput } from '@components/ui';
 import { useAllConversations } from '@lib/hooks/use-all-conversations';
 import { useChatInterface } from '@lib/hooks/use-chat-interface';
@@ -225,7 +226,7 @@ export function History() {
       return;
     }
 
-    router.push(`/chat/${id}`);
+    router.push(historyConversationPath(id, conversations));
   };
 
   return (
