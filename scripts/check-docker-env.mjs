@@ -42,6 +42,7 @@ export function validateDockerEnvironment(environment) {
     'S3_PRESIGN_ENDPOINT',
   ])
     new URL(environment[name]);
+  if (environment.AUTH_EMAIL_DISABLED === '1') return;
   for (const name of [
     'AUTH_EMAIL_VERIFICATION_MODE',
     'AUTH_RESET_PASSWORD_MODE',

@@ -15,15 +15,15 @@ export async function publishProfileChangeBestEffort(input: {
   }
 
   try {
-    const runtimeRequire = eval('require') as (id: string) => unknown;
-    const publisherModule = runtimeRequire('../server/realtime/publisher') as {
-      publishTableChangeEvent?: (payload: {
-        table: string;
-        eventType: 'INSERT' | 'UPDATE' | 'DELETE';
-        newRow: RealtimeRow | null;
-        oldRow: RealtimeRow | null;
-      }) => Promise<void>;
-    };
+    const publisherModule =
+      (await import('@lib/server/realtime/publisher')) as {
+        publishTableChangeEvent?: (payload: {
+          table: string;
+          eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+          newRow: RealtimeRow | null;
+          oldRow: RealtimeRow | null;
+        }) => Promise<void>;
+      };
     const publisher = publisherModule.publishTableChangeEvent;
     if (typeof publisher !== 'function') {
       return;
@@ -56,8 +56,7 @@ export async function queryRowsWithActorContext<T extends object>(
     return rows;
   }
 
-  const { queryRowsWithPgUserContext } = await import(
-    '@lib/server/pg/user-context'
-  );
+  const { queryRowsWithPgUserContext } =
+    await import('@lib/server/pg/user-context');
   return queryRowsWithPgUserContext<T>(actorUserId, sql, params);
 }

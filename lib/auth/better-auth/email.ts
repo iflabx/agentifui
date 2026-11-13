@@ -117,6 +117,9 @@ async function getSmtpTransporter() {
 }
 
 async function sendAuthEmail(kind: AuthEmailKind, payload: AuthEmailPayload) {
+  if (process.env.AUTH_EMAIL_DISABLED === '1') {
+    throw new Error('Authentication email is disabled on this deployment');
+  }
   const email = payload.user.email?.trim().toLowerCase();
   if (!email) {
     throw new Error(

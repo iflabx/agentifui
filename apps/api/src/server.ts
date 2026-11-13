@@ -85,9 +85,67 @@ export async function createApiServer(config: ApiRuntimeConfig) {
   const app = Fastify({
     logger: {
       level: config.logLevel,
+      serializers: {
+        req: request => ({
+          method: request.method,
+          url: request.url?.split('?')[0],
+        }),
+        err: error => ({
+          type: 'Error',
+          message: 'Request failed',
+          stack: '',
+          statusCode: resolveHttpStatusCode(error),
+        }),
+      },
     },
     trustProxy: true,
   });
+  app.addHook('preSerialization', (request, reply, payload, done) => {
+    try {
+      const normalized = normalizeLegacyErrorEnvelope({
+        payload,
+        statusCode: reply.statusCode,
+        requestId: request.id,
+        source: 'fastify-api',
+      });
+      done(null, normalized);
+    } catch (error) {
+      done(error as Error);
+    }
+  });
+
+  app.setErrorHandler((error, request, reply) => {
+    const statusCode = resolveHttpStatusCode(error);
+    const route = request.routeOptions.url || request.url.split('?')[0];
+    request.log.error(
+      { statusCode, route, method: request.method },
+      '[FastifyAPI] request failed'
+    );
+    if (reply.sent) {
+      return;
+    }
+    const detail = buildApiErrorDetail({
+      status: statusCode,
+      source: 'fastify-api',
+      requestId: request.id,
+      userMessage: 'Fastify API internal error',
+    });
+    const payload = buildApiErrorEnvelope(detail, 'Fastify API internal error');
+    void recordApiErrorEvent({
+      detail,
+      statusCode,
+      method: request.method,
+      route,
+    }).catch(() => {
+      request.log.warn(
+        { requestId: request.id },
+        '[FastifyAPI] failed to record global error event'
+      );
+    });
+    reply.header(REQUEST_ID_HEADER, request.id);
+    reply.status(statusCode).send(payload);
+  });
+
   installCapacityControl(app);
 
   // Keep legacy multipart requests reachable so storage routes can return
@@ -127,52 +185,6 @@ export async function createApiServer(config: ApiRuntimeConfig) {
   await app.register(internalStorageContentImagesPresignRoutes, { config });
   await app.register(internalStorageContentImagesRoutes, { config });
   await app.register(translationsRoutes);
-
-  app.addHook('preSerialization', (request, reply, payload, done) => {
-    try {
-      const normalized = normalizeLegacyErrorEnvelope({
-        payload,
-        statusCode: reply.statusCode,
-        requestId: request.id,
-        source: 'fastify-api',
-      });
-      done(null, normalized);
-    } catch (error) {
-      done(error as Error);
-    }
-  });
-
-  app.setErrorHandler((error, request, reply) => {
-    request.log.error(
-      { err: error, url: request.url, method: request.method },
-      '[FastifyAPI] request failed'
-    );
-    if (reply.sent) {
-      return;
-    }
-    const statusCode = resolveHttpStatusCode(error);
-    const detail = buildApiErrorDetail({
-      status: statusCode,
-      source: 'fastify-api',
-      requestId: request.id,
-      userMessage: 'Fastify API internal error',
-      developerMessage: error instanceof Error ? error.message : String(error),
-    });
-    const payload = buildApiErrorEnvelope(detail, 'Fastify API internal error');
-    void recordApiErrorEvent({
-      detail,
-      statusCode,
-      method: request.method,
-      route: request.url,
-    }).catch(logError => {
-      request.log.warn(
-        { err: logError },
-        '[FastifyAPI] failed to record global error event'
-      );
-    });
-    reply.header(REQUEST_ID_HEADER, request.id);
-    reply.status(statusCode).send(payload);
-  });
 
   return app;
 }

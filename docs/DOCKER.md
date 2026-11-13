@@ -103,7 +103,12 @@ Configure optional public branding and GitHub login before building. GitHub
 credentials belong in private runtime configuration; callback configuration is
 described in [CONFIGURATION.md](CONFIGURATION.md). SMTP is required for public
 registration/reset flows: the container entrypoint rejects `dev-log`, which
-would expose authentication links to logs. An isolated acceptance test may use
+would expose authentication links to logs. An installation that uses existing
+accounts or external sign-in only may explicitly set `AUTH_EMAIL_DISABLED=1`;
+this disables email signup, verification and reset endpoints and sending, while
+preserving existing password and external sign-in. In that mode SMTP is optional.
+The default is `0`; restart applications after changing it and keep the UI
+registration policy consistent. An isolated acceptance test may use
 a private SMTP sink, never a real recipient without authorization.
 
 The default Docker stack disables phone OTP to avoid logging real OTPs through

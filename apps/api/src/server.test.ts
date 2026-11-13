@@ -2,6 +2,26 @@
 import type { ApiRuntimeConfig } from './config';
 import { createApiServer } from './server';
 
+jest.mock('./lib/error-events', () => ({
+  recordApiErrorEvent: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('./routes/health', () => {
+  const { healthRoutes } =
+    jest.requireActual<typeof import('./routes/health')>('./routes/health');
+  return {
+    healthRoutes: async (
+      ...pluginArguments: Parameters<typeof healthRoutes>
+    ) => {
+      await healthRoutes(...pluginArguments);
+      const [app] = pluginArguments;
+      app.get('/privacy-plugin-error', async () => {
+        throw new Error('synthetic-private-plugin-exception');
+      });
+    },
+  };
+});
+
 function createConfig(
   overrides: Partial<ApiRuntimeConfig> = {}
 ): ApiRuntimeConfig {
@@ -40,6 +60,66 @@ describe('createApiServer realtime mode guard', () => {
   it('allows db-outbox mode for realtime-sensitive proxied routes', async () => {
     const app = await createApiServer(createConfig());
     await app.close();
+  });
+});
+
+describe('unhandled error privacy', () => {
+  it('applies the safe handler to errors inside registered route plugins', async () => {
+    const app = await createApiServer(createConfig());
+    try {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/privacy-plugin-error?private_marker=synthetic-private-query',
+      });
+      expect(response.statusCode).toBe(500);
+      expect(response.body).not.toContain('synthetic-private-plugin-exception');
+      expect(response.body).not.toContain('synthetic-private-query');
+      expect(response.json().request_id).toBeTruthy();
+      expect(response.headers['x-request-id']).toBe(response.json().request_id);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('applies the safe handler to malformed JSON on a registered business route', async () => {
+    const app = await createApiServer(createConfig());
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/internal/data?private_marker=synthetic-private-query',
+        headers: { 'content-type': 'application/json' },
+        payload: '{"synthetic-private-body":',
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.body).not.toContain('synthetic-private-body');
+      expect(response.body).not.toContain('synthetic-private-query');
+      expect(response.json().app_error).toMatchObject({
+        source: 'fastify-api',
+      });
+      expect(response.json().request_id).toBeTruthy();
+      expect(response.headers['x-request-id']).toBe(response.json().request_id);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('returns a request identifier without exposing exception text', async () => {
+    const app = await createApiServer(createConfig());
+    const sensitiveValue = 'synthetic-private-exception-value';
+    app.get('/privacy-error', async () => {
+      throw new Error(`Authorization: Bearer ${sensitiveValue}`);
+    });
+    try {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/privacy-error',
+      });
+      expect(response.statusCode).toBe(500);
+      expect(response.body).not.toContain(sensitiveValue);
+      expect(response.json().request_id).toBeTruthy();
+    } finally {
+      await app.close();
+    }
   });
 });
 

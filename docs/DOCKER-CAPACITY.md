@@ -187,3 +187,85 @@ Test scale-up, idempotence, scale-down with an active stream, refusal on unsafe
 configuration, and data preservation in isolation before production rollout.
 No production migration, automatic failover or autoscaling is provided by this
 command.
+
+## 5. Maintenance-Window Version Replacement
+
+Use this procedure for an existing host-capacity installation, not for a fresh
+database. It intentionally uses a short maintenance window, not mixed-version
+rolling updates. Rehearse the intended image/schema/content combination in an
+isolated project first. Do not perform a rehearsal against production data.
+
+1. Record the current source and local patches, exact image ID, selected counts,
+   private environment, capacity configuration, entire state directory and
+   active Nginx configuration. Keep the old source available: its operational
+   wrapper may still invoke the old capacity script. Back up data/content/keys
+   and review pending migrations and rollback compatibility using
+   [DOCKER.md](DOCKER.md#5-upgrade-and-rollback). Do not replay initialization.
+2. Build and verify the candidate from confirmed source in a separate directory.
+   Keep the public origin, compiled API gateway, authentication/encryption keys,
+   Redis namespace and data endpoints consistent. Preserve reviewed deployment
+   choices such as `AUTH_EMAIL_DISABLED`; do not silently drop local patches.
+   Test the actual artifact, not just the source or a differently configured
+   image. Retain the old image for rollback.
+3. Prepare a private candidate base Compose file and capacity JSON with a **new
+   project and empty state directory**, the new image, and the recorded counts.
+   Preserve the exact existing data/log mount sources and named-volume `name`
+   values explicitly: changing a project name must not select empty volumes.
+   Keep resolved configuration private with mode 600. Use the same application
+   ports/gateways for this maintenance-window method; do not start the candidate
+   while the old containers still own those ports. The new capacity token is
+   generated normally; retain the old state/token unchanged for rollback.
+4. Freeze content editing, pause new generations at the trusted entry and wait
+   for current generation requests. Close the public application entry with a
+   temporary maintenance response; also close any other writer entry points.
+   Keep that maintenance configuration and its recovery commands available until
+   acceptance finishes. At each **active old API port**, issue a direct loopback
+   `POST /__agentifui/capacity` with `Authorization: Bearer <old-state-token>`
+   and `{"draining":true}`. Read the token locally from old `state.json`; do not
+   expose it through the public proxy, shell tracing or logs. This closes realtime
+   subscriptions and prevents new work. Poll the same authenticated endpoint
+   until `activeRequests` and `backgroundTasks` are zero, and wait for established
+   Web connections to clear. Apply a bounded timeout; abort and resume the old
+   deployment on timeout rather than killing busy requests.
+5. Stop only the old managed applications, retaining their containers and state:
+
+   ```bash
+   docker compose -p <old-project> -f /private/old-state/compose.json stop
+   ```
+
+   Remove the old generated fragment from the **loaded include set**, preserving
+   its original bytes privately. While maintenance stays active, arrange that
+   the Nginx HTTP include loads only the candidate fragment, using an optional
+   glob while it does not yet exist. Avoid duplicate upstream names or gateway
+   listeners. Nginx check/reload must use this real configuration. Apply only
+   reviewed pending SQL/content upgrades, if any, at the planned point with all
+   relevant writers stopped. Never restore old data merely to change topology.
+
+6. Start the candidate at the recorded size; for example, if the old size was 2/3:
+
+   ```bash
+   node /releases/candidate/scripts/docker-scale.mjs \
+     --config /private/candidate-capacity.json --web 2 --api 3
+   ```
+
+   The new project has no old managed slots, so the tool can create correct
+   image/configuration labels and state without editing hashes or bypassing its
+   refusal checks. Verify every intended replica's exact image, mounts, keys,
+   readiness and the gateway before removing maintenance. Check retained session
+   cookies, cross-replica login/logout, two-turn chat/history, realtime and signed
+   files, plus affected SSO/email policy. Readiness alone is not acceptance.
+
+7. On success, point the installation's normal capacity command/configuration at
+   the candidate source/project/state, restore the public entry and observe
+   errors/restarts/event backlog. A repeated target must preserve container IDs.
+   Leave old image/source/state and maintenance recovery material for the agreed
+   rollback window; do not run the old Compose or scale wrapper accidentally.
+
+For a compatible code/topology rollback, keep maintenance active, drain and stop
+the candidate, remove its fragment from the loaded include set, and restore the
+old fragment/configuration. Run the **old source's** capacity command with its
+unchanged old state and counts to resume the retained old containers. Validate
+Nginx and business behavior before reopening. Keep all new user data: do not
+restore PostgreSQL, Redis or objects for a code-only rollback. If the schema or
+content is no longer old-code-compatible, retain maintenance and follow the
+preplanned forward-fix/recovery procedure instead of attempting this rollback.

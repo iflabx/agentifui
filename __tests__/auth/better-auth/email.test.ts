@@ -59,6 +59,26 @@ describe('authentication emails', () => {
     process.env.SMTP_FROM = 'Example Assistant <no-reply@example.com>';
   }
 
+  it.each(['smtp', 'dev-log'])(
+    'rejects both email types before transport, logging or quota in disabled %s mode',
+    async mode => {
+      configureSmtp();
+      process.env.AUTH_EMAIL_DISABLED = '1';
+      process.env.AUTH_EMAIL_VERIFICATION_MODE = mode;
+      process.env.AUTH_RESET_PASSWORD_MODE = mode;
+      await expect(sendVerificationEmail(payload)).rejects.toThrow(
+        'Authentication email is disabled'
+      );
+      await expect(sendResetPasswordEmail(payload)).rejects.toThrow(
+        'Authentication email is disabled'
+      );
+      expect(createTransport).not.toHaveBeenCalled();
+      expect(sendMail).not.toHaveBeenCalled();
+      expect(reserveAuthEmail).not.toHaveBeenCalled();
+      expect(console.info).not.toHaveBeenCalled();
+    }
+  );
+
   it('defaults both email types to explicit development logging', async () => {
     await sendVerificationEmail(payload);
     await sendResetPasswordEmail(payload);
