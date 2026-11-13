@@ -294,6 +294,15 @@ Authentication email settings:
 
 Phone OTP settings:
 
+- `AUTH_PHONE_OTP_ENABLED` defaults to `true`. Set it to `false` to disable
+  phone OTP endpoints, hide phone-login links on the login and registration
+  pages, and redirect direct visits to `/phone-login` back to `/login`.
+  These pages read the same server-side setting at request time; no additional
+  `NEXT_PUBLIC_*` flag is required. After installing a version with this support,
+  restart the Web service when changing the setting. Changing this flag alone
+  does not require rebuilding the application. Email/password, GitHub and SSO
+  settings are independent; existing accounts and conversations are preserved.
+
 - `AUTH_PHONE_OTP_ENABLED`
 - `AUTH_PHONE_OTP_MODE`
 - `AUTH_PHONE_OTP_LENGTH`

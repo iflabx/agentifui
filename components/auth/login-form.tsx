@@ -15,7 +15,11 @@ import { useRouter } from 'next/navigation';
 import { SocialAuthButtons } from './social-auth-buttons';
 import { SSOCard } from './sso-button';
 
-export function LoginForm() {
+export function LoginForm({
+  phoneLoginEnabled = true,
+}: {
+  phoneLoginEnabled?: boolean;
+}) {
   const router = useRouter();
   const t = useTranslations('pages.auth.login');
 
@@ -188,14 +192,16 @@ export function LoginForm() {
 
           {!ssoOnlyMode && (
             <div className="mt-6 space-y-3 text-center">
-              <div>
-                <Link
-                  href="/phone-login"
-                  className="font-serif text-sm font-medium text-stone-600 hover:text-stone-700 hover:underline dark:text-stone-400 dark:hover:text-stone-300"
-                >
-                  {t('phoneLoginLink')}
-                </Link>
-              </div>
+              {phoneLoginEnabled && (
+                <div>
+                  <Link
+                    href="/phone-login"
+                    className="font-serif text-sm font-medium text-stone-600 hover:text-stone-700 hover:underline dark:text-stone-400 dark:hover:text-stone-300"
+                  >
+                    {t('phoneLoginLink')}
+                  </Link>
+                </div>
+              )}
 
               <p className="font-serif text-sm text-gray-600 dark:text-gray-400">
                 {t('noAccountText')}{' '}

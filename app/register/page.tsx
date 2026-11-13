@@ -1,19 +1,8 @@
-'use client';
+import RegisterPageContent from '@components/auth/register-page-content';
+import { isPhoneNumberAuthEnabled } from '@lib/auth/better-auth/server/env';
 
-import { RegisterForm } from '@components/auth/register-form';
-import { motion } from 'framer-motion';
+export const dynamic = 'force-dynamic';
 
 export default function RegisterPage() {
-  return (
-    <main className="flex min-h-screen w-full flex-col items-center justify-center bg-stone-100 px-4 py-12 font-serif sm:px-6 lg:px-8 dark:bg-stone-800">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-        className="w-full max-w-md"
-      >
-        <RegisterForm />
-      </motion.div>
-    </main>
-  );
+  return <RegisterPageContent phoneLoginEnabled={isPhoneNumberAuthEnabled()} />;
 }

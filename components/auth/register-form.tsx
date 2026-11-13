@@ -14,7 +14,11 @@ import { useRouter } from 'next/navigation';
 
 import { SocialAuthButtons } from './social-auth-buttons';
 
-export function RegisterForm() {
+export function RegisterForm({
+  phoneLoginEnabled = true,
+}: {
+  phoneLoginEnabled?: boolean;
+}) {
   const router = useRouter();
   const t = useTranslations('pages.auth.register');
   const githubSocialLoginEnabled = isGitHubSocialLoginEnabled();
@@ -360,18 +364,19 @@ export function RegisterForm() {
       </form>
 
       <div className="space-y-3 text-center">
-        {/* Phone login link */}
-        <div>
-          <Link
-            href="/phone-login"
-            className={cn(
-              'font-serif text-sm font-medium hover:underline',
-              'text-stone-600 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-300'
-            )}
-          >
-            {t('phoneLoginLink')}
-          </Link>
-        </div>
+        {phoneLoginEnabled && (
+          <div>
+            <Link
+              href="/phone-login"
+              className={cn(
+                'font-serif text-sm font-medium hover:underline',
+                'text-stone-600 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-300'
+              )}
+            >
+              {t('phoneLoginLink')}
+            </Link>
+          </div>
+        )}
 
         <p
           className={cn(
