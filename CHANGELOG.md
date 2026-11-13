@@ -5,6 +5,30 @@ All notable changes to AgentifUI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-11-13
+
+### Added
+
+- Docker source-build installation with separate Web/API services and optional PostgreSQL 18, Redis and private S3-compatible storage services; no image-registry account is required.
+- Manual Web/API replica sizing and expansion/contraction with dedicated gateway routing, a fixed content writer and graceful request/outbox draining.
+- Explicit fresh-install database, content and storage initialization commands, separate from normal application startup and existing-installation upgrades.
+- Docker installation and capacity-management runbooks, configuration templates and isolated container-startup smoke tooling.
+
+### Changed
+
+- Build optional MinIO server/client images from pinned upstream source, retaining upstream license and source identification.
+- Include Docker image builds and real container startup checks in the required CI aggregate; reuse the image build instead of duplicating the Web build in the same run.
+- Expand Docker build-context exclusions and keep private research/validation directories out of TypeScript inputs.
+- Clarify host/PM2 upgrade backups, content preservation and reviewed incremental migration procedures; the existing host deployment path remains supported.
+
+### Upgrade notes
+
+- No database schema migration or dependency-version change is introduced relative to `v0.3.1`.
+- Existing installations must preserve their database, objects, runtime content, credentials and deployment configuration. Do not replay fresh-install initialization on existing data.
+- Docker is an alternative deployment method, not an automatic migration or production cutover. Manual scaling does not update application versions or replace data services.
+- Public build settings are compiled into Web assets; build for the target environment rather than reusing a staging-configured image. Real credentials remain runtime-only.
+- This release publishes source and deployment tooling; it does not publish prebuilt application images or claim production capacity/load-test results.
+
 ## [0.3.1] - 2026-11-12
 
 This release aligns the application package version with `v0.3.1`. It includes the accumulated changes since `v0.2.0` (354 non-merge commits), summarized below by functional area.
