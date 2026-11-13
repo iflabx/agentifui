@@ -1,6 +1,10 @@
 'use client';
 
 import {
+  isCurrentLangchainConversation,
+  langchainConversationPath,
+} from '@components/langchain/routing';
+import {
   type SidebarRecentItem,
   getDisplayConversations,
   getMoreActionsOpacityClass,
@@ -28,6 +32,7 @@ import {
   deleteConversation,
   renameConversation,
 } from '@lib/services/client/conversations-api';
+import { agentRequest } from '@lib/services/client/langchain-api';
 import { usePendingConversationStore } from '@lib/stores/pending-conversation-store';
 import { cn } from '@lib/utils';
 import { FileText, MessageSquare, Pen, Trash, Workflow } from 'lucide-react';
@@ -35,6 +40,7 @@ import { FileText, MessageSquare, Pen, Trash, Workflow } from 'lucide-react';
 import * as React from 'react';
 
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 
 interface SidebarChatListProps {
   contentVisible: boolean;
@@ -61,6 +67,7 @@ export function SidebarChatList({
   onSelectChat,
   onSelectTaskExecution,
 }: SidebarChatListProps) {
+  const router = useRouter();
   const t = useTranslations('sidebar');
   const {
     conversations,
@@ -207,6 +214,28 @@ export function SidebarChatList({
 
     setIsOperating(true);
     try {
+      if (
+        selectedConversation.metadata?.backend_type === 'langchain' &&
+        selectedConversation.app_id
+      ) {
+        await agentRequest(
+          selectedConversation.app_id,
+          `/conversations/${encodeURIComponent(dbPK)}`,
+          { method: 'DELETE' }
+        );
+        refresh();
+        conversationEvents.emit();
+        if (
+          isCurrentLangchainConversation(
+            window.location.href,
+            selectedConversation.app_id,
+            dbPK
+          )
+        )
+          router.push(`/apps/langchain/${selectedConversation.app_id}`);
+        setShowDeleteDialog(false);
+        return;
+      }
       const result = await deleteConversation(dbPK);
 
       if (result.success) {
@@ -226,7 +255,7 @@ export function SidebarChatList({
     } finally {
       setIsOperating(false);
     }
-  }, [refresh, selectedConversation, selectedId, t]);
+  }, [refresh, selectedConversation, selectedId, t, router]);
 
   const isRecentItemActive = React.useCallback(
     (chat: SidebarRecentItem) => {
@@ -245,6 +274,11 @@ export function SidebarChatList({
         );
       }
 
+      const agentPath = langchainConversationPath(chat);
+      if (agentPath)
+        return (
+          `${window.location.pathname}${window.location.search}` === agentPath
+        );
       if (!selectedId) {
         return false;
       }
@@ -390,7 +424,11 @@ export function SidebarChatList({
                     hasOpenDropdown={openDropdownId === chat.id}
                     disableHover={!!openDropdownId}
                     untitledLabel={t('untitled')}
-                    onClick={() => onSelectChat(chat.id)}
+                    onClick={() => {
+                      const path = langchainConversationPath(chat);
+                      if (path) router.push(path);
+                      else onSelectChat(chat.id);
+                    }}
                     onTypewriterComplete={completeTitleTypewriter}
                     moreActionsTrigger={
                       <div
@@ -423,7 +461,9 @@ export function SidebarChatList({
                   return;
                 }
 
-                onSelectChat(chat.id);
+                const agentPath = langchainConversationPath(chat);
+                if (agentPath) router.push(agentPath);
+                else onSelectChat(chat.id);
               };
 
               return (

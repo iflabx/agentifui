@@ -37,7 +37,9 @@ export function createParameterActions(
         await get().fetchApps();
       }
 
-      const currentApps = get().apps;
+      const currentApps = get().apps.filter(
+        app => app.config?.backend_type !== 'langchain'
+      );
       if (currentApps.length === 0) {
         console.warn('[AppListStore] No available apps, skip parameter fetch');
         return;
@@ -140,6 +142,7 @@ export function createParameterActions(
       }
 
       const app = state.apps.find(item => item.id === appId);
+      if (app?.config?.backend_type === 'langchain') return;
       if (!app) {
         console.warn(`[AppListStore] App ${appId} not found`);
         return;

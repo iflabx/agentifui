@@ -19,12 +19,7 @@ export type SsoProtocol = 'CAS' | 'SAML' | 'OAuth2' | 'OIDC';
 // Used for workflow and text-generation app execution record management
 export type ExecutionType = 'workflow' | 'text-generation';
 export type ExecutionStatus =
-  | 'pending'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'stopped'
-  | 'deleted';
+  'pending' | 'running' | 'completed' | 'failed' | 'stopped' | 'deleted';
 
 // User Profile interface, with employee_number field for SSO user management
 export interface Profile {
@@ -146,6 +141,11 @@ export interface Provider {
 // ServiceInstanceConfig type definition
 // Used to standardize the structure of ServiceInstance.config
 export interface ServiceInstanceConfig {
+  backend_type?: 'dify' | 'langchain';
+  langchain?: {
+    assistant_id: string;
+  };
+
   // Dify API base URL
   api_url?: string;
 
@@ -157,11 +157,7 @@ export interface ServiceInstanceConfig {
     // Dify app type (required field)
     // Based on Dify official API documentation's five app types
     dify_apptype?:
-      | 'chatbot'
-      | 'agent'
-      | 'chatflow'
-      | 'workflow'
-      | 'text-generation';
+      'chatbot' | 'agent' | 'chatflow' | 'workflow' | 'text-generation';
 
     // Whether this is a common model (for prioritized preloading)
     is_common_model?: boolean;

@@ -17,16 +17,14 @@ import { SidebarListButton } from './sidebar-list-button';
 
 interface FavoriteApp {
   instanceId: string;
+  backendType?: 'dify' | 'langchain';
+  serviceInstanceId?: string;
   displayName: string;
   description?: string;
   iconUrl?: string;
   appType: 'model' | 'marketplace';
   dify_apptype?:
-    | 'agent'
-    | 'chatbot'
-    | 'text-generation'
-    | 'chatflow'
-    | 'workflow';
+    'agent' | 'chatbot' | 'text-generation' | 'chatflow' | 'workflow';
 }
 
 interface SidebarFavoriteAppsProps {
@@ -83,6 +81,12 @@ export function SidebarFavoriteApps({
     const routeInstanceId = pathParts[1]; // Instance ID
 
     // Basic instanceId matching
+    if (app.backendType === 'langchain') {
+      return (
+        routeAppType === 'langchain' &&
+        routeInstanceId === app.serviceInstanceId
+      );
+    }
     if (routeInstanceId !== app.instanceId) return false;
 
     // Check if the application type matches
@@ -107,7 +111,10 @@ export function SidebarFavoriteApps({
 
       // 🎯 Immediately jump to the route, let the page-level spinner handle the loading state
       const difyAppType = app.dify_apptype || 'chatflow';
-      const targetPath = `/apps/${difyAppType}/${app.instanceId}`;
+      const targetPath =
+        app.backendType === 'langchain' && app.serviceInstanceId
+          ? `/apps/langchain/${app.serviceInstanceId}`
+          : `/apps/${difyAppType}/${app.instanceId}`;
 
       console.log('[FavoriteApps] Immediately jump to the route:', targetPath);
 
@@ -139,7 +146,10 @@ export function SidebarFavoriteApps({
 
       // Immediately jump, let the page handle the subsequent logic
       const difyAppType = app.dify_apptype || 'chatflow';
-      const targetPath = `/apps/${difyAppType}/${app.instanceId}`;
+      const targetPath =
+        app.backendType === 'langchain' && app.serviceInstanceId
+          ? `/apps/langchain/${app.serviceInstanceId}`
+          : `/apps/${difyAppType}/${app.instanceId}`;
 
       console.log('[FavoriteApps] Start new chat, jump to:', targetPath);
       router.push(targetPath);
