@@ -9,6 +9,15 @@ import {
 
 const CONTROL_PATH = '/__agentifui/capacity';
 const REALTIME_PATH = '/api/internal/realtime/stream';
+const backgroundTasks = new Set<Promise<unknown>>();
+
+export function trackApiBackgroundTask(task: Promise<unknown>): void {
+  backgroundTasks.add(task);
+  void task.then(
+    () => backgroundTasks.delete(task),
+    () => backgroundTasks.delete(task)
+  );
+}
 
 export function installCapacityControl(
   app: FastifyInstance,
@@ -56,7 +65,7 @@ export function installCapacityControl(
       draining,
       activeRequests: requests.size,
       subscriptions: subscriptions.size,
-      backgroundTasks: isRealtimeOutboxBusy() ? 1 : 0,
+      backgroundTasks: backgroundTasks.size + (isRealtimeOutboxBusy() ? 1 : 0),
     };
   });
   app.post<{ Body: { draining: boolean } }>(
@@ -74,7 +83,8 @@ export function installCapacityControl(
         draining,
         activeRequests: requests.size,
         subscriptions: subscriptions.size,
-        backgroundTasks: isRealtimeOutboxBusy() ? 1 : 0,
+        backgroundTasks:
+          backgroundTasks.size + (isRealtimeOutboxBusy() ? 1 : 0),
       };
     }
   );

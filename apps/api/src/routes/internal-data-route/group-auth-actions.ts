@@ -1,4 +1,5 @@
 import { queryRowsWithPgUserContext } from '../../lib/pg-context';
+import { publicAppConfig } from '../../lib/public-app-config';
 import {
   parsePositiveInt,
   readString,
@@ -28,7 +29,19 @@ export async function handleGroupAuthAction(
       `SELECT * FROM get_user_accessible_apps($1::uuid)`,
       [targetUserId]
     );
-    return toSuccessResponse(rows || []);
+    return toSuccessResponse(
+      (rows || []).map(row => {
+        const config =
+          row.config &&
+          typeof row.config === 'object' &&
+          !Array.isArray(row.config)
+            ? (row.config as Record<string, unknown>)
+            : null;
+        return config?.backend_type === 'langchain'
+          ? { ...row, api_path: '', config: publicAppConfig(config) }
+          : row;
+      })
+    );
   }
 
   if (action === 'groups.checkUserAppPermission') {

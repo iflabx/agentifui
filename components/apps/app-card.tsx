@@ -42,7 +42,10 @@ export function AppCard({ app, viewMode, onClick }: AppCardProps) {
   const t = useTranslations('pages.apps.market');
   const tDifyTypes = useTranslations('difyAppTypes');
 
-  const difyAppType = app.config?.app_metadata?.dify_apptype || app.difyAppType;
+  const isLangChain = app.config?.backend_type === 'langchain';
+  const difyAppType = isLangChain
+    ? undefined
+    : app.config?.app_metadata?.dify_apptype || app.difyAppType;
   const difyTypeInfo = difyAppType
     ? getDifyAppTypeInfo(difyAppType, tDifyTypes)
     : null;
@@ -56,6 +59,12 @@ export function AppCard({ app, viewMode, onClick }: AppCardProps) {
       removeFavoriteApp(app.instanceId);
     } else {
       await addFavoriteApp({
+        ...(app.config?.backend_type === 'langchain'
+          ? {
+              backendType: 'langchain' as const,
+              serviceInstanceId: app.instanceId,
+            }
+          : {}),
         instanceId: app.instanceId,
         displayName: app.displayName,
         description: app.description,
@@ -185,7 +194,9 @@ export function AppCard({ app, viewMode, onClick }: AppCardProps) {
 
           <div className="mt-auto flex items-center justify-between text-xs">
             <span className={cn('font-serif', 'text-stone-500')}>
-              {difyTypeInfo?.label || t('appCard.defaultType')}
+              {isLangChain
+                ? 'LangChain'
+                : difyTypeInfo?.label || t('appCard.defaultType')}
             </span>
 
             <ArrowRight className={cn('h-3 w-3', 'text-stone-500')} />
@@ -206,14 +217,14 @@ export function AppCard({ app, viewMode, onClick }: AppCardProps) {
                 {app.displayName}
               </h3>
 
-              {difyTypeInfo && (
+              {(isLangChain || difyTypeInfo) && (
                 <span
                   className={cn(
                     'rounded px-1.5 py-0.5 font-serif text-xs',
                     'bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-300'
                   )}
                 >
-                  {difyTypeInfo.label}
+                  {isLangChain ? 'LangChain' : difyTypeInfo?.label}
                 </span>
               )}
             </div>

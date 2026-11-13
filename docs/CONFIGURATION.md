@@ -330,6 +330,14 @@ Phone OTP settings:
 
 Do not reuse production secrets in dev or test profiles.
 
+## LangChain Agent Backend
+
+LangChain applications reuse provider URLs and encrypted service-instance API
+keys. Their explicit backend configuration, service contract, server-managed
+history, supported capabilities and shared concurrency settings are documented
+in [LangChain Agent Integration](LANGCHAIN-INTEGRATION.md). Unconfigured
+LangChain applications do not prevent Dify from starting.
+
 ## Dify Proxy Resilience
 
 Supported runtime controls:

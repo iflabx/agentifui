@@ -1,4 +1,5 @@
 import { queryRowsWithPgSystemContext } from '../../lib/pg-context';
+import { boundConversationAccessSql, unboundConversationSql } from './auth';
 import {
   parsePositiveInt,
   readString,
@@ -61,6 +62,7 @@ export async function handleConversationAction(
         WHERE user_id = $1::uuid
           AND status = 'active'
           ${appFilterSql}
+          AND ${boundConversationAccessSql('$1')}
         ORDER BY updated_at DESC
         LIMIT $2
         OFFSET $3
@@ -81,6 +83,7 @@ export async function handleConversationAction(
         WHERE user_id = $1::uuid
           AND status = 'active'
           ${countFilterSql}
+          AND ${boundConversationAccessSql('$1')}
       `,
       countParams
     );
@@ -117,6 +120,7 @@ export async function handleConversationAction(
         WHERE external_id = $1
           AND user_id = $2::uuid
           AND status = 'active'
+          AND ${boundConversationAccessSql('$2')}
         ORDER BY updated_at DESC
         LIMIT 1
       `,
@@ -154,7 +158,7 @@ export async function handleConversationAction(
           created_at,
           updated_at
         )
-        VALUES (
+        SELECT
           $1::uuid,
           $2::uuid,
           $3,
@@ -163,10 +167,14 @@ export async function handleConversationAction(
           $6::jsonb,
           $7,
           $8,
-          $9,
+          $9::text,
           $10,
           NOW(),
           NOW()
+        WHERE NOT EXISTS (
+          SELECT 1 FROM service_instances instance
+          WHERE (lower(instance.id::text) = lower($9::text) OR instance.instance_id = $9::text)
+            AND instance.config ->> 'backend_type' = 'langchain'
         )
         RETURNING
           id::text,
@@ -205,7 +213,12 @@ export async function handleConversationAction(
       ]
     );
 
-    return toSuccessResponse(rows[0] ? sanitizeConversation(rows[0]) : null);
+    return rows[0]
+      ? toSuccessResponse(sanitizeConversation(rows[0]))
+      : toErrorResponse(
+          'Conversation must be created through its backend',
+          409
+        );
   }
 
   if (action === 'conversations.renameConversation') {
@@ -256,6 +269,7 @@ export async function handleConversationAction(
         WHERE id = $2::uuid
           AND user_id = $3::uuid
           AND status = 'active'
+          AND ${unboundConversationSql}
           AND (
             NULLIF(BTRIM(title), '') IS NULL
             OR title = ANY($4::text[])

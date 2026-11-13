@@ -15,6 +15,7 @@ export function createEmptyInstanceFormData(): InstanceFormData {
     api_path: '',
     apiKey: '',
     config: {
+      backend_type: 'dify',
       api_url: '',
       app_metadata: {
         app_type: 'model',
@@ -30,6 +31,7 @@ export function createInstanceFormDataFromInstance(
   instance: Partial<ServiceInstance>,
   providers: Provider[]
 ): InstanceFormData {
+  const isLangChain = instance.config?.backend_type === 'langchain';
   const data: InstanceFormData = {
     instance_id: instance.instance_id || '',
     display_name: instance.display_name || '',
@@ -37,22 +39,37 @@ export function createInstanceFormDataFromInstance(
     api_path: instance.api_path || '',
     apiKey: '',
     config: {
+      backend_type: isLangChain ? 'langchain' : 'dify',
+      ...(isLangChain
+        ? {
+            langchain: {
+              assistant_id: instance.config?.langchain?.assistant_id || '',
+            },
+          }
+        : {}),
       api_url: instance.config?.api_url || '',
       app_metadata: {
-        app_type:
-          (instance.config?.app_metadata?.app_type as
-            | 'model'
-            | 'marketplace') || 'model',
-        dify_apptype:
-          (instance.config?.app_metadata?.dify_apptype as
-            | 'chatbot'
-            | 'agent'
-            | 'chatflow'
-            | 'workflow'
-            | 'text-generation') || 'chatbot',
+        app_type: isLangChain
+          ? 'marketplace'
+          : (instance.config?.app_metadata?.app_type as
+              'model' | 'marketplace') || 'model',
+        ...(!isLangChain
+          ? {
+              dify_apptype:
+                (instance.config?.app_metadata?.dify_apptype as
+                  | 'chatbot'
+                  | 'agent'
+                  | 'chatflow'
+                  | 'workflow'
+                  | 'text-generation') || 'chatbot',
+            }
+          : {}),
         tags: instance.config?.app_metadata?.tags || [],
+        ...(isLangChain ? { is_marketplace_app: true } : {}),
       },
-      dify_parameters: instance.config?.dify_parameters || {},
+      ...(!isLangChain
+        ? { dify_parameters: instance.config?.dify_parameters || {} }
+        : {}),
     },
   };
 
@@ -64,6 +81,70 @@ export function createInstanceFormDataFromInstance(
   }
 
   return data;
+}
+
+export function changeInstanceBackend(
+  data: InstanceFormData,
+  backend: 'dify' | 'langchain'
+): InstanceFormData {
+  if (backend === 'langchain') {
+    return {
+      ...data,
+      is_default: false,
+      config: {
+        backend_type: 'langchain',
+        api_url: data.config.api_url,
+        langchain: {
+          assistant_id: data.config.langchain?.assistant_id || 'agent',
+        },
+        app_metadata: {
+          app_type: 'marketplace',
+          is_marketplace_app: true,
+          tags: data.config.app_metadata.tags,
+        },
+      },
+    };
+  }
+
+  const config = { ...data.config };
+  delete config.langchain;
+  return {
+    ...data,
+    config: {
+      ...config,
+      backend_type: 'dify',
+      app_metadata: {
+        ...config.app_metadata,
+        dify_apptype: config.app_metadata.dify_apptype || 'chatbot',
+      },
+      dify_parameters: config.dify_parameters || {},
+    },
+  };
+}
+
+export function prepareInstanceFormForSave(
+  data: InstanceFormData
+): InstanceFormData {
+  const normalized = changeInstanceBackend(
+    data,
+    data.config.backend_type || 'dify'
+  );
+  if (normalized.config.langchain) {
+    normalized.config.langchain.assistant_id =
+      data.config.langchain?.assistant_id.trim() || '';
+  }
+  return {
+    ...normalized,
+    instance_id: data.instance_id.trim(),
+    config: {
+      ...normalized.config,
+      app_metadata: {
+        ...normalized.config.app_metadata,
+        is_marketplace_app:
+          normalized.config.app_metadata.app_type === 'marketplace',
+      },
+    },
+  };
 }
 
 export function getInitialProviderId(

@@ -1454,6 +1454,16 @@
           "difyConfig": {
             "title": "Dify 參數配置",
             "appTypeNote": "選擇\"模型\"類型的應用會出現在聊天介面的模型選擇器中"
+          },
+          "backend": {
+            "label": "后端类型",
+            "assistantId": "Assistant ID",
+            "langchainNote": "填写服务暴露的 Assistant 标识。首批仅支持文本及只读工具，服务凭证仅由服务端使用。",
+            "validation": {
+              "instanceIdRequired": "请填写应用标识。",
+              "displayNameRequired": "请填写显示名称。",
+              "assistantIdRequired": "请填写 Assistant 标识。"
+            }
           }
         },
         "useApiConfigEvents": {
@@ -2725,5 +2735,32 @@
       "size": "大小："
     },
     "closeButton": "關閉預覽"
+  },
+  "langchain": {
+    "title": "LangChain Agent",
+    "capabilities": "支援文字對話、會話記憶與唯讀工具摘要。暫不支援檔案與執行取消。",
+    "newConversation": "新建會話",
+    "history": "會話歷史",
+    "untitled": "未命名會話",
+    "emptyHistory": "暫無已儲存會話。",
+    "loading": "載入中…",
+    "loginRequired": "請先登入後使用此應用程式。",
+    "unavailable": "應用程式或會話不可用，或您已無權存取。",
+    "rateLimited": "已達到執行上限，請等待目前執行結束。",
+    "requestFailed": "請求無法完成，請先核對執行狀態，不要直接重複傳送。",
+    "you": "您",
+    "assistant": "助理",
+    "tool": "工具",
+    "saved": "已完成並儲存",
+    "saveIncomplete": "執行已完成，但尚未確認儲存成功。",
+    "failed": "執行失敗或中斷，已儲存的部分回覆仍保留在歷史中。",
+    "unknown": "尚未確認執行結果。",
+    "running": "執行中…",
+    "noAutomaticRetry": "不要自動重送：後端可能仍在執行。狀態查詢次數有限，不會重新執行模型。",
+    "message": "訊息",
+    "placeholder": "向此 Agent 傳送文字訊息…",
+    "confirmDelete": "刪除此本機會話？這不會刪除上游 Agent 的執行記憶。",
+    "deleteConversation": "刪除會話",
+    "send": "傳送"
   }
 }

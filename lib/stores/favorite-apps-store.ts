@@ -3,16 +3,14 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 
 interface FavoriteApp {
   instanceId: string;
+  backendType?: 'dify' | 'langchain';
+  serviceInstanceId?: string;
   displayName: string;
   description?: string;
   iconUrl?: string;
   appType: 'model' | 'marketplace';
   dify_apptype?:
-    | 'agent'
-    | 'chatbot'
-    | 'text-generation'
-    | 'chatflow'
-    | 'workflow';
+    'agent' | 'chatbot' | 'text-generation' | 'chatflow' | 'workflow';
   addedAt: string;
   lastUsedAt: string;
 }
@@ -25,11 +23,13 @@ interface AppMetadata {
 }
 
 interface SyncAppInfo {
+  id?: string;
   instance_id: string;
   display_name?: string | null;
   name?: string;
   description?: string | null;
   config?: {
+    backend_type?: 'dify' | 'langchain';
     app_metadata?: AppMetadata;
   };
 }
@@ -160,8 +160,11 @@ export const useFavoriteAppsStore = create<FavoriteAppsState>()(
 
         state.favoriteApps.forEach(favoriteApp => {
           // Fix: use instance_id for matching, since favoriteApp.instanceId stores instance_id
-          const matchedApp = apps.find(
-            app => app.instance_id === favoriteApp.instanceId
+          const matchedApp = apps.find(app =>
+            app.config?.backend_type === 'langchain'
+              ? app.id ===
+                (favoriteApp.serviceInstanceId || favoriteApp.instanceId)
+              : app.instance_id === favoriteApp.instanceId
           );
 
           if (matchedApp) {
@@ -178,6 +181,8 @@ export const useFavoriteAppsStore = create<FavoriteAppsState>()(
                 appMetadata?.brief_description ||
                 favoriteApp.description,
               iconUrl: appMetadata?.icon_url || favoriteApp.iconUrl,
+              backendType: matchedApp.config?.backend_type || 'dify',
+              serviceInstanceId: matchedApp.id || favoriteApp.serviceInstanceId,
               dify_apptype:
                 appMetadata?.dify_apptype || favoriteApp.dify_apptype,
             });
@@ -199,7 +204,9 @@ export const useFavoriteAppsStore = create<FavoriteAppsState>()(
               !original ||
               updated.displayName !== original.displayName ||
               updated.description !== original.description ||
-              updated.iconUrl !== original.iconUrl
+              updated.iconUrl !== original.iconUrl ||
+              updated.backendType !== original.backendType ||
+              updated.serviceInstanceId !== original.serviceInstanceId
             );
           });
 
@@ -256,10 +263,12 @@ export function useAutoAddFavoriteApp() {
       const payload = (await response.json()) as {
         success: boolean;
         app?: {
+          id: string;
           instance_id: string;
           display_name: string | null;
           description: string | null;
           config?: {
+            backend_type?: 'dify' | 'langchain';
             app_metadata?: AppMetadata;
           };
           provider_name?: string;
@@ -291,7 +300,12 @@ export function useAutoAddFavoriteApp() {
       }
 
       const favoriteApp = {
-        instanceId: instance.instance_id,
+        instanceId:
+          instance.config?.backend_type === 'langchain'
+            ? instance.id
+            : instance.instance_id,
+        backendType: instance.config?.backend_type || 'dify',
+        serviceInstanceId: instance.id,
         displayName: instance.display_name || instance.instance_id,
         description: instance.description || appMetadata?.brief_description,
         iconUrl: appMetadata?.icon_url,

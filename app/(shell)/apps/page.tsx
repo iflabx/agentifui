@@ -76,6 +76,7 @@ export default function AppsPage() {
 
   const apps: AppInstance[] = rawApps
     .filter(app => {
+      if (app.config?.backend_type === 'langchain') return true;
       const metadata = app.config?.app_metadata;
 
       if (metadata) {
@@ -103,7 +104,8 @@ export default function AppsPage() {
       }
 
       return {
-        instanceId: app.instance_id,
+        instanceId:
+          app.config?.backend_type === 'langchain' ? app.id : app.instance_id,
         displayName: app.display_name || app.instance_id,
         description,
         appType: 'marketplace' as const,
@@ -201,6 +203,10 @@ export default function AppsPage() {
 
   const handleOpenApp = async (app: AppInstance) => {
     try {
+      if (app.config?.backend_type === 'langchain') {
+        router.push(`/apps/langchain/${encodeURIComponent(app.instanceId)}`);
+        return;
+      }
       const difyAppType = app.config?.app_metadata?.dify_apptype;
 
       let routePath: string;

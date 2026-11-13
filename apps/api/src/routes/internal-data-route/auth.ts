@@ -91,7 +91,8 @@ export async function ensureActionPermission(
 
 export async function loadConversationOwnedByActor(
   conversationId: string,
-  actorUserId: string
+  actorUserId: string,
+  access: 'read' | 'write' = 'read'
 ): Promise<boolean> {
   const rows = await queryRowsWithPgSystemContext<{ id: string }>(
     `
@@ -99,12 +100,49 @@ export async function loadConversationOwnedByActor(
       FROM conversations
       WHERE id = $1::uuid
         AND user_id = $2::uuid
+        AND ${access === 'write' ? unboundConversationSql : boundConversationAccessSql('$2')}
       LIMIT 1
     `,
     [conversationId, actorUserId]
   );
 
   return Boolean(rows[0]?.id);
+}
+
+export const unboundConversationSql = `NOT EXISTS (
+  SELECT 1 FROM backend_conversations binding
+  WHERE binding.conversation_id = conversations.id
+)`;
+
+export function boundConversationAccessSql(
+  actorParameter: '$1' | '$2'
+): string {
+  return `(
+    ${unboundConversationSql}
+    OR EXISTS (
+      SELECT 1
+      FROM backend_conversations binding
+      JOIN service_instances instance ON instance.id = binding.service_instance_id
+      JOIN providers provider ON provider.id = instance.provider_id
+      JOIN profiles actor ON actor.id = ${actorParameter}::uuid
+      WHERE binding.conversation_id = conversations.id
+        AND conversations.status = 'active'
+        AND actor.status = 'active'
+        AND provider.is_active = TRUE
+        AND instance.config ->> 'backend_type' = 'langchain'
+        AND (
+          instance.visibility = 'public'
+          OR actor.role = 'admin'
+          OR (instance.visibility = 'group_only' AND EXISTS (
+            SELECT 1 FROM group_app_permissions permission
+            JOIN group_members member ON member.group_id = permission.group_id
+            WHERE permission.service_instance_id = instance.id
+              AND permission.is_enabled = TRUE
+              AND member.user_id = actor.id
+          ))
+        )
+    )
+  )`;
 }
 
 export async function loadExecutionOwnedByActor(

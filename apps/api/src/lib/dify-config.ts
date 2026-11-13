@@ -221,7 +221,10 @@ export async function resolveDifyConfig(
     actorUserId,
     actorRole
   );
-  if (!serviceInstance) {
+  if (
+    !serviceInstance ||
+    serviceInstance.config?.backend_type === 'langchain'
+  ) {
     return null;
   }
 

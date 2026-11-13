@@ -172,7 +172,8 @@ export async function handleMessageAction(
 
     const owned = await loadConversationOwnedByActor(
       conversationId,
-      actorUserId
+      actorUserId,
+      'write'
     );
     if (!owned) {
       return toErrorResponse('Conversation not found', 404);
@@ -215,7 +216,7 @@ export async function handleMessageAction(
           sequence_index,
           created_at
         )
-        VALUES (
+        SELECT
           $1::uuid,
           $2::uuid,
           $3::message_role,
@@ -227,6 +228,9 @@ export async function handleMessageAction(
           TRUE,
           $9,
           NOW()
+        WHERE NOT EXISTS (
+          SELECT 1 FROM backend_conversations binding
+          WHERE binding.conversation_id = $1::uuid
         )
         RETURNING
           id::text,
@@ -291,7 +295,8 @@ export async function handleMessageAction(
 
     const owned = await loadConversationOwnedByActor(
       conversationId,
-      actorUserId
+      actorUserId,
+      'write'
     );
     if (!owned) {
       return toErrorResponse('Conversation not found', 404);
@@ -303,6 +308,10 @@ export async function handleMessageAction(
         SET metadata = $3::jsonb
         WHERE id = $1::uuid
           AND conversation_id = $2::uuid
+          AND NOT EXISTS (
+            SELECT 1 FROM backend_conversations binding
+            WHERE binding.conversation_id = $2::uuid
+          )
         RETURNING
           id::text,
           conversation_id::text,
@@ -339,7 +348,8 @@ export async function handleMessageAction(
 
     const owned = await loadConversationOwnedByActor(
       conversationId,
-      actorUserId
+      actorUserId,
+      'write'
     );
     if (!owned) {
       return toErrorResponse('Conversation not found', 404);
@@ -371,7 +381,7 @@ export async function handleMessageAction(
           sequence_index,
           created_at
         )
-        VALUES (
+        SELECT
           $1::uuid,
           NULL,
           'assistant'::message_role,
@@ -383,6 +393,9 @@ export async function handleMessageAction(
           TRUE,
           1,
           NOW()
+        WHERE NOT EXISTS (
+          SELECT 1 FROM backend_conversations binding
+          WHERE binding.conversation_id = $1::uuid
         )
         RETURNING
           id::text,
