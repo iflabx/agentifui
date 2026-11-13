@@ -1,0 +1,18 @@
+{
+  "project": "agentifui",
+  "composeFile": "/srv/agentifui/releases/current/compose.yaml",
+  "envFile": "/srv/agentifui/private/application.env",
+  "stateDir": "/srv/agentifui/private/capacity",
+  "upstreamFile": "/srv/agentifui/private/capacity/nginx.conf",
+  "upstreamPrefix": "agentifui_capacity",
+  "webGatewayPort": 13000,
+  "apiGatewayPort": 13010,
+  "webPorts": [13001, 13002, 13003, 13004],
+  "apiPorts": [13101, 13102, 13103, 13104, 13105, 13106],
+  "webResources": { "cpus": 2, "memory": "2g" },
+  "apiResources": { "cpus": 2, "memory": "1g" },
+  "healthTimeoutSeconds": 180,
+  "drainTimeoutSeconds": 180,
+  "nginxTest": ["sudo", "-n", "nginx", "-t"],
+  "nginxReload": ["sudo", "-n", "systemctl", "reload", "nginx"]
+}

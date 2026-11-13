@@ -39,6 +39,7 @@ jobs:
       pull-requests: read
     outputs:
       required: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.runtime == 'true' }}
+      docker_required: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.docker == 'true' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -50,18 +51,38 @@ jobs:
         id: filter
         with:
           filters: |
-            runtime:
+            runtime: &runtime_paths
               - 'app/**'
               - 'apps/**'
               - 'packages/**'
+              - 'lib/**'
+              - 'components/**'
+              - 'hooks/**'
+              - 'providers/**'
+              - 'messages/**'
+              - 'styles/**'
+              - 'database/**'
+              - 'docker/**'
+              - 'scripts/**'
+              - '.github/workflows/**'
+              - '__tests__/scripts/**'
               - '**/*.{ts,tsx,js,jsx,mjs,cjs,json,css,scss,sql,sh,yml,yaml}'
               - 'public/**'
               - 'content/**'
               - '**/Dockerfile*'
+              - '**/.dockerignore'
+              - 'package.json'
+              - 'pnpm*'
+              - 'next.config.*'
+              - 'tsconfig*'
+              - 'postcss.config.*'
+              - 'tailwind.config.*'
+              - '.npmrc'
               - '.env*.example'
               - '.nvmrc'
               - '.prettierignore'
               - '.gitignore'
+            docker: *runtime_paths
 
   quality:
     name: Quality Checks
@@ -120,7 +141,7 @@ jobs:
           fi
 
           echo "Using diff range: $RANGE"
-          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMRT "$RANGE" | grep -E '\.(js|jsx|ts|tsx)$' | tr '\n' ' ' || true)
+          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMRT "$RANGE" | grep -E '\.(js|jsx|mjs|cjs|ts|tsx)$' | tr '\n' ' ' || true)
 
           if [ -n "$CHANGED_FILES" ]; then
             echo "Running ESLint on changed files: $CHANGED_FILES"
@@ -286,9 +307,74 @@ jobs:
         run: pnpm test --maxWorkers=2
 
       - name: Build application and workspace packages
+        if: needs.changes.outputs.docker_required != 'true'
         env:
           NODE_ENV: production
         run: pnpm run build:all
+
+  docker:
+    name: Docker Build and Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: changes
+    if: needs.changes.outputs.docker_required == 'true'
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build CI image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: agentifui:ci
+          build-args: |
+            SOURCE_COMMIT=${{ github.sha }}
+            NEXT_PUBLIC_APP_URL=http://127.0.0.1:23300
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build source MinIO image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.storage
+          target: minio
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: agentifui-minio:source-9e49d5e7
+          cache-from: type=gha,scope=storage
+          cache-to: type=gha,scope=storage,mode=max
+
+      - name: Build source MinIO client image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.storage
+          target: mc
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: agentifui-mc:source-7394ce0d
+          cache-from: type=gha,scope=storage
+          cache-to: type=gha,scope=storage,mode=max
+
+      - name: Smoke test CI image
+        run: node scripts/smoke-docker.mjs --image agentifui:ci
 
   # Final status check - all jobs must pass
   ci-status:
@@ -299,6 +385,7 @@ jobs:
       - changes
       - quality
       - verify
+      - docker
     if: always()
     permissions:
       contents: read
@@ -309,12 +396,13 @@ jobs:
         run: |
           node <<'NODE'
           const needs = JSON.parse(process.env.CI_NEEDS);
-          if (needs['publication-check'].result !== 'success') process.exit(1);
-          if (needs.changes.result !== 'success') process.exit(1);
-          const required = needs.changes.outputs.required;
-          if (!['true', 'false'].includes(required)) process.exit(1);
-          for (const name of ['quality', 'verify']) {
-            if (needs[name]?.result !== (required === 'true' ? 'success' : 'skipped')) {
+          if (needs?.['publication-check']?.result !== 'success') process.exit(1);
+          if (needs?.changes?.result !== 'success') process.exit(1);
+          const required = needs.changes.outputs?.required;
+          const dockerRequired = needs.changes.outputs?.docker_required;
+          if (![required, dockerRequired].every(value => ['true', 'false'].includes(value))) process.exit(1);
+          for (const [name, flag] of Object.entries({ quality: required, verify: required, docker: dockerRequired })) {
+            if (needs[name]?.result !== (flag === 'true' ? 'success' : 'skipped')) {
               console.error(`${name}: unexpected ${needs[name]?.result}`);
               process.exit(1);
             }

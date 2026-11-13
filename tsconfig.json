@@ -38,5 +38,10 @@
     ".next-pw/dev/types/**/*.ts",
     "next-env.d.ts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    "local_docs",
+    "local_scripts",
+    "private-baselines"
+  ]
 }

@@ -2,7 +2,9 @@
 
 ## 1. Scope
 
-This is the current public production runbook.
+This is the host/PM2 production runbook. For the alternative container installation,
+see [Docker Compose installation](DOCKER.md). Do not use the historical
+`Dockerfile.prod-test` or test-stack Compose files as production installers.
 
 It assumes:
 
@@ -232,6 +234,18 @@ done
 ```
 
 ## 6. Deploy
+
+Before upgrading an older installation, record its exact source commit, actual
+PM2 working directories and Node binaries. Compare **all** migrations between
+that commit and the target release, not just the latest commit's SQL changes.
+Back up the database and roles, objects, private configuration, encryption keys,
+operational content and service/timer configuration; verify a usable restore path.
+Preserve source-directory content edits before creating a new runtime directory:
+copy the installation's `messages/` and `content/pages/` to a stable external
+directory, then validate with `node scripts/prepare-runtime-content.mjs --check`
+using the target release and the configured `AGENTIF_RUNTIME_DIR`. Do not replace
+operator content with fresh defaults. A `current` symlink is optional; an existing
+real directory must not be replaced or deleted just to adopt that convention.
 
 For upgrades, identify only the pending migrations, confirm backup/restore and old-code compatibility, and run the explicit incremental command. Do not replay all initialization SQL on an existing database.
 

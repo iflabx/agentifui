@@ -1,0 +1,230 @@
+name: ${COMPOSE_PROJECT_NAME:-agentifui}
+
+x-image: &image
+  image: ${AGENTIF_IMAGE:-agentifui:local}
+  pull_policy: never
+  build:
+    context: .
+    args:
+      SOURCE_COMMIT: ${SOURCE_COMMIT:-unknown}
+      FASTIFY_PROXY_BASE_URL: ${FASTIFY_PROXY_BASE_URL:-http://api:3010}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      NEXT_PUBLIC_BRAND_NAME: ${NEXT_PUBLIC_BRAND_NAME:-AgentifUI}
+      NEXT_PUBLIC_BRAND_DOMAIN: ${NEXT_PUBLIC_BRAND_DOMAIN:-example.com}
+      NEXT_PUBLIC_GITHUB_LOGIN_ENABLED: ${NEXT_PUBLIC_GITHUB_LOGIN_ENABLED:-false}
+      NEXT_PUBLIC_SSO_ONLY_MODE: ${NEXT_PUBLIC_SSO_ONLY_MODE:-false}
+      NEXT_PUBLIC_STORAGE_LEGACY_RELAY_ENABLED: ${NEXT_PUBLIC_STORAGE_LEGACY_RELAY_ENABLED:-false}
+      NEXT_PUBLIC_AUTH_SESSION_CACHE_TTL_MS: ${NEXT_PUBLIC_AUTH_SESSION_CACHE_TTL_MS:-5000}
+      NEXT_PUBLIC_AUTH_SESSION_STALE_GRACE_MS: ${NEXT_PUBLIC_AUTH_SESSION_STALE_GRACE_MS:-60000}
+      NEXT_PUBLIC_AUTH_SESSION_THROTTLE_BACKOFF_MS: ${NEXT_PUBLIC_AUTH_SESSION_THROTTLE_BACKOFF_MS:-2000}
+
+x-environment: &environment
+  NODE_ENV: production
+  AGENTIF_RUNTIME_DIR: /data/runtime
+  DATABASE_URL: ${DATABASE_URL:-}
+  APP_RLS_STRICT_MODE: '1'
+  REDIS_URL: ${REDIS_URL:-}
+  REDIS_PREFIX: ${REDIS_PREFIX:-agentifui}
+  S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+  S3_PRESIGN_ENDPOINT: ${S3_PRESIGN_ENDPOINT:-}
+  S3_BUCKET: ${S3_BUCKET:-agentifui}
+  S3_REGION: ${S3_REGION:-us-east-1}
+  S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+  S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+  S3_ENABLE_PATH_STYLE: '1'
+  S3_PUBLIC_READ_ENABLED: 'false'
+  STORAGE_LEGACY_RELAY_ENABLED: ${STORAGE_LEGACY_RELAY_ENABLED:-0}
+  BETTER_AUTH_ENABLED: 'true'
+  AUTH_BACKEND: better-auth
+  AUTH_PHONE_OTP_ENABLED: 'false'
+  BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
+  API_ENCRYPTION_KEY: ${API_ENCRYPTION_KEY:-}
+  NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+  NEXT_PUBLIC_BRAND_NAME: ${NEXT_PUBLIC_BRAND_NAME:-AgentifUI}
+  NEXT_PUBLIC_BRAND_DOMAIN: ${NEXT_PUBLIC_BRAND_DOMAIN:-example.com}
+  BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
+  BETTER_AUTH_TRUSTED_ORIGINS: ${BETTER_AUTH_TRUSTED_ORIGINS:-}
+  NEXT_PUBLIC_GITHUB_LOGIN_ENABLED: ${NEXT_PUBLIC_GITHUB_LOGIN_ENABLED:-false}
+  NEXT_PUBLIC_SSO_ONLY_MODE: ${NEXT_PUBLIC_SSO_ONLY_MODE:-false}
+  GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+  GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+  AUTH_EMAIL_VERIFICATION_MODE: ${AUTH_EMAIL_VERIFICATION_MODE:-smtp}
+  AUTH_RESET_PASSWORD_MODE: ${AUTH_RESET_PASSWORD_MODE:-smtp}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-465}
+  SMTP_SECURE: ${SMTP_SECURE:-true}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_FROM: ${SMTP_FROM:-}
+  FASTIFY_API_HOST: 0.0.0.0
+  FASTIFY_API_PORT: '3010'
+  FASTIFY_PROXY_ENABLED: '1'
+  FASTIFY_PROXY_BASE_URL: ${FASTIFY_PROXY_BASE_URL:-http://api:3010}
+  NEXT_UPSTREAM_BASE_URL: ${NEXT_UPSTREAM_BASE_URL:-http://web:3000}
+  PG_POOL_MAX: ${PG_POOL_MAX:-5}
+  PG_POOL_IDLE_MS: ${PG_POOL_IDLE_MS:-30000}
+  PG_POOL_CONNECT_MS: ${PG_POOL_CONNECT_MS:-5000}
+  CACHE_L2_REDIS_ENABLED: ${CACHE_L2_REDIS_ENABLED:-1}
+  CACHE_L2_REDIS_INVALIDATION_ENABLED: ${CACHE_L2_REDIS_INVALIDATION_ENABLED:-1}
+  CACHE_L2_KEY_PREFIX: ${CACHE_L2_KEY_PREFIX:-${REDIS_PREFIX:-agentifui}:cache:l2}
+  CACHE_L2_INVALIDATION_CHANNEL: ${CACHE_L2_INVALIDATION_CHANNEL:-${REDIS_PREFIX:-agentifui}:cache:invalidate}
+  REALTIME_SOURCE_MODE: db-outbox
+  REALTIME_REDIS_CHANNEL: ${REALTIME_REDIS_CHANNEL:-${REDIS_PREFIX:-agentifui}:realtime:events}
+  REALTIME_REDIS_STREAM_KEY: ${REALTIME_REDIS_STREAM_KEY:-${REDIS_PREFIX:-agentifui}:realtime:stream}
+  REALTIME_PUBLISH_ALLOW_LOCAL_FALLBACK: '0'
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
+  DIFY_UPLOAD_MAX_BYTES: ${DIFY_UPLOAD_MAX_BYTES:-16777216}
+  DIFY_INPUT_MODERATION_ENABLED: ${DIFY_INPUT_MODERATION_ENABLED:-0}
+  DIFY_INPUT_MODERATION_APP: ${DIFY_INPUT_MODERATION_APP:-}
+
+x-app: &app
+  <<: *image
+  init: true
+  restart: unless-stopped
+  stop_grace_period: 60s
+  environment: *environment
+  volumes:
+    - content:/data
+    - logs:/app/pm2-logs
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: '3'
+
+services:
+  web:
+    <<: *app
+    environment:
+      <<: *environment
+      REALTIME_OUTBOX_ENABLED: '0'
+    command: [web]
+    ports:
+      - '${WEB_BIND_IP:-127.0.0.1}:${WEB_PORT:-3000}:3000'
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:3000/api/auth/better/get-session').then(response=>{if(!response.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+  api:
+    <<: *app
+    environment:
+      <<: *environment
+      REALTIME_OUTBOX_ENABLED: '1'
+    command: [api]
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:3010/healthz').then(response=>{if(!response.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+  content:
+    <<: *image
+    profiles: [tools]
+    command: [content-check]
+    environment:
+      AGENTIF_RUNTIME_DIR: /data/runtime
+    volumes:
+      - content:/data
+  db-init:
+    <<: *image
+    profiles: [tools]
+    command: [db-init]
+    environment:
+      MIGRATOR_DATABASE_URL: ${MIGRATOR_DATABASE_URL:-}
+      APP_DATABASE_ROLE: ${APP_DATABASE_ROLE:-agentif_app}
+      APP_DATABASE_PASSWORD: ${APP_DATABASE_PASSWORD:-}
+  postgres:
+    image: postgres:18.6-alpine
+    profiles: [data]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-agentifui}
+      POSTGRES_USER: ${POSTGRES_USER:-agentif_owner}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    volumes:
+      - postgres:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  redis:
+    image: redis:7.4-alpine
+    profiles: [data]
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command:
+      [
+        sh,
+        -ec,
+        'test -n "$$REDIS_PASSWORD"; exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"',
+      ]
+    volumes:
+      - redis:/data
+    healthcheck:
+      test:
+        [
+          CMD-SHELL,
+          'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -q PONG',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  minio:
+    image: ${AGENTIF_MINIO_IMAGE:-agentifui-minio:source-9e49d5e7}
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.storage
+      target: minio
+    profiles: [data]
+    restart: unless-stopped
+    command: [server, /data, --console-address, ':9001']
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-agentif_owner}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
+      MINIO_API_CORS_ALLOW_ORIGIN: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+    volumes:
+      - objects:/data
+    ports:
+      - '${STORAGE_BIND_IP:-127.0.0.1}:${STORAGE_PORT:-9000}:9000'
+  storage-init:
+    image: ${AGENTIF_MC_IMAGE:-agentifui-mc:source-7394ce0d}
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.storage
+      target: mc
+    profiles: [tools]
+    entrypoint: [sh, /scripts/docker-storage-init.sh]
+    volumes:
+      - ./scripts/docker-storage-init.sh:/scripts/docker-storage-init.sh:ro
+    environment:
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-agentifui}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-agentif_owner}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
+
+volumes:
+  postgres:
+  redis:
+  objects:
+  content:
+  logs:
