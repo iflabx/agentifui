@@ -7,11 +7,14 @@ import type { ChatMessage } from '@lib/stores/chat-store';
 import { useChatStore } from '@lib/stores/chat-store';
 import { usePendingConversationStore } from '@lib/stores/pending-conversation-store';
 
+import type { AssistantMessagePersistenceFallback } from './types';
+
 type ChatMessageUpdates = Partial<Omit<ChatMessage, 'id' | 'isUser'>>;
 
 interface HandleChatSubmitStreamErrorInput {
   error: unknown;
   assistantMessageId: string | null;
+  assistantFallback?: AssistantMessagePersistenceFallback | null;
   finalDbConvUUID: string | null;
   userMessage: ChatMessage;
   addMessage: (messageData: Omit<ChatMessage, 'id'>) => ChatMessage;
@@ -45,28 +48,61 @@ export function handleChatSubmitStreamError(
     }
   );
 
-  if (input.assistantMessageId) {
-    input.setMessageError(input.assistantMessageId, errorMessage);
+  const fallback = input.assistantFallback;
+  const fallbackMessage: ChatMessage | null = fallback?.text.trim()
+    ? {
+        id:
+          fallback.id ||
+          input.assistantMessageId ||
+          `${input.userMessage.id}-assistant`,
+        text: fallback.text,
+        isUser: false,
+        isStreaming: false,
+        persistenceStatus: 'pending',
+        metadata: fallback.metadata,
+        token_count: fallback.tokenCount,
+        wasManuallyStopped: fallback.wasManuallyStopped,
+      }
+    : null;
+
+  if (input.assistantMessageId || fallbackMessage) {
+    if (input.assistantMessageId) {
+      if (fallbackMessage)
+        input.updateMessage(input.assistantMessageId, {
+          text: fallbackMessage.text,
+        });
+      input.setMessageError(input.assistantMessageId, errorMessage);
+    }
 
     if (input.finalDbConvUUID) {
-      const assistantMessage = useChatStore
-        .getState()
-        .messages.find(message => message.id === input.assistantMessageId);
+      const assistantMessage =
+        useChatStore
+          .getState()
+          .messages.find(message => message.id === input.assistantMessageId) ||
+        fallbackMessage;
       if (assistantMessage && assistantMessage.persistenceStatus !== 'saved') {
         console.log(
           `[handleSubmit] Save error assistant message, ID=${input.assistantMessageId}`
         );
-        input.updateMessage(input.assistantMessageId, {
+        input.updateMessage(assistantMessage.id, {
           persistenceStatus: 'pending',
         });
         void input
-          .saveMessage(assistantMessage, input.finalDbConvUUID)
+          .saveMessage(
+            {
+              ...assistantMessage,
+              ...(fallbackMessage ? { text: fallbackMessage.text } : {}),
+              error: errorMessage,
+              isStreaming: false,
+            },
+            input.finalDbConvUUID
+          )
           .catch(error => {
             console.error(
               '[handleSubmit] Failed to save error assistant message:',
               error
             );
-            input.updateMessage(input.assistantMessageId!, {
+            input.updateMessage(assistantMessage.id, {
               persistenceStatus: 'error',
             });
           });

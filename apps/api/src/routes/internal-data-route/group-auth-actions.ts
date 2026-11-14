@@ -1,11 +1,6 @@
 import { queryRowsWithPgUserContext } from '../../lib/pg-context';
 import { publicAppConfig } from '../../lib/public-app-config';
-import {
-  parsePositiveInt,
-  readString,
-  toErrorResponse,
-  toSuccessResponse,
-} from './helpers';
+import { readString, toErrorResponse, toSuccessResponse } from './helpers';
 import { type ApiActionResponse, LOCAL_GROUP_AUTH_ACTIONS } from './types';
 
 export async function handleGroupAuthAction(
@@ -78,30 +73,7 @@ export async function handleGroupAuthAction(
   }
 
   if (action === 'groups.incrementAppUsage') {
-    const serviceInstanceId = readString(payload?.serviceInstanceId);
-    const increment = Math.max(1, parsePositiveInt(payload?.increment, 1));
-    if (!serviceInstanceId) {
-      return toErrorResponse('Missing required fields', 400);
-    }
-
-    const rows = await queryRowsWithPgUserContext<{
-      success: boolean;
-      new_used_count: number;
-      quota_remaining: number | null;
-      error_message: string | null;
-    }>(
-      actorUserId,
-      undefined,
-      `SELECT * FROM increment_app_usage($1::uuid, $2::uuid, $3::integer)`,
-      [targetUserId, serviceInstanceId, increment]
-    );
-
-    const usageResult = rows[0];
-    if (!usageResult) {
-      return toErrorResponse('Failed to update usage count', 500);
-    }
-
-    return toSuccessResponse(usageResult);
+    return toErrorResponse('Usage is managed by generation admission', 409);
   }
 
   return null;

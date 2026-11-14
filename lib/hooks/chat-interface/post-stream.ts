@@ -62,6 +62,7 @@ export function syncChatStateAfterStreaming(
 }
 
 interface PersistChatMessagesAfterStreamingInput {
+  allowCurrentConversationFallback?: boolean;
   finalDbConvUUID: string | null;
   dbConversationUUID: string | null;
   conversationPersistencePromise?: Promise<string | null>;
@@ -99,11 +100,13 @@ function isPersistableConversationExternalId(
 }
 
 function resolveConversationExternalIdForPersistence(
-  finalRealConvId?: string
+  finalRealConvId?: string,
+  allowCurrentConversationFallback = true
 ): string | null {
   if (isPersistableConversationExternalId(finalRealConvId)) {
     return finalRealConvId;
   }
+  if (!allowCurrentConversationFallback) return null;
 
   const storeConversationId = useChatStore.getState().currentConversationId;
   if (isPersistableConversationExternalId(storeConversationId)) {
@@ -371,7 +374,8 @@ export async function persistChatMessagesAfterStreaming(
 ): Promise<string | null> {
   let currentDbConvId = input.finalDbConvUUID || input.dbConversationUUID;
   const conversationExternalId = resolveConversationExternalIdForPersistence(
-    input.finalRealConvId
+    input.finalRealConvId,
+    input.allowCurrentConversationFallback
   );
 
   if (!currentDbConvId && input.conversationPersistencePromise) {

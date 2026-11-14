@@ -1,8 +1,5 @@
 import { uploadDifyFile } from '@lib/services/dify/file-service';
-import {
-  type AttachmentFile,
-  useAttachmentStore,
-} from '@lib/stores/attachment-store';
+import { useAttachmentStore } from '@lib/stores/attachment-store';
 import { useNotificationStore } from '@lib/stores/ui/notification-store';
 
 import { useCallback } from 'react';
@@ -10,111 +7,66 @@ import { useCallback } from 'react';
 import type { ChatInputTranslations } from './helpers';
 
 interface UseChatInputUploadsInput {
-  addFiles: (files: File[]) => void;
+  scope: string | null;
   currentAppId: string | null;
   sessionUserId?: string;
   t: ChatInputTranslations;
-  updateFileStatus: (
-    fileId: string,
-    status: AttachmentFile['status'],
-    errorMessage?: string
-  ) => void;
-  updateFileUploadedId: (fileId: string, uploadedId: string) => void;
 }
 
 export function useChatInputUploads({
-  addFiles,
+  scope,
   currentAppId,
   sessionUserId,
   t,
-  updateFileStatus,
-  updateFileUploadedId,
 }: UseChatInputUploadsInput) {
+  const upload = useCallback(
+    async (fileId: string) => {
+      if (!scope || !currentAppId || !sessionUserId) return;
+      const store = useAttachmentStore.getState();
+      const attachment = store.getFiles(scope).find(file => file.id === fileId);
+      if (!attachment) return;
+      const attempt = store.beginUpload(scope, fileId);
+      if (attempt === undefined) return;
+      try {
+        const response = await uploadDifyFile(
+          currentAppId,
+          attachment.file,
+          sessionUserId
+        );
+        useAttachmentStore
+          .getState()
+          .finishUpload(scope, fileId, attempt, { uploadedId: response.id });
+      } catch (error) {
+        useAttachmentStore.getState().finishUpload(scope, fileId, attempt, {
+          error:
+            error instanceof Error ? error.message : t('input.uploadFailed'),
+        });
+      }
+    },
+    [scope, currentAppId, sessionUserId, t]
+  );
+
   const handleFileSelect = useCallback(
     (files: FileList | null) => {
-      if (!files || files.length === 0) {
-        return;
-      }
-
-      const filesArray = Array.from(files);
-      addFiles(filesArray);
-
-      filesArray.forEach(file => {
-        const fileId = `${file.name}-${file.lastModified}-${file.size}`;
-        updateFileStatus(fileId, 'uploading');
-
-        const appIdToUse = currentAppId || 'chat-input-warning-no-app-id';
-        const userIdToUse = sessionUserId || 'chat-input-warning-no-user-id';
-
-        uploadDifyFile(appIdToUse, file, userIdToUse)
-          .then(response => {
-            updateFileUploadedId(fileId, response.id);
-          })
-          .catch(error => {
-            updateFileStatus(
-              fileId,
-              'error',
-              error.message || t('input.uploadFailed')
-            );
-          });
-      });
-    },
-    [
-      addFiles,
-      currentAppId,
-      sessionUserId,
-      t,
-      updateFileStatus,
-      updateFileUploadedId,
-    ]
-  );
-
-  const handleRetryUpload = useCallback(
-    async (fileId: string) => {
-      const attachment = useAttachmentStore
-        .getState()
-        .files.find(file => file.id === fileId);
-
-      if (!attachment) {
+      if (!files?.length) return;
+      if (!scope || !currentAppId || !sessionUserId) {
         useNotificationStore
           .getState()
-          .showNotification(
-            `${t('input.retryUpload')}: ${t('input.fileUploadError')} ${fileId}`,
-            'error'
-          );
+          .showNotification(t('input.uploadFailed'), 'error', 3000);
         return;
       }
-
-      updateFileStatus(fileId, 'uploading');
-
-      try {
-        const appIdToUse = currentAppId || 'chat-input-warning-no-app-id';
-        const userIdToUse = sessionUserId || 'chat-input-warning-no-user-id';
-        const response = await uploadDifyFile(
-          appIdToUse,
-          attachment.file,
-          userIdToUse
-        );
-        updateFileUploadedId(fileId, response.id);
-      } catch (error) {
-        updateFileStatus(
-          fileId,
-          'error',
-          (error as Error).message || t('input.retryUpload')
-        );
-        useNotificationStore
-          .getState()
-          .showNotification(
-            `${t('input.fileUploadError')} ${attachment.name}: ${(error as Error)?.message || t('input.unknownError')}`,
-            'error'
-          );
-      }
+      const store = useAttachmentStore.getState();
+      const existing = new Set(store.getFiles(scope).map(file => file.id));
+      store.addFiles(Array.from(files), scope);
+      store
+        .getFiles(scope)
+        .filter(file => !existing.has(file.id))
+        .forEach(file => {
+          void upload(file.id);
+        });
     },
-    [currentAppId, sessionUserId, t, updateFileStatus, updateFileUploadedId]
+    [scope, currentAppId, sessionUserId, t, upload]
   );
 
-  return {
-    handleFileSelect,
-    handleRetryUpload,
-  };
+  return { handleFileSelect, handleRetryUpload: upload };
 }

@@ -18,15 +18,21 @@ export async function sendDirectChatMessage(
     return;
   }
 
-  const { setMessage } = useChatInputStore.getState();
-  const originalMessage = useChatInputStore.getState().message;
-
+  const original = useChatInputStore.getState().snapshot();
+  useChatInputStore.getState().setMessage(input.messageText);
+  const submitted = useChatInputStore.getState().snapshot();
   try {
-    setMessage(input.messageText);
     await input.handleSubmit(input.messageText, input.files, {});
   } catch (error) {
+    const store = useChatInputStore.getState();
+    const current = store.snapshot();
+    if (
+      store.resolveScope(submitted.scope) === current.scope &&
+      current.revision === submitted.revision &&
+      current.message === submitted.message
+    )
+      store.setMessage(original.message);
     console.error('[sendDirectMessage] Send failed:', error);
-    setMessage(originalMessage);
     throw error;
   }
 }

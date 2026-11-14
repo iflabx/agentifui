@@ -1,9 +1,10 @@
+import { captureDifyInputSubmission } from '@components/chat-input/submission';
 import type { UseCreateConversationReturn } from '@lib/hooks/create-conversation/types';
 import type { ChatMessage } from '@lib/stores/chat-store';
 import { selectIsProcessing, useChatStore } from '@lib/stores/chat-store';
 import type { PendingConversation } from '@lib/stores/pending-conversation-store';
 
-import { useCallback } from 'react';
+import { useCallback, useLayoutEffect, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 
 import type { ChatResolvedAppConfig } from './app-config';
@@ -13,6 +14,36 @@ import { executeChatSubmit } from './submit-flow';
 import type { ChatNodeEvent } from './types';
 
 type ChatMessageUpdates = Partial<Omit<ChatMessage, 'id' | 'isUser'>>;
+
+interface SubmissionViewOwner {
+  active: boolean;
+  paths: Set<string | null>;
+  userId: string;
+  routeAppId?: string | null;
+  messageIds: Set<string>;
+  taskIds: Set<string>;
+}
+
+function detachSubmissionView(owner: SubmissionViewOwner) {
+  owner.active = false;
+  const state = useChatStore.getState();
+  const ownsStreaming = Boolean(
+    state.streamingMessageId && owner.messageIds.has(state.streamingMessageId)
+  );
+  const ownsTask = Boolean(
+    state.currentTaskId && owner.taskIds.has(state.currentTaskId)
+  );
+  const lastUser = state.messages?.filter(message => message.isUser).at(-1);
+  if (
+    ownsStreaming ||
+    ownsTask ||
+    (lastUser && owner.messageIds.has(lastUser.id))
+  ) {
+    state.setIsWaitingForResponse(false);
+    if (ownsTask) state.setCurrentTaskId(null);
+    if (ownsStreaming) useChatStore.setState({ streamingMessageId: null });
+  }
+}
 
 interface UseChatSubmitHandlerInput {
   currentUserId: string | undefined;
@@ -104,6 +135,42 @@ export function useChatSubmitHandler({
   moderationT,
   incompleteAnswerMessage,
 }: UseChatSubmitHandlerInput) {
+  const task = useRef<SubmissionViewOwner | null>(null);
+  const latest = useRef({
+    currentUserId,
+    currentPathname,
+    preferredRouteAppId,
+  });
+  useLayoutEffect(() => {
+    latest.current = { currentUserId, currentPathname, preferredRouteAppId };
+    if (
+      task.current &&
+      (task.current.userId !== currentUserId ||
+        task.current.routeAppId !== preferredRouteAppId ||
+        !task.current.paths.has(currentPathname))
+    ) {
+      detachSubmissionView(task.current);
+      isSubmittingRef.current = false;
+      if (appendTimerRef.current) clearTimeout(appendTimerRef.current);
+      appendTimerRef.current = null;
+      chunkBufferRef.current = '';
+    }
+    if (task.current?.active && task.current.paths.has(currentPathname))
+      task.current.paths = new Set([currentPathname]);
+  }, [
+    currentUserId,
+    currentPathname,
+    preferredRouteAppId,
+    isSubmittingRef,
+    appendTimerRef,
+    chunkBufferRef,
+  ]);
+  useLayoutEffect(
+    () => () => {
+      if (task.current) detachSubmissionView(task.current);
+    },
+    []
+  );
   return useCallback(
     async (
       message: string,
@@ -126,12 +193,37 @@ export function useChatSubmitHandler({
         return;
       }
 
+      const owner = {
+        active: true,
+        paths: new Set([currentPathname]),
+        userId: currentUserId,
+        routeAppId: preferredRouteAppId,
+        messageIds: new Set<string>(),
+        taskIds: new Set<string>(),
+      };
+      task.current = owner;
+      const acceptInput = captureDifyInputSubmission(message, currentUserId);
+      isSubmittingRef.current = true;
+      const isCurrent = () =>
+        owner.active &&
+        task.current === owner &&
+        latest.current.currentUserId === owner.userId &&
+        latest.current.preferredRouteAppId === owner.routeAppId &&
+        owner.paths.has(latest.current.currentPathname);
+      const viewScope = {
+        isCurrent,
+        onRouteAdopted: (pathname: string) => {
+          if (isCurrent()) owner.paths.add(pathname);
+        },
+      };
+
       const appConfig = await resolveChatSubmitAppConfig({
         conversationAppId,
         preferredRouteAppId,
         ensureAppReady,
         validateConfig,
         onErrorMessage: errorMessage => {
+          if (!isCurrent()) return;
           addMessage({
             text: `Sorry, failed to get app config: ${errorMessage}. Please check your network or contact admin.`,
             isUser: false,
@@ -141,46 +233,60 @@ export function useChatSubmitHandler({
         },
       });
 
-      if (!appConfig) {
+      if (!appConfig || !isCurrent()) {
+        if (isCurrent()) isSubmittingRef.current = false;
         return;
       }
 
-      await executeChatSubmit({
-        message,
-        files,
-        inputs,
-        currentUserId,
-        appConfig,
-        isWelcomeScreen,
-        currentPathname,
-        difyConversationId,
-        dbConversationUUID,
-        onNodeEvent,
-        isSubmittingRef,
-        chunkBufferRef,
-        appendTimerRef,
-        setIsWelcomeScreen,
-        setDifyConversationId,
-        setDbConversationUUID,
-        setCurrentConversationId,
-        setCurrentTaskId,
-        setIsWaitingForResponse,
-        addMessage,
-        updateMessage,
-        setMessageError,
-        finalizeStreamingMessage,
-        markAsManuallyStopped,
-        updatePendingStatus,
-        saveMessage,
-        saveStoppedAssistantMessage,
-        saveErrorPlaceholder,
-        initiateNewConversation,
-        navigateToConversation,
-        flushChunkBuffer,
-        chunkAppendInterval,
-        moderationT,
-        incompleteAnswerMessage,
-      });
+      try {
+        await executeChatSubmit({
+          onAccepted: accepted => acceptInput(appConfig.appId, accepted),
+          viewScope,
+          message,
+          files,
+          inputs,
+          currentUserId,
+          appConfig,
+          isWelcomeScreen,
+          currentPathname,
+          difyConversationId,
+          dbConversationUUID,
+          onNodeEvent,
+          isSubmittingRef,
+          chunkBufferRef,
+          appendTimerRef,
+          setIsWelcomeScreen,
+          setDifyConversationId,
+          setDbConversationUUID,
+          setCurrentConversationId,
+          setCurrentTaskId: id => {
+            if (id) owner.taskIds.add(id);
+            setCurrentTaskId(id);
+          },
+          setIsWaitingForResponse,
+          addMessage: message => {
+            const added = addMessage(message);
+            owner.messageIds.add(added.id);
+            return added;
+          },
+          updateMessage,
+          setMessageError,
+          finalizeStreamingMessage,
+          markAsManuallyStopped,
+          updatePendingStatus,
+          saveMessage,
+          saveStoppedAssistantMessage,
+          saveErrorPlaceholder,
+          initiateNewConversation,
+          navigateToConversation,
+          flushChunkBuffer,
+          chunkAppendInterval,
+          moderationT,
+          incompleteAnswerMessage,
+        });
+      } finally {
+        if (isCurrent()) isSubmittingRef.current = false;
+      }
     },
     [
       currentUserId,

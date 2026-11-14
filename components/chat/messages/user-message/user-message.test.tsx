@@ -111,4 +111,26 @@ describe('UserMessage', () => {
       lastFileAttachmentDisplayProps?.attachments[0]?.preview_file_id
     ).toBe('preview-file-1');
   });
+
+  it('does not borrow the active application for an unknown historical attachment', () => {
+    render(
+      <UserMessage
+        id="legacy"
+        content="Attachment"
+        attachments={[
+          {
+            id: 'file',
+            name: 'notes.md',
+            size: 10,
+            type: 'text/markdown',
+            upload_file_id: 'native-file',
+          },
+        ]}
+      />
+    );
+    expect(lastFileAttachmentDisplayProps?.appId).toBeUndefined();
+    expect(
+      lastFileAttachmentDisplayProps?.attachments[0]?.app_id
+    ).toBeUndefined();
+  });
 });

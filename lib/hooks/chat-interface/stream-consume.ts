@@ -10,6 +10,8 @@ type ChatMessageUpdates = Partial<Omit<ChatMessage, 'id' | 'isUser'>>;
 const COMPLETION_METADATA_WAIT_TIMEOUT_MS = 1500;
 
 interface ConsumeChatAnswerStreamInput {
+  onInterrupted?: (snapshot: ChatAnswerStreamResult) => void;
+  isCurrent?: () => boolean;
   answerStream: AsyncGenerator<string, void, undefined>;
   assistantMessageId: string | null;
   isNewConversationFlow: boolean;
@@ -34,58 +36,64 @@ export async function consumeChatAnswerStream(
   let assistantText = '';
   let lastAppendTime = Date.now();
 
-  for await (const answerChunk of input.answerStream) {
-    assistantText += answerChunk;
+  try {
+    for await (const answerChunk of input.answerStream) {
+      assistantText += answerChunk;
+      if (input.isCurrent && !input.isCurrent()) continue;
 
-    if (
-      useChatStore.getState().streamingMessageId === null &&
-      assistantMessageId === null
-    ) {
-      const assistantMessage = input.addMessage({
-        text: '',
-        isUser: false,
-        isStreaming: true,
-      });
-      assistantMessageId = assistantMessage.id;
-      useChatStore.setState({ streamingMessageId: assistantMessageId });
-      input.setIsWaitingForResponse(false);
+      if (
+        useChatStore.getState().streamingMessageId === null &&
+        assistantMessageId === null
+      ) {
+        const assistantMessage = input.addMessage({
+          text: '',
+          isUser: false,
+          isStreaming: true,
+        });
+        assistantMessageId = assistantMessage.id;
+        useChatStore.setState({ streamingMessageId: assistantMessageId });
+        input.setIsWaitingForResponse(false);
 
-      if (input.isNewConversationFlow && input.finalRealConvId) {
-        input.updatePendingStatus(input.finalRealConvId, 'streaming_message');
+        if (input.isNewConversationFlow && input.finalRealConvId) {
+          input.updatePendingStatus(input.finalRealConvId, 'streaming_message');
+        }
       }
-    }
 
-    if (assistantMessageId) {
-      if (useChatStore.getState().streamingMessageId === assistantMessageId) {
-        input.chunkBufferRef.current += answerChunk;
-        if (
-          Date.now() - lastAppendTime >= input.chunkAppendInterval ||
-          input.chunkBufferRef.current.includes('\n') ||
-          input.chunkBufferRef.current.length > 200
-        ) {
-          input.flushChunkBuffer(assistantMessageId);
-          lastAppendTime = Date.now();
-        } else if (!input.appendTimerRef.current) {
-          input.appendTimerRef.current = setTimeout(() => {
+      if (assistantMessageId) {
+        if (useChatStore.getState().streamingMessageId === assistantMessageId) {
+          input.chunkBufferRef.current += answerChunk;
+          if (
+            Date.now() - lastAppendTime >= input.chunkAppendInterval ||
+            input.chunkBufferRef.current.includes('\n') ||
+            input.chunkBufferRef.current.length > 200
+          ) {
             input.flushChunkBuffer(assistantMessageId);
             lastAppendTime = Date.now();
-          }, input.chunkAppendInterval);
+          } else if (!input.appendTimerRef.current) {
+            input.appendTimerRef.current = setTimeout(() => {
+              input.flushChunkBuffer(assistantMessageId);
+              lastAppendTime = Date.now();
+            }, input.chunkAppendInterval);
+          }
+        } else {
+          console.log(
+            '[handleSubmit] Stream was stopped externally, breaking chunk processing.'
+          );
+          if (
+            !useChatStore
+              .getState()
+              .messages.find(message => message.id === assistantMessageId)
+              ?.wasManuallyStopped
+          ) {
+            input.markAsManuallyStopped(assistantMessageId);
+          }
+          break;
         }
-      } else {
-        console.log(
-          '[handleSubmit] Stream was stopped externally, breaking chunk processing.'
-        );
-        if (
-          !useChatStore
-            .getState()
-            .messages.find(message => message.id === assistantMessageId)
-            ?.wasManuallyStopped
-        ) {
-          input.markAsManuallyStopped(assistantMessageId);
-        }
-        break;
       }
     }
+  } catch (error) {
+    input.onInterrupted?.({ assistantMessageId, assistantText });
+    throw error;
   }
 
   input.flushChunkBuffer(assistantMessageId);
@@ -96,6 +104,7 @@ export async function consumeChatAnswerStream(
 }
 
 interface ApplyChatCompletionMetadataInput {
+  isCurrent?: () => boolean;
   completionPromise?: Promise<ChatStreamCompletionData>;
   assistantMessageId: string | null;
   updateMessage: (id: string, updates: ChatMessageUpdates) => void;
@@ -156,7 +165,11 @@ export async function applyChatCompletionMetadata(
 
   const completionWork = input.completionPromise
     .then(completionData => {
-      if (!input.assistantMessageId || !completionData) {
+      if (
+        !input.assistantMessageId ||
+        !completionData ||
+        (input.isCurrent && !input.isCurrent())
+      ) {
         return completionData || null;
       }
 

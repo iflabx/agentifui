@@ -418,6 +418,10 @@ afterEach(async () => {
   await database.query(`DROP TRIGGER IF EXISTS ${triggerName} ON messages`);
   await database.query(`DROP FUNCTION IF EXISTS ${triggerName}()`);
   await database.query(
+    'DELETE FROM agent_submissions WHERE user_id = ANY($1::uuid[])',
+    [actors]
+  );
+  await database.query(
     'DELETE FROM conversations WHERE user_id = ANY($1::uuid[])',
     [actors]
   );
@@ -474,6 +478,71 @@ it('exercises FORCE RLS with a non-superuser role and no implicit legacy access'
     (await getPgPool().query('SELECT * FROM backend_conversations')).rows
   ).toEqual([]);
   expect((await getStoredRun(ids.runId)).execution_status).toBe('success');
+});
+
+it('settles an attached legacy run when the old API writes a terminal status without charging or executing twice', async () => {
+  const submissionId = randomUUID();
+  const first = await submit(0, 'legacy running operation', { submissionId });
+  const ids = accepted(first.body);
+  const usage = (
+    await database.query(
+      'SELECT used_count FROM group_app_permissions WHERE group_id=$1 AND service_instance_id=$2',
+      [groupId, applications[0]]
+    )
+  ).rows[0].used_count;
+  await database.query('DELETE FROM agent_submissions WHERE run_id=$1', [
+    ids.runId,
+  ]);
+  await database.query(
+    "UPDATE backend_runs SET execution_status='running' WHERE id=$1",
+    [ids.runId]
+  );
+  const replay = await submit(0, 'legacy running operation', {
+    submissionId,
+    server: 1,
+  });
+  expect(accepted(replay.body).runId).toBe(ids.runId);
+  expect(
+    (
+      await database.query(
+        'SELECT state,quota_state FROM agent_submissions WHERE run_id=$1',
+        [ids.runId]
+      )
+    ).rows[0]
+  ).toEqual({ state: 'unknown', quota_state: 'none' });
+  await database.query(
+    "UPDATE backend_runs SET execution_status='success' WHERE id=$1",
+    [ids.runId]
+  );
+  expect(
+    (
+      await database.query(
+        'SELECT state,quota_state FROM agent_submissions WHERE run_id=$1',
+        [ids.runId]
+      )
+    ).rows[0]
+  ).toEqual({ state: 'finished', quota_state: 'none' });
+  const again = await submit(0, 'legacy running operation', { submissionId });
+  expect(accepted(again.body).runId).toBe(ids.runId);
+  expect(
+    (
+      await database.query(
+        'SELECT used_count FROM group_app_permissions WHERE group_id=$1 AND service_instance_id=$2',
+        [groupId, applications[0]]
+      )
+    ).rows[0].used_count
+  ).toBe(usage);
+  await expect(
+    database.query('UPDATE service_instances SET instance_id=$2 WHERE id=$1', [
+      applications[0],
+      `${marker}-legacy-finished`,
+    ])
+  ).resolves.toBeDefined();
+  await database.query(
+    'UPDATE service_instances SET instance_id=$2 WHERE id=$1',
+    [applications[0], `${marker}-0`]
+  );
+  expect(modelCalls()).toHaveLength(1);
 });
 
 it('authorizes entry, reports capabilities and never returns private config or service credentials', async () => {
@@ -732,7 +801,8 @@ it('keeps non-UUID application identifiers case-sensitive for generic creation',
     expect(
       (
         await database.query(
-          'SELECT count(*)::int AS count FROM backend_conversations'
+          'SELECT count(*)::int AS count FROM backend_conversations WHERE service_instance_id=ANY($1::uuid[])',
+          [applications]
         )
       ).rows[0].count
     ).toBe(0);

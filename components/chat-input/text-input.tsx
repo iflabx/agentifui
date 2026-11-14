@@ -3,7 +3,7 @@
 import { INITIAL_INPUT_HEIGHT } from '@lib/stores/chat-layout-store';
 import { cn } from '@lib/utils';
 
-import { forwardRef, useCallback, useEffect, useRef } from 'react';
+import { forwardRef, useCallback, useEffect, useId, useRef } from 'react';
 
 import { useTranslations } from 'next-intl';
 
@@ -42,22 +42,20 @@ export const ChatTextInput = forwardRef<
     ref
   ) => {
     const t = useTranslations('pages.chat');
+    const inputId = useId();
     const defaultPlaceholder = placeholder || t('input.placeholder');
 
     // Internal reference, used when no external ref is provided
     const internalRef = useRef<HTMLTextAreaElement>(null);
 
-    // Get the currently available reference
-    const getTextarea = () => {
-      if (ref && typeof ref === 'object' && ref.current) {
-        return ref.current;
-      }
-      return internalRef.current;
-    };
+    useEffect(() => {
+      if (!disabled && document.activeElement === document.body)
+        internalRef.current?.focus();
+    }, [disabled]);
 
     // Height adjustment logic
     const updateHeight = useCallback(() => {
-      const textarea = getTextarea();
+      const textarea = internalRef.current;
       if (!textarea) return;
 
       // Save current selection position and scroll position
@@ -81,7 +79,7 @@ export const ChatTextInput = forwardRef<
       if (onHeightChange) {
         onHeightChange(Math.max(newHeight, INITIAL_INPUT_HEIGHT));
       }
-    }, [maxHeight, onHeightChange, ref]);
+    }, [maxHeight, onHeightChange]);
 
     // Adjust height based on value change
     useEffect(() => {
@@ -98,6 +96,9 @@ export const ChatTextInput = forwardRef<
 
     return (
       <textarea
+        id={inputId}
+        name="message"
+        aria-label={t('input.placeholder')}
         ref={node => {
           // Update internal reference simultaneously
           internalRef.current = node;
@@ -105,6 +106,8 @@ export const ChatTextInput = forwardRef<
           // If an external ref callback is provided, also call it
           if (ref && typeof ref === 'function') {
             ref(node);
+          } else if (ref) {
+            ref.current = node;
           }
         }}
         value={value}

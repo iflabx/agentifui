@@ -2,7 +2,6 @@
 
 import { UserMessageActions } from '@components/chat/message-actions';
 import { useMobile, useMounted } from '@lib/hooks';
-import { useCurrentApp } from '@lib/hooks/use-current-app';
 import { MessageAttachment } from '@lib/stores/chat-store';
 import { cn } from '@lib/utils';
 
@@ -26,13 +25,12 @@ export const UserMessage: React.FC<UserMessageProps> = ({
   conversationAppId = null,
   id,
   className,
-  onEdit = () => console.log('Edit message', id),
+  onEdit,
 }) => {
   const isMobile = useMobile();
   const isMounted = useMounted();
-  const { currentAppId } = useCurrentApp();
   const hasAttachments = attachments && attachments.length > 0;
-  const previewAppId = conversationAppId || currentAppId || undefined;
+  const previewAppId = conversationAppId || undefined;
 
   if (!isMounted) {
     return null;

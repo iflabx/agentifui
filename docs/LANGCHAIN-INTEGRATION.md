@@ -12,6 +12,10 @@ wire proxy.
 
 ## Configure An Application
 
+Generation uses the common server-side identity, input moderation, quota and
+idempotency gate described in [Agent Governance](AGENT-GOVERNANCE.md). This does
+not implement AG-UI replay, human input or resume.
+
 1. Apply the database migrations using the deployment's usual migration process.
 2. In API configuration, create a provider whose base URL is reachable from every
    API replica. Use HTTPS outside a trusted local network. Do not put credentials

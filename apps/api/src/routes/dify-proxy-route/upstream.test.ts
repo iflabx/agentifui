@@ -5,6 +5,11 @@ import { request as httpRequest } from 'node:http';
 import { type AddressInfo, createConnection } from 'node:net';
 
 import {
+  confirmSubmission,
+  markSubmissionSubmitting,
+  rejectUnacceptedSubmission,
+} from '../../lib/agent-submissions';
+import {
   fetchWithDifyProxyResilience,
   getDifyProxyCircuitSnapshot,
 } from '../../lib/dify-proxy-resilience';
@@ -27,6 +32,12 @@ jest.mock('./trusted-user-context', () => ({
   injectTrustedUserContext: jest.fn(),
   loadTrustedUserProfile: jest.fn(),
   shouldInjectTrustedUserContext: jest.fn(),
+}));
+jest.mock('../../lib/agent-submissions', () => ({
+  confirmSubmission: jest.fn().mockResolvedValue(undefined),
+  markSubmissionSubmitting: jest.fn().mockResolvedValue(undefined),
+  rejectSubmission: jest.fn().mockResolvedValue(undefined),
+  rejectUnacceptedSubmission: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('../../lib/error-events', () => ({
@@ -243,6 +254,51 @@ describe('dispatchDifyUpstreamRequest trusted user context integration', () => {
   afterAll(() => {
     global.fetch = originalFetch;
   });
+
+  it.each([400, 401, 403, 404, 405, 413, 415, 422])(
+    'releases a governed HTTP %s refusal before native acceptance',
+    async status => {
+      mockedFetch.mockResolvedValue(
+        new Response(JSON.stringify({ code: 'synthetic_refusal' }), {
+          status,
+          headers: { 'content-type': 'application/json' },
+        })
+      );
+      await dispatchDifyUpstreamRequest(
+        createRequest(),
+        createReply(),
+        createContext(),
+        createTargetConfig({ rootTaskId: 'root-task' })
+      );
+      expect(markSubmissionSubmitting).toHaveBeenCalledWith('root-task');
+      expect(rejectUnacceptedSubmission).toHaveBeenCalledWith('root-task');
+      expect(mockedFetch).toHaveBeenCalledTimes(1);
+      expect(confirmSubmission).not.toHaveBeenCalledWith(
+        'root-task',
+        'accepted'
+      );
+    }
+  );
+
+  it.each([429, 500, 503])(
+    'retains governed HTTP %s as unknown rather than assuming acceptance or refusal',
+    async status => {
+      mockedFetch.mockResolvedValue(
+        new Response('{}', {
+          status,
+          headers: { 'content-type': 'application/json' },
+        })
+      );
+      await dispatchDifyUpstreamRequest(
+        createRequest(),
+        createReply(),
+        createContext(),
+        createTargetConfig({ rootTaskId: 'root-task' })
+      );
+      expect(rejectUnacceptedSubmission).not.toHaveBeenCalled();
+      expect(confirmSubmission).toHaveBeenCalledWith('root-task', 'unknown');
+    }
+  );
 
   it.each(['timeout', 'client-abort'] as const)(
     'handles %s during JSON body consumption and removes downstream listeners',

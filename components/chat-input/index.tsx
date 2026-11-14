@@ -1,7 +1,6 @@
 'use client';
 
 import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
-import { useChatWidth, useInputHeightReset } from '@lib/hooks';
 import {
   formatChatUiError,
   isContentModerationBlocked,
@@ -9,7 +8,11 @@ import {
   reportTraceableClientError,
 } from '@lib/hooks/chat-interface/error-utils';
 import { isChatSubmitResult } from '@lib/hooks/chat-interface/guards';
-import { useChatInputRouteSync } from '@lib/hooks/use-chat-input-route-sync';
+import {
+  registerChatInputSubmission,
+  useChatInputRouteSync,
+} from '@lib/hooks/use-chat-input-route-sync';
+import { useChatWidth } from '@lib/hooks/use-chat-width';
 import { useCurrentApp } from '@lib/hooks/use-current-app';
 import { useAppListStore } from '@lib/stores/app-list-store';
 import { useAttachmentStore } from '@lib/stores/attachment-store';
@@ -20,27 +23,17 @@ import {
 } from '@lib/stores/chat-layout-store';
 import { useNotificationStore } from '@lib/stores/ui/notification-store';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 
-import { ChatInputActions } from './actions';
 import { AttachmentPreviewBar } from './attachment-preview-bar';
-import { ChatContainer } from './container';
+import { FileTypeSelector } from './file-type-selector';
 import { useFocusManager } from './focus-manager';
-import {
-  buildSubmitFiles,
-  getChatInputAriaLabel,
-  shouldBlockEnterSubmit,
-} from './helpers';
-import { ChatTextArea } from './layout';
-import { ChatTextInput } from './text-input';
-import {
-  useChatInputButtonVisibility,
-  useChatInputFocusEffects,
-  useChatInputWaitingEffect,
-} from './use-effects';
+import { buildSubmitFiles } from './helpers';
+import { ModelSelectorButton } from './model-selector-button';
 import { useChatInputUploads } from './use-uploads';
+import { ChatInputView } from './view';
 
 interface ChatInputProps {
   className?: string;
@@ -76,208 +69,132 @@ export const ChatInput = ({
 }: ChatInputProps) => {
   const t = useTranslations('pages.chat');
   const tModeration = useTranslations('errors.system.moderation');
-  const defaultPlaceholder = placeholder || t('input.placeholder');
+  const { session, loading } = useAuthSession();
+  const { currentAppId, isValidatingForMessage } = useCurrentApp();
+  const route = useChatInputRouteSync({
+    userId: session?.user?.id,
+    appId: currentAppId,
+    authLoading: loading,
+  });
   const { widthClass } = useChatWidth();
-  const { setInputHeight } = useChatLayoutStore();
-  const {
-    message,
-    setMessage,
-    clearMessage,
-    isComposing,
-    setIsComposing,
-    isWelcomeScreen,
-  } = useChatInputStore();
-  const [isLocalSubmitting, setIsLocalSubmitting] = useState(false);
-  const {
-    files: attachments,
-    addFiles,
-    clearFiles: clearAttachments,
-    updateFileStatus,
-    updateFileUploadedId,
-  } = useAttachmentStore();
-  const [attachmentBarHeight, setAttachmentBarHeight] = useState(0);
-  const [textAreaHeight, setTextAreaHeight] = useState(INITIAL_INPUT_HEIGHT);
-
-  useInputHeightReset(isWelcomeScreen);
-  useChatInputRouteSync();
-
+  const { message, setMessage, isWelcomeScreen, currentRoute } =
+    useChatInputStore();
+  const attachments = useAttachmentStore(state => state.files);
+  const apps = useAppListStore(state => state.apps);
+  const [submittingScope, setSubmittingScope] = useState<string | null>(null);
+  const canonicalSubmittingScope = useChatInputStore(state =>
+    submittingScope === null ? null : state.resolveScope(submittingScope)
+  );
+  const locks = useRef(new Set<string>());
+  const textHeight = useRef(INITIAL_INPUT_HEIGHT);
+  const barHeight = useRef(0);
+  const registeredInput = useRef<React.RefObject<HTMLTextAreaElement> | null>(
+    null
+  );
   const inputRef = useCallback((node: HTMLTextAreaElement | null) => {
     if (node) {
-      const ref = { current: node } as React.RefObject<HTMLTextAreaElement>;
+      const ref = { current: node };
+      registeredInput.current = ref;
       useFocusManager.getState().registerRef(ref);
+    } else if (
+      useFocusManager.getState().inputRef === registeredInput.current
+    ) {
+      useFocusManager.getState().unregisterRef();
+      registeredInput.current = null;
     }
   }, []);
-
-  const handleChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setMessage(event.target.value);
-  };
-
-  const currentLayoutInputHeight = useChatLayoutStore(
-    state => state.inputHeight
-  );
-
-  const handleTextHeightChange = useCallback(
-    (newObservedHeight: number) => {
-      const newCalculatedTextAreaHeight = Math.max(
-        newObservedHeight,
-        INITIAL_INPUT_HEIGHT
-      );
-      setTextAreaHeight(newCalculatedTextAreaHeight);
-
-      const newTotalInputHeight =
-        newCalculatedTextAreaHeight + attachmentBarHeight;
-      if (currentLayoutInputHeight !== newTotalInputHeight) {
-        setInputHeight(newTotalInputHeight);
-      }
-    },
-    [attachmentBarHeight, currentLayoutInputHeight, setInputHeight]
-  );
-
-  const handleAttachmentBarHeightChange = useCallback(
-    (newAttachmentBarHeight: number) => {
-      setAttachmentBarHeight(newAttachmentBarHeight);
-
-      const newTotalInputHeight = textAreaHeight + newAttachmentBarHeight;
-      if (currentLayoutInputHeight !== newTotalInputHeight) {
-        setInputHeight(newTotalInputHeight);
-      }
-    },
-    [currentLayoutInputHeight, setInputHeight, textAreaHeight]
-  );
-
-  const { session } = useAuthSession();
-  const {
-    currentAppId,
-    isValidating: isValidatingAppConfig,
-    isValidatingForMessage: isValidatingForMessageOnly,
-  } = useCurrentApp();
-
-  const { apps } = useAppListStore();
-  const availableModels = apps.filter(app => {
-    const metadata = app.config?.app_metadata;
-    return metadata?.app_type === 'model';
-  });
-  const hasAvailableModels = availableModels.length > 0;
-  const currentSelectedModel = availableModels.find(
-    app => app.instance_id === currentAppId
-  );
-  const hasValidSelectedModel = !!currentSelectedModel;
-  const canSubmitWithModel =
+  const updateTextHeight = useCallback((height: number) => {
+    textHeight.current = height;
+    useChatLayoutStore.getState().setInputHeight(height + barHeight.current);
+  }, []);
+  const updateBarHeight = useCallback((height: number) => {
+    barHeight.current = height;
+    useChatLayoutStore.getState().setInputHeight(height + textHeight.current);
+  }, []);
+  const validModel =
     !requireModelValidation ||
     !showModelSelector ||
-    (hasAvailableModels && hasValidSelectedModel);
-
-  useChatInputWaitingEffect({
-    clearAttachments,
-    clearMessage,
-    isWaiting,
-    setIsLocalSubmitting,
+    apps.some(
+      app =>
+        app.instance_id === route.appId &&
+        app.config?.app_metadata?.app_type === 'model'
+    );
+  const blockedAttachments = attachments.some(
+    file => file.status !== 'success' || !file.uploadedId
+  );
+  const localSubmitting =
+    submittingScope !== null && canonicalSubmittingScope === currentRoute;
+  const disabled =
+    !route.ready ||
+    !session ||
+    !onSubmit ||
+    !validModel ||
+    isValidatingForMessage;
+  const waiting = isWaiting || isWaitingForResponse || localSubmitting;
+  const { handleFileSelect, handleRetryUpload } = useChatInputUploads({
+    scope: route.ready ? currentRoute : null,
+    currentAppId: route.appId === currentAppId ? route.appId : null,
+    sessionUserId: session?.user?.id,
+    t,
   });
 
   const handleLocalSubmit = async () => {
-    if (isLocalSubmitting) {
+    const input = useChatInputStore.getState();
+    const snapshot = input.snapshot();
+    if (
+      disabled ||
+      waiting ||
+      isProcessing ||
+      blockedAttachments ||
+      !snapshot.message.trim() ||
+      locks.current.has(snapshot.scope) ||
+      !onSubmit
+    )
       return;
-    }
-
-    let savedMessage = '';
-    let savedAttachments = [] as typeof attachments;
-
+    const files = [...useAttachmentStore.getState().getFiles(snapshot.scope)];
+    const userId = session!.user.id;
+    const appId = route.appId!;
+    locks.current.add(snapshot.scope);
+    setSubmittingScope(snapshot.scope);
+    const unregister = registerChatInputSubmission(snapshot.scope);
+    const isCurrent = () =>
+      useChatInputStore.getState().actorId === userId &&
+      useChatInputStore.getState().resolveScope(snapshot.scope) ===
+        useChatInputStore.getState().currentRoute;
+    const consume = () => {
+      useChatInputStore.getState().consumeSnapshot(snapshot);
+      useAttachmentStore.getState().consumeFiles(snapshot.scope, files);
+    };
     try {
-      setIsLocalSubmitting(true);
-      savedMessage = message;
-      savedAttachments = useAttachmentStore.getState().files;
-      const filesToSend = buildSubmitFiles(savedAttachments);
-
-      if (savedMessage.trim() && onSubmit) {
-        const submitResult = await onSubmit(savedMessage, filesToSend);
-
-        if (isChatSubmitResult(submitResult) && !submitResult.ok) {
-          const submitFailureMessage =
-            localizeChatModerationMessage(
-              {
-                code: submitResult.errorCode || 'REQUEST_FAILED',
-                developerMessage: submitResult.errorMessage,
-              },
-              (key, values) => tModeration(key, values)
-            ) ||
-            submitResult.errorMessage ||
-            `${t('input.messageSendFailed')}: ${t('input.unknownError')}`;
-          const isModerationBlocked = isContentModerationBlocked(
-            submitResult.errorCode
-          );
-
-          void reportTraceableClientError({
-            code: submitResult.errorCode || 'CHAT_INPUT_SUBMIT_FAILED',
-            userMessage: submitFailureMessage,
-            developerMessage: 'ChatInput submission returned ok=false',
-            requestId: submitResult.requestId,
-            context: {
-              component: 'chat-input',
-              phase: 'submit_result',
-              currentAppId: currentAppId || null,
-              userId: session?.user?.id || null,
-              attachmentCount: savedAttachments.length,
-              messageLength: savedMessage.length,
-              surfaced: Boolean(submitResult.surfaced),
+      const result = await onSubmit(snapshot.message, buildSubmitFiles(files));
+      if (isChatSubmitResult(result) && result.ok) consume();
+      if (isChatSubmitResult(result) && !result.ok) {
+        const failure =
+          localizeChatModerationMessage(
+            {
+              code: result.errorCode || 'REQUEST_FAILED',
+              developerMessage: result.errorMessage,
             },
-          });
-
-          if (isModerationBlocked) {
-            clearMessage();
-            clearAttachments();
-            useNotificationStore
-              .getState()
-              .showNotification(submitFailureMessage, 'warning', 5000);
-            return;
-          }
-
-          if (!submitResult.surfaced) {
-            setMessage(savedMessage);
-            useAttachmentStore.getState().setFiles(savedAttachments);
-            useNotificationStore
-              .getState()
-              .showNotification(submitFailureMessage, 'error', 5000);
-          }
-          return;
-        }
+            (key, values) => tModeration(key, values)
+          ) ||
+          result.errorMessage ||
+          t('input.messageSendFailed');
+        const moderated = isContentModerationBlocked(result.errorCode);
+        if (moderated) consume();
+        if (isCurrent() && !result.surfaced)
+          useNotificationStore
+            .getState()
+            .showNotification(failure, moderated ? 'warning' : 'error', 5000);
       }
     } catch (error) {
       const { errorMessage, errorCode, requestId } = formatChatUiError(
         error,
-        `${t('input.messageSendFailed')}: ${t('input.unknownError')}`,
+        t('input.messageSendFailed'),
         'frontend',
-        {
-          moderationT: (key, values) => tModeration(key, values),
-        }
+        { moderationT: (key, values) => tModeration(key, values) }
       );
-      const isModerationBlocked = isContentModerationBlocked(errorCode);
-
-      if (isModerationBlocked) {
-        clearMessage();
-        clearAttachments();
-        void reportTraceableClientError({
-          code: errorCode || 'CHAT_INPUT_SUBMIT_THROWN',
-          userMessage: errorMessage,
-          developerMessage:
-            error instanceof Error ? error.message : String(error),
-          requestId,
-          context: {
-            component: 'chat-input',
-            phase: 'submit_throw',
-            currentAppId: currentAppId || null,
-            userId: session?.user?.id || null,
-            attachmentCount: savedAttachments.length,
-            messageLength: savedMessage.length,
-          },
-        });
-        useNotificationStore
-          .getState()
-          .showNotification(errorMessage, 'warning', 3000);
-        return;
-      }
-
-      setMessage(savedMessage);
-      useAttachmentStore.getState().setFiles(savedAttachments);
+      const moderated = isContentModerationBlocked(errorCode);
+      if (moderated) consume();
       void reportTraceableClientError({
         code: errorCode || 'CHAT_INPUT_SUBMIT_THROWN',
         userMessage: errorMessage,
@@ -287,149 +204,69 @@ export const ChatInput = ({
         context: {
           component: 'chat-input',
           phase: 'submit_throw',
-          currentAppId: currentAppId || null,
-          userId: session?.user?.id || null,
-          attachmentCount: savedAttachments.length,
-          messageLength: savedMessage.length,
+          currentAppId: appId,
+          attachmentCount: files.length,
+          messageLength: snapshot.message.length,
         },
       });
-      useNotificationStore
-        .getState()
-        .showNotification(errorMessage, 'error', 3000);
+      if (isCurrent())
+        useNotificationStore
+          .getState()
+          .showNotification(
+            errorMessage,
+            moderated ? 'warning' : 'error',
+            3000
+          );
     } finally {
-      setIsLocalSubmitting(false);
+      unregister();
+      locks.current.delete(snapshot.scope);
+      setSubmittingScope(current =>
+        current === snapshot.scope ? null : current
+      );
     }
   };
-
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Enter' && !event.shiftKey && !isComposing) {
-      event.preventDefault();
-
-      if (
-        !shouldBlockEnterSubmit({
-          attachments,
-          canSubmitWithModel,
-          isComposing,
-          isLocalSubmitting,
-          isProcessing,
-          isValidatingAppConfig,
-          isWaiting,
-          message,
-        })
-      ) {
-        void handleLocalSubmit();
-      }
-    }
-  };
-
-  const handleCompositionStart = () => {
-    setIsComposing(true);
-  };
-
-  const handleCompositionEnd = () => {
-    setIsComposing(false);
-  };
-
-  useChatInputFocusEffects({
-    externalIsWelcomeScreen,
-    isProcessing,
-    isWaitingForResponse,
-    isWelcomeScreen,
-    message,
-  });
-
-  const { handleFileSelect, handleRetryUpload } = useChatInputUploads({
-    addFiles,
-    currentAppId,
-    sessionUserId: session?.user?.id,
-    t,
-    updateFileStatus,
-    updateFileUploadedId,
-  });
-
-  const isUploading = attachments.some(file => file.status === 'uploading');
-  const hasError = attachments.some(file => file.status === 'error');
-  const isValidatingConfig = isValidatingForMessageOnly;
-  const effectiveIsWelcomeScreen = externalIsWelcomeScreen || isWelcomeScreen;
-  const showButtons = useChatInputButtonVisibility({
-    effectiveIsWelcomeScreen,
-    isLocalSubmitting,
-    isProcessing,
-    isTransitioningToWelcome,
-  });
-  const sendButtonDisabled =
-    isLocalSubmitting ||
-    isWaiting ||
-    isValidatingConfig ||
-    isUploading ||
-    hasError ||
-    (!isProcessing && !message.trim()) ||
-    !canSubmitWithModel;
-  const sendButtonAriaLabel = getChatInputAriaLabel({
-    canSubmitWithModel,
-    hasAvailableModels,
-    hasError,
-    isLocalSubmitting,
-    isProcessing,
-    isUploading,
-    isValidatingConfig,
-    isWaiting,
-    requireModelValidation,
-    t,
-  });
-  const actionClick =
-    isLocalSubmitting || isWaiting || isValidatingConfig
-      ? undefined
-      : isProcessing
-        ? onStop
-        : () => {
-            void handleLocalSubmit();
-          };
 
   return (
-    <ChatContainer
-      isWelcomeScreen={effectiveIsWelcomeScreen}
+    <ChatInputView
+      key={route.ready ? currentRoute : 'loading'}
+      value={route.ready ? message : ''}
+      onValueChange={setMessage}
+      onSubmit={handleLocalSubmit}
+      disabled={disabled}
+      isProcessing={isProcessing}
+      onStop={onStop}
+      isWaiting={waiting || blockedAttachments}
       className={className}
+      placeholder={placeholder}
+      maxHeight={maxHeight}
+      isWelcomeScreen={externalIsWelcomeScreen || isWelcomeScreen}
       widthClass={widthClass}
       isTransitioningToWelcome={isTransitioningToWelcome}
-    >
-      <AttachmentPreviewBar
-        onHeightChange={handleAttachmentBarHeightChange}
-        onRetryUpload={handleRetryUpload}
-      />
-
-      <ChatTextArea>
-        <ChatTextInput
-          ref={inputRef}
-          value={message}
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-          placeholder={defaultPlaceholder}
-          maxHeight={maxHeight}
-          onCompositionStart={handleCompositionStart}
-          onCompositionEnd={handleCompositionEnd}
-          onHeightChange={handleTextHeightChange}
-        />
-      </ChatTextArea>
-
-      <ChatInputActions
-        attachmentAriaLabel={t('input.addAttachment')}
-        isLocalSubmitting={isLocalSubmitting}
-        isProcessing={isProcessing}
-        isUploading={isUploading}
-        isValidatingConfig={isValidatingConfig}
-        isWaiting={isWaiting}
-        onActionClick={actionClick}
-        onFileSelect={handleFileSelect}
-        sendButtonAriaLabel={sendButtonAriaLabel}
-        sendButtonDisabled={sendButtonDisabled}
-        showButtons={showButtons}
-        showModelSelector={showModelSelector}
-      />
-    </ChatContainer>
+      onHeightChange={updateTextHeight}
+      onInputRef={inputRef}
+      attachmentPreview={
+        route.ready ? (
+          <AttachmentPreviewBar
+            onHeightChange={updateBarHeight}
+            onRetryUpload={handleRetryUpload}
+          />
+        ) : undefined
+      }
+      attachmentAction={
+        route.ready && route.appId === currentAppId ? (
+          <FileTypeSelector
+            onFileSelect={handleFileSelect}
+            disabled={disabled || waiting || isProcessing}
+            ariaLabel={t('input.addAttachment')}
+          />
+        ) : undefined
+      }
+      modelSelector={showModelSelector ? <ModelSelectorButton /> : undefined}
+    />
   );
 };
 
+export { ChatInputView } from './view';
 export { ChatButton } from './button';
 export { ChatTextInput } from './text-input';
 export { ChatButtonArea, ChatTextArea } from './layout';

@@ -35,6 +35,9 @@ import {
 import type {
   AssistantMessagePersistenceFallback,
   ChatStreamCompletionData,
+  ChatSubmissionAccepted,
+  ChatSubmissionBinding,
+  ChatViewScope,
   DifyLocalFile,
 } from './types';
 
@@ -129,6 +132,8 @@ function buildAssistantPersistenceFallback(input: {
 }
 
 interface ExecuteChatSubmitInput {
+  onAccepted?: (accepted: ChatSubmissionAccepted) => void;
+  viewScope?: ChatViewScope;
   message: string;
   files?: unknown[];
   inputs?: Record<string, unknown>;
@@ -182,6 +187,38 @@ interface ExecuteChatSubmitInput {
 export async function executeChatSubmit(
   input: ExecuteChatSubmitInput
 ): Promise<void> {
+  const isCurrent = input.viewScope?.isCurrent || (() => true);
+  const guard =
+    <Args extends unknown[]>(callback: (...args: Args) => void) =>
+    (...args: Args) => {
+      if (isCurrent()) callback(...args);
+    };
+  const original = input;
+  input = {
+    ...input,
+    setIsWelcomeScreen: guard(input.setIsWelcomeScreen),
+    setDifyConversationId: guard(input.setDifyConversationId),
+    setDbConversationUUID: guard(input.setDbConversationUUID),
+    setCurrentConversationId: guard(input.setCurrentConversationId),
+    setCurrentTaskId: guard(input.setCurrentTaskId),
+    setIsWaitingForResponse: guard(input.setIsWaitingForResponse),
+    addMessage: message =>
+      isCurrent()
+        ? original.addMessage(message)
+        : { ...message, id: crypto.randomUUID() },
+    updateMessage: guard(input.updateMessage),
+    setMessageError: guard(input.setMessageError),
+    finalizeStreamingMessage: guard(input.finalizeStreamingMessage),
+    markAsManuallyStopped: guard(input.markAsManuallyStopped),
+    flushChunkBuffer: guard(input.flushChunkBuffer),
+    onNodeEvent: input.onNodeEvent ? guard(input.onNodeEvent) : undefined,
+    navigateToConversation: id => {
+      if (isCurrent()) {
+        input.viewScope?.onRouteAdopted(`/chat/${id}`);
+        original.navigateToConversation(id);
+      }
+    },
+  };
   input.isSubmittingRef.current = true;
   input.setIsWaitingForResponse(true);
 
@@ -200,7 +237,9 @@ export async function executeChatSubmit(
   if (input.isWelcomeScreen) {
     input.setIsWelcomeScreen(false);
     if (window.location.pathname === '/chat/new') {
-      window.history.replaceState({}, '', `/chat/temp-${Date.now()}`);
+      const temporaryPath = `/chat/temp-${Date.now()}`;
+      input.viewScope?.onRouteAdopted(temporaryPath);
+      window.history.replaceState({}, '', temporaryPath);
     }
   }
 
@@ -212,6 +251,19 @@ export async function executeChatSubmit(
   let conversationPersistencePromise: Promise<string | null> | undefined;
   let answerStream: AsyncGenerator<string, void, undefined> | undefined;
   let assistantFallback: AssistantMessagePersistenceFallback | null = null;
+  let getBinding: (() => ChatSubmissionBinding) | undefined;
+  const refreshBinding = () => {
+    const binding = getBinding?.();
+    finalRealConvId = binding?.externalId || finalRealConvId;
+    finalTaskId = binding?.taskId || finalTaskId;
+    finalDbConvUUID = binding?.dbConversationId || finalDbConvUUID;
+  };
+  const onAccepted = (accepted: ChatSubmissionAccepted) => {
+    finalRealConvId = accepted.externalId;
+    finalTaskId = accepted.taskId;
+    input.setCurrentTaskId(accepted.taskId);
+    input.onAccepted?.(accepted);
+  };
 
   const urlIndicatesNew =
     window.location.pathname === '/chat/new' ||
@@ -230,6 +282,7 @@ export async function executeChatSubmit(
 
     const submitStartResult = isNewConversationFlow
       ? await startNewChatConversation({
+          onAccepted,
           payload: {
             query: input.message,
             user: input.currentUserId,
@@ -247,8 +300,10 @@ export async function executeChatSubmit(
           navigateToConversation: input.navigateToConversation,
           saveMessage: input.saveMessage,
           onNodeEvent: input.onNodeEvent,
+          viewScope: input.viewScope,
         })
       : await startExistingChatConversation({
+          onAccepted,
           message: input.message,
           inputs: input.inputs,
           difyFiles: difyFiles as DifyLocalFile[] | undefined,
@@ -274,12 +329,21 @@ export async function executeChatSubmit(
     completionPromise = submitStartResult.completionPromise;
     conversationPersistencePromise =
       submitStartResult.conversationPersistencePromise;
+    getBinding = submitStartResult.getBinding;
 
     if (!answerStream) {
       throw new Error('Answer stream is undefined after API call.');
     }
 
     const answerStreamResult = await consumeChatAnswerStream({
+      onInterrupted: snapshot => {
+        assistantMessageId = snapshot.assistantMessageId;
+        assistantFallback = {
+          id: snapshot.assistantMessageId,
+          text: snapshot.assistantText,
+        };
+      },
+      isCurrent,
       answerStream,
       assistantMessageId,
       isNewConversationFlow,
@@ -294,11 +358,13 @@ export async function executeChatSubmit(
       chunkAppendInterval: input.chunkAppendInterval,
     });
     assistantMessageId = answerStreamResult.assistantMessageId;
+    refreshBinding();
 
     const completionData = await applyChatCompletionMetadata({
       completionPromise,
       assistantMessageId,
       updateMessage: input.updateMessage,
+      isCurrent,
     });
 
     const latestAssistantMessage = assistantMessageId
@@ -323,6 +389,7 @@ export async function executeChatSubmit(
       dbConversationUUID: input.dbConversationUUID,
       conversationPersistencePromise,
       finalRealConvId,
+      allowCurrentConversationFallback: false,
       userMessage,
       userMessagePreviewFileIds: completionData?.userMessageFileIds,
       assistantMessageId,
@@ -347,9 +414,14 @@ export async function executeChatSubmit(
       navigateToConversation: input.navigateToConversation,
     });
   } catch (error) {
+    refreshBinding();
+    if (!finalDbConvUUID && conversationPersistencePromise) {
+      finalDbConvUUID = await conversationPersistencePromise;
+    }
     handleChatSubmitStreamError({
       error,
       assistantMessageId,
+      assistantFallback,
       finalDbConvUUID,
       userMessage,
       addMessage: input.addMessage,
@@ -360,7 +432,7 @@ export async function executeChatSubmit(
       moderationT: input.moderationT,
     });
   } finally {
-    if (input.appendTimerRef.current) {
+    if (isCurrent() && input.appendTimerRef.current) {
       clearTimeout(input.appendTimerRef.current);
     }
 
@@ -377,6 +449,6 @@ export async function executeChatSubmit(
     });
 
     input.setIsWaitingForResponse(false);
-    input.isSubmittingRef.current = false;
+    if (isCurrent()) input.isSubmittingRef.current = false;
   }
 }

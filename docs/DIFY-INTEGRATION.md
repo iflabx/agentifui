@@ -4,8 +4,17 @@ AgentifUI uses Dify's application-scoped Service API, normally served under
 `/v1`. Compatibility work targets the Dify `1.19.0` tagged implementation; this
 does not mean every newer Dify feature is available in the AgentifUI interface.
 Keep the Dify API URL and application API keys in private deployment
-configuration. No Dify server upgrade or AgentifUI database migration is needed
-for these client changes.
+configuration. No Dify server upgrade is required. The shared generation
+governance gate requires the AgentifUI migrations described in
+[Agent Governance](AGENT-GOVERNANCE.md); deploy its API and browser client together.
+
+Generation requests now require `x-agentifui-submission-id` (a UUID). Existing
+cached browser pages must be refreshed after this coordinated upgrade. The
+Dify service helpers create a new UUID per generation; their final optional
+`{ submissionId }` argument lets an explicit replay reuse the original UUID.
+Do not automatically resend a generation after a network interruption, and do
+not reuse an ID for a new question. Upstream `user` binding and browser-side
+conversation/message persistence are unchanged.
 
 ## Implementation Boundaries
 
