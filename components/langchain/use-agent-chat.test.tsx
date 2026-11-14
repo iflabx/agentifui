@@ -41,6 +41,142 @@ describe('independent agent chat lifecycle', () => {
   });
   afterEach(() => {
     global.fetch = originalFetch;
+    jest.useRealTimers();
+  });
+
+  it('retains a streamed answer during failed persistence, bounds polling and recovers only the same saved run', async () => {
+    let saved = false;
+    let checks = 0;
+    jest.mocked(agentRequest).mockImplementation(async (_appId, suffix) => {
+      if (!suffix) return { app: { name: 'Test agent' } } as never;
+      const run = {
+        id: 'run',
+        executionStatus: 'success',
+        persistenceStatus: saved ? 'saved' : 'failed',
+      };
+      if (suffix.startsWith('/runs/')) {
+        checks += 1;
+        return run as never;
+      }
+      return {
+        conversation: { id: 'local', title: 'Test' },
+        messages: [
+          { id: 'user', role: 'user', content: 'Hello' },
+          ...(saved
+            ? [{ id: 'answer', role: 'assistant', content: 'Known answer' }]
+            : []),
+        ],
+        runs: [run],
+      } as never;
+    });
+    jest
+      .mocked(consumeAgentStream)
+      .mockImplementation(async (_response, emit) => {
+        emit({
+          type: 'accepted',
+          conversationId: 'local',
+          runId: 'run',
+          userMessageId: 'user',
+        });
+        emit({ type: 'text', messageId: 'answer', delta: 'Known answer' });
+        emit({
+          type: 'status',
+          executionStatus: 'success',
+          persistenceStatus: 'failed',
+        });
+      });
+    const { result, unmount } = renderHook(() =>
+      useAgentChat('app-uuid', null)
+    );
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    jest.useFakeTimers();
+    await act(async () => {
+      await result.current.send('Hello');
+    });
+    expect(result.current.view.messages.at(-1)?.content).toBe('Known answer');
+    expect(result.current.unconfirmed).toBe(true);
+    await act(async () => {
+      await result.current.send('Do not regenerate');
+    });
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(130000);
+    });
+    expect(checks).toBe(40);
+    expect(result.current.statusCheckExhausted).toBe(true);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    saved = true;
+    await act(async () => {
+      result.current.retryStatus();
+    });
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(1501);
+    });
+    expect(result.current.unconfirmed).toBe(false);
+    expect(
+      result.current.view.messages.filter(
+        message => message.content === 'Known answer'
+      )
+    ).toHaveLength(1);
+    expect(result.current.view.run?.persistenceStatus).toBe('saved');
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it('restores only the authorized recovery snapshot after refresh and does not let its late poll overwrite another conversation', async () => {
+    let finishPoll: (value: unknown) => void = () => undefined;
+    const failedRun = {
+      id: 'run',
+      executionStatus: 'success',
+      persistenceStatus: 'failed',
+      recoveryMessages: [
+        { id: 'answer', role: 'assistant', content: 'Known answer' },
+      ],
+    };
+    jest.mocked(agentRequest).mockImplementation(async (_appId, suffix) => {
+      if (!suffix) return { app: { name: 'Test agent' } } as never;
+      if (suffix.startsWith('/runs/'))
+        return new Promise(resolve => {
+          finishPoll = resolve;
+        }) as never;
+      const isOther = suffix.endsWith('/other');
+      return {
+        conversation: { id: isOther ? 'other' : 'local', title: 'Test' },
+        messages: [
+          {
+            id: isOther ? 'other-user' : 'user',
+            role: 'user',
+            content: isOther ? 'Other' : 'Hello',
+          },
+        ],
+        runs: isOther ? [] : [failedRun],
+      } as never;
+    });
+    const { result, unmount } = renderHook(() =>
+      useAgentChat('app-uuid', 'local')
+    );
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(result.current.view.messages.at(-1)?.content).toBe('Known answer');
+    expect(result.current.unconfirmed).toBe(true);
+    jest.useFakeTimers();
+    await act(async () => {
+      result.current.retryStatus();
+    });
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(1501);
+    });
+    await act(async () => {
+      await result.current.select('other');
+    });
+    await act(async () => {
+      finishPoll({ ...failedRun, persistenceStatus: 'saved' });
+    });
+    expect(result.current.view.conversationId).toBe('other');
+    expect(result.current.view.messages).toEqual([
+      { id: 'other-user', role: 'user', content: 'Other' },
+    ]);
+    expect(result.current.unconfirmed).toBe(false);
+    expect(global.fetch).not.toHaveBeenCalled();
+    unmount();
   });
 
   it('sends exactly one run request and reads persisted messages without client saves', async () => {
@@ -220,10 +356,17 @@ describe('independent agent chat lifecycle', () => {
     unmount();
   });
 
-  it('removes optimistic input on an explicitly rejected HTTP request', async () => {
-    jest
-      .mocked(consumeAgentStream)
-      .mockRejectedValue(new AgentRequestError(429));
+  it('removes rejected optimistic input while preserving structured policy errors', async () => {
+    const failure = new AgentRequestError(429, {
+      code: 'AGENT_QUOTA_EXCEEDED',
+      source: 'fastify-api',
+      severity: 'warn',
+      retryable: false,
+      userMessage: 'The application usage allowance has been exhausted.',
+      requestId: 'synthetic-request',
+      occurredAt: '2026-01-01T00:00:00.000Z',
+    });
+    jest.mocked(consumeAgentStream).mockRejectedValue(failure);
     const { result, unmount } = renderHook(() =>
       useAgentChat('app-uuid', null)
     );
@@ -232,7 +375,7 @@ describe('independent agent chat lifecycle', () => {
       await result.current.send('Rejected');
     });
     expect(result.current.view.messages).toEqual([]);
-    expect(result.current.error).toBe(429);
+    expect(result.current.error).toBe(failure);
     expect(result.current.unconfirmed).toBe(false);
     await act(async () => {
       await result.current.send('Rejected again');

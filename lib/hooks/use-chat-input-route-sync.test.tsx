@@ -1,3 +1,4 @@
+import { captureDifyInputSubmission } from '@components/chat-input/submission';
 import { getConversationByExternalId } from '@lib/services/client/conversations-api';
 import { useAttachmentStore } from '@lib/stores/attachment-store';
 import {
@@ -291,6 +292,56 @@ describe('input route scope synchronization', () => {
     unregister();
   });
 
+  it('preserves accepted stream ownership when the persisted route activates before the save promise resolves', async () => {
+    const { rerender, result } = renderHook(() =>
+      useChatInputRouteSync({ userId: 'actor', appId: 'app-A' })
+    );
+    act(() => useChatInputStore.getState().setMessage('Question'));
+    const source = useChatInputStore.getState().currentRoute;
+    let finish!: (value: string | null) => void;
+    const conversationPersistencePromise = new Promise<string | null>(
+      resolve => {
+        finish = resolve;
+      }
+    );
+    const accept = captureDifyInputSubmission('Question', 'actor');
+    act(() => {
+      accept('app-A', {
+        externalId: 'accepted-external',
+        taskId: 'accepted-task',
+        conversationPersistencePromise,
+      });
+      useChatInputStore.getState().setMessage('Next draft');
+      useAttachmentStore.getState().addFiles([new File(['next'], 'next.txt')]);
+    });
+    let detached = false;
+    const unsubscribe = useChatInputStore.subscribe(state => {
+      if (state.resolveScope(source) !== state.currentRoute) detached = true;
+    });
+    jest.mocked(getConversationByExternalId).mockResolvedValue({
+      success: true,
+      data: { id: 'accepted-local', user_id: 'actor', app_id: 'app-A' },
+    } as never);
+    try {
+      mockPathname = '/chat/accepted-external';
+      rerender();
+      await waitFor(() => expect(result.current.ready).toBe(true));
+      expect(result.current.scope).toContain('conversation:accepted-local');
+      expect(detached).toBe(false);
+      expect(useChatInputStore.getState().resolveScope(source)).toBe(
+        result.current.scope
+      );
+      expect(useChatInputStore.getState().message).toBe('Next draft');
+      expect(useAttachmentStore.getState().files[0].name).toBe('next.txt');
+    } finally {
+      unsubscribe();
+      await act(async () => {
+        finish('accepted-local');
+        await conversationPersistencePromise;
+      });
+    }
+  });
+
   it('does not activate an earlier history lookup that resolves after another route', async () => {
     let resolve!: (
       value: Awaited<ReturnType<typeof getConversationByExternalId>>
@@ -372,6 +423,42 @@ describe('input route scope synchronization', () => {
     await pending;
     expect(useChatInputStore.getState().aliases).toEqual({});
   });
+
+  it.each(['failed', 'other-actor', 'same-actor-relogin'])(
+    'does not look up or migrate an accepted scope after %s persistence',
+    async outcome => {
+      useChatInputStore.getState().setActor('actor');
+      const scope = chatInputScope(
+        useChatInputStore.getState().actorEpoch,
+        'actor',
+        'app-A',
+        'newdraft:waiting'
+      );
+      useChatInputStore.getState().setCurrentRoute(scope);
+      let finish!: (value: string | null) => void;
+      const persistence = new Promise<string | null>(resolve => {
+        finish = resolve;
+      });
+      const pending = bindChatInputConversation(
+        scope,
+        'actor',
+        'app-A',
+        'external-waiting',
+        persistence
+      );
+      expect(getConversationByExternalId).not.toHaveBeenCalled();
+      if (outcome === 'other-actor')
+        useChatInputStore.getState().setActor('other');
+      if (outcome === 'same-actor-relogin') {
+        useChatInputStore.getState().setActor(null);
+        useChatInputStore.getState().setActor('actor');
+      }
+      finish(outcome === 'failed' ? null : 'local-waiting');
+      await pending;
+      expect(getConversationByExternalId).not.toHaveBeenCalled();
+      expect(useChatInputStore.getState().aliases).toEqual({});
+    }
+  );
 
   it('notifies scope subscribers even when both drafts have identical text', () => {
     const { result } = renderHook(() => {

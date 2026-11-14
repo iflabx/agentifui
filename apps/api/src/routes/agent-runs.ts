@@ -8,6 +8,7 @@ import {
   resolveAgentApp,
 } from '../lib/agent-app';
 import { AgentPolicyError } from '../lib/agent-backends';
+import { toUserFacingAgentError } from '../lib/agent-error';
 import { moderateInputText } from '../lib/agent-input-moderation';
 import {
   executeAgentRun,
@@ -32,6 +33,7 @@ import { getRun } from '../lib/langchain/transport';
 import { queryRowsWithPgSystemContext } from '../lib/pg-context';
 import { buildRouteErrorPayload } from '../lib/route-error';
 import { resolveIdentityFromSession } from '../lib/session-identity';
+import { resolveRequestLocale } from './dify-proxy-route/helpers';
 
 const UUID_PATTERN =
   /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
@@ -117,6 +119,18 @@ export const agentRunsRoutes: FastifyPluginAsync<{
       : clientError
         ? 'INVALID_AGENT_REQUEST'
         : 'AGENT_REQUEST_FAILED';
+    const policyError = [
+      'AGENT_CONCURRENCY_LIMIT',
+      'AGENT_QUOTA_EXCEEDED',
+      'CONTENT_MODERATION_BLOCKED',
+      'CONTENT_MODERATION_UNAVAILABLE',
+    ].includes(code)
+      ? toUserFacingAgentError({
+          status: statusCode,
+          code,
+          locale: resolveRequestLocale(request.headers['accept-language']),
+        })
+      : undefined;
     request.log.warn({ code, requestId: request.id }, '[Agent] request failed');
     reply
       .header('x-request-id', request.id)
@@ -126,8 +140,8 @@ export const agentRunsRoutes: FastifyPluginAsync<{
           request,
           statusCode,
           code,
-          userMessage: code,
-          retryable: false,
+          userMessage: policyError?.userMessage ?? code,
+          retryable: policyError?.retryable ?? false,
         })
       );
   });
@@ -161,6 +175,7 @@ export const agentRunsRoutes: FastifyPluginAsync<{
         throw new AgentAppError(400, 'INVALID_AGENT_REQUEST');
       }
       const registration = await registerSubmission({
+        credentialVersion: app.credentialVersion,
         userId: actor.userId,
         serviceInstanceId: app.id,
         submissionId: uuid(body.submissionId),
@@ -331,7 +346,8 @@ export const agentRunsRoutes: FastifyPluginAsync<{
         [conversationId]
       );
       const runs = await queryRowsWithPgSystemContext<AgentRunRecord>(
-        `SELECT id, conversation_id, execution_status, persistence_status, error_code, created_at, updated_at
+        `SELECT id, conversation_id, execution_status, persistence_status, error_code, created_at, updated_at,
+          CASE WHEN persistence_status <> 'saved' THEN result ELSE NULL END AS result
        FROM backend_runs WHERE conversation_id = $1::uuid ORDER BY created_at DESC LIMIT 100`,
         [conversationId]
       );
@@ -372,7 +388,20 @@ export const agentRunsRoutes: FastifyPluginAsync<{
     if (run.config_fingerprint !== app.fingerprint)
       throw new AgentAppError(409, 'AGENT_CONFIG_CHANGED');
     if (run.result && run.persistence_status !== 'saved') {
-      run = await saveRunResult(run.id, run.result);
+      try {
+        run = await saveRunResult(run.id, run.result);
+      } catch (error) {
+        if (
+          !(error instanceof AgentRunError) ||
+          error.code !== 'AGENT_STORAGE_UNAVAILABLE'
+        )
+          throw error;
+        run = {
+          ...run,
+          persistence_status: 'failed',
+          error_code: 'AGENT_SAVE_FAILED',
+        };
+      }
     }
     let upstreamStatus: string | undefined;
     const stale = Date.now() - new Date(run.updated_at).getTime() > 180000;

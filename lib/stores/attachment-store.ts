@@ -9,6 +9,9 @@ export interface AttachmentFile {
   status: 'pending' | 'uploading' | 'success' | 'error';
   error?: string;
   uploadedId?: string;
+  uploadedAppId?: string;
+  uploadedActorId?: string;
+  uploadedActorEpoch?: number;
   uploadAttempt?: number;
 }
 
@@ -37,7 +40,14 @@ interface AttachmentStoreState {
     scope: string,
     id: string,
     attempt: number,
-    result: { uploadedId: string } | { error: string }
+    result:
+      | {
+          uploadedId: string;
+          appId?: string;
+          actorId?: string;
+          actorEpoch?: number;
+        }
+      | { error: string }
   ) => void;
   consumeFiles: (scope: string, files: AttachmentFile[]) => void;
 }
@@ -133,6 +143,7 @@ export const useAttachmentStore = create<AttachmentStoreState>((set, get) => ({
               uploadAttempt: attempt,
               status: 'uploading',
               uploadedId: undefined,
+              uploadedAppId: undefined,
               error: undefined,
             }
           : file
@@ -153,6 +164,9 @@ export const useAttachmentStore = create<AttachmentStoreState>((set, get) => ({
               ...('uploadedId' in result
                 ? {
                     uploadedId: result.uploadedId,
+                    uploadedAppId: result.appId,
+                    uploadedActorId: result.actorId,
+                    uploadedActorEpoch: result.actorEpoch,
                     status: 'success' as const,
                     error: undefined,
                   }
@@ -160,6 +174,9 @@ export const useAttachmentStore = create<AttachmentStoreState>((set, get) => ({
                     error: result.error,
                     status: 'error' as const,
                     uploadedId: undefined,
+                    uploadedAppId: undefined,
+                    uploadedActorId: undefined,
+                    uploadedActorEpoch: undefined,
                   }),
             }
           : file

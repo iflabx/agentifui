@@ -8,12 +8,14 @@ import {
   reportTraceableClientError,
 } from '@lib/hooks/chat-interface/error-utils';
 import { isChatSubmitResult } from '@lib/hooks/chat-interface/guards';
+import { useChatInputApp } from '@lib/hooks/use-chat-input-app';
 import {
   registerChatInputSubmission,
   useChatInputRouteSync,
 } from '@lib/hooks/use-chat-input-route-sync';
 import { useChatWidth } from '@lib/hooks/use-chat-width';
 import { useCurrentApp } from '@lib/hooks/use-current-app';
+import { useFileTypes } from '@lib/hooks/use-file-types';
 import { useAppListStore } from '@lib/stores/app-list-store';
 import { useAttachmentStore } from '@lib/stores/attachment-store';
 import { useChatInputStore } from '@lib/stores/chat-input-store';
@@ -22,12 +24,14 @@ import {
   useChatLayoutStore,
 } from '@lib/stores/chat-layout-store';
 import { useNotificationStore } from '@lib/stores/ui/notification-store';
+import { RotateCcw } from 'lucide-react';
 
 import { useCallback, useRef, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 
 import { AttachmentPreviewBar } from './attachment-preview-bar';
+import { ChatButton } from './button';
 import { FileTypeSelector } from './file-type-selector';
 import { useFocusManager } from './focus-manager';
 import { buildSubmitFiles } from './helpers';
@@ -69,6 +73,7 @@ export const ChatInput = ({
 }: ChatInputProps) => {
   const t = useTranslations('pages.chat');
   const tModeration = useTranslations('errors.system.moderation');
+  const tCommon = useTranslations('common');
   const { session, loading } = useAuthSession();
   const { currentAppId, isValidatingForMessage } = useCurrentApp();
   const route = useChatInputRouteSync({
@@ -80,6 +85,12 @@ export const ChatInput = ({
   const { message, setMessage, isWelcomeScreen, currentRoute } =
     useChatInputStore();
   const attachments = useAttachmentStore(state => state.files);
+  const {
+    instance: inputApp,
+    failed: inputAppFailed,
+    retry: retryInputApp,
+  } = useChatInputApp(route.appId, route.ready);
+  const fileConfig = useFileTypes(inputApp);
   const apps = useAppListStore(state => state.apps);
   const [submittingScope, setSubmittingScope] = useState<string | null>(null);
   const canonicalSubmittingScope = useChatInputStore(state =>
@@ -133,7 +144,7 @@ export const ChatInput = ({
   const waiting = isWaiting || isWaitingForResponse || localSubmitting;
   const { handleFileSelect, handleRetryUpload } = useChatInputUploads({
     scope: route.ready ? currentRoute : null,
-    currentAppId: route.appId === currentAppId ? route.appId : null,
+    currentAppId: inputApp ? route.appId : null,
     sessionUserId: session?.user?.id,
     t,
   });
@@ -247,14 +258,27 @@ export const ChatInput = ({
       attachmentPreview={
         route.ready ? (
           <AttachmentPreviewBar
+            files={attachments}
+            uploadConfig={fileConfig.uploadConfig}
+            onRemove={id =>
+              useAttachmentStore.getState().removeFile(id, currentRoute)
+            }
             onHeightChange={updateBarHeight}
             onRetryUpload={handleRetryUpload}
           />
         ) : undefined
       }
       attachmentAction={
-        route.ready && route.appId === currentAppId ? (
+        inputAppFailed ? (
+          <ChatButton
+            onClick={retryInputApp}
+            ariaLabel={`${tCommon('ui.retry')}: ${t('input.uploadFailed')}`}
+            icon={<RotateCcw className="h-4 w-4" />}
+          />
+        ) : route.ready && inputApp ? (
           <FileTypeSelector
+            config={fileConfig}
+            attachmentCount={attachments.length}
             onFileSelect={handleFileSelect}
             disabled={disabled || waiting || isProcessing}
             ariaLabel={t('input.addAttachment')}

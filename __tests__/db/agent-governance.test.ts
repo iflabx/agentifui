@@ -413,3 +413,156 @@ it('restores the restricted administrative connection context after normal and r
     administrator.release();
   }
 });
+
+it.each(['reserved', 'accepted', 'unknown'] as const)(
+  'protects %s quota identity, cascades and destructive count changes while allowing immediate revocation',
+  async state => {
+    const entry = await register();
+    await admit(entry.task.root_task_id);
+    await markSubmissionSubmitting(entry.task.root_task_id);
+    if (state !== 'reserved') {
+      await confirmSubmission(entry.task.root_task_id, 'accepted');
+      if (state === 'unknown')
+        await confirmSubmission(entry.task.root_task_id, 'unknown');
+    }
+    await database.query(
+      'UPDATE group_app_permissions SET used_count=used_count+1 WHERE id=$1',
+      [permission]
+    );
+    for (const statement of [
+      'DELETE FROM group_app_permissions WHERE id=$1',
+      'UPDATE group_app_permissions SET id=gen_random_uuid() WHERE id=$1',
+      'UPDATE group_app_permissions SET group_id=gen_random_uuid() WHERE id=$1',
+      'UPDATE group_app_permissions SET service_instance_id=gen_random_uuid() WHERE id=$1',
+      'UPDATE group_app_permissions SET used_count=0 WHERE id=$1',
+      'UPDATE group_app_permissions SET used_count=NULL WHERE id=$1',
+    ]) {
+      await expect(
+        database.query(statement, [permission])
+      ).rejects.toMatchObject({
+        code: '23514',
+        message: 'AGENT_QUOTA_BUSY',
+      });
+    }
+    await expect(
+      database.query('DELETE FROM groups WHERE id=$1', [group])
+    ).rejects.toMatchObject({ code: '23514', message: 'AGENT_QUOTA_BUSY' });
+    await database.query(
+      'UPDATE group_app_permissions SET is_enabled=FALSE WHERE id=$1',
+      [permission]
+    );
+    await database.query(
+      'DELETE FROM group_members WHERE group_id=$1 AND user_id=$2',
+      [group, actors[0]]
+    );
+    expect(
+      (
+        await database.query(
+          'SELECT quota_permission_id FROM agent_submissions WHERE root_task_id=$1',
+          [entry.task.root_task_id]
+        )
+      ).rows[0].quota_permission_id
+    ).toBe(permission);
+    await database.query(
+      'INSERT INTO group_members(group_id,user_id) VALUES($1,$2)',
+      [group, actors[0]]
+    );
+    await confirmSubmission(entry.task.root_task_id, 'finished');
+    await expect(
+      database.query(
+        'UPDATE group_app_permissions SET used_count=0 WHERE id=$1',
+        [permission]
+      )
+    ).resolves.toBeDefined();
+    await expect(
+      database.query('DELETE FROM group_app_permissions WHERE id=$1', [
+        permission,
+      ])
+    ).resolves.toBeDefined();
+  }
+);
+
+it.each(['accepted', 'unknown'] as const)(
+  'does not deadlock %s counted confirmation against permission deletion',
+  async state => {
+    const entry = await register();
+    await admit(entry.task.root_task_id);
+    await markSubmissionSubmitting(entry.task.root_task_id);
+    await confirmSubmission(entry.task.root_task_id, 'accepted');
+    if (state === 'unknown')
+      await confirmSubmission(entry.task.root_task_id, 'unknown');
+    const confirmer = await database.connect();
+    const editor = await database.connect();
+    try {
+      await confirmer.query('BEGIN');
+      await confirmer.query(
+        'SELECT root_task_id FROM agent_submissions WHERE root_task_id=$1 FOR UPDATE',
+        [entry.task.root_task_id]
+      );
+      await editor.query("SET statement_timeout='1500ms'");
+      await expect(
+        editor.query('DELETE FROM group_app_permissions WHERE id=$1', [
+          permission,
+        ])
+      ).rejects.toMatchObject({ code: '23514', message: 'AGENT_QUOTA_BUSY' });
+    } finally {
+      await confirmer.query('ROLLBACK');
+      await editor.query('RESET statement_timeout');
+      confirmer.release();
+      editor.release();
+    }
+    await confirmSubmission(entry.task.root_task_id, 'finished');
+    expect(
+      (
+        await database.query(
+          'SELECT used_count FROM group_app_permissions WHERE id=$1',
+          [permission]
+        )
+      ).rows[0].used_count
+    ).toBe(1);
+  }
+);
+
+it('rejects a destructive quota edit while real admission is uncommitted', async () => {
+  const entry = await register();
+  const admission = await database.connect();
+  const editor = await database.connect();
+  let editing: Promise<unknown> | undefined;
+  try {
+    await admission.query('BEGIN');
+    await admitSubmission(
+      admission,
+      entry.task.root_task_id,
+      actors[0],
+      application,
+      {}
+    );
+    await editor.query("SET statement_timeout='3000ms'");
+    editing = editor
+      .query('DELETE FROM group_app_permissions WHERE id=$1', [permission])
+      .then(
+        () => null,
+        error => error
+      );
+    await admission.query('COMMIT');
+    expect(await editing).toMatchObject({
+      code: '23514',
+      message: 'AGENT_QUOTA_BUSY',
+    });
+  } finally {
+    await admission.query('ROLLBACK');
+    await editing;
+    await editor.query('RESET statement_timeout');
+    admission.release();
+    editor.release();
+  }
+  await confirmSubmission(entry.task.root_task_id, 'finished');
+  expect(
+    (
+      await database.query(
+        'SELECT used_count FROM group_app_permissions WHERE id=$1',
+        [permission]
+      )
+    ).rows[0].used_count
+  ).toBe(1);
+});

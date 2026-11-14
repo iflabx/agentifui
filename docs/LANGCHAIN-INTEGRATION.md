@@ -86,6 +86,12 @@ frontend tools, arbitrary state synchronization, resumable streams and execution
 cancellation are not supported. Do not enable corresponding UI capabilities
 merely because the upstream schema advertises additional endpoints.
 
+New tool summaries carry a local run identity, an optional mapped local parent
+message and a small projection order. Known text/tool/text ordering is retained
+after refresh; native IDs are not local authorization IDs. Older summaries with
+no ordering evidence stay labeled summaries rather than fabricated event
+history. This is a compatibility projection, not a full event store.
+
 ## Identity, Saving And Limits
 
 Website sessions, account state and application access are checked by Fastify.
@@ -114,6 +120,11 @@ failed saving is not a completely saved conversation. Retrying persistence uses
 the same known snapshot, never a second model call. Browser disconnects do not
 cancel execution: a live API consumes the stream within its bounded timeout and
 tries to finish saving. Background work participates in replica draining.
+The browser retains known streamed content when saving fails, blocks further
+generation on that conversation, and polls the existing run a bounded number
+of times. A manual status/save retry restarts only that lookup, never execution.
+After refresh, an authorized run response can return a restricted visible
+message snapshot while the same saved result is being recovered.
 
 ## Failure And Operational Boundaries
 
@@ -134,6 +145,10 @@ tries to finish saving. Background work participates in replica draining.
   a different backend; retain the original configuration for its history. A token
   rotation for the same service identity preserves the binding; the upstream
   must still authorize access to the existing native thread.
+  Rotation of the effective credential is blocked until unresolved tasks have
+  been reconciled. Capability preflight failures occur before the generation
+  dispatch boundary and release admission; a dispatched POST with an unknown
+  outcome retains protection instead of being retried automatically.
 - Disable the new application/provider to stop new use without changing Dify.
   Additive tables remain during rollback; do not run destructive down migrations.
 

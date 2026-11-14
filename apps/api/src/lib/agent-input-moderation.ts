@@ -266,17 +266,43 @@ async function fetchWithTimeout(
   url: string,
   init: RequestInit,
   timeoutMs: number
-): Promise<Response> {
+): Promise<{ response: Response; responseText: string }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  const abort = () => {
+    void reader?.cancel().catch(() => undefined);
+  };
+  controller.signal.addEventListener('abort', abort, { once: true });
 
   try {
-    return await fetch(url, {
+    const response = await fetch(url, {
       ...init,
       signal: controller.signal,
     });
+    const chunks: Uint8Array[] = [];
+    let bytes = 0;
+    reader = response.body?.getReader();
+    while (reader) {
+      controller.signal.throwIfAborted();
+      const chunk = await reader.read();
+      controller.signal.throwIfAborted();
+      if (chunk.done) break;
+      bytes += chunk.value.byteLength;
+      if (bytes > 256 * 1024) throw new Error('Moderation response too large');
+      chunks.push(chunk.value);
+    }
+    const responseText = new TextDecoder('utf-8', { fatal: true }).decode(
+      Buffer.concat(chunks)
+    );
+    controller.signal.throwIfAborted();
+    return { response, responseText };
   } finally {
     clearTimeout(timer);
+    controller.signal.removeEventListener('abort', abort);
+    void reader?.cancel().catch(() => undefined);
+    reader?.releaseLock();
+    controller.abort();
   }
 }
 
@@ -342,7 +368,7 @@ export async function moderateInputText(input: {
   const moderationUrl = `${config.inputModeration.app.apiUrl.replace(/\/+$/, '')}/chat-messages`;
 
   try {
-    const response = await fetchWithTimeout(
+    const { response, responseText } = await fetchWithTimeout(
       moderationUrl,
       {
         method: 'POST',
@@ -364,7 +390,6 @@ export async function moderateInputText(input: {
       INPUT_MODERATION_TIMEOUT_MS
     );
 
-    const responseText = await response.text();
     if (!response.ok) {
       request.log.warn(
         {

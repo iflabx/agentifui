@@ -7,6 +7,25 @@ import {
 import { publicAppConfig } from './public-app-config';
 
 describe('backend selection and public capabilities', () => {
+  it('separates backend cancellation support from effective role and application actions', () => {
+    const workflow = { app_metadata: { dify_apptype: 'workflow' } };
+    expect(describeBackend(workflow, 'user')).toMatchObject({
+      capabilities: { cancellation: true },
+      effectiveActions: { cancellation: false },
+    });
+    expect(
+      describeBackend(workflow, 'admin').effectiveActions.cancellation
+    ).toBe(true);
+    expect(
+      describeBackend({ app_metadata: { dify_apptype: 'chatbot' } }, 'user')
+        .effectiveActions.cancellation
+    ).toBe(true);
+    expect(describeBackend(workflow).effectiveActions.cancellation).toBe(false);
+    expect(
+      describeBackend({ backend_type: 'langchain' }, 'admin').effectiveActions
+        .cancellation
+    ).toBe(false);
+  });
   it('defaults only legacy missing types to Dify', () => {
     expect(resolveBackendType(null)).toBe('dify');
     expect(resolveBackendType({})).toBe('dify');

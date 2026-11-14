@@ -35,3 +35,27 @@ describe('agent-error moderation overrides', () => {
     });
   });
 });
+it('distinguishes platform concurrency from usage quotas and generic upstream 429', () => {
+  const concurrent = toUserFacingAgentError({
+    status: 429,
+    code: 'AGENT_CONCURRENCY_LIMIT',
+  });
+  expect(concurrent).toMatchObject({
+    code: 'AGENT_CONCURRENCY_LIMIT',
+    kind: 'concurrency_limited',
+    retryable: true,
+  });
+  expect(concurrent.userMessage).not.toMatch(/quota/i);
+  const quota = toUserFacingAgentError({
+    status: 429,
+    code: 'AGENT_QUOTA_EXCEEDED',
+  });
+  expect(quota).toMatchObject({
+    code: 'AGENT_QUOTA_EXCEEDED',
+    kind: 'usage_quota_exceeded',
+    retryable: false,
+  });
+  expect(
+    toUserFacingAgentError({ status: 429, code: 'rate_limit' })
+  ).toMatchObject({ kind: 'quota_exceeded', retryable: false });
+});

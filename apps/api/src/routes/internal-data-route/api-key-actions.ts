@@ -44,6 +44,7 @@ export async function handleApiKeyAction(
         FROM api_keys
         WHERE service_instance_id = $1::uuid
           AND is_default = TRUE
+        ORDER BY created_at ASC, id ASC
         LIMIT 1
       `,
       [serviceInstanceId]

@@ -1,5 +1,6 @@
 import { uploadDifyFile } from '@lib/services/dify/file-service';
 import { useAttachmentStore } from '@lib/stores/attachment-store';
+import { syncChatDraftActor } from '@lib/stores/chat-draft-lifecycle';
 import { act, renderHook } from '@testing-library/react';
 
 import { useChatInputUploads } from './use-uploads';
@@ -19,9 +20,36 @@ describe('scoped input uploads', () => {
     ] as unknown as FileList;
   beforeEach(() => {
     jest.clearAllMocks();
+    syncChatDraftActor('actor');
     useAttachmentStore.getState().resetAll();
     useAttachmentStore.getState().setScope('A');
   });
+
+  it.each(['other', 'same'])(
+    'rejects old file-picker and retry callbacks after %s-account relogin',
+    async account => {
+      const { result } = renderHook(() =>
+        useChatInputUploads({
+          scope: 'A',
+          currentAppId: 'app-A',
+          sessionUserId: 'actor',
+          t,
+        })
+      );
+      const oldSelect = result.current.handleFileSelect;
+      const oldRetry = result.current.handleRetryUpload;
+      act(() => {
+        syncChatDraftActor(null);
+        syncChatDraftActor(account === 'same' ? 'actor' : 'other');
+      });
+      await act(async () => {
+        oldSelect(files());
+        await oldRetry('old-file');
+      });
+      expect(useAttachmentStore.getState().getFiles('A')).toEqual([]);
+      expect(uploadDifyFile).not.toHaveBeenCalled();
+    }
+  );
 
   it('does not upload or add files without a real app and user', () => {
     const { result } = renderHook(() =>

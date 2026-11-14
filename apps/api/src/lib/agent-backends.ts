@@ -50,10 +50,21 @@ export function resolveBackendType(
 }
 
 export function describeBackend(
-  config: Record<string, unknown> | null | undefined
+  config: Record<string, unknown> | null | undefined,
+  actorRole?: string | null
 ) {
   const backendType = resolveBackendType(config);
-  return { backendType, ...BACKENDS[backendType] };
+  const metadata = config?.app_metadata as Record<string, unknown> | undefined;
+  return {
+    backendType,
+    ...BACKENDS[backendType],
+    effectiveActions: {
+      cancellation:
+        BACKENDS[backendType].capabilities.cancellation &&
+        Boolean(actorRole) &&
+        (metadata?.dify_apptype !== 'workflow' || actorRole === 'admin'),
+    },
+  };
 }
 
 export const LANGCHAIN_CAPABILITIES = BACKENDS.langchain.capabilities;

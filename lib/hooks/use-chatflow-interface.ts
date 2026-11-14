@@ -1,10 +1,25 @@
 'use client';
 
+import { extractFilesFromFormData as extractFormUploads } from '@components/chatflow/chatflow-input-area/helpers';
+import { isWorkflowUploadOwner } from '@components/workflow/workflow-input-form/file-upload-field/helpers';
+import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
 import { isChatSubmitResult } from '@lib/hooks/chat-interface/guards';
+import { useChatInputStore } from '@lib/stores/chat-input-store';
+import { useChatStore } from '@lib/stores/chat-store';
 import { useChatflowExecutionStore } from '@lib/stores/chatflow-execution-store';
+import { useCurrentAppStore } from '@lib/stores/current-app-store';
 
-import { useCallback, useEffect } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from 'react';
 
+import { usePathname } from 'next/navigation';
+
+import { useChatInputRouteSync } from './use-chat-input-route-sync';
 import { useChatInterface } from './use-chat-interface';
 
 /**
@@ -18,6 +33,29 @@ import { useChatInterface } from './use-chat-interface';
  * - Integrates node execution tracking
  */
 export function useChatflowInterface(preferredRouteAppId?: string | null) {
+  const pathname = usePathname() ?? '';
+  const { session, loading } = useAuthSession();
+  const userId = session?.user?.id;
+  const actorEpoch = useChatInputStore(state => state.actorEpoch);
+  const isFormRoute = Boolean(
+    preferredRouteAppId && pathname === `/apps/chatflow/${preferredRouteAppId}`
+  );
+  const formScope = useChatInputRouteSync({
+    userId,
+    appId: preferredRouteAppId,
+    authLoading: loading || !isFormRoute,
+  });
+  const view = useMemo(
+    () => ({ pathname, userId, actorEpoch, preferredRouteAppId }),
+    [pathname, userId, actorEpoch, preferredRouteAppId]
+  );
+  const activeViewRef = useRef<typeof view | null>(null);
+  useLayoutEffect(() => {
+    activeViewRef.current = view;
+    return () => {
+      if (activeViewRef.current === view) activeViewRef.current = null;
+    };
+  }, [view]);
   // Get node tracking related methods
   const { startExecution, handleNodeEvent, resetExecution } =
     useChatflowExecutionStore();
@@ -34,6 +72,31 @@ export function useChatflowInterface(preferredRouteAppId?: string | null) {
   const handleChatflowSubmit = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async (query: string, inputs: Record<string, any>, files?: any[]) => {
+      const input = useChatInputStore.getState();
+      if (
+        activeViewRef.current !== view ||
+        !formScope.ready ||
+        !formScope.scope ||
+        input.actorId !== userId ||
+        input.actorEpoch !== actorEpoch ||
+        input.resolveScope(formScope.scope) !== input.currentRoute
+      )
+        return { ok: false, errorCode: 'STALE_INPUT_SCOPE' };
+      const uploadOwner = {
+        app_id: formScope.appId!,
+        actor_id: userId!,
+        actor_epoch: actorEpoch,
+      };
+      const submittedFiles = [...(files || []), ...extractFormUploads(inputs)];
+      if (
+        submittedFiles.some(
+          file =>
+            typeof file.upload_file_id !== 'string' ||
+            !file.upload_file_id ||
+            !isWorkflowUploadOwner(file, uploadOwner)
+        )
+      )
+        return { ok: false, errorCode: 'INVALID_ATTACHMENT_OWNER' };
       console.log('[useChatflowInterface] Handling Chatflow submit', {
         query,
         inputs,
@@ -66,13 +129,22 @@ export function useChatflowInterface(preferredRouteAppId?: string | null) {
       } catch (error) {
         console.error('[useChatflowInterface] Chatflow submit failed:', error);
         // Stop execution tracking on error
-        useChatflowExecutionStore
-          .getState()
-          .setError(error instanceof Error ? error.message : 'Submit failed');
+        const currentInput = useChatInputStore.getState();
+        if (
+          activeViewRef.current === view &&
+          currentInput.actorId === userId &&
+          currentInput.actorEpoch === actorEpoch &&
+          currentInput.resolveScope(formScope.scope) ===
+            currentInput.currentRoute
+        ) {
+          useChatflowExecutionStore
+            .getState()
+            .setError(error instanceof Error ? error.message : 'Submit failed');
+        }
         throw error;
       }
     },
-    [chatInterface, startExecution]
+    [chatInterface, startExecution, view, formScope, userId, actorEpoch]
   );
 
   // Listen to SSE events and update node status
@@ -102,16 +174,57 @@ export function useChatflowInterface(preferredRouteAppId?: string | null) {
    * Override stop processing method, handle both chat stop and fine-grained node status
    */
   const handleStopProcessing = useCallback(async () => {
-    console.log(
-      '[useChatflowInterface] Start stopping processing: chat + fine-grained nodes'
+    const taskId = useChatStore.getState().currentTaskId;
+    const actor = useChatInputStore.getState();
+    if (
+      activeViewRef.current !== view ||
+      actor.actorId !== userId ||
+      actor.actorEpoch !== actorEpoch
+    ) {
+      return {
+        confirmed: false,
+        current: false,
+        ...(taskId ? { taskId } : {}),
+      };
+    }
+    const selectedApp = useCurrentAppStore.getState().currentAppId;
+    let detached = false;
+    const isCurrent = () => !detached && activeViewRef.current === view;
+    const unsubscribeActor = useChatInputStore.subscribe(next => {
+      if (
+        next.actorEpoch !== actor.actorEpoch ||
+        next.actorId !== actor.actorId ||
+        next.resolveScope(actor.currentRoute) !== next.currentRoute
+      )
+        detached = true;
+    });
+    const unsubscribeApp = useCurrentAppStore.subscribe(next => {
+      if (next.currentAppId !== selectedApp) detached = true;
+    });
+    let taskCleared = false;
+    const unsubscribeTask = useChatStore.subscribe(next => {
+      if (!next.currentTaskId) taskCleared = true;
+      else if (next.currentTaskId !== taskId || taskCleared) detached = true;
+    });
+    const unsubscribeExecution = useChatflowExecutionStore.subscribe(
+      (next, previous) => {
+        if (
+          (next.nodes !== previous.nodes && next.nodes.length === 0) ||
+          (!previous.isExecuting && next.isExecuting)
+        )
+          detached = true;
+      }
     );
-
     try {
-      // 1. Call the original chat stop method first
-      await chatInterface.handleStopProcessing();
-      console.log('[useChatflowInterface] Chat stop completed');
-
-      // 2. Handle fine-grained node status stop
+      const result = await chatInterface.handleStopProcessing();
+      if (
+        !result.confirmed ||
+        !result.current ||
+        !taskId ||
+        result.taskId !== taskId ||
+        !isCurrent()
+      )
+        return { ...result, current: result.current && isCurrent() };
       const {
         stopExecution,
         nodes,
@@ -120,10 +233,8 @@ export function useChatflowInterface(preferredRouteAppId?: string | null) {
         updateParallelBranch,
       } = useChatflowExecutionStore.getState();
 
-      // Stop all running nodes
       nodes.forEach(node => {
         if (node.status === 'running') {
-          console.log('[useChatflowInterface] Stopping running node:', node.id);
           updateNode(node.id, {
             status: 'failed',
             endTime: Date.now(),
@@ -131,15 +242,9 @@ export function useChatflowInterface(preferredRouteAppId?: string | null) {
           });
         }
 
-        // Handle running nodes in iterations
         if (node.iterations) {
           node.iterations.forEach(iteration => {
             if (iteration.status === 'running') {
-              console.log(
-                '[useChatflowInterface] Stopping running node in iteration:',
-                node.id,
-                iteration.id
-              );
               updateIteration(node.id, iteration.id, {
                 status: 'failed',
                 endTime: Date.now(),
@@ -148,15 +253,9 @@ export function useChatflowInterface(preferredRouteAppId?: string | null) {
           });
         }
 
-        // Handle running nodes in parallel branches
         if (node.parallelBranches) {
           node.parallelBranches.forEach(branch => {
             if (branch.status === 'running') {
-              console.log(
-                '[useChatflowInterface] Stopping running node in parallel branch:',
-                node.id,
-                branch.id
-              );
               updateParallelBranch(node.id, branch.id, {
                 status: 'failed',
                 endTime: Date.now(),
@@ -166,24 +265,22 @@ export function useChatflowInterface(preferredRouteAppId?: string | null) {
         }
       });
 
-      // 3. Stop execution status
       stopExecution();
-      console.log(
-        '[useChatflowInterface] Fine-grained node status stop completed'
-      );
-    } catch (error) {
-      console.error('[useChatflowInterface] Stop processing failed:', error);
-      // Try to stop execution status even if error occurs
-      useChatflowExecutionStore.getState().stopExecution();
-      throw error;
+      return result;
+    } finally {
+      unsubscribeActor();
+      unsubscribeApp();
+      unsubscribeTask();
+      unsubscribeExecution();
     }
-  }, [chatInterface]);
+  }, [chatInterface, view, userId, actorEpoch]);
 
   // Return the extended interface
   return {
     ...chatInterface,
     handleStopProcessing, // Use the overridden stop method
     handleChatflowSubmit,
+    formIdentity: JSON.stringify([actorEpoch, userId, preferredRouteAppId]),
     // Expose node tracking related state and methods
     nodeTracker: {
       nodes: useChatflowExecutionStore(state => state.nodes),
@@ -224,6 +321,9 @@ function formatFilesForDify(files: any[]): any[] {
         name: file.name,
         size: file.size,
         mime_type: file.mime_type,
+        app_id: file.app_id,
+        actor_id: file.actor_id,
+        actor_epoch: file.actor_epoch,
       };
     }
     return file;

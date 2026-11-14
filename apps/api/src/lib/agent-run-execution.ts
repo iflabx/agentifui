@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { AgentApp } from './agent-app';
+import { AgentPolicyError } from './agent-backends';
 import {
   type AgentRunRecord,
   type AgentRunResult,
@@ -28,6 +29,9 @@ export interface AgentToolSummary {
   name: string;
   status: 'running' | 'completed';
   summary?: string;
+  runId?: string;
+  messageId?: string;
+  order?: number;
 }
 
 export type AgentClientEvent =
@@ -37,7 +41,13 @@ export type AgentClientEvent =
       runId: string;
       userMessageId: string;
     }
-  | { type: 'text'; messageId: string; delta: string }
+  | {
+      type: 'text';
+      messageId: string;
+      delta: string;
+      runId?: string;
+      order?: number;
+    }
   | ({ type: 'tool' } & AgentToolSummary)
   | {
       type: 'status';
@@ -58,6 +68,40 @@ export function publicAgentRun(run: AgentRunRecord) {
     ...(run.error_code ? { errorCode: run.error_code } : {}),
     createdAt: run.created_at,
     updatedAt: run.updated_at,
+    ...(run.persistence_status !== 'saved' && run.result
+      ? {
+          recoveryMessages: run.result.messages.map(message => ({
+            id: message.id,
+            role: 'assistant',
+            content: message.content,
+            metadata: {
+              backend_run_id: run.id,
+              ...(message.order === undefined
+                ? {}
+                : { projection_order: message.order }),
+              ...(Array.isArray(message.tools)
+                ? {
+                    tools: message.tools.map(tool => {
+                      const value = tool as AgentToolSummary;
+                      return {
+                        toolCallId: value.toolCallId,
+                        name: value.name,
+                        status: value.status,
+                        runId: run.id,
+                        ...(value.messageId
+                          ? { messageId: value.messageId }
+                          : {}),
+                        ...(value.order === undefined
+                          ? {}
+                          : { order: value.order }),
+                      };
+                    }),
+                  }
+                : {}),
+            },
+          })),
+        }
+      : {}),
   };
 }
 
@@ -92,8 +136,10 @@ export async function executeAgentRun(input: {
   let knownThreadId: string | undefined;
   let visibleBytes = 0;
   let submitting = false;
+  let claimed = false;
   let accepted = false;
   let rejectedBeforeExecution = false;
+  let projectionOrder = 0;
   try {
     knownThreadId = run.thread_id || (await createThread(input.app)).threadId;
     try {
@@ -101,13 +147,18 @@ export async function executeAgentRun(input: {
     } catch {
       run = await bindThread(run.id, knownThreadId);
     }
-    if (input.rootTaskId) await markSubmissionSubmitting(input.rootTaskId);
-    submitting = true;
     for await (const event of streamTurn(input.app, {
       threadId: knownThreadId,
       runId: run.id,
       messageId: run.user_message_id,
       content: input.content,
+      beforeDispatch: async () => {
+        if (input.rootTaskId) await markSubmissionSubmitting(input.rootTaskId);
+        claimed = true;
+      },
+      onDispatch: () => {
+        submitting = true;
+      },
     })) {
       if (!accepted && event.type !== 'RUN_ERROR') {
         if (input.rootTaskId)
@@ -121,9 +172,19 @@ export async function executeAgentRun(input: {
         case 'TEXT_MESSAGE_START': {
           if (messages.size >= 64)
             throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
-          const message = { id: randomUUID(), content: '' };
+          const message = {
+            id: randomUUID(),
+            content: '',
+            order: projectionOrder++,
+          };
           messages.set(event.messageId, message);
-          input.emit({ type: 'text', messageId: message.id, delta: '' });
+          input.emit({
+            type: 'text',
+            messageId: message.id,
+            delta: '',
+            runId: run.id,
+            order: message.order,
+          });
           break;
         }
         case 'TEXT_MESSAGE_CONTENT': {
@@ -138,6 +199,8 @@ export async function executeAgentRun(input: {
             type: 'text',
             messageId: message.id,
             delta: event.delta,
+            runId: run.id,
+            order: message.order,
           });
           break;
         }
@@ -148,6 +211,11 @@ export async function executeAgentRun(input: {
             toolCallId: event.toolCallId,
             name: event.toolCallName,
             status: 'running',
+            runId: run.id,
+            order: projectionOrder++,
+            ...(event.parentMessageId && messages.has(event.parentMessageId)
+              ? { messageId: messages.get(event.parentMessageId)!.id }
+              : {}),
           };
           tools.set(event.toolCallId, tool);
           input.emit({ type: 'tool', ...tool });
@@ -185,7 +253,8 @@ export async function executeAgentRun(input: {
     executionStatus =
       !submitting || rejectedBeforeExecution ? 'error' : 'unknown';
     errorCode =
-      error instanceof LangChainUpstreamError
+      error instanceof LangChainUpstreamError ||
+      error instanceof AgentPolicyError
         ? error.code
         : 'AGENT_RESULT_UNKNOWN';
     input.report({
@@ -198,9 +267,14 @@ export async function executeAgentRun(input: {
   }
   if (input.rootTaskId) {
     try {
-      if (!submitting)
-        await rejectSubmission(input.rootTaskId, 'AGENT_NOT_DISPATCHED');
-      else if (rejectedBeforeExecution)
+      if (!submitting) {
+        if (claimed)
+          await rejectUnacceptedSubmission(
+            input.rootTaskId,
+            'AGENT_NOT_DISPATCHED'
+          );
+        else await rejectSubmission(input.rootTaskId, 'AGENT_NOT_DISPATCHED');
+      } else if (rejectedBeforeExecution)
         await rejectUnacceptedSubmission(input.rootTaskId);
       else
         await confirmSubmission(
@@ -216,9 +290,24 @@ export async function executeAgentRun(input: {
   }
   const savedMessages = [...messages.values()];
   if (tools.size) {
-    if (!savedMessages.length)
-      savedMessages.push({ id: randomUUID(), content: '' });
-    savedMessages[0].tools = [...tools.values()];
+    let runSummary: AgentSavedMessage | undefined = savedMessages.at(-1);
+    for (const tool of tools.values()) {
+      let owner = tool.messageId
+        ? savedMessages.find(message => message.id === tool.messageId)
+        : undefined;
+      if (!owner) {
+        if (!runSummary) {
+          runSummary = {
+            id: randomUUID(),
+            content: '',
+            order: projectionOrder++,
+          };
+          savedMessages.push(runSummary);
+        }
+        owner = runSummary;
+      }
+      owner.tools = [...(Array.isArray(owner.tools) ? owner.tools : []), tool];
+    }
   }
   const result: AgentRunResult = {
     executionStatus,

@@ -43,6 +43,7 @@ import type { WorkflowNodeSnapshot } from './use-workflow-execution/types';
 export function useWorkflowExecution(instanceId: string) {
   const { profile } = useProfile();
   const userId = profile?.id;
+  const canStop = profile?.role === 'admin';
   const { formatDate } = useDateFormatter();
   const { addToFavorites } = useAutoAddFavoriteApp();
 
@@ -169,9 +170,8 @@ export function useWorkflowExecution(instanceId: string) {
           JSON.stringify(difyPayload, null, 2)
         );
 
-        const { streamDifyWorkflow } = await import(
-          '@lib/services/dify/workflow-service'
-        );
+        const { streamDifyWorkflow } =
+          await import('@lib/services/dify/workflow-service');
 
         abortControllerRef.current = new AbortController();
         streamResponse = await streamDifyWorkflow(difyPayload, instanceId);
@@ -322,6 +322,7 @@ export function useWorkflowExecution(instanceId: string) {
   );
 
   const stopWorkflowExecution = useCallback(async () => {
+    if (!canStop) return;
     console.log('[Workflow Execution] Stop workflow execution');
 
     try {
@@ -335,9 +336,8 @@ export function useWorkflowExecution(instanceId: string) {
 
       if (state.difyTaskId && userId) {
         try {
-          const { stopDifyWorkflow } = await import(
-            '@lib/services/dify/workflow-service'
-          );
+          const { stopDifyWorkflow } =
+            await import('@lib/services/dify/workflow-service');
           await stopDifyWorkflow(instanceId, state.difyTaskId, userId);
           console.log('[Workflow Execution] Dify workflow stopped');
         } catch (stopError) {
@@ -380,7 +380,7 @@ export function useWorkflowExecution(instanceId: string) {
       );
       getActions().setError('Failed to stop execution');
     }
-  }, [getActions, instanceId, userId]);
+  }, [canStop, getActions, instanceId, userId]);
 
   const loadWorkflowHistory = useCallback(async () => {
     if (!userId) return;
@@ -504,6 +504,7 @@ export function useWorkflowExecution(instanceId: string) {
     formLocked,
     executeWorkflow,
     stopWorkflowExecution,
+    canStop,
     retryExecution,
     resetExecution,
     resetAll,

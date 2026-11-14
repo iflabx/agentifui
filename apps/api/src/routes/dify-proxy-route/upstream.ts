@@ -524,6 +524,7 @@ export async function dispatchDifyUpstreamRequest(
   if (request.raw.aborted || reply.raw.destroyed) abortDownstream();
 
   let dispatched = false;
+  let claimed = false;
   try {
     const resilienceResult = await fetchWithDifyProxyResilience({
       circuitKey,
@@ -531,6 +532,13 @@ export async function dispatchDifyUpstreamRequest(
       execute: async signal => {
         if (targetConfig.rootTaskId)
           await markSubmissionSubmitting(targetConfig.rootTaskId);
+        claimed = true;
+        if (signal.aborted && targetConfig.rootTaskId)
+          await rejectUnacceptedSubmission(
+            targetConfig.rootTaskId,
+            'AGENT_NOT_DISPATCHED'
+          );
+        signal.throwIfAborted();
         dispatched = true;
         const requestInit: RequestInit = {
           method: actualMethod,
@@ -550,6 +558,11 @@ export async function dispatchDifyUpstreamRequest(
       if (targetConfig.rootTaskId) {
         if (dispatched)
           await confirmSubmission(targetConfig.rootTaskId, 'unknown');
+        else if (claimed)
+          await rejectUnacceptedSubmission(
+            targetConfig.rootTaskId,
+            'AGENT_NOT_DISPATCHED'
+          );
         else
           await rejectSubmission(
             targetConfig.rootTaskId,
@@ -608,6 +621,18 @@ export async function dispatchDifyUpstreamRequest(
       await confirmSubmission(targetConfig.rootTaskId, 'unknown').catch(
         () => undefined
       );
+    if (targetConfig.rootTaskId && !dispatched) {
+      if (claimed)
+        await rejectUnacceptedSubmission(
+          targetConfig.rootTaskId,
+          'AGENT_NOT_DISPATCHED'
+        ).catch(() => undefined);
+      else
+        await rejectSubmission(
+          targetConfig.rootTaskId,
+          'AGENT_NOT_DISPATCHED'
+        ).catch(() => undefined);
+    }
     if (
       error instanceof DifyProxyRequestError &&
       error.reason !== 'network-error' &&

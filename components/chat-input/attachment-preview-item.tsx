@@ -2,10 +2,7 @@
 
 import { Spinner } from '@components/ui/spinner';
 import { TooltipWrapper } from '@components/ui/tooltip-wrapper';
-import {
-  AttachmentFile,
-  useAttachmentStore,
-} from '@lib/stores/attachment-store';
+import type { AttachmentFile } from '@lib/stores/attachment-store';
 import { cn, formatBytes } from '@lib/utils';
 import { CheckCircle2Icon, FileTextIcon, RotateCcw, XIcon } from 'lucide-react';
 
@@ -20,6 +17,7 @@ import { useTranslations } from 'next-intl';
 interface AttachmentPreviewItemProps {
   attachment: AttachmentFile;
   onRetry: (id: string) => void;
+  onRemove: (id: string) => void;
 }
 
 /**
@@ -29,14 +27,14 @@ interface AttachmentPreviewItemProps {
 export const AttachmentPreviewItem: React.FC<AttachmentPreviewItemProps> = ({
   attachment,
   onRetry,
+  onRemove,
 }) => {
-  const removeFile = useAttachmentStore(state => state.removeFile);
   const t = useTranslations('common.ui');
 
   // Remove file handler
   const handleRemove = (e: React.MouseEvent) => {
     e.stopPropagation();
-    removeFile(attachment.id);
+    onRemove(attachment.id);
   };
 
   // Retry upload handler

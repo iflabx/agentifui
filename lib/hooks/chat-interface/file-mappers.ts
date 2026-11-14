@@ -12,14 +12,14 @@ export function mapChatUploadFilesToMessageAttachments(
   }
 
   return files.map(file => {
-    const uploadFile = file as ChatUploadFile;
+    const uploadFile = file as ChatUploadFile & { app_id?: string };
     return {
       id: uploadFile.upload_file_id,
       name: uploadFile.name,
       size: uploadFile.size,
       type: uploadFile.mime_type,
       upload_file_id: uploadFile.upload_file_id,
-      app_id: appId || undefined,
+      app_id: uploadFile.app_id || appId || undefined,
     };
   });
 }

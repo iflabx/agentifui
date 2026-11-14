@@ -1,3 +1,5 @@
+import { useChatInputStore } from '@lib/stores/chat-input-store';
+import { useCurrentAppStore } from '@lib/stores/current-app-store';
 import { act, renderHook } from '@testing-library/react';
 
 import { resolveChatSubmitAppConfig } from './app-config';
@@ -76,7 +78,104 @@ describe('useChatSubmitHandler', () => {
       instance: { id: 'instance-1' },
     });
     (executeChatSubmit as jest.Mock).mockResolvedValue(undefined);
+    useCurrentAppStore.setState({ currentAppId: 'app-1' });
+    useChatInputStore.getState().setActor('user-1');
   });
+
+  it('detaches a same-path selected-app submission, including A-B-A without rerender', async () => {
+    let resolveConfig!: (value: unknown) => void;
+    jest.mocked(resolveChatSubmitAppConfig).mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolveConfig = resolve;
+        }) as never
+    );
+    const input = { ...createInput(), conversationAppId: null };
+    const { result } = renderHook(() => useChatSubmitHandler(input));
+    let pending!: Promise<void>;
+    act(() => {
+      pending = result.current('A draft');
+    });
+    act(() => {
+      useCurrentAppStore.setState({ currentAppId: 'app-2' });
+      useCurrentAppStore.setState({ currentAppId: 'app-1' });
+    });
+    expect(input.isSubmittingRef.current).toBe(false);
+    await act(async () => {
+      resolveConfig({ appId: 'app-1', instance: { instance_id: 'app-1' } });
+      await pending;
+    });
+    expect(executeChatSubmit).not.toHaveBeenCalled();
+  });
+
+  it('does not release B when A config rejects late', async () => {
+    let finishA!: (value: null) => void;
+    jest.mocked(resolveChatSubmitAppConfig).mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          finishA = resolve;
+        })
+    );
+    let finishB!: () => void;
+    jest.mocked(executeChatSubmit).mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          finishB = resolve;
+        })
+    );
+    const input = { ...createInput(), conversationAppId: null };
+    const { result } = renderHook(() => useChatSubmitHandler(input));
+    let pendingA!: Promise<void>;
+    act(() => {
+      pendingA = result.current('A');
+    });
+    act(() => useCurrentAppStore.setState({ currentAppId: 'app-B' }));
+    let pendingB!: Promise<void>;
+    await act(async () => {
+      pendingB = result.current('B');
+      await Promise.resolve();
+    });
+    expect(input.isSubmittingRef.current).toBe(true);
+    await act(async () => {
+      finishA(null);
+      await pendingA;
+    });
+    expect(input.isSubmittingRef.current).toBe(true);
+    await act(async () => {
+      finishB();
+      await pendingB;
+    });
+    expect(input.isSubmittingRef.current).toBe(false);
+  });
+
+  it.each(['foreign', 'missing', 'old-actor', 'old-login'])(
+    'rejects %s attachment provenance without consuming the draft',
+    async provenance => {
+      const input = createInput();
+      const { result } = renderHook(() => useChatSubmitHandler(input));
+      useChatInputStore.getState().setMessage('keep');
+      await act(async () => {
+        await result.current('keep', [
+          {
+            upload_file_id: 'uploaded-A',
+            ...(provenance === 'foreign' ? { app_id: 'app-B' } : {}),
+            ...(provenance === 'old-actor' || provenance === 'old-login'
+              ? {
+                  app_id: 'app-1',
+                  actor_id: provenance === 'old-actor' ? 'user-2' : 'user-1',
+                  actor_epoch:
+                    useChatInputStore.getState().actorEpoch -
+                    (provenance === 'old-login' ? 1 : 0),
+                }
+              : {}),
+          },
+        ]);
+      });
+      expect(resolveChatSubmitAppConfig).not.toHaveBeenCalled();
+      expect(executeChatSubmit).not.toHaveBeenCalled();
+      expect(useChatInputStore.getState().message).toBe('keep');
+    }
+  );
 
   it('invalidates a delayed configuration result when the user navigates away', async () => {
     let resolveConfig: (value: unknown) => void = () => undefined;
@@ -174,7 +273,18 @@ describe('useChatSubmitHandler', () => {
     const { result } = renderHook(() => useChatSubmitHandler(input));
 
     await act(async () => {
-      await result.current('hello', ['file-1'], { foo: 'bar' });
+      await result.current(
+        'hello',
+        [
+          {
+            upload_file_id: 'file-1',
+            app_id: 'app-1',
+            actor_id: 'user-1',
+            actor_epoch: useChatInputStore.getState().actorEpoch,
+          },
+        ],
+        { foo: 'bar' }
+      );
     });
 
     expect(resolveChatSubmitAppConfig).toHaveBeenCalledWith(
@@ -189,7 +299,14 @@ describe('useChatSubmitHandler', () => {
     expect(executeChatSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
         message: 'hello',
-        files: ['file-1'],
+        files: [
+          {
+            upload_file_id: 'file-1',
+            app_id: 'app-1',
+            actor_id: 'user-1',
+            actor_epoch: useChatInputStore.getState().actorEpoch,
+          },
+        ],
         inputs: { foo: 'bar' },
         currentUserId: 'user-1',
         currentPathname: '/chat/new',

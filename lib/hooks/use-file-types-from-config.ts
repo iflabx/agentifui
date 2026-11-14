@@ -2,6 +2,7 @@
 
 import { FILE_TYPE_CONFIG, FileTypeKey } from '@lib/constants/file-types';
 import { useCurrentAppStore } from '@lib/stores/current-app-store';
+import type { ServiceInstance } from '@lib/types/database';
 import { DifyFileUploadConfig } from '@lib/types/dify-parameters';
 
 import React from 'react';
@@ -38,8 +39,14 @@ const FILE_TYPE_MAPPING: Record<string, FileTypeKey> = {
   custom: 'other',
 };
 
-export function useFileTypesFromConfig() {
-  const { currentAppInstance } = useCurrentAppStore();
+export function useFileTypesFromConfig(
+  resolvedInstance?: ServiceInstance | null
+) {
+  const selected = useCurrentAppStore();
+  const currentAppInstance =
+    resolvedInstance === undefined
+      ? selected.currentAppInstance
+      : resolvedInstance;
 
   const { fileTypes, uploadConfig } = useMemo(() => {
     if (!currentAppInstance?.config?.dify_parameters?.file_upload) {
@@ -77,8 +84,7 @@ export function useFileTypesFromConfig() {
     const maxFiles = actualConfig.number_limits || 0;
     const supportedMethods: ('local_file' | 'remote_url')[] = [
       ...((actualConfig.allowed_file_upload_methods as (
-        | 'local_file'
-        | 'remote_url'
+        'local_file' | 'remote_url'
       )[]) || []),
     ];
     const allowedFileTypes = actualConfig.allowed_file_types || [];

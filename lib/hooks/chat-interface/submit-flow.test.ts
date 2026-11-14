@@ -420,4 +420,23 @@ describe('executeChatSubmit', () => {
       })
     );
   });
+
+  it('does not fabricate an incomplete assistant response for a confirmed pre-row stop', async () => {
+    const { input } = createInput();
+    mockConsumeChatAnswerStream.mockResolvedValueOnce({
+      assistantMessageId: null,
+      assistantText: '',
+    });
+    await executeChatSubmit({
+      ...input,
+      viewScope: {
+        isCurrent: () => false,
+        isStopped: () => true,
+        onRouteAdopted: jest.fn(),
+      },
+    });
+    expect(mockPersistChatMessagesAfterStreaming).toHaveBeenCalledWith(
+      expect.objectContaining({ assistantFallback: null })
+    );
+  });
 });

@@ -1,6 +1,8 @@
 import { stopDifyStreamingTask } from '@lib/services/dify/chat-service';
+import { useChatInputStore } from '@lib/stores/chat-input-store';
 import type { ChatMessage } from '@lib/stores/chat-store';
 import { useChatStore } from '@lib/stores/chat-store';
+import { useCurrentAppStore } from '@lib/stores/current-app-store';
 import type { ServiceInstance } from '@lib/types/database';
 import { resolveStoppedResponseSnapshot } from '@lib/utils/stopped-message-content';
 
@@ -8,6 +10,7 @@ import type { MutableRefObject } from 'react';
 
 import { resolveChatStopAppConfig } from './app-config';
 import { resolveDbConversationUuidByExternalId } from './conversation-db';
+import { chatSubmissionOwners } from './submission-owner';
 
 type ChatMessageUpdates = Partial<Omit<ChatMessage, 'id' | 'isUser'>>;
 
@@ -100,38 +103,41 @@ interface StopRemoteStreamingTaskIfNeededInput {
   currentTaskId: string | null;
   currentUserId: string;
   appId?: string;
-  setCurrentTaskId: (taskId: string | null) => void;
 }
 
 export async function stopRemoteStreamingTaskIfNeeded(
   input: StopRemoteStreamingTaskIfNeededInput
-): Promise<void> {
+): Promise<boolean> {
   if (input.currentTaskId && input.appId) {
     try {
-      await stopDifyStreamingTask(
+      const result = await stopDifyStreamingTask(
         input.appId,
         input.currentTaskId,
         input.currentUserId
       );
-      input.setCurrentTaskId(null);
+      if (result.result !== 'success') return false;
+      return true;
     } catch (error) {
       console.error(
         '[handleStopProcessing] Error calling stopDifyStreamingTask:',
         error
       );
     }
-    return;
+    return false;
   }
 
   if (input.currentTaskId) {
     console.warn(
       '[handleStopProcessing] No valid app config, skip remote stop'
     );
-    input.setCurrentTaskId(null);
   }
+  return false;
 }
 
 interface PersistStoppedStreamingStateInput {
+  assistantSnapshot?: ChatMessage | null;
+  userSnapshot?: ChatMessage | null;
+  canSaveForNewConversation?: boolean;
   currentStreamingId: string;
   dbConversationUUID: string | null;
   difyConversationId: string | null;
@@ -151,9 +157,20 @@ interface PersistStoppedStreamingStateInput {
 export async function persistStoppedStreamingState(
   input: PersistStoppedStreamingStateInput
 ): Promise<void> {
-  const assistantMessage = useChatStore
-    .getState()
-    .messages.find(message => message.id === input.currentStreamingId);
+  const assistantMessage =
+    input.assistantSnapshot === undefined
+      ? useChatStore
+          .getState()
+          .messages.find(message => message.id === input.currentStreamingId)
+      : input.assistantSnapshot;
+  const recentUserMessage =
+    input.userSnapshot === undefined
+      ? findLatestUnsavedUserMessage()
+      : input.userSnapshot;
+  const canSaveForNewConversation =
+    input.canSaveForNewConversation ??
+    (isNewConversationUrl() || !input.difyConversationId);
+  let stoppedAssistantMessage: ChatMessage | null = null;
 
   if (assistantMessage) {
     const updatedMetadata = {
@@ -171,15 +188,18 @@ export async function persistStoppedStreamingState(
       wasManuallyStopped: true,
       persistenceStatus: 'pending',
     });
+    stoppedAssistantMessage = {
+      ...assistantMessage,
+      isStreaming: false,
+      metadata: updatedMetadata,
+      wasManuallyStopped: true,
+      persistenceStatus: 'pending',
+    };
 
     console.log(
       `[handleStopProcessing] Marked assistant message as stopped, waiting for unified save, ID=${input.currentStreamingId}`
     );
   }
-
-  const recentUserMessage = findLatestUnsavedUserMessage();
-  const canSaveForNewConversation =
-    isNewConversationUrl() || !input.difyConversationId;
 
   let resolvedDbConversationId = input.dbConversationUUID;
   if (!resolvedDbConversationId && input.difyConversationId) {
@@ -218,10 +238,6 @@ export async function persistStoppedStreamingState(
     }
   }
 
-  const stoppedAssistantMessage = useChatStore
-    .getState()
-    .messages.find(message => message.id === input.currentStreamingId);
-
   if (!stoppedAssistantMessage) {
     return;
   }
@@ -244,6 +260,7 @@ export async function persistStoppedStreamingState(
 }
 
 interface ExecuteChatStopInput {
+  isCurrent?: () => boolean;
   currentUserId: string | undefined;
   currentAppId: string | null | undefined;
   currentAppInstance: ServiceInstance | null | undefined;
@@ -269,73 +286,156 @@ interface ExecuteChatStopInput {
   finalizeStreamingMessage: (id: string) => void;
 }
 
+const stoppingTasks = new Set<string>();
+
+export interface ChatStopResult {
+  confirmed: boolean;
+  current: boolean;
+  taskId?: string;
+}
+
 export async function executeChatStop(
   input: ExecuteChatStopInput
-): Promise<void> {
+): Promise<ChatStopResult> {
   const state = useChatStore.getState();
-  const currentStreamingId = state.streamingMessageId;
   const currentTaskId = state.currentTaskId;
-
-  if (
-    await fixZombieStreamingStateIfNeeded({
-      currentStreamingId,
-      currentTaskId,
-      dbConversationUUID: input.dbConversationUUID,
-      finalizeStreamingMessage: input.finalizeStreamingMessage,
-      setIsWaitingForResponse: input.setIsWaitingForResponse,
-      updateMessage: input.updateMessage,
-      saveMessage: input.saveMessage,
-    })
-  ) {
-    input.isSubmittingRef.current = false;
-    console.log(
-      '[handleStopProcessing] Zombie state fix complete, user can resubmit'
-    );
-    return;
-  }
-
-  if (!input.currentUserId) {
-    console.error(
-      'useChatInterface.handleStopProcessing: User not authenticated.'
-    );
-    return;
-  }
-
-  const appConfig = resolveChatStopAppConfig({
-    currentAppId: input.currentAppId,
-    currentAppInstance: input.currentAppInstance,
+  const currentStreamingId = state.streamingMessageId;
+  const submission = chatSubmissionOwners.get(input.isSubmittingRef);
+  const outcome = (confirmed: boolean, current: boolean): ChatStopResult => ({
+    confirmed,
+    current,
+    ...(currentTaskId ? { taskId: currentTaskId } : {}),
   });
+  if (!input.currentUserId || (submission && !submission.isCurrent()))
+    return outcome(false, false);
+  const appConfig = submission?.appConfig || resolveChatStopAppConfig(input);
+  type CancellationInstance = ServiceInstance & {
+    descriptor?: { effectiveActions?: { cancellation?: boolean } };
+  };
+  const instance = appConfig?.instance as CancellationInstance | undefined;
+  const currentInstance = input.currentAppInstance as
+    CancellationInstance | undefined;
+  if (
+    instance?.descriptor?.effectiveActions?.cancellation === false ||
+    (currentInstance?.instance_id === appConfig?.appId &&
+      currentInstance?.descriptor?.effectiveActions?.cancellation === false)
+  )
+    return outcome(false, input.isCurrent?.() ?? true);
 
-  if (currentStreamingId) {
-    if (input.appendTimerRef.current) {
-      clearTimeout(input.appendTimerRef.current);
-      input.appendTimerRef.current = null;
+  const actor = useChatInputStore.getState();
+  const selectedAppId = useCurrentAppStore.getState().currentAppId;
+  let detached = false;
+  const isCurrent = () =>
+    !detached &&
+    (submission?.isCurrent() ?? input.isCurrent?.() ?? true) &&
+    useChatStore.getState().currentTaskId === currentTaskId;
+  const unsubscribeApp = useCurrentAppStore.subscribe(next => {
+    if (next.currentAppId !== selectedAppId) detached = true;
+  });
+  const unsubscribeInput = useChatInputStore.subscribe(next => {
+    if (
+      next.actorEpoch !== actor.actorEpoch ||
+      next.resolveScope(actor.currentRoute) !== next.currentRoute
+    )
+      detached = true;
+  });
+  const unsubscribeChat = useChatStore.subscribe(next => {
+    if (next.currentTaskId !== currentTaskId) detached = true;
+  });
+  const guard =
+    <Args extends unknown[]>(callback: (...args: Args) => void) =>
+    (...args: Args) => {
+      if (isCurrent()) callback(...args);
+    };
+  const key = JSON.stringify([
+    actor.actorEpoch,
+    input.currentUserId,
+    appConfig?.appId,
+    currentTaskId,
+  ]);
+  if (stoppingTasks.has(key)) {
+    unsubscribeApp();
+    unsubscribeInput();
+    unsubscribeChat();
+    return outcome(false, isCurrent());
+  }
+  stoppingTasks.add(key);
+  try {
+    if (!currentTaskId) {
+      const fixed = await fixZombieStreamingStateIfNeeded({
+        currentStreamingId,
+        currentTaskId,
+        dbConversationUUID: input.dbConversationUUID,
+        finalizeStreamingMessage: guard(input.finalizeStreamingMessage),
+        setIsWaitingForResponse: guard(input.setIsWaitingForResponse),
+        updateMessage: guard(input.updateMessage),
+        saveMessage: input.saveMessage,
+      });
+      if (fixed && isCurrent()) input.isSubmittingRef.current = false;
+      return outcome(false, isCurrent());
     }
-    input.flushChunkBuffer(currentStreamingId);
-    input.markAsManuallyStopped(currentStreamingId);
-
-    await stopRemoteStreamingTaskIfNeeded({
+    if (!appConfig) return outcome(false, isCurrent());
+    if (isCurrent() && currentStreamingId)
+      input.flushChunkBuffer(currentStreamingId);
+    const assistantSnapshot =
+      useChatStore
+        .getState()
+        .messages.find(message => message.id === currentStreamingId) || null;
+    const userSnapshot = findLatestUnsavedUserMessage() || null;
+    const canSaveForNewConversation =
+      isNewConversationUrl() || !input.difyConversationId;
+    const confirmed = await stopRemoteStreamingTaskIfNeeded({
       currentTaskId,
       currentUserId: input.currentUserId,
-      appId: appConfig?.appId,
-      setCurrentTaskId: input.setCurrentTaskId,
+      appId: appConfig.appId,
     });
+    if (!confirmed) return outcome(false, isCurrent());
 
-    await persistStoppedStreamingState({
-      currentStreamingId,
-      dbConversationUUID: input.dbConversationUUID,
-      difyConversationId: input.difyConversationId,
-      setDbConversationUUID: input.setDbConversationUUID,
-      updateMessage: input.updateMessage,
-      saveMessage: input.saveMessage,
-      saveStoppedAssistantMessage: input.saveStoppedAssistantMessage,
-    });
+    let stoppedSnapshot = assistantSnapshot;
+    let stoppedId = currentStreamingId;
+    if (isCurrent()) {
+      stoppedId = useChatStore.getState().streamingMessageId;
+      if (input.appendTimerRef.current) {
+        clearTimeout(input.appendTimerRef.current);
+        input.appendTimerRef.current = null;
+      }
+      if (stoppedId) {
+        input.flushChunkBuffer(stoppedId);
+        stoppedSnapshot =
+          useChatStore
+            .getState()
+            .messages.find(message => message.id === stoppedId) ||
+          stoppedSnapshot;
+        input.markAsManuallyStopped(stoppedId);
+        input.finalizeStreamingMessage(stoppedId);
+      }
+    }
+    if (stoppedId && stoppedSnapshot) {
+      await persistStoppedStreamingState({
+        currentStreamingId: stoppedId,
+        assistantSnapshot: stoppedSnapshot,
+        userSnapshot,
+        canSaveForNewConversation,
+        dbConversationUUID: input.dbConversationUUID,
+        difyConversationId: input.difyConversationId,
+        setDbConversationUUID: guard(input.setDbConversationUUID),
+        updateMessage: guard(input.updateMessage),
+        saveMessage: input.saveMessage,
+        saveStoppedAssistantMessage: input.saveStoppedAssistantMessage,
+      });
+    }
+    const current = isCurrent();
+    if (current) {
+      input.setIsWaitingForResponse(false);
+      input.isSubmittingRef.current = false;
+      input.setCurrentTaskId(null);
+    }
+    submission?.onStopped();
+    return outcome(true, current);
+  } finally {
+    stoppingTasks.delete(key);
+    unsubscribeApp();
+    unsubscribeInput();
+    unsubscribeChat();
   }
-
-  input.setIsWaitingForResponse(false);
-  input.isSubmittingRef.current = false;
-
-  console.log(
-    '[handleStopProcessing] Normal stop flow complete, user can resubmit'
-  );
 }

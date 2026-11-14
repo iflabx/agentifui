@@ -13,6 +13,39 @@ jest.mock('@lib/stores/chat-store', () => ({
 }));
 
 describe('consumeChatAnswerStream interruption snapshots', () => {
+  it('does not create a first assistant row or retain late text after confirmed stop', async () => {
+    let stopped = false;
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => {
+      release = resolve;
+    });
+    const addMessage = jest.fn();
+    const pending = consumeChatAnswerStream({
+      answerStream: (async function* () {
+        await gate;
+        yield 'late token';
+      })(),
+      assistantMessageId: null,
+      isCurrent: () => true,
+      isStopped: () => stopped,
+      isNewConversationFlow: false,
+      addMessage,
+      setIsWaitingForResponse: jest.fn(),
+      updatePendingStatus: jest.fn(),
+      chunkBufferRef: { current: '' },
+      appendTimerRef: { current: null },
+      flushChunkBuffer: jest.fn(),
+      markAsManuallyStopped: jest.fn(),
+      chunkAppendInterval: 0,
+    });
+    stopped = true;
+    release();
+    await expect(pending).resolves.toEqual({
+      assistantMessageId: null,
+      assistantText: '',
+    });
+    expect(addMessage).not.toHaveBeenCalled();
+  });
   it('retains the original message ID and all received chunks after navigation without changing the thrown error', async () => {
     let active = true;
     const failure = new Error('synthetic stream failure');

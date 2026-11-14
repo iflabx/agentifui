@@ -168,7 +168,7 @@ export function WorkflowTracker({
             error={error}
             canRetry={canRetry}
             currentExecution={currentExecution}
-            onStop={onStop || (() => {})}
+            onStop={onStop}
             onRetry={onRetry || (() => {})}
             onReset={onReset || (() => {})}
             onShowResult={() => setShowResult(true)}

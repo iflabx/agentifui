@@ -14,6 +14,8 @@ describe('useChatStopHandler', () => {
   });
 
   it('delegates stop handling to executeChatStop', async () => {
+    const stopResult = { confirmed: true, current: true, taskId: 'task-1' };
+    jest.mocked(executeChatStop).mockResolvedValue(stopResult);
     const input: Parameters<typeof useChatStopHandler>[0] = {
       currentUserId: 'user-1',
       currentAppId: 'app-1',
@@ -45,12 +47,23 @@ describe('useChatStopHandler', () => {
       finalizeStreamingMessage: jest.fn(),
     };
 
-    const { result } = renderHook(() => useChatStopHandler(input));
+    const { result, rerender } = renderHook(
+      ({ path }) => useChatStopHandler({ ...input, currentPathname: path }),
+      { initialProps: { path: '/chat/A' } }
+    );
 
     await act(async () => {
-      await result.current();
+      expect(await result.current()).toBe(stopResult);
     });
 
-    expect(executeChatStop).toHaveBeenCalledWith(input);
+    expect(executeChatStop).toHaveBeenCalledWith({
+      ...input,
+      isCurrent: expect.any(Function),
+    });
+    const owner = jest.mocked(executeChatStop).mock.calls[0][0];
+    expect(owner.isCurrent?.()).toBe(true);
+    rerender({ path: '/chat/B' });
+    rerender({ path: '/chat/A' });
+    expect(owner.isCurrent?.()).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 import type { ChatMessage } from '@lib/stores/chat-store';
 import type { ServiceInstance } from '@lib/types/database';
 
-import { useCallback } from 'react';
+import { useCallback, useLayoutEffect, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 
 import { executeChatStop } from './stop-flow';
@@ -9,6 +9,7 @@ import { executeChatStop } from './stop-flow';
 type ChatMessageUpdates = Partial<Omit<ChatMessage, 'id' | 'isUser'>>;
 
 interface UseChatStopHandlerInput {
+  currentPathname?: string | null;
   currentUserId: string | undefined;
   currentAppId: string | null | undefined;
   currentAppInstance: ServiceInstance | null | undefined;
@@ -35,6 +36,7 @@ interface UseChatStopHandlerInput {
 }
 
 export function useChatStopHandler({
+  currentPathname,
   currentUserId,
   currentAppId,
   currentAppInstance,
@@ -52,27 +54,17 @@ export function useChatStopHandler({
   saveStoppedAssistantMessage,
   finalizeStreamingMessage,
 }: UseChatStopHandlerInput) {
-  return useCallback(
-    async () =>
-      executeChatStop({
-        currentUserId,
-        currentAppId,
-        currentAppInstance,
-        dbConversationUUID,
-        difyConversationId,
-        isSubmittingRef,
-        appendTimerRef,
-        setDbConversationUUID,
-        setCurrentTaskId,
-        setIsWaitingForResponse,
-        markAsManuallyStopped,
-        flushChunkBuffer,
-        updateMessage,
-        saveMessage,
-        saveStoppedAssistantMessage,
-        finalizeStreamingMessage,
-      }),
-    [
+  const viewEpoch = useRef(0);
+  useLayoutEffect(() => {
+    viewEpoch.current += 1;
+    return () => {
+      viewEpoch.current += 1;
+    };
+  }, [currentPathname, currentUserId, currentAppId]);
+  return useCallback(async () => {
+    const epoch = viewEpoch.current;
+    return executeChatStop({
+      isCurrent: () => viewEpoch.current === epoch,
       currentUserId,
       currentAppId,
       currentAppInstance,
@@ -89,6 +81,23 @@ export function useChatStopHandler({
       saveMessage,
       saveStoppedAssistantMessage,
       finalizeStreamingMessage,
-    ]
-  );
+    });
+  }, [
+    currentUserId,
+    currentAppId,
+    currentAppInstance,
+    dbConversationUUID,
+    difyConversationId,
+    isSubmittingRef,
+    appendTimerRef,
+    setDbConversationUUID,
+    setCurrentTaskId,
+    setIsWaitingForResponse,
+    markAsManuallyStopped,
+    flushChunkBuffer,
+    updateMessage,
+    saveMessage,
+    saveStoppedAssistantMessage,
+    finalizeStreamingMessage,
+  ]);
 }

@@ -248,7 +248,8 @@ describe('real lazy Dify SSE submission binding', () => {
         expect.any(String),
         'actor',
         'app',
-        'external-A'
+        'external-A',
+        creation.conversationPersistencePromise
       );
       if (leave) {
         expect(useChatStore.getState().messages).toEqual(nextMessages);

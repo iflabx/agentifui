@@ -17,13 +17,22 @@ export function useAuthSession() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let generation = 0;
+    let mounted = true;
     const syncSession = async () => {
+      const version = ++generation;
       setLoading(true);
-      const currentSession = await getCurrentSession().catch(() => null);
-      const currentUser = currentSession?.user ?? null;
-      setSession(currentUser ? { user: currentUser } : null);
-      setUser(currentUser);
-      setLoading(false);
+      try {
+        const currentSession = await getCurrentSession();
+        if (!mounted || version !== generation) return;
+        const currentUser = currentSession?.user ?? null;
+        setSession(currentUser ? { user: currentUser } : null);
+        setUser(currentUser);
+      } catch {
+        return;
+      } finally {
+        if (mounted && version === generation) setLoading(false);
+      }
     };
 
     void syncSession();
@@ -32,6 +41,7 @@ export function useAuthSession() {
     });
 
     return () => {
+      mounted = false;
       unsubscribe();
     };
   }, []);

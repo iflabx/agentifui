@@ -68,7 +68,11 @@ describe('AttachmentPreviewItem', () => {
       const attachment = { ...baseAttachment, status: 'uploading' as const };
 
       render(
-        <AttachmentPreviewItem attachment={attachment} onRetry={mockOnRetry} />
+        <AttachmentPreviewItem
+          attachment={attachment}
+          onRetry={mockOnRetry}
+          onRemove={mockRemoveFile}
+        />
       );
 
       expect(screen.getByTestId('spinner')).toBeInTheDocument();
@@ -79,7 +83,11 @@ describe('AttachmentPreviewItem', () => {
       const attachment = { ...baseAttachment, status: 'success' as const };
 
       render(
-        <AttachmentPreviewItem attachment={attachment} onRetry={mockOnRetry} />
+        <AttachmentPreviewItem
+          attachment={attachment}
+          onRetry={mockOnRetry}
+          onRemove={mockRemoveFile}
+        />
       );
 
       expect(screen.getByTestId('success-icon')).toBeInTheDocument();
@@ -93,7 +101,11 @@ describe('AttachmentPreviewItem', () => {
       };
 
       render(
-        <AttachmentPreviewItem attachment={attachment} onRetry={mockOnRetry} />
+        <AttachmentPreviewItem
+          attachment={attachment}
+          onRetry={mockOnRetry}
+          onRemove={mockRemoveFile}
+        />
       );
 
       expect(screen.getByTestId('retry-icon')).toBeInTheDocument();
@@ -103,7 +115,11 @@ describe('AttachmentPreviewItem', () => {
       const attachment = { ...baseAttachment, status: 'pending' as const };
 
       render(
-        <AttachmentPreviewItem attachment={attachment} onRetry={mockOnRetry} />
+        <AttachmentPreviewItem
+          attachment={attachment}
+          onRetry={mockOnRetry}
+          onRemove={mockRemoveFile}
+        />
       );
 
       expect(screen.getByTestId('file-icon')).toBeInTheDocument();
@@ -115,7 +131,11 @@ describe('AttachmentPreviewItem', () => {
       const attachment = { ...baseAttachment, status: 'pending' as const };
 
       render(
-        <AttachmentPreviewItem attachment={attachment} onRetry={mockOnRetry} />
+        <AttachmentPreviewItem
+          attachment={attachment}
+          onRetry={mockOnRetry}
+          onRemove={mockRemoveFile}
+        />
       );
 
       expect(screen.getByText('test-file.txt')).toBeInTheDocument();
@@ -130,7 +150,11 @@ describe('AttachmentPreviewItem', () => {
       };
 
       render(
-        <AttachmentPreviewItem attachment={attachment} onRetry={mockOnRetry} />
+        <AttachmentPreviewItem
+          attachment={attachment}
+          onRetry={mockOnRetry}
+          onRemove={mockRemoveFile}
+        />
       );
 
       const container = screen.getByTitle('error: Network error');
@@ -147,7 +171,11 @@ describe('AttachmentPreviewItem', () => {
       };
 
       render(
-        <AttachmentPreviewItem attachment={attachment} onRetry={mockOnRetry} />
+        <AttachmentPreviewItem
+          attachment={attachment}
+          onRetry={mockOnRetry}
+          onRemove={mockRemoveFile}
+        />
       );
 
       const retryButton = screen.getByRole('button', { name: 'retry' });
@@ -160,7 +188,11 @@ describe('AttachmentPreviewItem', () => {
       const attachment = { ...baseAttachment, status: 'pending' as const };
 
       render(
-        <AttachmentPreviewItem attachment={attachment} onRetry={mockOnRetry} />
+        <AttachmentPreviewItem
+          attachment={attachment}
+          onRetry={mockOnRetry}
+          onRemove={mockRemoveFile}
+        />
       );
 
       const removeButton = screen.getByRole('button', { name: 'remove' });
@@ -178,6 +210,7 @@ describe('AttachmentPreviewItem', () => {
           <AttachmentPreviewItem
             attachment={attachment}
             onRetry={mockOnRetry}
+            onRemove={mockRemoveFile}
           />
         </div>
       );
@@ -195,7 +228,11 @@ describe('AttachmentPreviewItem', () => {
       const attachment = { ...baseAttachment, status: 'success' as const };
 
       render(
-        <AttachmentPreviewItem attachment={attachment} onRetry={mockOnRetry} />
+        <AttachmentPreviewItem
+          attachment={attachment}
+          onRetry={mockOnRetry}
+          onRemove={mockRemoveFile}
+        />
       );
 
       const container = screen.getByTitle('test-file.txt');
@@ -206,7 +243,11 @@ describe('AttachmentPreviewItem', () => {
       const attachment = { ...baseAttachment, status: 'success' as const };
 
       render(
-        <AttachmentPreviewItem attachment={attachment} onRetry={mockOnRetry} />
+        <AttachmentPreviewItem
+          attachment={attachment}
+          onRetry={mockOnRetry}
+          onRemove={mockRemoveFile}
+        />
       );
 
       const container = screen.getByTitle('test-file.txt');
@@ -226,7 +267,11 @@ describe('AttachmentPreviewItem', () => {
       };
 
       render(
-        <AttachmentPreviewItem attachment={attachment} onRetry={mockOnRetry} />
+        <AttachmentPreviewItem
+          attachment={attachment}
+          onRetry={mockOnRetry}
+          onRemove={mockRemoveFile}
+        />
       );
 
       const container = screen.getByTitle('error: Upload failed');
@@ -241,7 +286,11 @@ describe('AttachmentPreviewItem', () => {
       };
 
       render(
-        <AttachmentPreviewItem attachment={attachment} onRetry={mockOnRetry} />
+        <AttachmentPreviewItem
+          attachment={attachment}
+          onRetry={mockOnRetry}
+          onRemove={mockRemoveFile}
+        />
       );
 
       const container = screen.getByTitle('error: Upload failed');

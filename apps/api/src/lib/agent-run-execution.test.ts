@@ -64,7 +64,9 @@ const initial = {
 } as AgentRunRecord;
 
 function stream(events: AGUIEvent[], error?: Error) {
-  jest.mocked(streamTurn).mockImplementation(async function* () {
+  jest.mocked(streamTurn).mockImplementation(async function* (_app, turn) {
+    await turn.beforeDispatch?.();
+    turn.onDispatch?.();
     yield* events;
     if (error) throw error;
   });
@@ -139,6 +141,8 @@ it('creates and binds a thread before one new user input, saves only current-run
     runId: initial.id,
     messageId: initial.user_message_id,
     content: 'one new input',
+    beforeDispatch: expect.any(Function),
+    onDispatch: expect.any(Function),
   });
   expect(recordNativeRun).toHaveBeenCalledWith(initial.id, 'native-run');
   const result = jest.mocked(saveRunResult).mock.calls[0][1];
@@ -161,7 +165,7 @@ it('durably claims a governed turn before dispatch and confirms usage before for
   expect(confirmSubmission).toHaveBeenNthCalledWith(2, 'root-task', 'finished');
   expect(
     jest.mocked(markSubmissionSubmitting).mock.invocationCallOrder[0]
-  ).toBeLessThan(jest.mocked(streamTurn).mock.invocationCallOrder[0]);
+  ).toBeLessThan(jest.mocked(confirmSubmission).mock.invocationCallOrder[0]);
 });
 
 it('does not confuse save-only failure with uncertain execution or dispatch a second turn', async () => {
@@ -319,6 +323,26 @@ it('releases known pre-dispatch setup failure but retains ambiguous dispatched u
   );
 });
 
+it('releases a completed claim when transport aborts before dispatch without recording uncertainty', async () => {
+  jest.mocked(streamTurn).mockImplementationOnce(async function* (_app, turn) {
+    await turn.beforeDispatch?.();
+    throw new DOMException('Synthetic pre-dispatch abort', 'AbortError');
+  });
+  const { events } = await run({}, 'root-task');
+  expect(markSubmissionSubmitting).toHaveBeenCalledWith('root-task');
+  expect(rejectUnacceptedSubmission).toHaveBeenCalledWith(
+    'root-task',
+    'AGENT_NOT_DISPATCHED'
+  );
+  expect(rejectSubmission).not.toHaveBeenCalled();
+  expect(confirmSubmission).not.toHaveBeenCalled();
+  expect(markRunUnknown).not.toHaveBeenCalled();
+  expect(events.at(-1)).toMatchObject({
+    executionStatus: 'error',
+    persistenceStatus: 'saved',
+  });
+});
+
 it.each(['thread', 'binding', 'claim'])(
   'does not retain an active run after an undispatched %s failure',
   async stage => {
@@ -336,7 +360,7 @@ it.each(['thread', 'binding', 'claim'])(
         .mocked(markSubmissionSubmitting)
         .mockRejectedValueOnce(new Error('synthetic claim failure'));
     const { events } = await run({}, 'root-task');
-    expect(streamTurn).not.toHaveBeenCalled();
+    if (stage !== 'claim') expect(streamTurn).not.toHaveBeenCalled();
     expect(confirmSubmission).not.toHaveBeenCalled();
     expect(rejectSubmission).toHaveBeenCalledWith(
       'root-task',
@@ -502,14 +526,23 @@ it('saves multiple assistants by separate local IDs and stores only safe tool su
   const result = jest.mocked(saveRunResult).mock.calls[0][1];
   expect(result.messages).toHaveLength(2);
   expect(new Set(result.messages.map(message => message.id)).size).toBe(2);
-  expect(result.messages[0].tools).toEqual([
-    { toolCallId: 'call', name: 'arithmetic', status: 'completed' },
+  expect(result.messages[0].tools).toBeUndefined();
+  expect(result.messages[1].tools).toEqual([
+    {
+      toolCallId: 'call',
+      name: 'arithmetic',
+      status: 'completed',
+      runId: initial.id,
+      order: 1,
+    },
   ]);
   expect(events).toContainEqual({
     type: 'tool',
     toolCallId: 'call',
     name: 'arithmetic',
     status: 'completed',
+    runId: initial.id,
+    order: 1,
   });
 });
 
