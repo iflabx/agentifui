@@ -2,6 +2,12 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import type { ApiRuntimeConfig } from '../../config';
+import { AgentPolicyError } from '../../lib/agent-backends';
+import {
+  admitSubmission,
+  registerSubmission,
+  rejectSubmission,
+} from '../../lib/agent-submissions';
 import { handleDifyProxy } from './handler';
 import { runInputModeration } from './input-moderation';
 import { resolveProxyRequestContext } from './request-context';
@@ -10,6 +16,14 @@ import { dispatchDifyUpstreamRequest } from './upstream';
 
 jest.mock('./request-context', () => ({
   resolveProxyRequestContext: jest.fn(),
+}));
+
+jest.mock('../../lib/agent-submissions', () => ({
+  ...jest.requireActual('../../lib/agent-submissions'),
+  registerSubmission: jest.fn(),
+  admitSubmission: jest.fn().mockResolvedValue(undefined),
+  rejectSubmission: jest.fn().mockResolvedValue(undefined),
+  submissionStorage: jest.fn(async operation => operation({})),
 }));
 
 jest.mock('./target-config', () => ({
@@ -56,7 +70,9 @@ function createRequest(method = 'POST'): FastifyRequest {
   return {
     id: 'req-1',
     method,
-    headers: {},
+    headers: {
+      'x-agentifui-submission-id': '30000000-0000-4000-8000-000000000001',
+    },
     raw: {
       url: '/api/dify/app-1/chat-messages',
     },
@@ -101,6 +117,11 @@ describe('handleDifyProxy input moderation integration', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.mocked(registerSubmission).mockResolvedValue({
+      task: { root_task_id: 'root-task' } as never,
+      replayed: false,
+    });
+    jest.mocked(admitSubmission).mockResolvedValue(undefined);
     mockedResolveProxyRequestContext.mockResolvedValue({
       ok: true,
       context: {
@@ -116,6 +137,7 @@ describe('handleDifyProxy input moderation integration', () => {
     mockedResolveDifyTargetConfig.mockResolvedValue({
       ok: true,
       targetConfig: {
+        serviceInstanceId: '20000000-0000-4000-8000-000000000001',
         difyApiKey: 'business-key',
         difyApiUrl: 'https://business.example.com/v1',
         tempConfigUsed: false,
@@ -126,6 +148,77 @@ describe('handleDifyProxy input moderation integration', () => {
       outcome: 'skip',
     });
     mockedDispatchDifyUpstreamRequest.mockResolvedValue(undefined);
+  });
+
+  it('requires durable identity for generation even when bypassing the UI', async () => {
+    const request = createRequest();
+    delete request.headers['x-agentifui-submission-id'];
+    const reply = createReply();
+    await handleDifyProxy(request, reply, createConfig());
+    expect(reply.status).toHaveBeenCalledWith(400);
+    expect(mockedDispatchDifyUpstreamRequest).not.toHaveBeenCalled();
+    expect(mockedRunInputModeration).not.toHaveBeenCalled();
+  });
+
+  it('does not redispatch or re-moderate an unknown duplicate submission', async () => {
+    jest.mocked(registerSubmission).mockResolvedValue({
+      task: { root_task_id: 'root-task', state: 'unknown' } as never,
+      replayed: true,
+    });
+    const reply = createReply();
+    await handleDifyProxy(createRequest(), reply, createConfig());
+    expect(reply.status).toHaveBeenCalledWith(409);
+    expect(mockedRunInputModeration).not.toHaveBeenCalled();
+    expect(admitSubmission).not.toHaveBeenCalled();
+    expect(mockedDispatchDifyUpstreamRequest).not.toHaveBeenCalled();
+  });
+
+  it('rejects quota before touching the upstream and records the rejection', async () => {
+    jest
+      .mocked(admitSubmission)
+      .mockRejectedValueOnce(new AgentPolicyError(429, 'AGENT_QUOTA_EXCEEDED'));
+    const reply = createReply();
+    await handleDifyProxy(createRequest(), reply, createConfig());
+    expect(reply.status).toHaveBeenCalledWith(429);
+    expect(rejectSubmission).toHaveBeenCalledWith(
+      'root-task',
+      'AGENT_QUOTA_EXCEEDED'
+    );
+    expect(mockedDispatchDifyUpstreamRequest).not.toHaveBeenCalled();
+  });
+
+  it('passes canonical workflow aliases through the same moderation and quota door', async () => {
+    const context = await mockedResolveProxyRequestContext(
+      createRequest(),
+      createConfig()
+    );
+    if (!context.ok) throw new Error('test fixture');
+    mockedResolveProxyRequestContext.mockResolvedValue({
+      ok: true,
+      context: { ...context.context, slug: ['run'] },
+    });
+    const target = await mockedResolveDifyTargetConfig(
+      createRequest(),
+      createConfig(),
+      context.context
+    );
+    if (!target.ok) throw new Error('test fixture');
+    mockedResolveDifyTargetConfig.mockResolvedValue({
+      ok: true,
+      targetConfig: {
+        ...target.targetConfig,
+        appType: 'workflow',
+        rawBody: { inputs: { topic: 'synthetic' } },
+      },
+    });
+    await handleDifyProxy(createRequest(), createReply(), createConfig());
+    expect(mockedRunInputModeration).toHaveBeenCalledWith(
+      expect.objectContaining({
+        context: expect.objectContaining({ slug: ['workflows', 'run'] }),
+      })
+    );
+    expect(admitSubmission).toHaveBeenCalledTimes(1);
+    expect(mockedDispatchDifyUpstreamRequest).toHaveBeenCalledTimes(1);
   });
 
   it('returns 400 and does not dispatch upstream when moderation blocks the request', async () => {

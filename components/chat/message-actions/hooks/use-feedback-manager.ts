@@ -8,7 +8,7 @@ import { useCallback, useState } from 'react';
  * @param onFeedback Callback function to be called when feedback is given.
  * @returns Feedback state and handler functions.
  */
-export function useFeedbackManager(onFeedback: (isPositive: boolean) => void) {
+export function useFeedbackManager(onFeedback?: (isPositive: boolean) => void) {
   // The current selected feedback type: null (not selected), true (thumbs up), false (thumbs down)
   const [selectedFeedback, setSelectedFeedback] = useState<boolean | null>(
     null

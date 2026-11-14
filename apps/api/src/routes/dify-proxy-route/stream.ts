@@ -214,6 +214,9 @@ export async function sendUpstreamStream(
 
   reply.hijack();
   reply.raw.statusCode = upstream.status;
+  for (const [name, value] of Object.entries(reply.getHeaders())) {
+    if (value !== undefined) reply.raw.setHeader(name, value);
+  }
   copyRawHeaders(reply, upstream.headers, options.allow);
 
   for (const [key, value] of Object.entries(options.defaultHeaders || {})) {

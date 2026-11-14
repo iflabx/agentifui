@@ -1,8 +1,54 @@
 /** @jest-environment node */
-import type { FastifyReply, FastifyRequest } from 'fastify';
+import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 import { Writable } from 'node:stream';
 
 import { sendUpstreamStream } from './stream';
+
+it.each(['sse', 'media'] as const)(
+  'preserves server task headers when taking over a %s response',
+  async streamKind => {
+    const server = Fastify({ logger: false });
+    const content =
+      streamKind === 'sse' ? 'data: {"event":"message_end"}\n\n' : 'file';
+    server.get('/stream', async (request, reply) => {
+      reply.header('x-agentifui-root-task-id', 'trusted-task');
+      reply.header('x-request-id', request.id);
+      await sendUpstreamStream(
+        request,
+        reply,
+        new Response(content, {
+          headers: {
+            'content-type':
+              streamKind === 'sse'
+                ? 'text/event-stream'
+                : 'application/octet-stream',
+            'x-agentifui-root-task-id': 'untrusted-upstream-task',
+          },
+        }),
+        {
+          appId: 'synthetic-app',
+          routePath: '/stream',
+          slugPath: 'chat-messages',
+          streamKind,
+          requestStartedAt: Date.now(),
+          responseHeaderElapsedMs: 0,
+          targetHost: 'upstream.example.invalid',
+          targetOrigin: 'https://upstream.example.invalid',
+          allow: key => key === 'content-type',
+        }
+      );
+    });
+    try {
+      const response = await server.inject('/stream');
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['x-agentifui-root-task-id']).toBe('trusted-task');
+      expect(response.headers['x-request-id']).toBeTruthy();
+      expect(response.body).toBe(content);
+    } finally {
+      await server.close();
+    }
+  }
+);
 
 it('closes a failed upstream stream without logging exception details', async () => {
   const privateFixture = 'sensitive-stream-error-fixture';
@@ -26,6 +72,7 @@ it('closes a failed upstream stream without logging exception details', async ()
   const reply = {
     raw,
     hijack: jest.fn(),
+    getHeaders: jest.fn().mockReturnValue({}),
   } as unknown as FastifyReply;
   const response = new Response(
     new ReadableStream({

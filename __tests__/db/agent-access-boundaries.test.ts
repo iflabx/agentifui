@@ -68,7 +68,10 @@ async function proxy(
   return app.inject({
     method,
     url: `/api/dify/${appName}/${path}`,
-    headers: { cookie: `session_token=${tokens[actor]}` },
+    headers: {
+      cookie: `session_token=${tokens[actor]}`,
+      'x-agentifui-submission-id': randomUUID(),
+    },
     ...(method === 'POST'
       ? { payload: { query: 'synthetic question', ...body } }
       : {}),
@@ -96,11 +99,13 @@ beforeAll(async () => {
       if (body.query === 'synthetic ongoing run') {
         response.setHeader('Content-Type', 'text/event-stream');
         response.write(
-          'data: {"event":"message","answer":"synthetic partial"}\n\n'
+          'data: {"event":"message","task_id":"synthetic-task","message_id":"synthetic-message","answer":"synthetic partial"}\n\n'
         );
         finishPendingStream = () => {
           if (!response.writableEnded)
-            response.end('data: {"event":"message_end"}\n\n');
+            response.end(
+              'data: {"event":"message_end","task_id":"synthetic-task"}\n\n'
+            );
         };
         signalPendingStream?.();
         return;
@@ -111,6 +116,8 @@ beforeAll(async () => {
           answer: 'synthetic response',
           user: body.user,
           id: 'synthetic-resource',
+          message_id: 'synthetic-message',
+          task_id: 'synthetic-task',
         })
       );
     });
@@ -197,6 +204,10 @@ afterAll(async () => {
   delete state.__agentifui_fastify_pg_pool__;
   delete state.__agentifui_fastify_session_resolver_cache__;
   if (database) {
+    await database.query(
+      'DELETE FROM agent_submissions WHERE user_id = ANY($1::uuid[])',
+      [actors]
+    );
     await database.query('DELETE FROM groups WHERE id = $1', [groupId]);
     await database.query('DELETE FROM providers WHERE id = $1', [providerId]);
     await database.query('DELETE FROM profiles WHERE id = ANY($1::uuid[])', [

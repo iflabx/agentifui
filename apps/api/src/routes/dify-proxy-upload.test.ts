@@ -131,6 +131,7 @@ describe('Dify route-specific upload limits', () => {
         identity: actor,
       });
       jest.mocked(resolveDifyConfig).mockResolvedValue({
+        serviceInstanceId: '00000000-0000-4000-8000-000000000456',
         appId: 'app-1',
         apiKey: 'synthetic-test-key',
         apiUrl: 'https://upstream.invalid/v1',

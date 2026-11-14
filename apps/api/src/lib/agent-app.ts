@@ -1,18 +1,9 @@
 import { createDecipheriv, createHash } from 'node:crypto';
 
+import { LANGCHAIN_CAPABILITIES, resolveBackendType } from './agent-backends';
 import { queryRowsWithPgSystemContext } from './pg-context';
 
-export const AGENT_CAPABILITIES = {
-  text: true,
-  streaming: true,
-  history: true,
-  tools: 'read-only-summary',
-  runQuery: true,
-  cancellation: false,
-  files: false,
-  humanInput: false,
-  resumableStream: false,
-} as const;
+export const AGENT_CAPABILITIES = LANGCHAIN_CAPABILITIES;
 
 export interface AgentApp {
   id: string;
@@ -116,10 +107,11 @@ export async function resolveAgentApp(
   if (!row) {
     throw new AgentAppError(404, 'AGENT_APP_NOT_FOUND');
   }
-  if (row.config?.backend_type !== 'langchain') {
+  if (resolveBackendType(row.config) !== 'langchain') {
     throw new AgentAppError(409, 'AGENT_BACKEND_MISMATCH');
   }
-  const langchain = row.config.langchain as Record<string, unknown> | undefined;
+  const langchain = row.config?.langchain as
+    Record<string, unknown> | undefined;
   const assistantId = langchain?.assistant_id;
   if (
     typeof assistantId !== 'string' ||

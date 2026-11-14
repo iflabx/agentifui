@@ -1,6 +1,9 @@
 import type {
   ChatNodeEvent,
   ChatStreamCompletionData,
+  ChatSubmissionAccepted,
+  ChatSubmissionBinding,
+  ChatViewScope,
 } from '@lib/hooks/chat-interface/types';
 import type { DifyChatRequestPayload } from '@lib/services/dify/types';
 
@@ -20,6 +23,7 @@ export interface CreateConversationResult {
   answerStream?: AsyncGenerator<string, void, undefined>;
   completionPromise?: Promise<ChatStreamCompletionData>;
   conversationPersistencePromise?: Promise<string | null>;
+  getBinding?: () => ChatSubmissionBinding;
   error?: Error;
 }
 
@@ -29,7 +33,9 @@ export interface UseCreateConversationReturn {
     appId: string,
     userIdentifier: string,
     onDbIdCreated?: OnConversationDbIdCreated,
-    onNodeEvent?: OnCreateConversationNodeEvent
+    onNodeEvent?: OnCreateConversationNodeEvent,
+    viewScope?: ChatViewScope,
+    onAccepted?: (accepted: ChatSubmissionAccepted) => void
   ) => Promise<CreateConversationResult>;
   isLoading: boolean;
   error: Error | null;

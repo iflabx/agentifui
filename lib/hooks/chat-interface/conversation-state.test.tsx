@@ -52,4 +52,29 @@ describe('useChatConversationState', () => {
     expect(result.current.dbConversationUUID).toBeNull();
     expect(result.current.conversationAppId).toBeNull();
   });
+
+  it('rejects a late route lookup after navigation or explicit reset', async () => {
+    const callbacks: Array<Parameters<typeof syncChatRouteState>[0]> = [];
+    jest.mocked(syncChatRouteState).mockImplementation(async input => {
+      callbacks.push(input);
+    });
+    const { result, rerender } = renderHook(
+      ({ path }) => useChatConversationState(path),
+      { initialProps: { path: '/chat/first' } }
+    );
+    await waitFor(() => expect(callbacks).toHaveLength(1));
+    rerender({ path: '/chat/second' });
+    await waitFor(() => expect(callbacks).toHaveLength(2));
+    act(() => {
+      callbacks[1].setDbConversationUUID('second-db');
+      callbacks[0].setDbConversationUUID('first-db');
+    });
+    expect(result.current.dbConversationUUID).toBe('second-db');
+    act(() => {
+      result.current.clearConversationState();
+      callbacks[1].setConversationAppId('late');
+    });
+    expect(result.current.dbConversationUUID).toBeNull();
+    expect(result.current.conversationAppId).toBeNull();
+  });
 });

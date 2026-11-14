@@ -7,6 +7,8 @@ import {
   readAgentAdmissionLimits,
   resolveAgentApp,
 } from '../lib/agent-app';
+import { AgentPolicyError } from '../lib/agent-backends';
+import { moderateInputText } from '../lib/agent-input-moderation';
 import {
   executeAgentRun,
   publicAgentRun,
@@ -19,6 +21,12 @@ import {
   reserveRun,
   saveRunResult,
 } from '../lib/agent-runs-repository';
+import {
+  ROOT_TASK_HEADER,
+  registerSubmission,
+  rejectSubmission,
+  submissionHash,
+} from '../lib/agent-submissions';
 import { trackApiBackgroundTask } from '../lib/capacity-control';
 import { getRun } from '../lib/langchain/transport';
 import { queryRowsWithPgSystemContext } from '../lib/pg-context';
@@ -91,7 +99,9 @@ export const agentRunsRoutes: FastifyPluginAsync<{
   });
   server.setErrorHandler((error, request, reply) => {
     const expected =
-      error instanceof AgentAppError || error instanceof AgentRunError;
+      error instanceof AgentAppError ||
+      error instanceof AgentRunError ||
+      error instanceof AgentPolicyError;
     const candidateStatus = (error as { statusCode?: unknown } | null)
       ?.statusCode;
     const clientStatus =
@@ -150,19 +160,77 @@ export const agentRunsRoutes: FastifyPluginAsync<{
       ) {
         throw new AgentAppError(400, 'INVALID_AGENT_REQUEST');
       }
-      const { run, replayed } = await reserveRun({
+      const registration = await registerSubmission({
         userId: actor.userId,
         serviceInstanceId: app.id,
-        appInstanceId: app.instanceId,
-        configFingerprint: app.fingerprint,
         submissionId: uuid(body.submissionId),
-        conversationId:
-          body.conversationId === undefined
-            ? undefined
-            : uuid(body.conversationId),
-        content: body.content,
-        ...readAgentAdmissionLimits(),
+        backendType: 'langchain',
+        targetFingerprint: submissionHash([
+          app.id,
+          app.baseUrl,
+          app.assistantId,
+        ]),
+        request: {
+          content: body.content,
+          conversationId: body.conversationId ?? null,
+        },
       });
+      const rootTaskId = registration.task.root_task_id;
+      reply.header(ROOT_TASK_HEADER, rootTaskId);
+      if (registration.replayed && !registration.task.run_id)
+        throw new AgentPolicyError(
+          409,
+          registration.task.error_code ?? 'AGENT_SUBMISSION_IN_PROGRESS'
+        );
+      if (!registration.replayed) {
+        const moderation = await moderateInputText({
+          request,
+          config: options.config,
+          userId: actor.userId,
+          text: body.content,
+        });
+        if (
+          moderation.outcome === 'block' ||
+          moderation.outcome === 'unavailable'
+        ) {
+          const code =
+            moderation.outcome === 'block'
+              ? 'CONTENT_MODERATION_BLOCKED'
+              : 'CONTENT_MODERATION_UNAVAILABLE';
+          await rejectSubmission(rootTaskId, code);
+          throw new AgentPolicyError(
+            moderation.outcome === 'block' ? 400 : 503,
+            code
+          );
+        }
+      }
+      let reservation;
+      try {
+        reservation = await reserveRun({
+          governanceTaskId: rootTaskId,
+          userId: actor.userId,
+          serviceInstanceId: app.id,
+          appInstanceId: app.instanceId,
+          configFingerprint: app.fingerprint,
+          submissionId: uuid(body.submissionId),
+          conversationId:
+            body.conversationId === undefined
+              ? undefined
+              : uuid(body.conversationId),
+          content: body.content,
+          ...readAgentAdmissionLimits(),
+        });
+      } catch (error) {
+        if (
+          !registration.replayed &&
+          (error instanceof AgentRunError ||
+            error instanceof AgentPolicyError) &&
+          error.statusCode < 500
+        )
+          await rejectSubmission(rootTaskId, error.code);
+        throw error;
+      }
+      const { run, replayed } = reservation;
       reply.header('content-type', 'text/event-stream; charset=utf-8');
       reply.header('cache-control', 'no-cache, no-transform');
       reply.header('x-accel-buffering', 'no');
@@ -202,6 +270,7 @@ export const agentRunsRoutes: FastifyPluginAsync<{
       }, 15000);
       heartbeat.unref();
       const task = executeAgentRun({
+        rootTaskId,
         app,
         run,
         content: body.content,

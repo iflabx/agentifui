@@ -10,7 +10,7 @@ import { EditButton } from './buttons/edit-button';
 interface UserMessageActionsProps {
   messageId: string;
   content: string;
-  onEdit: () => void;
+  onEdit?: () => void;
   className?: string;
   // Tooltip configuration
   tooltipSize?: 'sm' | 'md';
@@ -36,11 +36,13 @@ export const UserMessageActions: React.FC<UserMessageActionsProps> = ({
         tooltipSize={tooltipSize}
         showTooltipArrow={showTooltipArrow}
       />
-      <EditButton
-        onEdit={onEdit}
-        tooltipSize={tooltipSize}
-        showTooltipArrow={showTooltipArrow}
-      />
+      {onEdit && (
+        <EditButton
+          onEdit={onEdit}
+          tooltipSize={tooltipSize}
+          showTooltipArrow={showTooltipArrow}
+        />
+      )}
     </MessageActionsContainer>
   );
 };

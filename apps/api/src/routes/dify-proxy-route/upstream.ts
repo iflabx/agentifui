@@ -1,10 +1,17 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import {
+  confirmSubmission,
+  markSubmissionSubmitting,
+  rejectSubmission,
+  rejectUnacceptedSubmission,
+} from '../../lib/agent-submissions';
+import {
   DifyProxyRequestError,
   fetchWithDifyProxyResilience,
   getDifyProxyCircuitSnapshot,
 } from '../../lib/dify-proxy-resilience';
+import { observeDifyResponse } from '../../lib/dify-submission-observer';
 import { buildRouteErrorPayload } from '../../lib/route-error';
 import {
   buildAppErrorPayload,
@@ -516,11 +523,15 @@ export async function dispatchDifyUpstreamRequest(
   reply.raw.once('close', onResponseClose);
   if (request.raw.aborted || reply.raw.destroyed) abortDownstream();
 
+  let dispatched = false;
   try {
     const resilienceResult = await fetchWithDifyProxyResilience({
       circuitKey,
       requestSignal: downstream.signal,
       execute: async signal => {
+        if (targetConfig.rootTaskId)
+          await markSubmissionSubmitting(targetConfig.rootTaskId);
+        dispatched = true;
         const requestInit: RequestInit = {
           method: actualMethod,
           headers: upstreamHeaders,
@@ -536,6 +547,15 @@ export async function dispatchDifyUpstreamRequest(
     });
 
     if (!resilienceResult.ok) {
+      if (targetConfig.rootTaskId) {
+        if (dispatched)
+          await confirmSubmission(targetConfig.rootTaskId, 'unknown');
+        else
+          await rejectSubmission(
+            targetConfig.rootTaskId,
+            'AGENT_NOT_DISPATCHED'
+          );
+      }
       await handleResilienceFailure({
         request,
         reply,
@@ -555,6 +575,13 @@ export async function dispatchDifyUpstreamRequest(
       return;
     }
 
+    const nativeRefusal =
+      !resilienceResult.response.ok &&
+      [400, 401, 403, 404, 405, 413, 415, 422].includes(
+        resilienceResult.response.status
+      );
+    if (nativeRefusal && targetConfig.rootTaskId)
+      await rejectUnacceptedSubmission(targetConfig.rootTaskId);
     await sendUpstreamResponse({
       request,
       reply,
@@ -563,11 +590,24 @@ export async function dispatchDifyUpstreamRequest(
       slugPath,
       target,
       targetUrl,
-      upstream: resilienceResult.response,
+      upstream:
+        targetConfig.rootTaskId && !nativeRefusal
+          ? observeDifyResponse(
+              resilienceResult.response,
+              targetConfig.rootTaskId,
+              slugPath
+            )
+          : resilienceResult.response,
       upstreamRequestStartedAt,
       resilienceElapsedMs: resilienceResult.elapsedMs,
     });
+    if (targetConfig.rootTaskId)
+      await confirmSubmission(targetConfig.rootTaskId, 'unknown');
   } catch (error) {
+    if (targetConfig.rootTaskId && dispatched)
+      await confirmSubmission(targetConfig.rootTaskId, 'unknown').catch(
+        () => undefined
+      );
     if (
       error instanceof DifyProxyRequestError &&
       error.reason !== 'network-error' &&

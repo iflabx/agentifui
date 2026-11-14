@@ -1,3 +1,5 @@
+import { describeBackend, resolveBackendType } from './agent-backends';
+
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -7,11 +9,12 @@ function record(value: unknown): Record<string, unknown> {
 export function publicAppConfig(
   config: Record<string, unknown> | null
 ): Record<string, unknown> {
-  if (config?.backend_type !== 'langchain') {
+  const descriptor = describeBackend(config);
+  if (resolveBackendType(config) !== 'langchain') {
     return config || {};
   }
 
-  const metadata = record(config.app_metadata);
+  const metadata = record(config?.app_metadata);
   const appMetadata: Record<string, unknown> = {};
   for (const key of [
     'app_type',
@@ -32,7 +35,7 @@ export function publicAppConfig(
     appMetadata.tags = metadata.tags.filter(tag => typeof tag === 'string');
   }
 
-  const source = record(config.langchain);
+  const source = record(config?.langchain);
   const langchain: Record<string, unknown> = {};
   if (
     typeof source.assistant_id === 'string' &&
@@ -40,28 +43,7 @@ export function publicAppConfig(
   ) {
     langchain.assistant_id = source.assistant_id;
   }
-  const capabilities = record(source.capabilities);
-  const safeCapabilities: Record<string, boolean | 'read-only-summary'> = {};
-  for (const key of [
-    'text',
-    'streaming',
-    'history',
-    'cancellation',
-    'runQuery',
-    'files',
-    'humanInput',
-    'resumableStream',
-  ]) {
-    if (typeof capabilities[key] === 'boolean') {
-      safeCapabilities[key] = capabilities[key];
-    }
-  }
-  if (capabilities.tools === 'read-only-summary') {
-    safeCapabilities.tools = 'read-only-summary';
-  }
-  if (Object.keys(safeCapabilities).length) {
-    langchain.capabilities = safeCapabilities;
-  }
+  langchain.capabilities = descriptor.capabilities;
 
   return { backend_type: 'langchain', app_metadata: appMetadata, langchain };
 }

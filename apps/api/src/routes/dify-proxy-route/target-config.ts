@@ -110,6 +110,8 @@ export async function resolveDifyTargetConfig(
   return {
     ok: true,
     targetConfig: {
+      serviceInstanceId: difyConfig.serviceInstanceId,
+      appInstanceId: difyConfig.appId,
       difyApiKey: difyConfig.apiKey,
       difyApiUrl: difyConfig.apiUrl,
       appType: difyConfig.appType,

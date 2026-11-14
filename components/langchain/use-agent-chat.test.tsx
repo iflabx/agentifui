@@ -276,4 +276,150 @@ describe('independent agent chat lifecycle', () => {
     expect(result.current.view.messages).toEqual([]);
     unmount();
   });
+
+  it('ignores late stream events and completion after navigation without unlocking a newer request', async () => {
+    let firstEvent: Parameters<typeof consumeAgentStream>[1] = () => undefined;
+    let finishFirst: () => void = () => undefined;
+    let finishSecond: () => void = () => undefined;
+    jest
+      .mocked(consumeAgentStream)
+      .mockImplementationOnce(async (_response, event) => {
+        firstEvent = event;
+        await new Promise<void>(resolve => {
+          finishFirst = resolve;
+        });
+      })
+      .mockImplementationOnce(async (_response, event) => {
+        event({
+          type: 'accepted',
+          conversationId: 'B',
+          runId: 'run-B',
+          userMessageId: 'u-B',
+        });
+        await new Promise<void>(resolve => {
+          finishSecond = resolve;
+        });
+      });
+    const { result, unmount } = renderHook(() =>
+      useAgentChat('app-uuid', null)
+    );
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    let first: ReturnType<typeof result.current.send>;
+    let second: ReturnType<typeof result.current.send>;
+    await act(async () => {
+      first = result.current.send('A');
+    });
+    await act(async () => {
+      await result.current.select(null);
+    });
+    await act(async () => {
+      second = result.current.send('B');
+    });
+    await act(async () => {
+      firstEvent({
+        type: 'accepted',
+        conversationId: 'A',
+        runId: 'run-A',
+        userMessageId: 'u-A',
+      });
+      firstEvent({
+        type: 'text',
+        messageId: 'late',
+        delta: 'Wrong conversation',
+      });
+      finishFirst();
+      await first;
+    });
+    expect(result.current.view.conversationId).toBe('B');
+    expect(
+      result.current.view.messages.some(message => message.id === 'late')
+    ).toBe(false);
+    expect(result.current.busy).toBe(true);
+    expect(
+      new URL(window.location.href).searchParams.get('conversationId')
+    ).toBe('B');
+    await act(async () => {
+      await result.current.send('Blocked duplicate');
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      finishSecond();
+      await second;
+    });
+    unmount();
+  });
+
+  it('preserves the new draft scope on accepted route adoption and assigns a fresh next draft', async () => {
+    jest
+      .mocked(consumeAgentStream)
+      .mockImplementation(async (_response, event) => {
+        event({
+          type: 'accepted',
+          conversationId: 'local',
+          runId: 'run',
+          userMessageId: 'user',
+        });
+        event({
+          type: 'status',
+          executionStatus: 'success',
+          persistenceStatus: 'saved',
+        });
+      });
+    const { result, rerender, unmount } = renderHook(
+      ({ selected }: { selected: string | null }) =>
+        useAgentChat('app-uuid', selected),
+      { initialProps: { selected: null as string | null } }
+    );
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const originalScope = result.current.draftScope;
+    await act(async () => {
+      await result.current.send('Hello');
+    });
+    rerender({ selected: 'local' });
+    expect(result.current.draftScope).toBe(originalScope);
+    await act(async () => {
+      await result.current.select(null);
+    });
+    expect(result.current.draftScope).not.toBe(originalScope);
+    await act(async () => {
+      await result.current.select('local');
+    });
+    expect(result.current.draftScope).toBe(originalScope);
+    expect(
+      jest
+        .mocked(agentRequest)
+        .mock.calls.some(call => call[1] === '/conversations')
+    ).toBe(false);
+    unmount();
+  });
+
+  it('keeps a failed initial history read-only but allows navigating to a clean new draft', async () => {
+    const original = jest.mocked(agentRequest).getMockImplementation()!;
+    jest
+      .mocked(agentRequest)
+      .mockImplementation((appId, suffix, init) =>
+        suffix === '/conversations/missing'
+          ? Promise.reject(new AgentRequestError(404))
+          : (original(appId, suffix, init) as never)
+      );
+    const { result, unmount } = renderHook(() =>
+      useAgentChat('app-uuid', 'missing')
+    );
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(result.current.historyFailed).toBe(true);
+    await act(async () => {
+      await result.current.send('Do not create a replacement');
+    });
+    expect(global.fetch).not.toHaveBeenCalled();
+    await act(async () => {
+      await result.current.select(null);
+    });
+    expect(result.current.historyFailed).toBe(false);
+    const scope = result.current.draftScope;
+    await act(async () => {
+      await result.current.select(null);
+    });
+    expect(result.current.draftScope).not.toBe(scope);
+    unmount();
+  });
 });

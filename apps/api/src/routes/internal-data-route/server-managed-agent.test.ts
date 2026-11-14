@@ -1,4 +1,5 @@
 /** @jest-environment node */
+import { LANGCHAIN_CAPABILITIES } from '../../lib/agent-backends';
 import {
   queryRowsWithPgSystemContext,
   queryRowsWithPgUserContext,
@@ -284,7 +285,10 @@ describe('trusted backend conversation boundary', () => {
           config: {
             backend_type: 'langchain',
             app_metadata: { brief_description: 'Public description' },
-            langchain: { assistant_id: 'agent' },
+            langchain: {
+              assistant_id: 'agent',
+              capabilities: LANGCHAIN_CAPABILITIES,
+            },
           },
         },
       ],

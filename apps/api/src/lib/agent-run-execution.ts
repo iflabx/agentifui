@@ -8,8 +8,15 @@ import {
   bindThread,
   markRunUnknown,
   recordNativeRun,
+  recordRunPersistenceFailure,
   saveRunResult,
 } from './agent-runs-repository';
+import {
+  confirmSubmission,
+  markSubmissionSubmitting,
+  rejectSubmission,
+  rejectUnacceptedSubmission,
+} from './agent-submissions';
 import {
   LangChainUpstreamError,
   createThread,
@@ -66,6 +73,7 @@ export function runStatusEvent(run: AgentRunRecord): AgentClientEvent {
 }
 
 export async function executeAgentRun(input: {
+  rootTaskId?: string;
   app: AgentApp;
   run: AgentRunRecord;
   content: string;
@@ -83,6 +91,9 @@ export async function executeAgentRun(input: {
   let errorCode: string | undefined;
   let knownThreadId: string | undefined;
   let visibleBytes = 0;
+  let submitting = false;
+  let accepted = false;
+  let rejectedBeforeExecution = false;
   try {
     knownThreadId = run.thread_id || (await createThread(input.app)).threadId;
     try {
@@ -90,12 +101,19 @@ export async function executeAgentRun(input: {
     } catch {
       run = await bindThread(run.id, knownThreadId);
     }
+    if (input.rootTaskId) await markSubmissionSubmitting(input.rootTaskId);
+    submitting = true;
     for await (const event of streamTurn(input.app, {
       threadId: knownThreadId,
       runId: run.id,
       messageId: run.user_message_id,
       content: input.content,
     })) {
+      if (!accepted && event.type !== 'RUN_ERROR') {
+        if (input.rootTaskId)
+          await confirmSubmission(input.rootTaskId, 'accepted');
+        accepted = true;
+      }
       switch (event.type) {
         case 'CUSTOM':
           run = await recordNativeRun(run.id, event.value.run_id);
@@ -157,13 +175,15 @@ export async function executeAgentRun(input: {
       }
     }
   } catch (error) {
-    const rejectedBeforeExecution =
+    rejectedBeforeExecution =
+      !accepted &&
       error instanceof LangChainUpstreamError &&
       (error.code === 'INVALID_REQUEST' ||
         (error.code === 'UPSTREAM_HTTP_ERROR' &&
           error.status !== undefined &&
           [400, 401, 403, 404, 405, 413, 415, 422].includes(error.status)));
-    executionStatus = rejectedBeforeExecution ? 'error' : 'unknown';
+    executionStatus =
+      !submitting || rejectedBeforeExecution ? 'error' : 'unknown';
     errorCode =
       error instanceof LangChainUpstreamError
         ? error.code
@@ -175,6 +195,24 @@ export async function executeAgentRun(input: {
         ? { orphanThreadId: knownThreadId }
         : {}),
     });
+  }
+  if (input.rootTaskId) {
+    try {
+      if (!submitting)
+        await rejectSubmission(input.rootTaskId, 'AGENT_NOT_DISPATCHED');
+      else if (rejectedBeforeExecution)
+        await rejectUnacceptedSubmission(input.rootTaskId);
+      else
+        await confirmSubmission(
+          input.rootTaskId,
+          accepted && executionStatus !== 'unknown' ? 'finished' : 'unknown'
+        );
+    } catch {
+      input.report({ runId: run.id, code: 'AGENT_GOVERNANCE_UNAVAILABLE' });
+      await confirmSubmission(input.rootTaskId, 'unknown').catch(
+        () => undefined
+      );
+    }
   }
   const savedMessages = [...messages.values()];
   if (tools.size) {
@@ -195,7 +233,10 @@ export async function executeAgentRun(input: {
     }
     input.emit(runStatusEvent(run));
   } catch {
-    await markRunUnknown(run.id, 'AGENT_SAVE_FAILED').catch(() => undefined);
+    if (input.rootTaskId || !submitting)
+      await recordRunPersistenceFailure(run.id, result).catch(() => undefined);
+    else
+      await markRunUnknown(run.id, 'AGENT_SAVE_FAILED').catch(() => undefined);
     input.report({ runId: run.id, code: 'AGENT_SAVE_FAILED' });
     input.emit({
       type: 'status',

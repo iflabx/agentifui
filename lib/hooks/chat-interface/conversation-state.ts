@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { syncChatRouteState } from './route-sync';
 
@@ -23,17 +23,32 @@ export function useChatConversationState(
   const [conversationAppId, setConversationAppId] = useState<string | null>(
     null
   );
+  const version = useRef(0);
 
   useEffect(() => {
-    void syncChatRouteState({
-      currentPathname,
-      setDifyConversationId,
-      setDbConversationUUID,
-      setConversationAppId,
+    const current = ++version.current;
+    const apply =
+      (setter: (value: string | null) => void) => (value: string | null) => {
+        if (version.current === current) setter(value);
+      };
+    void Promise.resolve().then(() => {
+      if (version.current !== current) return;
+      setDbConversationUUID(null);
+      setConversationAppId(null);
+      return syncChatRouteState({
+        currentPathname,
+        setDifyConversationId: apply(setDifyConversationId),
+        setDbConversationUUID: apply(setDbConversationUUID),
+        setConversationAppId: apply(setConversationAppId),
+      });
     });
+    return () => {
+      version.current += 1;
+    };
   }, [currentPathname]);
 
   const clearConversationState = useCallback(() => {
+    version.current += 1;
     console.log('[useChatInterface] Clear conversation state');
     setDifyConversationId(null);
     setDbConversationUUID(null);

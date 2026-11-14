@@ -13,8 +13,8 @@ import { useFeedbackManager } from './hooks/use-feedback-manager';
 interface AssistantMessageActionsProps {
   messageId: string;
   content?: string;
-  onRegenerate: () => void;
-  onFeedback: (isPositive: boolean) => void;
+  onRegenerate?: () => void;
+  onFeedback?: (isPositive: boolean) => void;
   isRegenerating?: boolean;
   className?: string;
   // Tooltip configuration
@@ -62,22 +62,26 @@ export const AssistantMessageActions: React.FC<
         tooltipSize={tooltipSize}
         showTooltipArrow={showTooltipArrow}
       />
-      <RegenerateButton
-        onRegenerate={onRegenerate}
-        isRegenerating={isRegenerating}
-        tooltipSize={tooltipSize}
-        showTooltipArrow={showTooltipArrow}
-      />
+      {onRegenerate && (
+        <RegenerateButton
+          onRegenerate={onRegenerate}
+          isRegenerating={isRegenerating}
+          tooltipSize={tooltipSize}
+          showTooltipArrow={showTooltipArrow}
+        />
+      )}
 
       {/* Divider - uses a deeper color, less visible in dark mode */}
-      <div
-        className={cn(
-          'mx-1 self-stretch border-r border-gray-200/50 dark:border-gray-800/50'
-        )}
-      />
+      {onFeedback && (
+        <div
+          className={cn(
+            'mx-1 self-stretch border-r border-gray-200/50 dark:border-gray-800/50'
+          )}
+        />
+      )}
 
       {/* Feedback buttons - exclusive, only one shown at a time */}
-      {shouldShowButton(true) && (
+      {onFeedback && shouldShowButton(true) && (
         <FeedbackButton
           onFeedback={() => handleFeedback(true)}
           isPositive={true}
@@ -86,7 +90,7 @@ export const AssistantMessageActions: React.FC<
           showTooltipArrow={showTooltipArrow}
         />
       )}
-      {shouldShowButton(false) && (
+      {onFeedback && shouldShowButton(false) && (
         <FeedbackButton
           onFeedback={() => handleFeedback(false)}
           isPositive={false}

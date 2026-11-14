@@ -1,4 +1,7 @@
-import { applyChatCompletionMetadata } from './stream-consume';
+import {
+  applyChatCompletionMetadata,
+  consumeChatAnswerStream,
+} from './stream-consume';
 import type { ChatStreamCompletionData } from './types';
 
 const mockGetChatStoreState = jest.fn();
@@ -8,6 +11,51 @@ jest.mock('@lib/stores/chat-store', () => ({
     getState: (...args: unknown[]) => mockGetChatStoreState(...args),
   },
 }));
+
+describe('consumeChatAnswerStream interruption snapshots', () => {
+  it('retains the original message ID and all received chunks after navigation without changing the thrown error', async () => {
+    let active = true;
+    const failure = new Error('synthetic stream failure');
+    const onInterrupted = jest.fn();
+    const flushChunkBuffer = jest.fn();
+    mockGetChatStoreState.mockReturnValue({
+      streamingMessageId: 'original-assistant',
+      messages: [],
+    });
+    const pending = consumeChatAnswerStream({
+      answerStream: (async function* () {
+        yield 'First ';
+        active = false;
+        mockGetChatStoreState.mockReturnValue({
+          streamingMessageId: 'B-assistant',
+          messages: [],
+        });
+        yield 'second';
+        throw failure;
+      })(),
+      assistantMessageId: 'original-assistant',
+      isCurrent: () => active,
+      isNewConversationFlow: false,
+      addMessage: jest.fn(),
+      setIsWaitingForResponse: jest.fn(),
+      updatePendingStatus: jest.fn(),
+      chunkBufferRef: { current: '' },
+      appendTimerRef: { current: null },
+      flushChunkBuffer,
+      markAsManuallyStopped: jest.fn(),
+      chunkAppendInterval: 0,
+      onInterrupted,
+    });
+    await expect(pending).rejects.toBe(failure);
+    expect(onInterrupted).toHaveBeenCalledWith({
+      assistantMessageId: 'original-assistant',
+      assistantText: 'First second',
+    });
+    expect(onInterrupted).toHaveBeenCalledTimes(1);
+    expect(flushChunkBuffer).toHaveBeenCalledTimes(1);
+    expect(flushChunkBuffer).toHaveBeenCalledWith('original-assistant');
+  });
+});
 
 describe('applyChatCompletionMetadata', () => {
   beforeEach(() => {
@@ -114,5 +162,28 @@ describe('applyChatCompletionMetadata', () => {
         }),
       })
     );
+  });
+
+  it('returns completion data for original persistence without applying it to a detached view', async () => {
+    let resolveCompletion!: (value: ChatStreamCompletionData) => void;
+    const promise = new Promise<ChatStreamCompletionData>(resolve => {
+      resolveCompletion = resolve;
+    });
+    let active = true;
+    const updateMessage = jest.fn();
+    const pending = applyChatCompletionMetadata({
+      completionPromise: promise,
+      assistantMessageId: 'assistant-1',
+      updateMessage,
+      isCurrent: () => active,
+    });
+    active = false;
+    const metadata = {
+      messageId: 'original-native',
+      metadata: { source: 'original' },
+    };
+    resolveCompletion(metadata);
+    expect(await pending).toEqual(metadata);
+    expect(updateMessage).not.toHaveBeenCalled();
   });
 });
