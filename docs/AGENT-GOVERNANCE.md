@@ -21,6 +21,11 @@ check and the deployment's database approval.
   chat/workflow/completion helpers supply it without changing request payloads.
   Their final optional `{ submissionId }` argument supports an explicit replay.
 - LangChain continues to accept the existing body `submissionId` UUID.
+- A LangChain replay while registration has no run binding returns 409
+  `AGENT_SUBMISSION_IN_PROGRESS`; it never starts another execution. Once bound,
+  an explicit replay with identical input returns the existing run and local
+  conversation, including its current or saved result. Do not automatically
+  resend a generation request after an ambiguous response.
 - New question: new UUID. Same operation/network replay: same UUID and input.
   Never automatically resend after an ambiguous failure. Reusing an ID with
   different input or target returns 409 without calling the service.
@@ -122,3 +127,31 @@ SUPERUSER/BYPASSRLS: counted permission deletion, reserved deletion/reset
 rejection, active deletion protection, display/config changes, RLS isolation,
 two-client last-quota admission, acceptance replay, and failed-save replay.
 Unit tests with fake PostgreSQL clients do not establish these DB properties.
+
+## Adding Another Backend
+
+The current registry supports Dify and LangChain only. A future integration
+must add an implemented backend, not an unknown type that falls back to Dify.
+Use the existing integrations as examples, without copying an entire chat UI
+or adding another authentication or quota system:
+
+1. Extend `apps/api/src/lib/agent-backends.ts` and application configuration
+   validation with the backend's verified capabilities and persistence owner.
+   Resolve credentials and application access on the server; never accept an
+   arbitrary endpoint, native user or credential from a generation request.
+2. Reuse moderation, submission registration and atomic admission. Define the
+   target fingerprint, native acceptance and terminal evidence, uncertain
+   dispatch handling and replay contract before enabling generation.
+3. Keep native threads, conversations, runs and control requests inside the
+   adapter. Bind them to the current actor and local application/conversation;
+   do not treat a vendor ID or thread memory as local history authorization.
+4. Feed the shared `ChatInputView`, `UserMessage` and `AssistantMessage` through
+   a thin controller. Keep global history as the entry point, designate exactly
+   one history writer, and show only actions the integration actually supports.
+   The current private stream events are not a replacement for the planned
+   common AG-UI interaction contract.
+5. Add transport/contract tests, strict-role PostgreSQL ownership, quota and
+   cross-instance replay tests, then real two-turn streaming, refresh/history,
+   navigation and failure acceptance. An existing integration's success does
+   not establish another backend's support for files, cancellation, human input
+   or stream resumption.

@@ -5,6 +5,10 @@ import type { AddressInfo } from 'node:net';
 import { Pool } from 'pg';
 
 import type { ApiRuntimeConfig } from '../../apps/api/src/config';
+import {
+  registerSubmission,
+  submissionHash,
+} from '../../apps/api/src/lib/agent-submissions';
 import { getPgPool } from '../../apps/api/src/lib/pg-context';
 import { createApiServer } from '../../apps/api/src/server';
 import { resolveTestDatabaseUrl } from './helpers/test-database-url';
@@ -1034,6 +1038,55 @@ it('deduplicates simultaneous first submissions across two API instances before 
   expect(modelCalls()).toHaveLength(1);
 });
 
+it('does not dispatch a replay before the registered submission has a run binding', async () => {
+  const submissionId = randomUUID();
+  const content = 'registered request';
+  const address = upstream.address() as AddressInfo;
+  const registration = await registerSubmission({
+    userId: actors[0],
+    serviceInstanceId: applications[0],
+    submissionId,
+    backendType: 'langchain',
+    targetFingerprint: submissionHash([
+      applications[0],
+      `http://127.0.0.1:${address.port}`,
+      'agent',
+    ]),
+    request: { content, conversationId: null },
+  });
+  expect(registration.replayed).toBe(false);
+  const responses = await Promise.all(
+    [0, 1].map(server => submit(0, content, { submissionId, server }))
+  );
+  for (const response of responses) {
+    expect(response.statusCode).toBe(409);
+    expect(response.json().app_error).toMatchObject({
+      code: 'AGENT_SUBMISSION_IN_PROGRESS',
+      retryable: false,
+    });
+    expect(response.headers['x-agentifui-root-task-id']).toBe(
+      registration.task.root_task_id
+    );
+  }
+  expect(upstreamRequests).toHaveLength(0);
+  expect(
+    (
+      await database.query(
+        'SELECT state,quota_state,run_id FROM agent_submissions WHERE root_task_id=$1',
+        [registration.task.root_task_id]
+      )
+    ).rows
+  ).toEqual([{ state: 'registered', quota_state: 'none', run_id: null }]);
+  expect(
+    (
+      await database.query(
+        'SELECT count(*)::int AS count FROM backend_runs WHERE user_id=$1 AND submission_id=$2',
+        [actors[0], submissionId]
+      )
+    ).rows[0].count
+  ).toBe(0);
+});
+
 it('admits only one reservation when both replicas receive a new submission simultaneously', async () => {
   const submissionId = randomUUID();
   const responses = await Promise.all(
@@ -1041,8 +1094,22 @@ it('admits only one reservation when both replicas receive a new submission simu
       submit(0, 'parallel first request', { submissionId, server: index % 2 })
     )
   );
-  for (const response of responses) expect(response.statusCode).toBe(200);
-  const references = responses.map(response => accepted(response.body));
+  const completed = responses.filter(response => response.statusCode === 200);
+  expect(completed.length).toBeGreaterThanOrEqual(1);
+  for (const response of responses.filter(
+    response => response.statusCode !== 200
+  )) {
+    expect(response.statusCode).toBe(409);
+    expect(response.json().app_error.code).toBe('AGENT_SUBMISSION_IN_PROGRESS');
+  }
+  const replay = await submit(0, 'parallel first request', {
+    submissionId,
+    server: 1,
+  });
+  expect(replay.statusCode).toBe(200);
+  const references = [...completed, replay].map(response =>
+    accepted(response.body)
+  );
   expect(new Set(references.map(item => item.runId)).size).toBe(1);
   expect(new Set(references.map(item => item.conversationId)).size).toBe(1);
   expect(modelCalls()).toHaveLength(1);
