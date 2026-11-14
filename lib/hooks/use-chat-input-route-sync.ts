@@ -1,5 +1,12 @@
 import { getConversationByExternalId } from '@lib/services/client/conversations-api';
 import { useAttachmentStore } from '@lib/stores/attachment-store';
+import { syncChatDraftActor } from '@lib/stores/chat-draft-lifecycle';
+import {
+  acceptedDrafts,
+  appDrafts,
+  chatInputNavigation,
+  pendingDrafts,
+} from '@lib/stores/chat-input-scope-cache';
 import {
   chatInputScope,
   useChatInputStore,
@@ -9,11 +16,6 @@ import { usePendingConversationStore } from '@lib/stores/pending-conversation-st
 import { useLayoutEffect, useRef, useState } from 'react';
 
 import { usePathname } from 'next/navigation';
-
-const pendingDrafts = new Set<string>();
-const appDrafts = new Map<string, string>();
-const acceptedDrafts = new Map<string, string>();
-let activePathname: string | null = null;
 
 function migrateDraft(source: string, target: string) {
   const input = useChatInputStore.getState();
@@ -103,27 +105,28 @@ export function useChatInputRouteSync({
     const version = ++generation.current;
     if (authLoading) return;
     const input = useChatInputStore.getState();
-    if (input.setActor(userId || null)) {
-      useAttachmentStore.getState().resetAll();
-      pendingDrafts.clear();
-      appDrafts.clear();
-      acceptedDrafts.clear();
-      activePathname = null;
+    if (input.actorId !== (userId || null)) {
+      syncChatDraftActor(userId || null);
       previous.current = null;
     }
     if (!userId || !appId) return;
     const enteredNewChat =
       pathname === '/chat/new' &&
-      activePathname !== null &&
-      activePathname !== pathname;
-    activePathname = pathname;
+      chatInputNavigation.activePathname !== null &&
+      chatInputNavigation.activePathname !== pathname;
+    chatInputNavigation.activePathname = pathname;
     const actorEpoch = useChatInputStore.getState().actorEpoch;
     const activate = (
       resolvedApp: string,
       target: string,
       externalId?: string
     ) => {
-      if (version !== generation.current) return;
+      if (
+        version !== generation.current ||
+        useChatInputStore.getState().actorEpoch !== actorEpoch ||
+        useChatInputStore.getState().actorId !== userId
+      )
+        return;
       const scope = chatInputScope(actorEpoch, userId, resolvedApp, target);
       const source =
         externalId &&

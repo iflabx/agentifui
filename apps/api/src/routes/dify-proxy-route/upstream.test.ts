@@ -345,6 +345,52 @@ describe('dispatchDifyUpstreamRequest trusted user context integration', () => {
     }
   );
 
+  it('releases a late successful claim after resilience times out without dispatching or charging', async () => {
+    jest.useFakeTimers();
+    let completeClaim!: () => void;
+    jest.mocked(markSubmissionSubmitting).mockImplementationOnce(
+      () =>
+        new Promise<void>(resolve => {
+          completeClaim = resolve;
+        })
+    );
+    const realFetch = jest.requireActual<
+      typeof import('../../lib/dify-proxy-resilience')
+    >('../../lib/dify-proxy-resilience').fetchWithDifyProxyResilience;
+    mockedFetchWithDifyProxyResilience.mockImplementation(input =>
+      realFetch({
+        ...input,
+        configOverride: { timeoutMs: 1000, circuitEnabled: false },
+      })
+    );
+    const reply = createReply();
+    try {
+      const pending = dispatchDifyUpstreamRequest(
+        createRequest(),
+        reply,
+        createContext(),
+        createTargetConfig({ rootTaskId: 'root-task' })
+      );
+      await jest.advanceTimersByTimeAsync(0);
+      expect(markSubmissionSubmitting).toHaveBeenCalledWith('root-task');
+      await jest.advanceTimersByTimeAsync(1001);
+      await pending;
+      expect(reply.status).toHaveBeenCalledWith(504);
+      expect(mockedFetch).not.toHaveBeenCalled();
+      completeClaim();
+      await jest.advanceTimersByTimeAsync(0);
+      expect(rejectUnacceptedSubmission).toHaveBeenCalledWith(
+        'root-task',
+        'AGENT_NOT_DISPATCHED'
+      );
+      expect(mockedFetch).not.toHaveBeenCalled();
+      expect(confirmSubmission).not.toHaveBeenCalled();
+      expect(jest.getTimerCount()).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('injects trusted user context for chat requests before dispatch', async () => {
     await dispatchDifyUpstreamRequest(
       createRequest(),

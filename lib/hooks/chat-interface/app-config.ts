@@ -1,6 +1,5 @@
 import { useCurrentAppStore } from '@lib/stores/current-app-store';
 import type { ServiceInstance } from '@lib/types/database';
-import { logCurrentAppDebugSnapshot } from '@lib/utils/current-app-debug';
 
 import { formatChatUiError } from './error-utils';
 
@@ -12,7 +11,8 @@ export interface ChatResolvedAppConfig {
 interface ResolveChatSubmitAppConfigInput {
   conversationAppId: string | null;
   preferredRouteAppId?: string | null;
-  ensureAppReady: () => Promise<ChatResolvedAppConfig>;
+  targetAppId?: string | null;
+  ensureAppReady: (targetAppId?: string) => Promise<ChatResolvedAppConfig>;
   validateConfig: (
     appId?: string,
     context?: 'message' | 'switch' | 'general'
@@ -23,111 +23,24 @@ interface ResolveChatSubmitAppConfigInput {
 export async function resolveChatSubmitAppConfig(
   input: ResolveChatSubmitAppConfigInput
 ): Promise<ChatResolvedAppConfig | null> {
+  const targetAppId =
+    input.targetAppId ||
+    input.conversationAppId ||
+    input.preferredRouteAppId ||
+    useCurrentAppStore.getState().currentAppId;
   try {
-    const currentAppState = useCurrentAppStore.getState();
-    logCurrentAppDebugSnapshot('[CurrentAppDebug] handleSubmit start', {
-      source: 'lib/hooks/chat-interface/app-config.ts',
-      currentAppId: currentAppState.currentAppId,
-      currentAppInstanceId:
-        currentAppState.currentAppInstance?.instance_id ?? null,
-      currentAppDisplayName:
-        currentAppState.currentAppInstance?.display_name ?? null,
-      note: 'before resolveChatSubmitAppConfig',
-      extra: {
-        conversationAppId: input.conversationAppId,
-        preferredRouteAppId: input.preferredRouteAppId ?? null,
-      },
-    });
-    console.log('[handleSubmit] Start determining app to use...');
-
-    if (input.conversationAppId) {
-      console.log(
-        `[handleSubmit] Historical conversation, using original appId: ${input.conversationAppId}`
+    if (!targetAppId) throw new Error('No target app. Submission blocked.');
+    const appConfig = await input.ensureAppReady(targetAppId);
+    if (
+      appConfig.appId !== targetAppId ||
+      appConfig.instance.instance_id !== targetAppId
+    ) {
+      throw new Error(
+        `Submission blocked: expected app ${targetAppId}, got ${appConfig.appId}.`
       );
-      await input.validateConfig(input.conversationAppId, 'message');
-      const appConfig = await input.ensureAppReady();
-
-      if (appConfig.appId !== input.conversationAppId) {
-        console.warn(
-          `[handleSubmit] Failed to switch to original app, expected: ${input.conversationAppId}, actual: ${appConfig.appId}`
-        );
-      }
-
-      logCurrentAppDebugSnapshot(
-        '[CurrentAppDebug] handleSubmit resolved historical app',
-        {
-          source: 'lib/hooks/chat-interface/app-config.ts',
-          currentAppId: appConfig.appId,
-          currentAppInstanceId: appConfig.instance.instance_id,
-          currentAppDisplayName: appConfig.instance.display_name ?? null,
-          note: 'historical conversation resolved app',
-          extra: {
-            expectedConversationAppId: input.conversationAppId,
-          },
-        }
-      );
-      console.log(`[handleSubmit] Final app used: ${appConfig.appId}`);
-      return appConfig;
     }
-
-    if (input.preferredRouteAppId) {
-      console.log(
-        `[handleSubmit] App detail route detected, preferring route appId: ${input.preferredRouteAppId}`
-      );
-      await input.validateConfig(input.preferredRouteAppId, 'message');
-      const appConfig = await input.ensureAppReady();
-
-      if (appConfig.appId !== input.preferredRouteAppId) {
-        const errorMessage = `Current app did not match page target app. Expected ${input.preferredRouteAppId}, got ${appConfig.appId}. Submission blocked to avoid falling back to the default app.`;
-        console.error(`[handleSubmit] ${errorMessage}`);
-        logCurrentAppDebugSnapshot(
-          '[CurrentAppDebug] handleSubmit blocked route app mismatch',
-          {
-            source: 'lib/hooks/chat-interface/app-config.ts',
-            currentAppId: appConfig.appId,
-            currentAppInstanceId: appConfig.instance.instance_id,
-            currentAppDisplayName: appConfig.instance.display_name ?? null,
-            routeInstanceId: input.preferredRouteAppId,
-            note: errorMessage,
-          }
-        );
-        input.onErrorMessage(errorMessage);
-        return null;
-      }
-
-      logCurrentAppDebugSnapshot(
-        '[CurrentAppDebug] handleSubmit resolved route app',
-        {
-          source: 'lib/hooks/chat-interface/app-config.ts',
-          currentAppId: appConfig.appId,
-          currentAppInstanceId: appConfig.instance.instance_id,
-          currentAppDisplayName: appConfig.instance.display_name ?? null,
-          routeInstanceId: input.preferredRouteAppId,
-          note: 'detail page resolved app from route target',
-        }
-      );
-      console.log(`[handleSubmit] Final app used: ${appConfig.appId}`);
-      return appConfig;
-    }
-
-    console.log(
-      '[handleSubmit] New conversation or no original appId, using current selected app'
-    );
-    const appConfig = await input.ensureAppReady();
-    logCurrentAppDebugSnapshot(
-      '[CurrentAppDebug] handleSubmit resolved current app',
-      {
-        source: 'lib/hooks/chat-interface/app-config.ts',
-        currentAppId: appConfig.appId,
-        currentAppInstanceId: appConfig.instance.instance_id,
-        currentAppDisplayName: appConfig.instance.display_name ?? null,
-        note: 'new conversation resolved app',
-      }
-    );
-    console.log(`[handleSubmit] Final app used: ${appConfig.appId}`);
     return appConfig;
   } catch (error) {
-    console.error('[handleSubmit] Failed to get app config:', error);
     const { errorMessage } = formatChatUiError(
       error,
       'Failed to get app config',
@@ -138,27 +51,10 @@ export async function resolveChatSubmitAppConfig(
   }
 }
 
-interface ResolveChatStopAppConfigInput {
+export function resolveChatStopAppConfig(input: {
   currentAppId: string | null | undefined;
   currentAppInstance: ServiceInstance | null | undefined;
-}
-
-export function resolveChatStopAppConfig(
-  input: ResolveChatStopAppConfigInput
-): ChatResolvedAppConfig | null {
-  if (input.currentAppId && input.currentAppInstance) {
-    const appConfig = {
-      appId: input.currentAppId,
-      instance: input.currentAppInstance,
-    };
-    console.log(
-      `[handleStopProcessing] Using current app config: ${appConfig.appId}`
-    );
-    return appConfig;
-  }
-
-  console.warn(
-    '[handleStopProcessing] Current app config unavailable, only perform local stop'
-  );
-  return null;
+}): ChatResolvedAppConfig | null {
+  if (!input.currentAppId || !input.currentAppInstance) return null;
+  return { appId: input.currentAppId, instance: input.currentAppInstance };
 }

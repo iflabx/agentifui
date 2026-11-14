@@ -14,6 +14,7 @@ export interface AgentSubmission extends QueryResultRow {
   submission_id: string;
   request_hash: string;
   target_fingerprint: string;
+  credential_version?: string | null;
   backend_type: 'dify' | 'langchain';
   state:
     | 'registered'
@@ -36,6 +37,7 @@ export interface SubmissionInput {
   backendType: 'dify' | 'langchain';
   request: unknown;
   targetFingerprint: string;
+  credentialVersion?: string;
 }
 
 export function submissionId(value: unknown): string {
@@ -103,8 +105,8 @@ export async function registerSubmission(
     if (Number(pending.rows[0]?.count ?? 0) >= 8)
       throw new AgentPolicyError(429, 'AGENT_REGISTRATION_LIMIT');
     const inserted = await client.query<AgentSubmission>(
-      `INSERT INTO agent_submissions (root_task_id, user_id, service_instance_id, submission_id, request_hash, backend_type, target_fingerprint)
-       VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7)
+      `INSERT INTO agent_submissions (root_task_id, user_id, service_instance_id, submission_id, request_hash, backend_type, target_fingerprint, credential_version)
+       VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7, $8::uuid)
        ON CONFLICT (user_id, service_instance_id, submission_id) DO NOTHING RETURNING *`,
       [
         randomUUID(),
@@ -114,6 +116,7 @@ export async function registerSubmission(
         hash,
         input.backendType,
         input.targetFingerprint,
+        input.credentialVersion ?? null,
       ]
     );
     if (inserted.rows[0]) return { task: inserted.rows[0], replayed: false };
@@ -146,6 +149,51 @@ export async function lockAdmission(
   ]);
 }
 
+async function requireSubmissionTarget(
+  client: PoolClient,
+  task: AgentSubmission,
+  userId: string,
+  appId: string
+) {
+  const appResult = await client.query<{
+    visibility: string;
+    role: string;
+    config: Record<string, unknown> | null;
+    base_url: string;
+    instance_id: string;
+    credential_version?: string | null;
+  }>(
+    `SELECT si.visibility, si.config, si.instance_id, p.base_url, actor.role,
+       (SELECT credential_version::text FROM api_keys WHERE service_instance_id = si.id AND is_default = TRUE
+        ORDER BY created_at ASC, id ASC LIMIT 1) AS credential_version FROM service_instances si
+     JOIN providers p ON p.id = si.provider_id AND p.is_active = TRUE
+     JOIN profiles actor ON actor.id = $2::uuid AND actor.status = 'active'
+     WHERE si.id = $1::uuid AND (actor.role = 'admin' OR si.visibility = 'public' OR
+       (si.visibility = 'group_only' AND EXISTS (SELECT 1 FROM group_app_permissions gap
+        JOIN group_members gm ON gm.group_id = gap.group_id WHERE gap.service_instance_id = si.id
+        AND gap.is_enabled = TRUE AND gm.user_id = actor.id))) FOR SHARE OF si, p, actor`,
+    [appId, userId]
+  );
+  const app = appResult.rows[0];
+  if (!app) throw new AgentPolicyError(403, 'AGENT_APP_FORBIDDEN');
+  if ((app.credential_version ?? null) !== (task.credential_version ?? null))
+    throw new AgentPolicyError(409, 'AGENT_CONFIG_CHANGED');
+  if (resolveBackendType(app.config) !== task.backend_type)
+    throw new AgentPolicyError(409, 'AGENT_BACKEND_MISMATCH');
+  const assistant = app.config?.langchain as
+    Record<string, unknown> | undefined;
+  const target = submissionHash([
+    appId,
+    new URL(app.base_url).toString().replace(/\/+$/, ''),
+    task.backend_type === 'langchain'
+      ? assistant?.assistant_id
+      : app.instance_id,
+  ]);
+  if (target !== task.target_fingerprint)
+    throw new AgentPolicyError(409, 'AGENT_CONFIG_CHANGED');
+  return app;
+}
+
 export async function admitSubmission(
   client: PoolClient,
   taskId: string,
@@ -165,37 +213,7 @@ export async function admitSubmission(
       409,
       task?.error_code ?? 'AGENT_SUBMISSION_IN_PROGRESS'
     );
-  const appResult = await client.query<{
-    visibility: string;
-    role: string;
-    config: Record<string, unknown> | null;
-    base_url: string;
-    instance_id: string;
-  }>(
-    `SELECT si.visibility, si.config, si.instance_id, p.base_url, actor.role FROM service_instances si
-     JOIN providers p ON p.id = si.provider_id AND p.is_active = TRUE
-     JOIN profiles actor ON actor.id = $2::uuid AND actor.status = 'active'
-     WHERE si.id = $1::uuid AND (actor.role = 'admin' OR si.visibility = 'public' OR
-       (si.visibility = 'group_only' AND EXISTS (SELECT 1 FROM group_app_permissions gap
-        JOIN group_members gm ON gm.group_id = gap.group_id WHERE gap.service_instance_id = si.id
-        AND gap.is_enabled = TRUE AND gm.user_id = actor.id))) FOR SHARE OF si, p, actor`,
-    [appId, userId]
-  );
-  const app = appResult.rows[0];
-  if (!app) throw new AgentPolicyError(403, 'AGENT_APP_FORBIDDEN');
-  if (resolveBackendType(app.config) !== task.backend_type)
-    throw new AgentPolicyError(409, 'AGENT_BACKEND_MISMATCH');
-  const assistant = app.config?.langchain as
-    Record<string, unknown> | undefined;
-  const target = submissionHash([
-    appId,
-    new URL(app.base_url).toString().replace(/\/+$/, ''),
-    task.backend_type === 'langchain'
-      ? assistant?.assistant_id
-      : app.instance_id,
-  ]);
-  if (target !== task.target_fingerprint)
-    throw new AgentPolicyError(409, 'AGENT_CONFIG_CHANGED');
+  const app = await requireSubmissionTarget(client, task, userId, appId);
   const counts = await client.query<{ user_count: string; app_count: string }>(
     `SELECT count(*) FILTER (WHERE user_id = $1::uuid)::text AS user_count,
        count(*) FILTER (WHERE service_instance_id = $2::uuid)::text AS app_count
@@ -261,6 +279,34 @@ export async function rejectSubmission(
 
 export async function markSubmissionSubmitting(taskId: string): Promise<void> {
   await submissionStorage(async client => {
+    const initial = await client.query<AgentSubmission>(
+      'SELECT * FROM agent_submissions WHERE root_task_id = $1::uuid',
+      [taskId]
+    );
+    if (!initial.rows[0])
+      throw new AgentPolicyError(409, 'AGENT_SUBMISSION_IN_PROGRESS');
+    const { user_id: userId, service_instance_id: appId } = initial.rows[0];
+    await lockAdmission(client, userId, appId);
+    const current = await client.query<AgentSubmission>(
+      'SELECT * FROM agent_submissions WHERE root_task_id = $1::uuid FOR UPDATE',
+      [taskId]
+    );
+    const task = current.rows[0];
+    if (!task || task.state !== 'admitted')
+      throw new AgentPolicyError(409, 'AGENT_SUBMISSION_IN_PROGRESS');
+    const app = await requireSubmissionTarget(client, task, userId, appId);
+    if (task.quota_permission_id) {
+      const permission = await client.query(
+        `SELECT gap.id FROM group_app_permissions gap JOIN group_members gm ON gm.group_id = gap.group_id
+         WHERE gap.id = $1::uuid AND gap.service_instance_id = $2::uuid AND gap.is_enabled = TRUE
+           AND gm.user_id = $3::uuid FOR SHARE OF gap, gm`,
+        [task.quota_permission_id, appId, userId]
+      );
+      if (!permission.rows[0])
+        throw new AgentPolicyError(403, 'AGENT_APP_FORBIDDEN');
+    } else if (app.visibility === 'group_only') {
+      throw new AgentPolicyError(409, 'AGENT_CONFIG_CHANGED');
+    }
     const result = await client.query(
       `UPDATE agent_submissions SET state = 'submitting', updated_at = NOW() WHERE root_task_id = $1::uuid AND state = 'admitted' RETURNING root_task_id`,
       [taskId]
@@ -271,14 +317,15 @@ export async function markSubmissionSubmitting(taskId: string): Promise<void> {
 }
 
 export async function rejectUnacceptedSubmission(
-  taskId: string
+  taskId: string,
+  code = 'AGENT_NATIVE_REJECTED'
 ): Promise<void> {
   await submissionStorage(async client => {
     await client.query(
-      `UPDATE agent_submissions SET state = 'rejected', error_code = 'AGENT_NATIVE_REJECTED',
+      `UPDATE agent_submissions SET state = 'rejected', error_code = $2,
       quota_state = CASE WHEN quota_state = 'reserved' THEN 'released' ELSE quota_state END, updated_at = NOW()
       WHERE root_task_id = $1::uuid AND state = 'submitting' AND quota_state IN ('reserved','exempt')`,
-      [taskId]
+      [taskId, code]
     );
   });
 }

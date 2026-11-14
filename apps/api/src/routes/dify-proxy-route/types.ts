@@ -23,6 +23,7 @@ export interface DifyProxyTargetConfig {
   serviceInstanceId?: string;
   appInstanceId?: string;
   rootTaskId?: string;
+  credentialVersion?: string;
   difyApiKey: string;
   difyApiUrl: string;
   appType?: string;

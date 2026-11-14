@@ -42,6 +42,7 @@ const threads = new Map<
 const pending = new Map<string, () => void>();
 let database: Pool;
 let upstream: ReturnType<typeof createServer>;
+let holdCapabilities = false;
 
 const config: ApiRuntimeConfig = {
   host: '127.0.0.1',
@@ -205,6 +206,12 @@ beforeAll(async () => {
         return;
       }
       if (path === '/capabilities') {
+        if (holdCapabilities) {
+          pending.set('capability-preflight', () =>
+            response.end(JSON.stringify({ assistant_id: 'agent' }))
+          );
+          return;
+        }
         response.end(JSON.stringify({ assistant_id: 'agent' }));
         return;
       }
@@ -268,6 +275,7 @@ beforeAll(async () => {
           type: 'TOOL_CALL_START',
           toolCallId: 'call-one',
           toolCallName: 'arithmetic',
+          parentMessageId: 'assistant-before-tool',
         });
         emit({
           type: 'TOOL_CALL_ARGS',
@@ -415,6 +423,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   upstreamRequests.length = 0;
+  holdCapabilities = false;
 });
 
 afterEach(async () => {
@@ -630,6 +639,20 @@ it('persists two turns, multiple assistants and safe tool summaries exactly once
     ['assistant', 'synthetic answer 2'],
   ]);
   expect(history.body).not.toContain(privateMarker);
+  const assistantMessages = history
+    .json()
+    .messages.filter(
+      (message: { role: string }) => message.role === 'assistant'
+    );
+  const tool = assistantMessages[0].metadata.tools[0];
+  expect(tool).toMatchObject({
+    runId: ids.runId,
+    messageId: assistantMessages[0].id,
+    order: 1,
+  });
+  expect(assistantMessages[0].metadata.projection_order).toBe(0);
+  expect(assistantMessages[1].metadata.projection_order).toBe(2);
+  expect(tool.messageId).not.toBe('assistant-before-tool');
   const stored = await database.query(
     'SELECT * FROM messages WHERE conversation_id=$1 ORDER BY sequence_index',
     [ids.conversationId]
@@ -646,6 +669,93 @@ it('persists two turns, multiple assistants and safe tool summaries exactly once
     ).rows[0].app_id
   ).toBe(applications[0]);
 });
+
+it.each(['provider', 'permission', 'membership', 'profile'])(
+  'rechecks %s revocation after capabilities preflight but before generation dispatch',
+  async change => {
+    holdCapabilities = true;
+    const before = (
+      await database.query(
+        'SELECT used_count FROM group_app_permissions WHERE group_id=$1 AND service_instance_id=$2',
+        [groupId, applications[0]]
+      )
+    ).rows[0].used_count;
+    const running = submit(0, 'blocked during preflight');
+    try {
+      await waitFor(() => pending.has('capability-preflight'), Boolean);
+      if (change === 'provider')
+        await database.query(
+          'UPDATE providers SET is_active=FALSE WHERE id=$1',
+          [providerId]
+        );
+      if (change === 'permission')
+        await database.query(
+          'UPDATE group_app_permissions SET is_enabled=FALSE WHERE group_id=$1 AND service_instance_id=$2',
+          [groupId, applications[0]]
+        );
+      if (change === 'membership')
+        await database.query(
+          'DELETE FROM group_members WHERE group_id=$1 AND user_id=$2',
+          [groupId, actors[0]]
+        );
+      if (change === 'profile')
+        await database.query(
+          "UPDATE profiles SET status='suspended' WHERE id=$1",
+          [actors[0]]
+        );
+      pending.get('capability-preflight')!();
+      pending.delete('capability-preflight');
+      const response = await running;
+      const ids = accepted(response.body);
+      expect(events(response.body).at(-1)).toMatchObject({
+        executionStatus: 'error',
+        persistenceStatus: 'saved',
+      });
+      expect(modelCalls()).toHaveLength(0);
+      expect(
+        (
+          await database.query(
+            'SELECT state,quota_state FROM agent_submissions WHERE run_id=$1',
+            [ids.runId]
+          )
+        ).rows[0]
+      ).toEqual({ state: 'rejected', quota_state: 'released' });
+      expect(
+        (
+          await database.query(
+            'SELECT used_count FROM group_app_permissions WHERE group_id=$1 AND service_instance_id=$2',
+            [groupId, applications[0]]
+          )
+        ).rows[0].used_count
+      ).toBe(before);
+    } finally {
+      holdCapabilities = false;
+      pending.get('capability-preflight')?.();
+      pending.delete('capability-preflight');
+      await running.catch(() => undefined);
+      if (change === 'provider')
+        await database.query(
+          'UPDATE providers SET is_active=TRUE WHERE id=$1',
+          [providerId]
+        );
+      if (change === 'permission')
+        await database.query(
+          'UPDATE group_app_permissions SET is_enabled=TRUE WHERE group_id=$1 AND service_instance_id=$2',
+          [groupId, applications[0]]
+        );
+      if (change === 'membership')
+        await database.query(
+          'INSERT INTO group_members(group_id,user_id) VALUES($1,$2)',
+          [groupId, actors[0]]
+        );
+      if (change === 'profile')
+        await database.query(
+          "UPDATE profiles SET status='active' WHERE id=$1",
+          [actors[0]]
+        );
+    }
+  }
+);
 
 it('denies another user, another app and forged native identifiers without upstream calls', async () => {
   const first = await submit(0);
@@ -1344,6 +1454,26 @@ it('retries only known result persistence after an injected database failure, ne
   const stored = await getStoredRun(ids.runId);
   expect(stored.result.messages[0].content).toBe('persist-retry-answer');
   expect(stored.persistence_status).toBe('failed');
+  expect(modelCalls()).toHaveLength(1);
+  const failedRecovery = await request(
+    0,
+    `/api/internal/apps/${applications[0]}/agent/runs/${ids.runId}`,
+    1
+  );
+  expect(failedRecovery.statusCode).toBe(200);
+  expect(failedRecovery.json()).toMatchObject({
+    executionStatus: 'success',
+    persistenceStatus: 'failed',
+    recoveryMessages: [{ content: 'persist-retry-answer' }],
+  });
+  expect(failedRecovery.json()).not.toHaveProperty('result');
+  const failedHistory = await request(
+    0,
+    `/api/internal/apps/${applications[0]}/agent/conversations/${ids.conversationId}`
+  );
+  expect(failedHistory.json().runs[0].recoveryMessages).toEqual(
+    failedRecovery.json().recoveryMessages
+  );
   expect(modelCalls()).toHaveLength(1);
   await database.query(`DROP TRIGGER ${triggerName} ON messages`);
   const status = await request(

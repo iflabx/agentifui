@@ -54,8 +54,10 @@ export function useAgentChat(
   const [appName, setAppName] = useState('');
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<number | null>(null);
+  const [error, setError] = useState<AgentRequestError | null>(null);
   const [unconfirmed, setUnconfirmed] = useState(false);
+  const [statusCheckVersion, setStatusCheckVersion] = useState(0);
+  const [statusCheckExhausted, setStatusCheckExhausted] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyFailed, setHistoryFailed] = useState(false);
   const selecting = useRef(false);
@@ -81,12 +83,28 @@ export function useAgentChat(
       if (signal?.aborted || version !== navigationVersion.current)
         return false;
       const run = detail.runs[0];
-      setView({
-        conversationId: detail.conversation.id,
-        messages: detail.messages,
-        tools: agentToolsFromMessages(detail.messages),
-        run,
-        runId: run?.id || run?.runId,
+      setView(previous => {
+        const persisted = new Set(detail.messages.map(message => message.id));
+        const recovery =
+          run?.recoveryMessages ||
+          (previous.conversationId === detail.conversation.id &&
+          previous.runId === (run?.id || run?.runId)
+            ? previous.messages.filter(message => message.role === 'assistant')
+            : []);
+        const messages =
+          run && !agentRunSettled(run)
+            ? [
+                ...detail.messages,
+                ...recovery.filter(message => !persisted.has(message.id)),
+              ]
+            : detail.messages;
+        return {
+          conversationId: detail.conversation.id,
+          messages,
+          tools: agentToolsFromMessages(messages),
+          run,
+          runId: run?.id || run?.runId,
+        };
       });
       setUnconfirmed(Boolean(run && !agentRunSettled(run)));
       return true;
@@ -120,7 +138,9 @@ export function useAgentChat(
             if (!lifetime.signal.aborted) {
               setHistoryFailed(true);
               setError(
-                failure instanceof AgentRequestError ? failure.status : 500
+                failure instanceof AgentRequestError
+                  ? failure
+                  : new AgentRequestError(500)
               );
             }
           } finally {
@@ -130,7 +150,11 @@ export function useAgentChat(
         if (!lifetime.signal.aborted) setReady(true);
       } catch (failure) {
         if (!lifetime.signal.aborted)
-          setError(failure instanceof AgentRequestError ? failure.status : 500);
+          setError(
+            failure instanceof AgentRequestError
+              ? failure
+              : new AgentRequestError(500)
+          );
       }
     })();
     return () => {
@@ -167,7 +191,11 @@ export function useAgentChat(
       } catch (failure) {
         if (version === navigationVersion.current) {
           setHistoryFailed(true);
-          setError(failure instanceof AgentRequestError ? failure.status : 500);
+          setError(
+            failure instanceof AgentRequestError
+              ? failure
+              : new AgentRequestError(500)
+          );
         }
       } finally {
         if (version === navigationVersion.current) {
@@ -196,6 +224,9 @@ export function useAgentChat(
     const version = navigationVersion.current;
     let timer: ReturnType<typeof setTimeout>;
     let attempts = 0;
+    void Promise.resolve().then(() => {
+      if (!polling.signal.aborted) setStatusCheckExhausted(false);
+    });
     const poll = async () => {
       try {
         const result = await agentRequest<AgentRun | { run: AgentRun }>(
@@ -203,12 +234,14 @@ export function useAgentChat(
           `/runs/${encodeURIComponent(runId)}`,
           { signal: polling.signal }
         );
-        if (polling.signal.aborted) return;
+        if (polling.signal.aborted || version !== navigationVersion.current)
+          return;
         const run = 'run' in result ? result.run : result;
         if (agentRunSettled(run)) {
           if (conversationId)
             await load(conversationId, polling.signal, version);
-          if (polling.signal.aborted) return;
+          if (polling.signal.aborted || version !== navigationVersion.current)
+            return;
           setView(previous =>
             previous.runId === runId ? { ...previous, run } : previous
           );
@@ -217,28 +250,60 @@ export function useAgentChat(
           return;
         }
         setView(previous =>
-          previous.runId === runId ? { ...previous, run } : previous
+          previous.runId === runId
+            ? {
+                ...previous,
+                run,
+                ...(run.recoveryMessages
+                  ? {
+                      messages: [
+                        ...previous.messages.filter(
+                          message =>
+                            !run.recoveryMessages!.some(
+                              recovery => recovery.id === message.id
+                            )
+                        ),
+                        ...run.recoveryMessages,
+                      ],
+                      tools: agentToolsFromMessages([
+                        ...previous.messages,
+                        ...run.recoveryMessages,
+                      ]),
+                    }
+                  : {}),
+              }
+            : previous
         );
       } catch (failure) {
-        if (polling.signal.aborted) return;
+        if (polling.signal.aborted || version !== navigationVersion.current)
+          return;
         if (
           failure instanceof AgentRequestError &&
           [401, 403, 404].includes(failure.status)
         ) {
-          setError(failure.status);
+          setError(failure);
           return;
         }
       }
       attempts += 1;
       if (attempts < 40 && !polling.signal.aborted)
         timer = setTimeout(() => void poll(), 3000);
+      else if (!polling.signal.aborted) setStatusCheckExhausted(true);
     };
     timer = setTimeout(() => void poll(), 1500);
     return () => {
       polling.abort();
       clearTimeout(timer);
     };
-  }, [appId, busy, view.runId, view.conversationId, needsPolling, load]);
+  }, [
+    appId,
+    busy,
+    view.runId,
+    view.conversationId,
+    needsPolling,
+    load,
+    statusCheckVersion,
+  ]);
 
   const send = async (content: string) => {
     if (
@@ -272,7 +337,6 @@ export function useAgentChat(
     setError(null);
     setView(previous => ({
       ...previous,
-      tools: [],
       run: undefined,
       runId: undefined,
       messages: [
@@ -317,7 +381,11 @@ export function useAgentChat(
       }
     } catch (failure) {
       if (!ownsView()) return Boolean(latest.runId);
-      setError(failure instanceof AgentRequestError ? failure.status : 500);
+      setError(
+        failure instanceof AgentRequestError
+          ? failure
+          : new AgentRequestError(500)
+      );
       if (failure instanceof AgentRequestError && !latest.runId) {
         setView(view);
       } else {
@@ -349,7 +417,11 @@ export function useAgentChat(
       conversationEvents.emit();
     } catch (failure) {
       if (version === navigationVersion.current)
-        setError(failure instanceof AgentRequestError ? failure.status : 500);
+        setError(
+          failure instanceof AgentRequestError
+            ? failure
+            : new AgentRequestError(500)
+        );
     }
   };
   return {
@@ -360,6 +432,8 @@ export function useAgentChat(
     busy,
     error,
     unconfirmed,
+    statusCheckExhausted,
+    retryStatus: () => setStatusCheckVersion(previous => previous + 1),
     historyLoading,
     historyFailed,
     send,

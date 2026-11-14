@@ -45,7 +45,8 @@ describe('resolveChatSubmitAppConfig', () => {
       onErrorMessage,
     });
 
-    expect(validateConfig).toHaveBeenCalledWith('target-app', 'message');
+    expect(validateConfig).not.toHaveBeenCalled();
+    expect(ensureAppReady).toHaveBeenCalledWith('target-app');
     expect(ensureAppReady).toHaveBeenCalledTimes(1);
     expect(result).toEqual({
       appId: 'target-app',
@@ -55,6 +56,24 @@ describe('resolveChatSubmitAppConfig', () => {
       },
     });
     expect(onErrorMessage).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { conversationAppId: null, preferredRouteAppId: null },
+    { conversationAppId: 'default-app', preferredRouteAppId: null },
+  ])('rejects a delayed config belonging to another app: %j', async target => {
+    const onErrorMessage = jest.fn();
+    const result = await resolveChatSubmitAppConfig({
+      ...target,
+      ensureAppReady: jest.fn().mockResolvedValue({
+        appId: 'other-app',
+        instance: { instance_id: 'other-app' },
+      }),
+      validateConfig: jest.fn(),
+      onErrorMessage,
+    });
+    expect(result).toBeNull();
+    expect(onErrorMessage).toHaveBeenCalled();
   });
 
   it('blocks submission when the resolved app does not match the route app', async () => {
@@ -101,7 +120,8 @@ describe('resolveChatSubmitAppConfig', () => {
       onErrorMessage,
     });
 
-    expect(validateConfig).toHaveBeenCalledWith('history-app', 'message');
+    expect(validateConfig).not.toHaveBeenCalled();
+    expect(ensureAppReady).toHaveBeenCalledWith('history-app');
     expect(result).toEqual({
       appId: 'history-app',
       instance: {

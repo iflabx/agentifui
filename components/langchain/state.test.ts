@@ -6,6 +6,7 @@ import {
   langchainConversationPath,
 } from './routing';
 import {
+  agentTimeline,
   agentToolsFromMessages,
   markAgentStreamInterrupted,
   reduceAgentEvent,
@@ -14,6 +15,105 @@ import type { AgentViewState } from './state';
 
 describe('server-managed agent state', () => {
   const initial: AgentViewState = { messages: [], tools: [] };
+  it('keeps A-tool-B ordering per run in streaming and refreshed multi-turn history', () => {
+    let state: AgentViewState = initial;
+    for (const runId of ['first-run', 'second-run']) {
+      state = {
+        ...state,
+        messages: [
+          ...state.messages,
+          { id: `${runId}-user`, role: 'user', content: 'question' },
+        ],
+      };
+      state = reduceAgentEvent(state, {
+        type: 'accepted',
+        conversationId: 'local',
+        runId,
+        userMessageId: `${runId}-user`,
+      });
+      state = reduceAgentEvent(state, {
+        type: 'text',
+        messageId: `${runId}-A`,
+        delta: 'A',
+        runId,
+        order: 0,
+      });
+      state = reduceAgentEvent(state, {
+        type: 'tool',
+        toolCallId: 'reused-native-id',
+        name: 'lookup',
+        status: 'running',
+        runId,
+        messageId: `${runId}-A`,
+        order: 1,
+      });
+      state = reduceAgentEvent(state, {
+        type: 'tool',
+        toolCallId: 'reused-native-id',
+        name: 'lookup',
+        status: 'completed',
+        runId,
+        messageId: `${runId}-A`,
+        order: 1,
+      });
+      state = reduceAgentEvent(state, {
+        type: 'text',
+        messageId: `${runId}-B`,
+        delta: 'B',
+        runId,
+        order: 2,
+      });
+    }
+    const display = (view: AgentViewState) =>
+      agentTimeline(view).map(item =>
+        item.type === 'message' ? item.message.content : item.tool.name
+      );
+    expect(display(state)).toEqual([
+      'question',
+      'A',
+      'lookup',
+      'B',
+      'question',
+      'A',
+      'lookup',
+      'B',
+    ]);
+    expect(state.tools).toHaveLength(2);
+    const messages = state.messages.map(message => ({
+      ...message,
+      metadata: {
+        ...message.metadata,
+        tools: state.tools.filter(tool => tool.messageId === message.id),
+      },
+    }));
+    expect(
+      display({ messages, tools: agentToolsFromMessages(messages) })
+    ).toEqual(display(state));
+  });
+
+  it('leaves legacy summaries unordered instead of inventing message association', () => {
+    const messages = [
+      {
+        id: 'legacy',
+        role: 'assistant',
+        content: 'Old answer',
+        metadata: {
+          backend_run_id: 'old-run',
+          tools: [
+            { toolCallId: 'old-tool', name: 'lookup', status: 'completed' },
+          ],
+        },
+      },
+    ];
+    const tools = agentToolsFromMessages(messages);
+    expect(tools[0]).toMatchObject({ runId: 'old-run' });
+    expect(tools[0].order).toBeUndefined();
+    expect(tools[0].messageId).toBeUndefined();
+    expect(agentTimeline({ messages, tools }).map(item => item.type)).toEqual([
+      'message',
+      'tool',
+    ]);
+  });
   it('opens LangChain from global history without routing through Dify', () => {
     expect(
       historyConversationPath('local-id', [

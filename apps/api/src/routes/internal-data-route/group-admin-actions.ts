@@ -245,14 +245,18 @@ export async function handleGroupAdminAction(
 
     const enabled = readBoolean(data.is_enabled, false);
     if (!enabled) {
-      await queryRowsWithPgSystemContext(
+      const rows = await queryRowsWithPgSystemContext<GroupPermissionRow>(
         `
-          DELETE FROM group_app_permissions
+          UPDATE group_app_permissions SET is_enabled = FALSE
           WHERE group_id = $1::uuid
             AND service_instance_id = $2::uuid
+          RETURNING id::text, group_id::text, service_instance_id::text,
+            is_enabled, usage_quota, used_count, created_at::text
         `,
         [groupId, serviceInstanceId]
       );
+      if (rows[0])
+        return toSuccessResponse(sanitizeGroupPermissionRow(rows[0]));
       return toSuccessResponse({
         id: '',
         group_id: groupId,

@@ -73,6 +73,19 @@ describe('Dify failure log privacy', () => {
 });
 
 describe('Dify error event privacy and response compatibility', () => {
+  it.each(['AGENT_CONCURRENCY_LIMIT', 'AGENT_QUOTA_EXCEEDED'])(
+    'keeps the governance code %s consistent in the Dify envelope',
+    async code => {
+      const response = await withAgentErrorEnvelope(
+        { code, message: code },
+        { ...context, status: 429 }
+      );
+      expect(response).toMatchObject({
+        code,
+        app_error: { code, retryable: code === 'AGENT_CONCURRENCY_LIMIT' },
+      });
+    }
+  );
   it.each([
     ['JSON message', { code: privateFixture, message: rawMessage }],
     ['plain text', rawMessage],

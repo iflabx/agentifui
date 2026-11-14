@@ -1,6 +1,33 @@
+import { stopDifyStreamingTask } from '@lib/services/dify/chat-service';
 import { useChatStore } from '@lib/stores/chat-store';
 
-import { persistStoppedStreamingState } from './stop-flow';
+import { executeChatStop, persistStoppedStreamingState } from './stop-flow';
+import { chatSubmissionOwners } from './submission-owner';
+
+jest.mock('@lib/services/dify/chat-service', () => ({
+  stopDifyStreamingTask: jest.fn(),
+}));
+
+function stopInput() {
+  return {
+    currentUserId: 'user-A',
+    currentAppId: 'app-A',
+    currentAppInstance: { instance_id: 'app-A' } as never,
+    dbConversationUUID: 'db-A',
+    difyConversationId: 'external-A',
+    isSubmittingRef: { current: true },
+    appendTimerRef: { current: null },
+    setDbConversationUUID: jest.fn(),
+    setCurrentTaskId: useChatStore.getState().setCurrentTaskId,
+    setIsWaitingForResponse: useChatStore.getState().setIsWaitingForResponse,
+    markAsManuallyStopped: useChatStore.getState().markAsManuallyStopped,
+    flushChunkBuffer: jest.fn(),
+    updateMessage: useChatStore.getState().updateMessage,
+    saveMessage: jest.fn().mockResolvedValue(true),
+    saveStoppedAssistantMessage: jest.fn().mockResolvedValue(true),
+    finalizeStreamingMessage: useChatStore.getState().finalizeStreamingMessage,
+  };
+}
 
 describe('persistStoppedStreamingState', () => {
   beforeEach(() => {
@@ -12,6 +39,209 @@ describe('persistStoppedStreamingState', () => {
       currentConversationId: null,
       currentTaskId: null,
     });
+  });
+
+  it('stops an accepted task before the first assistant row', async () => {
+    jest.mocked(stopDifyStreamingTask).mockResolvedValue({ result: 'success' });
+    useChatStore.setState({
+      currentTaskId: 'task-A',
+      isWaitingForResponse: true,
+    });
+    const result = await executeChatStop(stopInput());
+    expect(stopDifyStreamingTask).toHaveBeenCalledWith(
+      'app-A',
+      'task-A',
+      'user-A'
+    );
+    expect(useChatStore.getState().currentTaskId).toBeNull();
+    expect(result).toEqual({
+      confirmed: true,
+      current: true,
+      taskId: 'task-A',
+    });
+  });
+
+  it('does not let a different current app disable cancellation of the captured app', async () => {
+    jest.mocked(stopDifyStreamingTask).mockResolvedValue({ result: 'success' });
+    useChatStore.setState({
+      currentTaskId: 'task-A',
+      isWaitingForResponse: true,
+    });
+    const input = stopInput();
+    input.currentAppInstance = {
+      instance_id: 'app-B',
+      descriptor: { effectiveActions: { cancellation: false } },
+    } as never;
+    chatSubmissionOwners.set(input.isSubmittingRef, {
+      appConfig: {
+        appId: 'app-A',
+        instance: { instance_id: 'app-A' } as never,
+      },
+      isCurrent: () => true,
+      onStopped: jest.fn(),
+    });
+    expect(await executeChatStop(input)).toEqual({
+      confirmed: true,
+      current: true,
+      taskId: 'task-A',
+    });
+    expect(stopDifyStreamingTask).toHaveBeenCalledWith(
+      'app-A',
+      'task-A',
+      'user-A'
+    );
+  });
+
+  it.each([false, true])(
+    'does not dispatch or claim cancellation when the descriptor disables it (original owner: %s)',
+    async hasOriginalOwner => {
+      useChatStore.setState({
+        currentTaskId: 'task-A',
+        isWaitingForResponse: true,
+      });
+      const input = stopInput();
+      input.currentAppInstance = {
+        instance_id: 'app-A',
+        descriptor: { effectiveActions: { cancellation: false } },
+      } as never;
+      if (hasOriginalOwner)
+        chatSubmissionOwners.set(input.isSubmittingRef, {
+          appConfig: {
+            appId: 'app-A',
+            instance: { instance_id: 'app-A' } as never,
+          },
+          isCurrent: () => true,
+          onStopped: jest.fn(),
+        });
+      expect(await executeChatStop(input)).toEqual({
+        confirmed: false,
+        current: true,
+        taskId: 'task-A',
+      });
+      expect(stopDifyStreamingTask).not.toHaveBeenCalled();
+      expect(useChatStore.getState().currentTaskId).toBe('task-A');
+      expect(input.isSubmittingRef.current).toBe(true);
+    }
+  );
+
+  it('does not release a pre-acceptance submission or claim it was canceled', async () => {
+    useChatStore.setState({ isWaitingForResponse: true });
+    const input = stopInput();
+    expect(await executeChatStop(input)).toEqual({
+      confirmed: false,
+      current: true,
+    });
+    expect(stopDifyStreamingTask).not.toHaveBeenCalled();
+    expect(useChatStore.getState().isWaitingForResponse).toBe(true);
+    expect(input.isSubmittingRef.current).toBe(true);
+  });
+
+  it('coalesces repeat clicks before first-row stop confirmation', async () => {
+    let confirm!: (
+      value: Awaited<ReturnType<typeof stopDifyStreamingTask>>
+    ) => void;
+    jest.mocked(stopDifyStreamingTask).mockImplementation(
+      () =>
+        new Promise(resolve => {
+          confirm = resolve;
+        })
+    );
+    useChatStore.setState({
+      currentTaskId: 'task-A',
+      isWaitingForResponse: true,
+    });
+    const input = stopInput();
+    const first = executeChatStop(input);
+    const duplicate = await executeChatStop(input);
+    confirm({ result: 'success' });
+    await first;
+    expect(duplicate).toEqual({
+      confirmed: false,
+      current: true,
+      taskId: 'task-A',
+    });
+    expect(stopDifyStreamingTask).toHaveBeenCalledTimes(1);
+    expect(input.isSubmittingRef.current).toBe(false);
+  });
+
+  it.each(['failure', 'unknown'])(
+    'retains ownership on an unconfirmed stop: %s',
+    async kind => {
+      jest.mocked(stopDifyStreamingTask).mockImplementation(async () => {
+        if (kind === 'failure') throw new Error('offline');
+        return { result: 'unknown' } as never;
+      });
+      useChatStore.setState({
+        currentTaskId: 'task-A',
+        isWaitingForResponse: true,
+        streamingMessageId: 'assistant-A',
+        messages: [
+          {
+            id: 'assistant-A',
+            text: 'partial',
+            isUser: false,
+            isStreaming: true,
+          },
+        ],
+      });
+      const input = stopInput();
+      await executeChatStop(input);
+      expect(useChatStore.getState().currentTaskId).toBe('task-A');
+      expect(useChatStore.getState().isWaitingForResponse).toBe(true);
+      expect(useChatStore.getState().messages[0].wasManuallyStopped).not.toBe(
+        true
+      );
+      expect(input.isSubmittingRef.current).toBe(true);
+      expect(input.saveStoppedAssistantMessage).not.toHaveBeenCalled();
+    }
+  );
+
+  it('saves captured A after a delayed stop without clearing B task or lock', async () => {
+    let confirm!: (
+      value: Awaited<ReturnType<typeof stopDifyStreamingTask>>
+    ) => void;
+    jest.mocked(stopDifyStreamingTask).mockImplementation(
+      () =>
+        new Promise(resolve => {
+          confirm = resolve;
+        })
+    );
+    useChatStore.setState({
+      currentTaskId: 'task-A',
+      streamingMessageId: 'assistant-A',
+      messages: [
+        {
+          id: 'assistant-A',
+          text: 'partial A',
+          isUser: false,
+          isStreaming: true,
+        },
+      ],
+    });
+    const input = stopInput();
+    const pending = executeChatStop(input);
+    await Promise.resolve();
+    useChatStore.setState({
+      currentTaskId: 'task-B',
+      streamingMessageId: 'assistant-B',
+      isWaitingForResponse: true,
+      messages: [
+        { id: 'assistant-B', text: 'B', isUser: false, isStreaming: true },
+      ],
+    });
+    confirm({ result: 'success' });
+    expect(await pending).toEqual({
+      confirmed: true,
+      current: false,
+      taskId: 'task-A',
+    });
+    expect(useChatStore.getState().currentTaskId).toBe('task-B');
+    expect(useChatStore.getState().isWaitingForResponse).toBe(true);
+    expect(input.isSubmittingRef.current).toBe(true);
+    expect(input.saveStoppedAssistantMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'assistant-A', text: 'partial A' }),
+      'db-A'
+    );
   });
 
   it('persists the stopped assistant even when no unsaved user message exists', async () => {

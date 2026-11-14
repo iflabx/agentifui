@@ -1,7 +1,11 @@
 import { captureDifyInputSubmission } from '@components/chat-input/submission';
 import type { UseCreateConversationReturn } from '@lib/hooks/create-conversation/types';
+import { registerChatInputSubmission } from '@lib/hooks/use-chat-input-route-sync';
+import { useAttachmentStore } from '@lib/stores/attachment-store';
+import { useChatInputStore } from '@lib/stores/chat-input-store';
 import type { ChatMessage } from '@lib/stores/chat-store';
 import { selectIsProcessing, useChatStore } from '@lib/stores/chat-store';
+import { useCurrentAppStore } from '@lib/stores/current-app-store';
 import type { PendingConversation } from '@lib/stores/pending-conversation-store';
 
 import { useCallback, useLayoutEffect, useRef } from 'react';
@@ -10,6 +14,7 @@ import type { MutableRefObject } from 'react';
 import type { ChatResolvedAppConfig } from './app-config';
 import { resolveChatSubmitAppConfig } from './app-config';
 import type { ChatModerationTranslator } from './error-utils';
+import { chatSubmissionOwners } from './submission-owner';
 import { executeChatSubmit } from './submit-flow';
 import type { ChatNodeEvent } from './types';
 
@@ -22,6 +27,9 @@ interface SubmissionViewOwner {
   routeAppId?: string | null;
   messageIds: Set<string>;
   taskIds: Set<string>;
+  selectedAppId: string | null;
+  actorEpoch: number;
+  draftScope: string;
 }
 
 function detachSubmissionView(owner: SubmissionViewOwner) {
@@ -49,7 +57,7 @@ interface UseChatSubmitHandlerInput {
   currentUserId: string | undefined;
   conversationAppId: string | null;
   preferredRouteAppId?: string | null;
-  ensureAppReady: () => Promise<ChatResolvedAppConfig>;
+  ensureAppReady: (targetAppId?: string) => Promise<ChatResolvedAppConfig>;
   validateConfig: (
     appId?: string,
     context?: 'message' | 'switch' | 'general'
@@ -136,6 +144,32 @@ export function useChatSubmitHandler({
   incompleteAnswerMessage,
 }: UseChatSubmitHandlerInput) {
   const task = useRef<SubmissionViewOwner | null>(null);
+  const detach = useCallback(() => {
+    if (!task.current?.active) return;
+    detachSubmissionView(task.current);
+    isSubmittingRef.current = false;
+    if (appendTimerRef.current) clearTimeout(appendTimerRef.current);
+    appendTimerRef.current = null;
+    chunkBufferRef.current = '';
+  }, [isSubmittingRef, appendTimerRef, chunkBufferRef]);
+  useLayoutEffect(() => {
+    const unsubscribeApp = useCurrentAppStore.subscribe((state, previous) => {
+      if (state.currentAppId !== previous.currentAppId) detach();
+    });
+    const unsubscribeInput = useChatInputStore.subscribe(state => {
+      const owner = task.current;
+      if (
+        owner &&
+        (state.actorEpoch !== owner.actorEpoch ||
+          state.resolveScope(owner.draftScope) !== state.currentRoute)
+      )
+        detach();
+    });
+    return () => {
+      unsubscribeApp();
+      unsubscribeInput();
+    };
+  }, [detach]);
   const latest = useRef({
     currentUserId,
     currentPathname,
@@ -149,11 +183,7 @@ export function useChatSubmitHandler({
         task.current.routeAppId !== preferredRouteAppId ||
         !task.current.paths.has(currentPathname))
     ) {
-      detachSubmissionView(task.current);
-      isSubmittingRef.current = false;
-      if (appendTimerRef.current) clearTimeout(appendTimerRef.current);
-      appendTimerRef.current = null;
-      chunkBufferRef.current = '';
+      detach();
     }
     if (task.current?.active && task.current.paths.has(currentPathname))
       task.current.paths = new Set([currentPathname]);
@@ -164,13 +194,9 @@ export function useChatSubmitHandler({
     isSubmittingRef,
     appendTimerRef,
     chunkBufferRef,
+    detach,
   ]);
-  useLayoutEffect(
-    () => () => {
-      if (task.current) detachSubmissionView(task.current);
-    },
-    []
-  );
+  useLayoutEffect(() => detach, [detach]);
   return useCallback(
     async (
       message: string,
@@ -193,13 +219,58 @@ export function useChatSubmitHandler({
         return;
       }
 
+      const inputSnapshot = useChatInputStore.getState();
+      const selectedAppId = useCurrentAppStore.getState().currentAppId;
+      const targetAppId =
+        conversationAppId || preferredRouteAppId || selectedAppId;
+      if (!targetAppId || inputSnapshot.actorId !== currentUserId) return;
+      const scopePrefix =
+        JSON.stringify([
+          inputSnapshot.actorEpoch,
+          currentUserId,
+          targetAppId,
+        ]).slice(0, -1) + ',';
+      if (
+        inputSnapshot.currentRoute.startsWith('[') &&
+        !inputSnapshot.currentRoute.startsWith(scopePrefix)
+      )
+        return;
+      const submittedFiles = files?.map(file => ({
+        ...(file as Record<string, unknown>),
+      }));
+      const sourceFiles = useAttachmentStore
+        .getState()
+        .getFiles(inputSnapshot.currentRoute);
+      if (
+        submittedFiles?.some(file => {
+          if (!file.upload_file_id) return true;
+          if (file.app_id && file.app_id !== targetAppId) return true;
+          if (file.actor_id !== undefined || file.actor_epoch !== undefined)
+            return (
+              file.app_id !== targetAppId ||
+              file.actor_id !== currentUserId ||
+              file.actor_epoch !== inputSnapshot.actorEpoch
+            );
+          const source = sourceFiles.find(
+            item =>
+              item.status === 'success' &&
+              item.uploadedId === file.upload_file_id
+          );
+          return source?.uploadedAppId !== targetAppId;
+        })
+      )
+        return;
       const owner = {
         active: true,
+        stopped: false,
         paths: new Set([currentPathname]),
         userId: currentUserId,
         routeAppId: preferredRouteAppId,
         messageIds: new Set<string>(),
         taskIds: new Set<string>(),
+        selectedAppId,
+        actorEpoch: inputSnapshot.actorEpoch,
+        draftScope: inputSnapshot.currentRoute,
       };
       task.current = owner;
       const acceptInput = captureDifyInputSubmission(message, currentUserId);
@@ -207,11 +278,14 @@ export function useChatSubmitHandler({
       const isCurrent = () =>
         owner.active &&
         task.current === owner &&
+        useChatInputStore.getState().actorEpoch === owner.actorEpoch &&
+        useCurrentAppStore.getState().currentAppId === owner.selectedAppId &&
         latest.current.currentUserId === owner.userId &&
         latest.current.preferredRouteAppId === owner.routeAppId &&
         owner.paths.has(latest.current.currentPathname);
       const viewScope = {
         isCurrent,
+        isStopped: () => owner.stopped,
         onRouteAdopted: (pathname: string) => {
           if (isCurrent()) owner.paths.add(pathname);
         },
@@ -220,6 +294,7 @@ export function useChatSubmitHandler({
       const appConfig = await resolveChatSubmitAppConfig({
         conversationAppId,
         preferredRouteAppId,
+        targetAppId,
         ensureAppReady,
         validateConfig,
         onErrorMessage: errorMessage => {
@@ -238,12 +313,21 @@ export function useChatSubmitHandler({
         return;
       }
 
+      const unregister = registerChatInputSubmission(owner.draftScope);
       try {
+        chatSubmissionOwners.set(isSubmittingRef, {
+          appConfig,
+          isCurrent,
+          onStopped: () => {
+            owner.stopped = true;
+            owner.active = false;
+          },
+        });
         await executeChatSubmit({
           onAccepted: accepted => acceptInput(appConfig.appId, accepted),
           viewScope,
           message,
-          files,
+          files: submittedFiles,
           inputs,
           currentUserId,
           appConfig,
@@ -285,6 +369,7 @@ export function useChatSubmitHandler({
           incompleteAnswerMessage,
         });
       } finally {
+        unregister();
         if (isCurrent()) isSubmittingRef.current = false;
       }
     },

@@ -9,6 +9,9 @@ export interface AgentToolSummary {
   name: string;
   status: string;
   summary?: string;
+  runId?: string;
+  messageId?: string;
+  order?: number;
 }
 
 export interface AgentViewState {
@@ -35,10 +38,21 @@ export function agentToolsFromMessages(
         typeof tool.status !== 'string'
       )
         continue;
-      tools.set(tool.toolCallId, {
+      const runId =
+        typeof tool.runId === 'string'
+          ? tool.runId
+          : message.metadata?.backend_run_id;
+      tools.set(JSON.stringify([runId, tool.toolCallId]), {
         toolCallId: tool.toolCallId,
         name: tool.name.slice(0, 100),
         status: tool.status.slice(0, 40),
+        ...(typeof runId === 'string' ? { runId } : {}),
+        ...(typeof tool.messageId === 'string'
+          ? { messageId: tool.messageId }
+          : {}),
+        ...(Number.isSafeInteger(tool.order) && Number(tool.order) >= 0
+          ? { order: Number(tool.order) }
+          : {}),
         ...(typeof tool.summary === 'string'
           ? { summary: tool.summary.slice(0, 2000) }
           : {}),
@@ -57,6 +71,11 @@ export function reduceAgentEvent(
       ...state,
       conversationId: event.conversationId,
       runId: event.runId,
+      messages: state.messages.map((message, index) =>
+        index === state.messages.length - 1 && message.role === 'user'
+          ? { ...message, id: event.userMessageId }
+          : message
+      ),
       run: {
         id: event.runId,
         executionStatus: 'running',
@@ -77,7 +96,15 @@ export function reduceAgentEvent(
           )
         : [
             ...state.messages,
-            { id: event.messageId, role: 'assistant', content: event.delta },
+            {
+              id: event.messageId,
+              role: 'assistant',
+              content: event.delta,
+              metadata: {
+                backend_run_id: event.runId || state.runId,
+                projection_order: event.order,
+              },
+            },
           ],
     };
   }
@@ -85,16 +112,69 @@ export function reduceAgentEvent(
     return {
       ...state,
       tools: [
-        ...state.tools.filter(tool => tool.toolCallId !== event.toolCallId),
+        ...state.tools.filter(
+          tool =>
+            tool.toolCallId !== event.toolCallId ||
+            tool.runId !== (event.runId || state.runId)
+        ),
         {
           toolCallId: event.toolCallId,
           name: event.name,
           status: event.status,
           summary: event.summary,
+          runId: event.runId || state.runId,
+          messageId: event.messageId,
+          order: event.order,
         },
       ],
     };
   return { ...state, run: event };
+}
+
+export type AgentTimelineItem =
+  | { type: 'message'; message: AgentMessage }
+  | { type: 'tool'; tool: AgentToolSummary };
+
+export function agentTimeline(state: AgentViewState): AgentTimelineItem[] {
+  const result: AgentTimelineItem[] = [];
+  const rendered = new Set<AgentToolSummary>();
+  for (let index = 0; index < state.messages.length; index += 1) {
+    const message = state.messages[index];
+    const runId = message.metadata?.backend_run_id;
+    if (message.role !== 'assistant' || typeof runId !== 'string') {
+      result.push({ type: 'message', message });
+      continue;
+    }
+    const group: AgentTimelineItem[] = [{ type: 'message', message }];
+    while (
+      state.messages[index + 1]?.role === 'assistant' &&
+      state.messages[index + 1]?.metadata?.backend_run_id === runId
+    ) {
+      group.push({ type: 'message', message: state.messages[++index] });
+    }
+    for (const tool of state.tools) {
+      if (tool.runId !== runId || rendered.has(tool)) continue;
+      group.push({ type: 'tool', tool });
+      rendered.add(tool);
+    }
+    const order = (item: AgentTimelineItem) =>
+      item.type === 'tool'
+        ? item.tool.order
+        : item.message.metadata?.projection_order;
+    group.sort((left, right) => {
+      const leftOrder = order(left);
+      const rightOrder = order(right);
+      return (
+        (typeof leftOrder === 'number' ? leftOrder : Infinity) -
+        (typeof rightOrder === 'number' ? rightOrder : Infinity)
+      );
+    });
+    result.push(...group);
+  }
+  for (const tool of state.tools) {
+    if (!rendered.has(tool)) result.push({ type: 'tool', tool });
+  }
+  return result;
 }
 
 export function markAgentStreamInterrupted(

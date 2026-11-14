@@ -1,3 +1,4 @@
+import type { useFileTypes } from '@lib/hooks/use-file-types';
 import { cn } from '@lib/utils';
 import { ArrowUpIcon, Loader2, Square } from 'lucide-react';
 
@@ -9,6 +10,8 @@ import { ChatButtonArea } from './layout';
 import { ModelSelectorButton } from './model-selector-button';
 
 interface ChatInputActionsProps {
+  fileConfig: ReturnType<typeof useFileTypes>;
+  attachmentCount: number;
   attachmentAriaLabel: string;
   isLocalSubmitting: boolean;
   isProcessing: boolean;
@@ -24,6 +27,8 @@ interface ChatInputActionsProps {
 }
 
 export function ChatInputActions({
+  fileConfig,
+  attachmentCount,
   attachmentAriaLabel,
   isLocalSubmitting,
   isProcessing,
@@ -57,6 +62,8 @@ export function ChatInputActions({
           style={{ transitionDelay: showButtons ? '0ms' : '0ms' }}
         >
           <FileTypeSelector
+            config={fileConfig}
+            attachmentCount={attachmentCount}
             onFileSelect={onFileSelect}
             disabled={isUploading || isProcessing}
             ariaLabel={attachmentAriaLabel}

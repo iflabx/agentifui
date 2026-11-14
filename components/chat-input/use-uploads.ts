@@ -1,5 +1,6 @@
 import { uploadDifyFile } from '@lib/services/dify/file-service';
 import { useAttachmentStore } from '@lib/stores/attachment-store';
+import { useChatInputStore } from '@lib/stores/chat-input-store';
 import { useNotificationStore } from '@lib/stores/ui/notification-store';
 
 import { useCallback } from 'react';
@@ -19,9 +20,15 @@ export function useChatInputUploads({
   sessionUserId,
   t,
 }: UseChatInputUploadsInput) {
+  const actorEpoch = useChatInputStore(state => state.actorEpoch);
+  const isCurrentActor = useCallback(() => {
+    const actor = useChatInputStore.getState();
+    return actor.actorId === sessionUserId && actor.actorEpoch === actorEpoch;
+  }, [sessionUserId, actorEpoch]);
   const upload = useCallback(
     async (fileId: string) => {
-      if (!scope || !currentAppId || !sessionUserId) return;
+      if (!scope || !currentAppId || !sessionUserId || !isCurrentActor())
+        return;
       const store = useAttachmentStore.getState();
       const attachment = store.getFiles(scope).find(file => file.id === fileId);
       if (!attachment) return;
@@ -33,22 +40,28 @@ export function useChatInputUploads({
           attachment.file,
           sessionUserId
         );
-        useAttachmentStore
-          .getState()
-          .finishUpload(scope, fileId, attempt, { uploadedId: response.id });
+        if (!isCurrentActor()) return;
+        useAttachmentStore.getState().finishUpload(scope, fileId, attempt, {
+          uploadedId: response.id,
+          appId: currentAppId,
+          actorId: sessionUserId,
+          actorEpoch,
+        });
       } catch (error) {
+        if (!isCurrentActor()) return;
         useAttachmentStore.getState().finishUpload(scope, fileId, attempt, {
           error:
             error instanceof Error ? error.message : t('input.uploadFailed'),
         });
       }
     },
-    [scope, currentAppId, sessionUserId, t]
+    [scope, currentAppId, sessionUserId, t, isCurrentActor, actorEpoch]
   );
 
   const handleFileSelect = useCallback(
     (files: FileList | null) => {
       if (!files?.length) return;
+      if (!isCurrentActor()) return;
       if (!scope || !currentAppId || !sessionUserId) {
         useNotificationStore
           .getState()
@@ -65,7 +78,7 @@ export function useChatInputUploads({
           void upload(file.id);
         });
     },
-    [scope, currentAppId, sessionUserId, t, upload]
+    [scope, currentAppId, sessionUserId, t, upload, isCurrentActor]
   );
 
   return { handleFileSelect, handleRetryUpload: upload };

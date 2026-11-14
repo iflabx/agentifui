@@ -5,6 +5,8 @@ import { ChatInputBackdrop } from '@components/chat/chat-input-backdrop';
 import { AssistantMessage } from '@components/chat/messages/assistant-message/assistant-message';
 import { UserMessage } from '@components/chat/messages/user-message/user-message';
 import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
+import { formatUiErrorMessage, toUiError } from '@lib/errors/ui-error';
+import { localizeChatModerationMessage } from '@lib/hooks/chat-interface/error-utils';
 import { useChatWidth } from '@lib/hooks/use-chat-width';
 import { agentRunSaved } from '@lib/services/client/langchain-api';
 import { useLangchainDraftStore } from '@lib/stores/langchain-draft-store';
@@ -14,6 +16,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 
+import { agentTimeline } from './state';
 import { useAgentChat } from './use-agent-chat';
 
 interface AgentChatProps {
@@ -52,6 +55,26 @@ function AgentChatSession({
 }: AgentChatProps & { actorId: string; authLoading: boolean }) {
   const t = useTranslations('langchain');
   const chat = useAgentChat(appId, conversationId);
+  const moderationT = useTranslations('errors.system.moderation');
+  const uiError = chat.error?.detail
+    ? toUiError(chat.error, t('requestFailed'), 'agent-generic')
+    : null;
+  const errorMessage = !chat.error
+    ? null
+    : chat.error.status === 401
+      ? t('loginRequired')
+      : [403, 404].includes(chat.error.status)
+        ? t('unavailable')
+        : uiError
+          ? localizeChatModerationMessage(uiError, moderationT) ||
+            formatUiErrorMessage({
+              ...uiError,
+              message:
+                uiError.message === uiError.code
+                  ? t('requestFailed')
+                  : uiError.message,
+            })
+          : t('requestFailed');
   const { widthClass, paddingClass } = useChatWidth();
   const actorEpoch = useLangchainDraftStore(state =>
     state.actorId === actorId ? state.actorEpoch : null
@@ -174,31 +197,45 @@ function AgentChatSession({
       >
         <div className={cn('mx-auto w-full pt-4', widthClass, paddingClass)}>
           {chat.historyLoading && <p role="status">{t('loading')}</p>}
-          {chat.error && (
+          {errorMessage && (
             <p
               role="alert"
               className="rounded-lg bg-amber-50 p-3 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
             >
-              {t(
-                chat.error === 401
-                  ? 'loginRequired'
-                  : [403, 404].includes(chat.error)
-                    ? 'unavailable'
-                    : chat.error === 429
-                      ? 'rateLimited'
-                      : 'requestFailed'
-              )}
+              {errorMessage}
             </p>
           )}
-          {chat.view.messages.map((message, index) =>
-            message.role === 'user' ? (
+          {agentTimeline(chat.view).map(item => {
+            if (item.type === 'tool') {
+              const tool = item.tool;
+              return (
+                <div
+                  key={JSON.stringify([tool.runId, tool.toolCallId])}
+                  className="my-3 rounded-lg border border-stone-200 p-3 text-sm dark:border-stone-700"
+                >
+                  <strong>
+                    {t(tool.order === undefined ? 'toolSummary' : 'tool')}:{' '}
+                    {tool.name}
+                  </strong>
+                  <p>{tool.status}</p>
+                  {tool.summary && (
+                    <p className="break-words whitespace-pre-wrap text-stone-500">
+                      {tool.summary}
+                    </p>
+                  )}
+                </div>
+              );
+            }
+            const { message } = item;
+            const index = chat.view.messages.indexOf(message);
+            return message.role === 'user' ? (
               <UserMessage
                 key={message.id}
                 id={message.id}
                 content={message.content}
                 conversationAppId={appId}
               />
-            ) : message.role === 'assistant' ? (
+            ) : message.role === 'assistant' && message.content ? (
               <AssistantMessage
                 key={message.id}
                 id={message.id}
@@ -210,24 +247,8 @@ function AgentChatSession({
                 }
                 wasManuallyStopped={false}
               />
-            ) : null
-          )}
-          {chat.view.tools.map(tool => (
-            <div
-              key={tool.toolCallId}
-              className="my-3 rounded-lg border border-stone-200 p-3 text-sm dark:border-stone-700"
-            >
-              <strong>
-                {t('tool')}: {tool.name}
-              </strong>
-              <p>{tool.status}</p>
-              {tool.summary && (
-                <p className="break-words whitespace-pre-wrap text-stone-500">
-                  {tool.summary}
-                </p>
-              )}
-            </div>
-          ))}
+            ) : null;
+          })}
           {runLabel && (
             <p role="status" className="text-sm text-stone-500">
               {t(runLabel)}
@@ -237,6 +258,20 @@ function AgentChatSession({
             <p className="text-sm text-amber-700 dark:text-amber-300">
               {t('noAutomaticRetry')}
             </p>
+          )}
+          {chat.unconfirmed && !chat.busy && (
+            <div>
+              {chat.statusCheckExhausted && (
+                <p role="status">{t('statusCheckExhausted')}</p>
+              )}
+              <button
+                type="button"
+                onClick={chat.retryStatus}
+                className="my-2 text-sm underline"
+              >
+                {t('retryStatus')}
+              </button>
+            </div>
           )}
         </div>
       </div>

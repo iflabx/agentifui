@@ -29,6 +29,8 @@ interface FilePreviewState {
   clearCache: () => void;
 }
 
+let previewGeneration = 0;
+
 export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
   // Basic State
   isPreviewOpen: false,
@@ -44,6 +46,7 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
 
   // Actions
   openPreview: async (file: MessageAttachment, appId?: string) => {
+    const generation = ++previewGeneration;
     const previewFileId = file.preview_file_id || file.upload_file_id;
 
     // Preserve the file's original app context first; only fall back to the caller appId.
@@ -99,6 +102,7 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
         previewFileId,
         { as_attachment: false } // Preview mode
       );
+      if (generation !== previewGeneration) return;
 
       // Store in cache
       const cached = cacheStore.set(
@@ -121,6 +125,7 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
         error: null,
       });
     } catch (error) {
+      if (generation !== previewGeneration) return;
       const errorMessage =
         error instanceof Error ? error.message : 'Failed to preview file';
       set({
@@ -133,6 +138,7 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
   },
 
   closePreview: () => {
+    previewGeneration += 1;
     // Clean up any object URLs to prevent memory leaks
     const { previewContent } = get();
     if (previewContent) {
@@ -150,6 +156,7 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
   },
 
   downloadFile: async () => {
+    const generation = previewGeneration;
     const { currentPreviewFile } = get();
     if (!currentPreviewFile) return;
     const previewFileId =
@@ -168,6 +175,7 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
         previewFileId,
         { as_attachment: true } // Download mode
       );
+      if (generation !== previewGeneration) return;
 
       // Create download link
       const url = URL.createObjectURL(response.content);
@@ -179,6 +187,7 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
     } catch (error) {
+      if (generation !== previewGeneration) return;
       const errorMessage =
         error instanceof Error ? error.message : 'Failed to download file';
       set({ error: errorMessage });
@@ -188,6 +197,7 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
   clearError: () => set({ error: null }),
 
   clearCache: () => {
+    previewGeneration += 1;
     const cacheStore = useFilePreviewCacheStore.getState();
     cacheStore.clear();
 

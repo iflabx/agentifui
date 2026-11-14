@@ -12,6 +12,7 @@ const COMPLETION_METADATA_WAIT_TIMEOUT_MS = 1500;
 interface ConsumeChatAnswerStreamInput {
   onInterrupted?: (snapshot: ChatAnswerStreamResult) => void;
   isCurrent?: () => boolean;
+  isStopped?: () => boolean;
   answerStream: AsyncGenerator<string, void, undefined>;
   assistantMessageId: string | null;
   isNewConversationFlow: boolean;
@@ -38,6 +39,7 @@ export async function consumeChatAnswerStream(
 
   try {
     for await (const answerChunk of input.answerStream) {
+      if (input.isStopped?.()) break;
       assistantText += answerChunk;
       if (input.isCurrent && !input.isCurrent()) continue;
 

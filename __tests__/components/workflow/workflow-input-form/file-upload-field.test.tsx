@@ -1,5 +1,7 @@
 import { FileUploadField } from '@components/workflow/workflow-input-form/file-upload-field';
 import { uploadDifyFile } from '@lib/services/dify/file-service';
+import { syncChatDraftActor } from '@lib/stores/chat-draft-lifecycle';
+import { useChatInputStore } from '@lib/stores/chat-input-store';
 import { fireEvent, render, waitFor } from '@testing-library/react';
 
 import { act } from 'react';
@@ -26,6 +28,8 @@ jest.mock('@lib/services/dify/file-service', () => ({
 
 describe('FileUploadField', () => {
   beforeEach(() => {
+    jest.clearAllMocks();
+    syncChatDraftActor('user-1');
     jest.useFakeTimers();
     (uploadDifyFile as jest.Mock).mockResolvedValue({
       id: 'uploaded-1',
@@ -70,7 +74,7 @@ describe('FileUploadField', () => {
 
     await waitFor(() => {
       expect(uploadDifyFile).toHaveBeenCalledWith(
-        'app-1',
+        'workflow-app-1',
         expect.any(File),
         'user-1'
       );
@@ -84,6 +88,9 @@ describe('FileUploadField', () => {
         name: 'demo.txt',
         size: file.size,
         mime_type: 'text/plain',
+        app_id: 'workflow-app-1',
+        actor_id: 'user-1',
+        actor_epoch: useChatInputStore.getState().actorEpoch,
       });
     });
   });

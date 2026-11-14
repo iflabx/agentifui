@@ -12,6 +12,10 @@ general policy platform.
 Apply `20261113150000_add_backend_conversation_runs.sql` before
 `20261114160000_add_agent_submission_governance.sql`, using the normal migration
 process. The latter is required for both backends, including Dify-only use.
+Then apply `20261114170000_protect_pending_agent_credentials_and_quota.sql`
+before deploying the matching API. It adds non-secret credential versions and
+protects unresolved counted quota as well as reserved quota. Do not rewrite
+previously applied migrations.
 Deploy API and browser changes together; already cached pages must refresh.
 Missing governance storage fails closed with 503 rather than invoking upstream.
 Do not apply migrations without an isolated PostgreSQL upgrade/RLS/concurrency
@@ -108,8 +112,10 @@ or `backend_runs` before invoking the native service. P2 does not add
 must preserve/backfill this task identity rather than introduce another ledger.
 
 Deleting a resolved quota permission nulls its historical task association;
-counted history does not permanently block revocation or group deletion.
-Unconfirmed reserved quota cannot lose its permission row. Active/unknown task
+completed counted history does not permanently block group deletion.
+Reserved quota and counted quota with unresolved tasks cannot lose their
+permission row, be repointed, or have usage reset. Disabling a permission
+revokes access immediately without deleting its usage history. Active/unknown task
 deletion and target identity changes are guarded in the database; ordinary
 display edits and provider disabling remain available. User/app historical
 deletion keeps existing cascade behavior where other existing constraints allow
@@ -127,6 +133,21 @@ SUPERUSER/BYPASSRLS: counted permission deletion, reserved deletion/reset
 rejection, active deletion protection, display/config changes, RLS isolation,
 two-client last-quota admission, acceptance replay, and failed-save replay.
 Unit tests with fake PostgreSQL clients do not establish these DB properties.
+
+Effective default-key changes are rejected while affected tasks remain
+unresolved. Administrative credential edits and admission coordinate on the
+same application lock; admission rechecks a non-secret selected-key version
+to reject a key that became stale before registration or moderation finished.
+Key material is not part of the conversation target fingerprint, so completed
+tasks do not prevent normal same-identity rotation. Display or unused-key edits
+remain available. Disable the application/provider or revoke a compromised key
+upstream in an emergency; this does not claim to cancel an accepted task.
+
+Descriptors distinguish backend support from `effectiveActions.cancellation`
+for the current actor and application. Workflow cancellation remains admin-only;
+LangChain cancellation remains unsupported. Both concurrency and usage limits
+may return 429, but `AGENT_CONCURRENCY_LIMIT` is retryable after active work
+settles, while `AGENT_QUOTA_EXCEEDED` requires allowance adjustment.
 
 ## Adding Another Backend
 

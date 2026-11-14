@@ -111,6 +111,7 @@ export async function resolveDifyTargetConfig(
     ok: true,
     targetConfig: {
       serviceInstanceId: difyConfig.serviceInstanceId,
+      credentialVersion: difyConfig.credentialVersion,
       appInstanceId: difyConfig.appId,
       difyApiKey: difyConfig.apiKey,
       difyApiUrl: difyConfig.apiUrl,

@@ -188,6 +188,7 @@ export function useChatInterface(
   );
 
   const handleStopProcessing = useChatStopHandler({
+    currentPathname,
     currentUserId,
     currentAppId,
     currentAppInstance,

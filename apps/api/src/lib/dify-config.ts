@@ -23,6 +23,7 @@ interface ServiceInstanceWithProviderRow {
 export interface DifyAppConfig {
   serviceInstanceId: string;
   apiKey: string;
+  credentialVersion?: string;
   apiUrl: string;
   appId: string;
   displayName?: string;
@@ -230,13 +231,16 @@ export async function resolveDifyConfig(
     return null;
   }
 
-  const apiKeyRows = await queryRowsWithPgSystemContext<{ key_value: string }>(
+  const apiKeyRows = await queryRowsWithPgSystemContext<{
+    key_value: string;
+    credential_version?: string;
+  }>(
     `
-      SELECT key_value
+      SELECT key_value, credential_version::text
       FROM api_keys
       WHERE service_instance_id = $1::uuid
         AND is_default = TRUE
-      ORDER BY created_at ASC
+      ORDER BY created_at ASC, id ASC
       LIMIT 1
     `,
     [serviceInstance.id]
@@ -259,6 +263,7 @@ export async function resolveDifyConfig(
   return {
     serviceInstanceId: serviceInstance.id,
     apiKey,
+    credentialVersion: apiKeyRows[0]?.credential_version,
     apiUrl: serviceInstance.provider_base_url,
     appId: serviceInstance.instance_id,
     displayName: serviceInstance.display_name || serviceInstance.instance_id,

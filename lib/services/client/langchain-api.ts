@@ -1,3 +1,9 @@
+import {
+  type AppErrorDetail,
+  AppRequestError,
+  extractAppErrorDetail,
+} from '@lib/errors/app-error';
+
 export interface AgentConversation {
   id: string;
   title: string;
@@ -18,6 +24,7 @@ export interface AgentRun {
   executionStatus: string;
   persistenceStatus: string;
   errorCode?: string;
+  recoveryMessages?: AgentMessage[];
 }
 
 export type AgentEvent =
@@ -27,20 +34,54 @@ export type AgentEvent =
       runId: string;
       userMessageId: string;
     }
-  | { type: 'text'; messageId: string; delta: string }
+  | {
+      type: 'text';
+      messageId: string;
+      delta: string;
+      runId?: string;
+      order?: number;
+    }
   | {
       type: 'tool';
       toolCallId: string;
       name: string;
       status: string;
       summary?: string;
+      runId?: string;
+      messageId?: string;
+      order?: number;
     }
   | ({ type: 'status' } & AgentRun);
 
-export class AgentRequestError extends Error {
-  constructor(public readonly status: number) {
-    super(`Agent request failed (${status})`);
+export class AgentRequestError extends AppRequestError {
+  constructor(status: number, detail?: AppErrorDetail | null) {
+    super(
+      detail?.userMessage || `Agent request failed (${status})`,
+      status,
+      detail
+    );
+    this.name = 'AgentRequestError';
   }
+}
+
+async function readAgentRequestError(
+  response: Response
+): Promise<AgentRequestError> {
+  const detail = extractAppErrorDetail(await response.json().catch(() => null));
+  return new AgentRequestError(
+    response.status,
+    detail
+      ? {
+          code: detail.code,
+          source: detail.source,
+          severity: detail.severity,
+          retryable: detail.retryable,
+          userMessage: detail.userMessage,
+          requestId: detail.requestId,
+          occurredAt: detail.occurredAt,
+        }
+      : null
+  );
 }
 
 export function agentPath(appId: string, suffix = ''): string {
@@ -60,7 +101,7 @@ export async function agentRequest<T>(
       ? AbortSignal.any([init.signal, AbortSignal.timeout(15000)])
       : AbortSignal.timeout(15000),
   });
-  if (!response.ok) throw new AgentRequestError(response.status);
+  if (!response.ok) throw await readAgentRequestError(response);
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
@@ -94,7 +135,7 @@ export async function consumeAgentStream(
   response: Response,
   onEvent: (event: AgentEvent) => void
 ): Promise<void> {
-  if (!response.ok) throw new AgentRequestError(response.status);
+  if (!response.ok) throw await readAgentRequestError(response);
   if (!response.body) throw new Error('Agent stream unavailable');
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -130,7 +171,7 @@ export function agentRunSettled(run: AgentRun): boolean {
       'timeout',
       'interrupted',
       'cancelled',
-    ].includes(run.executionStatus) && run.persistenceStatus !== 'pending'
+    ].includes(run.executionStatus) && run.persistenceStatus === 'saved'
   );
 }
 

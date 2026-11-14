@@ -19,6 +19,7 @@ export interface AgentSavedMessage {
   id: string;
   content: string;
   tools?: unknown;
+  order?: number;
 }
 
 export interface AgentRunResult {
@@ -433,6 +434,9 @@ function normalizeResult(result: AgentRunResult): AgentRunResult {
     return {
       id,
       content: message.content,
+      ...(Number.isSafeInteger(message.order) && message.order! >= 0
+        ? { order: message.order }
+        : {}),
       ...(message.tools === undefined ? {} : { tools: message.tools }),
     };
   });
@@ -500,6 +504,9 @@ export async function saveRunResult(
           const metadata = {
             backend_type: 'langchain',
             backend_run_id: id,
+            ...(message.order === undefined
+              ? {}
+              : { projection_order: message.order }),
             ...(message.tools === undefined ? {} : { tools: message.tools }),
           };
           const inserted = await client.query(
