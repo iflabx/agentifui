@@ -23,6 +23,7 @@ const SUBMISSION = '40000000-0000-4000-8000-000000000001';
 const RUN = '50000000-0000-4000-8000-000000000001';
 const USER_MESSAGE = '60000000-0000-4000-8000-000000000001';
 const ASSISTANT_MESSAGE = '60000000-0000-4000-8000-000000000002';
+const ROOT = '70000000-0000-4000-8000-000000000001';
 const BASE_URL = 'https://example.invalid';
 const FINGERPRINT = agentConfigFingerprint(APP, BASE_URL, 'agent');
 const input = {
@@ -176,6 +177,71 @@ describe('trusted agent run repository', () => {
       false
     );
   });
+
+  it.each(['reserved', 'submitting', 'running', 'unknown'] as const)(
+    'links an existing %s run without reserving or charging historical quota',
+    async executionStatus => {
+      replay = true;
+      run.execution_status = executionStatus;
+      await expect(
+        reserveRun({ ...input, governanceTaskId: ROOT })
+      ).resolves.toEqual({ run, replayed: true });
+      const lockedRun = query.mock.calls.findIndex(([sql]) =>
+        String(sql).includes('WHERE r.user_id =')
+      );
+      const binding = query.mock.calls.findIndex(([sql]) =>
+        String(sql).includes('SELECT b.conversation_id')
+      );
+      expect(query.mock.calls[lockedRun][0]).toContain('FOR UPDATE OF r');
+      expect(lockedRun).toBeLessThan(binding);
+      expect(query).toHaveBeenCalledWith(
+        expect.stringContaining("state IN ('registered','unknown')"),
+        [ROOT, RUN, 'unknown', USER, APP]
+      );
+      expect(
+        query.mock.calls.some(([sql]) =>
+          /INSERT INTO|UPDATE group_app_permissions|count\(\*\)/.test(
+            String(sql)
+          )
+        )
+      ).toBe(false);
+    }
+  );
+
+  it.each(['success', 'error', 'interrupted'] as const)(
+    'refreshes a migrated task from a now %s run without charging again',
+    async executionStatus => {
+      replay = true;
+      run.execution_status = 'running';
+      await reserveRun({ ...input, governanceTaskId: ROOT });
+      run.execution_status = executionStatus;
+      await reserveRun({ ...input, governanceTaskId: ROOT });
+      const updates = query.mock.calls.filter(([sql]) =>
+        String(sql).includes('UPDATE agent_submissions')
+      );
+      expect(updates.map(([, params]) => params)).toEqual([
+        [ROOT, RUN, 'unknown', USER, APP],
+        [ROOT, RUN, 'finished', USER, APP],
+      ]);
+      const statement = String(updates[1][0]);
+      for (const guard of [
+        "backend_type = 'langchain'",
+        "quota_state = 'none'",
+        'user_id = $4::uuid',
+        'service_instance_id = $5::uuid',
+        '(run_id IS NULL OR run_id = $2::uuid)',
+        "state IN ('registered','unknown')",
+      ]) {
+        expect(statement).toContain(guard);
+      }
+      expect(statement.split('WHERE')[0]).not.toContain('quota_state');
+      expect(
+        query.mock.calls.some(([sql]) =>
+          String(sql).includes('UPDATE group_app_permissions')
+        )
+      ).toBe(false);
+    }
+  );
 
   it('rejects changed text or a different local conversation for the same submission', async () => {
     replay = true;

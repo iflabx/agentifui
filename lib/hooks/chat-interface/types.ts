@@ -65,3 +65,19 @@ export interface ChatStreamingCheckSnapshot {
   content: string;
   lastUpdateTime: number;
 }
+export interface ChatViewScope {
+  isCurrent: () => boolean;
+  onRouteAdopted: (pathname: string) => void;
+}
+
+export interface ChatSubmissionBinding {
+  externalId: string | null;
+  taskId: string | null;
+  dbConversationId?: string | null;
+}
+
+export interface ChatSubmissionAccepted {
+  externalId: string;
+  taskId: string;
+  conversationPersistencePromise?: Promise<string | null>;
+}

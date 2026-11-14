@@ -1,6 +1,10 @@
 import { parseSseStream } from '@lib/utils/sse-parser';
 
 import {
+  type DifySubmissionOptions,
+  difySubmissionHeaders,
+} from '../submission';
+import {
   DifyChatRequestPayload,
   DifySseEvent,
   DifySseIterationCompletedEvent,
@@ -471,18 +475,19 @@ export async function streamDifyChat(
   payload: DifyChatRequestPayload,
   appId: string,
   onConversationIdReceived?: (id: string) => void,
-  onNodeEvent?: (event: NodeEvent) => void
+  onNodeEvent?: (event: NodeEvent) => void,
+  options?: DifySubmissionOptions,
+  onAccepted?: (binding: { externalId: string; taskId: string }) => void
 ): Promise<DifyStreamResponse> {
   console.log('[Dify Service] Sending request to proxy:', payload);
 
   const apiUrl = `${DIFY_API_BASE_URL}/${appId}/chat-messages`;
+  const headers = difySubmissionHeaders(options);
 
   try {
     const response = await fetch(apiUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(payload),
     });
 
@@ -504,6 +509,7 @@ export async function streamDifyChat(
     const stream = response.body;
     let conversationId: string | null = null;
     let taskId: string | null = null;
+    let acceptanceEmitted = false;
     const callbackCalledRef = { value: false };
 
     let completionResolve: (value: {
@@ -647,7 +653,9 @@ export async function streamDifyChat(
             );
           }
 
-          if (event.conversation_id) {
+          const isRejectedEvent =
+            event.event === 'error' || event.event === 'workflow_paused';
+          if (!isRejectedEvent && event.conversation_id) {
             if (!conversationId) {
               conversationId = event.conversation_id;
               emitConversationId(
@@ -666,9 +674,31 @@ export async function streamDifyChat(
               );
             }
           }
-          if ('task_id' in event && event.task_id && !taskId) {
+          if (
+            !isRejectedEvent &&
+            'task_id' in event &&
+            event.task_id &&
+            !taskId
+          ) {
             taskId = event.task_id;
             console.log('[Dify Service] Extracted taskId:', taskId);
+          }
+
+          if (
+            !isRejectedEvent &&
+            conversationId &&
+            taskId &&
+            !acceptanceEmitted
+          ) {
+            acceptanceEmitted = true;
+            try {
+              onAccepted?.({ externalId: conversationId, taskId });
+            } catch (callbackError) {
+              console.error(
+                '[Dify Service] Acceptance callback failed:',
+                callbackError
+              );
+            }
           }
 
           switch (event.event) {

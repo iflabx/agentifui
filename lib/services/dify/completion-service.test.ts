@@ -93,7 +93,10 @@ describe('executeDifyCompletion', () => {
       '/api/dify/app-1/completion-messages',
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-agentifui-submission-id': expect.any(String),
+        },
         body: JSON.stringify({ ...request, response_mode: 'blocking' }),
       }
     );
@@ -191,7 +194,10 @@ describe('streamDifyCompletion', () => {
       '/api/dify/app-1/completion-messages',
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-agentifui-submission-id': expect.any(String),
+        },
         body: JSON.stringify({ ...payload, response_mode: 'streaming' }),
       }
     );

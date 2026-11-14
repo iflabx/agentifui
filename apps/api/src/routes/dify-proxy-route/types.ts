@@ -20,6 +20,9 @@ export interface DifyProxyRequestContext {
 }
 
 export interface DifyProxyTargetConfig {
+  serviceInstanceId?: string;
+  appInstanceId?: string;
+  rootTaskId?: string;
   difyApiKey: string;
   difyApiUrl: string;
   appType?: string;

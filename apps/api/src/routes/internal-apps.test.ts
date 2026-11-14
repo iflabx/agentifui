@@ -2,6 +2,7 @@
 import Fastify from 'fastify';
 
 import type { ApiRuntimeConfig } from '../config';
+import { LANGCHAIN_CAPABILITIES } from '../lib/agent-backends';
 import {
   queryRowsWithPgSystemContext,
   queryRowsWithPgUserContext,
@@ -140,7 +141,7 @@ describe('LangChain application metadata boundary', () => {
           backend_type: 'langchain',
           langchain: {
             assistant_id: 'agent',
-            capabilities: { streaming: true, cancellation: false },
+            capabilities: LANGCHAIN_CAPABILITIES,
           },
           app_metadata: {
             brief_description: 'Safe description',

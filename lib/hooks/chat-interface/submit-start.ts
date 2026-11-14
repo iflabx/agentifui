@@ -12,7 +12,13 @@ import {
   persistUserMessageIfNeeded,
   resolveDbConversationUuidByExternalId,
 } from './conversation-db';
-import type { ChatStreamCompletionData, DifyLocalFile } from './types';
+import type {
+  ChatStreamCompletionData,
+  ChatSubmissionAccepted,
+  ChatSubmissionBinding,
+  ChatViewScope,
+  DifyLocalFile,
+} from './types';
 
 export interface ChatSubmitStartResult {
   answerStream?: AsyncGenerator<string, void, undefined>;
@@ -21,6 +27,7 @@ export interface ChatSubmitStartResult {
   finalDbConvUUID: string | null;
   completionPromise?: Promise<ChatStreamCompletionData>;
   conversationPersistencePromise?: Promise<string | null>;
+  getBinding?: () => ChatSubmissionBinding;
 }
 
 interface PrepareChatSubmitConversationStateInput {
@@ -53,6 +60,8 @@ export function prepareChatSubmitConversationState(
 }
 
 interface StartNewChatConversationInput {
+  onAccepted?: (accepted: ChatSubmissionAccepted) => void;
+  viewScope?: ChatViewScope;
   payload: CreateConversationPayload;
   appId: string;
   currentUserId: string;
@@ -99,7 +108,9 @@ export async function startNewChatConversation(
         '[handleSubmit] DB ID callback done, user message saved, assistant message will be saved after streaming'
       );
     },
-    input.onNodeEvent
+    input.onNodeEvent,
+    input.viewScope,
+    input.onAccepted
   );
 
   if (creationResult.error) {
@@ -143,10 +154,17 @@ export async function startNewChatConversation(
     completionPromise: creationResult.completionPromise,
     conversationPersistencePromise:
       creationResult.conversationPersistencePromise,
+    getBinding: () => ({
+      externalId:
+        creationResult.getBinding?.().externalId || finalRealConvId || null,
+      taskId: creationResult.getBinding?.().taskId || finalTaskId || null,
+      dbConversationId: finalDbConvUUID,
+    }),
   };
 }
 
 interface StartExistingChatConversationInput {
+  onAccepted?: (accepted: ChatSubmissionAccepted) => void;
   message: string;
   inputs?: Record<string, unknown>;
   difyFiles?: DifyLocalFile[];
@@ -240,7 +258,9 @@ export async function startExistingChatConversation(
         }
       }
     },
-    input.onNodeEvent
+    input.onNodeEvent,
+    undefined,
+    input.onAccepted
   );
 
   const finalRealConvId =
@@ -281,5 +301,11 @@ export async function startExistingChatConversation(
     finalTaskId,
     finalDbConvUUID,
     completionPromise,
+    getBinding: () => ({
+      externalId:
+        streamServiceResponse.getConversationId() || input.difyConversationId,
+      taskId: streamServiceResponse.getTaskId(),
+      dbConversationId: finalDbConvUUID,
+    }),
   };
 }

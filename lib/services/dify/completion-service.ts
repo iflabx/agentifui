@@ -7,6 +7,10 @@
 import { parseSseStream } from '@lib/utils/sse-parser';
 
 import { extractUsage } from './chat-service/helpers';
+import {
+  type DifySubmissionOptions,
+  difySubmissionHeaders,
+} from './submission';
 import type {
   DifyApiError,
   DifyCompletionRequestPayload,
@@ -23,17 +27,17 @@ import type {
  */
 export async function executeDifyCompletion(
   appId: string,
-  payload: DifyCompletionRequestPayload
+  payload: DifyCompletionRequestPayload,
+  options?: DifySubmissionOptions
 ): Promise<DifyCompletionResponse> {
   const slug = 'completion-messages'; // Text-Generation API endpoint
   const apiUrl = `/api/dify/${appId}/${slug}`;
+  const headers = difySubmissionHeaders(options);
 
   try {
     const response = await fetch(apiUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify({ ...payload, response_mode: 'blocking' }),
     });
 
@@ -91,17 +95,17 @@ export async function executeDifyCompletion(
  */
 export async function streamDifyCompletion(
   appId: string,
-  payload: DifyCompletionRequestPayload
+  payload: DifyCompletionRequestPayload,
+  options?: DifySubmissionOptions
 ): Promise<DifyCompletionStreamResponse> {
   const slug = 'completion-messages'; // Text-Generation API endpoint
   const apiUrl = `/api/dify/${appId}/${slug}`;
+  const headers = difySubmissionHeaders(options);
 
   try {
     const response = await fetch(apiUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify({ ...payload, response_mode: 'streaming' }),
     });
 

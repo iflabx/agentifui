@@ -1,140 +1,162 @@
 import { create } from 'zustand';
 
-// Utility function to get the current route
-// Supports SSR environment to avoid hydration errors
-const getCurrentRoute = (): string => {
-  if (typeof window !== 'undefined') {
-    return window.location.pathname;
-  }
-  return 'default'; // Default route for SSR environment
-};
+export interface DraftSnapshot {
+  scope: string;
+  revision: number;
+  message: string;
+}
 
 interface ChatInputState {
-  // Store message content by route
-  // Each route maintains its own input content for better UX
   messagesByRoute: Record<string, string>;
+  revisionsByRoute: Record<string, number>;
+  aliases: Record<string, string>;
   currentRoute: string;
-
-  // Compatibility: keep original API unchanged
-  // Get message for current route via function
-  message: string; // Normal property, updated via computed
-  getMessage: () => string; // Manual getter function
+  actorId: string | null;
+  actorEpoch: number;
+  message: string;
+  getMessage: () => string;
   setMessage: (message: string) => void;
   clearMessage: () => void;
-
-  // Route management functions
   setCurrentRoute: (route: string) => void;
   clearAllMessages: () => void;
   clearRouteMessage: (route: string) => void;
-
-  // IME (input method) state
+  setActor: (actorId: string | null) => boolean;
+  snapshot: () => DraftSnapshot;
+  consumeSnapshot: (snapshot: DraftSnapshot) => void;
+  migrateScope: (source: string, target: string) => boolean;
+  resolveScope: (scope: string) => string;
   isComposing: boolean;
-  setIsComposing: (isComposing: boolean) => void;
-
-  // Chat UI state
+  setIsComposing: (value: boolean) => void;
   isWelcomeScreen: boolean;
-  setIsWelcomeScreen: (isWelcome: boolean) => void;
-
-  // Dark mode state
+  setIsWelcomeScreen: (value: boolean) => void;
   isDark: boolean;
   toggleDarkMode: () => void;
-  setDarkMode: (isDark: boolean) => void;
+  setDarkMode: (value: boolean) => void;
+}
+
+export function chatInputScope(
+  epoch: number,
+  actor: string,
+  app: string,
+  target: string
+) {
+  return JSON.stringify([epoch, actor, app, target]);
 }
 
 export const useChatInputStore = create<ChatInputState>((set, get) => ({
-  // Store message content by route
   messagesByRoute: {},
-  currentRoute: getCurrentRoute(),
-
-  // Compatibility: message property
-  // Returns message for current route, or empty string if not set
+  revisionsByRoute: {},
+  aliases: {},
+  currentRoute: 'default',
+  actorId: null,
+  actorEpoch: 0,
   message: '',
-
-  getMessage: () => {
+  resolveScope: scope => {
+    let resolved = scope;
+    while (get().aliases[resolved]) resolved = get().aliases[resolved];
+    return resolved;
+  },
+  getMessage: () => get().message,
+  setMessage: message => {
     const state = get();
-    return state.messagesByRoute[state.currentRoute] || '';
-  },
-
-  // Compatibility: setMessage
-  // Set message for current route, avoid unnecessary updates
-  setMessage: (message: string) => {
-    const state = get();
-    const currentMessage = state.messagesByRoute[state.currentRoute] || '';
-
-    // Prevent update if value is the same to avoid unnecessary state changes
-    if (currentMessage === message) return;
-
-    set(state => ({
-      messagesByRoute: {
-        ...state.messagesByRoute,
-        [state.currentRoute]: message,
-      },
-      // Also update message property for compatibility
-      message: message,
-    }));
-  },
-
-  // Compatibility: clearMessage
-  // Clear message for current route
-  clearMessage: () => {
-    set(state => ({
-      messagesByRoute: {
-        ...state.messagesByRoute,
-        [state.currentRoute]: '',
-      },
-      // Also update message property for compatibility
-      message: '',
-    }));
-  },
-
-  // Route management: set current route
-  setCurrentRoute: (route: string) => {
-    const state = get();
-    if (state.currentRoute !== route) {
-      // When switching route, update message property to new route's content
-      const newMessage = state.messagesByRoute[route] || '';
-      set({
-        currentRoute: route,
-        message: newMessage,
-      });
-    }
-  },
-
-  clearAllMessages: () => {
+    const scope = state.currentRoute;
+    if (state.message === message) return;
     set({
-      messagesByRoute: {},
-      message: '',
+      message,
+      messagesByRoute: { ...state.messagesByRoute, [scope]: message },
+      revisionsByRoute: {
+        ...state.revisionsByRoute,
+        [scope]: (state.revisionsByRoute[scope] || 0) + 1,
+      },
     });
   },
-
-  clearRouteMessage: (route: string) => {
+  clearMessage: () => get().setMessage(''),
+  setCurrentRoute: route => {
+    const scope = get().resolveScope(route);
+    if (scope === get().currentRoute) return;
+    set({
+      currentRoute: scope,
+      message: get().messagesByRoute[scope] || '',
+      isComposing: false,
+    });
+  },
+  clearAllMessages: () =>
+    set({
+      messagesByRoute: {},
+      revisionsByRoute: {},
+      aliases: {},
+      message: '',
+    }),
+  clearRouteMessage: route => {
+    const scope = get().resolveScope(route);
     set(state => {
-      const newMessages = { ...state.messagesByRoute };
-      delete newMessages[route];
-
-      // If deleting current route, also update message property
-      const newMessage = route === state.currentRoute ? '' : state.message;
-
+      const messagesByRoute = { ...state.messagesByRoute };
+      delete messagesByRoute[scope];
       return {
-        messagesByRoute: newMessages,
-        message: newMessage,
+        messagesByRoute,
+        revisionsByRoute: {
+          ...state.revisionsByRoute,
+          [scope]: (state.revisionsByRoute[scope] || 0) + 1,
+        },
+        message: scope === state.currentRoute ? '' : state.message,
       };
     });
   },
-
-  // IME (input method) state
-  isComposing: false,
-  setIsComposing: (isComposingValue: boolean) => {
-    if (get().isComposing !== isComposingValue) {
-      set({ isComposing: isComposingValue });
-    }
+  setActor: actorId => {
+    if (get().actorId === actorId) return false;
+    set(state => ({
+      actorId,
+      actorEpoch: state.actorEpoch + 1,
+      messagesByRoute: {},
+      revisionsByRoute: {},
+      aliases: {},
+      message: '',
+      currentRoute: 'default',
+      isComposing: false,
+    }));
+    return true;
   },
-
-  // Chat UI state
+  snapshot: () => ({
+    scope: get().currentRoute,
+    revision: get().revisionsByRoute[get().currentRoute] || 0,
+    message: get().message,
+  }),
+  consumeSnapshot: snapshot => {
+    const state = get();
+    const scope = state.resolveScope(snapshot.scope);
+    if (
+      state.messagesByRoute[scope] !== snapshot.message ||
+      (state.revisionsByRoute[scope] || 0) !== snapshot.revision
+    )
+      return;
+    state.clearRouteMessage(scope);
+  },
+  migrateScope: (source, target) => {
+    const state = get();
+    source = state.resolveScope(source);
+    target = state.resolveScope(target);
+    if (source === target) return true;
+    if (state.messagesByRoute[target]) return false;
+    const messagesByRoute = { ...state.messagesByRoute };
+    messagesByRoute[target] = messagesByRoute[source] || '';
+    delete messagesByRoute[source];
+    set({
+      messagesByRoute,
+      revisionsByRoute: {
+        ...state.revisionsByRoute,
+        [target]: state.revisionsByRoute[source] || 0,
+      },
+      aliases: { ...state.aliases, [source]: target },
+      currentRoute: state.currentRoute === source ? target : state.currentRoute,
+      message:
+        state.currentRoute === target ? messagesByRoute[target] : state.message,
+    });
+    return true;
+  },
+  isComposing: false,
+  setIsComposing: isComposing => set({ isComposing }),
   isWelcomeScreen: true,
-  setIsWelcomeScreen: isWelcome => set({ isWelcomeScreen: isWelcome }),
-
-  // Dark mode state
+  setIsWelcomeScreen: isWelcomeScreen => set({ isWelcomeScreen }),
   isDark: false,
   toggleDarkMode: () => set(state => ({ isDark: !state.isDark })),
   setDarkMode: isDark => set({ isDark }),

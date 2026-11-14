@@ -1,37 +1,90 @@
 'use client';
 
+import { ChatInputView } from '@components/chat-input/view';
+import { ChatInputBackdrop } from '@components/chat/chat-input-backdrop';
+import { AssistantMessage } from '@components/chat/messages/assistant-message/assistant-message';
+import { UserMessage } from '@components/chat/messages/user-message/user-message';
 import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
+import { useChatWidth } from '@lib/hooks/use-chat-width';
 import { agentRunSaved } from '@lib/services/client/langchain-api';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { useLangchainDraftStore } from '@lib/stores/langchain-draft-store';
+import { cn } from '@lib/utils';
 
-import { useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 
 import { useAgentChat } from './use-agent-chat';
 
-export function AgentChat({
-  appId,
-  conversationId,
-}: {
+interface AgentChatProps {
   appId: string;
   conversationId: string | null;
-}) {
-  const t = useTranslations('langchain');
+}
+
+export function AgentChat(props: AgentChatProps) {
   const { session, loading } = useAuthSession();
+  const t = useTranslations('langchain');
+  const actorId = session?.user.id ?? null;
+  useLayoutEffect(() => {
+    if (!loading) useLangchainDraftStore.getState().setActor(actorId);
+  }, [actorId, loading]);
+  if (!session)
+    return loading ? (
+      <p role="status">{t('loading')}</p>
+    ) : (
+      <a href="/login">{t('loginRequired')}</a>
+    );
+  return (
+    <AgentChatSession
+      key={JSON.stringify([session.user.id, props.appId])}
+      {...props}
+      actorId={session.user.id}
+      authLoading={loading}
+    />
+  );
+}
+
+function AgentChatSession({
+  appId,
+  conversationId,
+  actorId,
+  authLoading,
+}: AgentChatProps & { actorId: string; authLoading: boolean }) {
+  const t = useTranslations('langchain');
   const chat = useAgentChat(appId, conversationId);
-  const [content, setContent] = useState('');
+  const { widthClass, paddingClass } = useChatWidth();
+  const actorEpoch = useLangchainDraftStore(state =>
+    state.actorId === actorId ? state.actorEpoch : null
+  );
+  const [selection, setSelection] = useState<{
+    epoch: number;
+    target: string;
+    scope: string;
+  } | null>(null);
+  const lastSelection = useRef(selection);
+  const scope =
+    selection?.epoch === actorEpoch && selection?.target === chat.draftScope
+      ? selection.scope
+      : null;
+  const draft = useLangchainDraftStore(state =>
+    scope ? state.drafts[scope] : undefined
+  );
+  const content = draft?.text || '';
+  const scrollArea = useRef<HTMLDivElement>(null);
+  const following = useRef(true);
+  const [inputHeight, setInputHeight] = useState(160);
   const disabled =
+    authLoading ||
+    !scope ||
     !chat.ready ||
     chat.busy ||
     chat.historyLoading ||
     chat.historyFailed ||
-    chat.unconfirmed ||
-    !session;
-  const buttonStyle =
-    'rounded-lg border border-stone-300 px-3 py-2 text-sm disabled:opacity-50 dark:border-stone-600';
+    chat.unconfirmed;
   const run = chat.view.run;
+  const lastUserIndex = chat.view.messages.findLastIndex(
+    message => message.role === 'user'
+  );
   const runLabel = !run
     ? null
     : agentRunSaved(run)
@@ -46,27 +99,81 @@ export function AgentChat({
             ? 'unknown'
             : 'running';
 
+  useLayoutEffect(() => {
+    if (actorEpoch === null || authLoading) return;
+    const previous = lastSelection.current;
+    if (previous?.epoch === actorEpoch && previous.target === chat.draftScope)
+      return;
+    const scope = useLangchainDraftStore
+      .getState()
+      .selectScope(
+        appId,
+        chat.draftScope.startsWith('new:') && conversationId
+          ? conversationId
+          : chat.draftScope,
+        previous?.epoch === actorEpoch
+      );
+    if (!scope) return;
+    const next = { epoch: actorEpoch, target: chat.draftScope, scope };
+    lastSelection.current = next;
+    setSelection(next);
+  }, [actorEpoch, appId, authLoading, chat.draftScope, conversationId]);
+
+  useLayoutEffect(() => {
+    if (scope && chat.draftScope.startsWith('new:') && chat.view.conversationId)
+      useLangchainDraftStore
+        .getState()
+        .bindConversation(scope, appId, chat.view.conversationId);
+  }, [scope, appId, chat.draftScope, chat.view.conversationId]);
+
+  useEffect(() => {
+    const area = scrollArea.current;
+    if (area && following.current) area.scrollTop = area.scrollHeight;
+  }, [chat.view.messages, chat.view.tools, chat.draftScope]);
+
+  const submit = async () => {
+    if (disabled || !content.trim() || !draft) return;
+    const snapshot = draft;
+    const accepted = await chat.send(content);
+    if (accepted) useLangchainDraftStore.getState().consumeSnapshot(snapshot);
+  };
+
   return (
-    <main className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col p-4 font-serif text-stone-800 md:p-6 dark:text-stone-200">
-      <section className="flex min-h-0 min-w-0 flex-1 flex-col rounded-xl border border-stone-200 bg-white dark:border-stone-700 dark:bg-stone-900">
-        <header className="shrink-0 border-b border-stone-200 px-4 py-3 dark:border-stone-700">
-          <h1 className="text-lg font-semibold">
-            {chat.appName || t('title')}
-          </h1>
-          <p className="text-xs text-stone-500">{t('capabilities')}</p>
-        </header>
-        <div
-          className="flex-1 space-y-5 overflow-y-auto p-4 md:p-6"
-          aria-live="polite"
-          aria-busy={chat.busy || chat.historyLoading}
+    <main className="relative flex h-full min-h-0 w-full flex-col text-stone-800 dark:text-stone-200">
+      <header
+        className={cn(
+          'mx-auto flex w-full shrink-0 items-center justify-between gap-3 py-3',
+          widthClass,
+          paddingClass
+        )}
+      >
+        <h1 className="text-sm font-medium">{chat.appName || t('title')}</h1>
+        <button
+          type="button"
+          className="text-xs text-stone-500 disabled:opacity-50"
+          disabled={disabled || !chat.view.conversationId}
+          onClick={() => {
+            if (window.confirm(t('confirmDelete'))) void chat.remove();
+          }}
         >
-          {loading && <p>{t('loading')}</p>}
+          {t('deleteConversation')}
+        </button>
+      </header>
+      <div
+        ref={scrollArea}
+        className="min-h-0 flex-1 overflow-y-auto"
+        style={{ paddingBottom: inputHeight + 96 }}
+        aria-live="polite"
+        aria-busy={chat.busy || chat.historyLoading}
+        onScroll={() => {
+          const area = scrollArea.current;
+          if (area)
+            following.current =
+              area.scrollHeight - area.scrollTop - area.clientHeight < 100;
+        }}
+      >
+        <div className={cn('mx-auto w-full pt-4', widthClass, paddingClass)}>
           {chat.historyLoading && <p role="status">{t('loading')}</p>}
-          {!loading && !session && (
-            <a className="underline" href="/login">
-              {t('loginRequired')}
-            </a>
-          )}
           {chat.error && (
             <p
               role="alert"
@@ -83,36 +190,32 @@ export function AgentChat({
               )}
             </p>
           )}
-          {chat.view.messages.map(message => (
-            <article
-              key={message.id}
-              className={`rounded-xl p-4 ${message.role === 'user' ? 'bg-stone-100 dark:bg-stone-800' : 'border border-stone-100 dark:border-stone-800'}`}
-            >
-              <p className="mb-2 text-xs font-semibold text-stone-500">
-                {t(message.role === 'user' ? 'you' : 'assistant')}
-              </p>
-              <div className="prose prose-stone dark:prose-invert max-w-none break-words">
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  skipHtml
-                  components={{
-                    img: () => null,
-                    a: ({ href, children }) => (
-                      <a href={href} target="_blank" rel="noopener noreferrer">
-                        {children}
-                      </a>
-                    ),
-                  }}
-                >
-                  {message.content}
-                </ReactMarkdown>
-              </div>
-            </article>
-          ))}
+          {chat.view.messages.map((message, index) =>
+            message.role === 'user' ? (
+              <UserMessage
+                key={message.id}
+                id={message.id}
+                content={message.content}
+                conversationAppId={appId}
+              />
+            ) : message.role === 'assistant' ? (
+              <AssistantMessage
+                key={message.id}
+                id={message.id}
+                content={message.content}
+                isStreaming={
+                  index > lastUserIndex &&
+                  chat.busy &&
+                  (!run || ['pending', 'running'].includes(run.executionStatus))
+                }
+                wasManuallyStopped={false}
+              />
+            ) : null
+          )}
           {chat.view.tools.map(tool => (
             <div
               key={tool.toolCallId}
-              className="rounded-lg border border-stone-200 p-3 text-sm dark:border-stone-700"
+              className="my-3 rounded-lg border border-stone-200 p-3 text-sm dark:border-stone-700"
             >
               <strong>
                 {t('tool')}: {tool.name}
@@ -136,54 +239,22 @@ export function AgentChat({
             </p>
           )}
         </div>
-        <form
-          className="space-y-3 border-t border-stone-200 p-4 dark:border-stone-700"
-          onSubmit={event => {
-            event.preventDefault();
-            if (!disabled && content.trim()) {
-              const submitted = content;
-              void chat.send(submitted).then(accepted => {
-                if (accepted)
-                  setContent(current => (current === submitted ? '' : current));
-              });
-            }
-          }}
-        >
-          <label htmlFor="agent-message" className="sr-only">
-            {t('message')}
-          </label>
-          <textarea
-            id="agent-message"
-            name="message"
-            rows={3}
-            maxLength={16000}
-            value={content}
-            onChange={event => setContent(event.target.value)}
-            disabled={disabled}
-            placeholder={t('placeholder')}
-            className="w-full resize-y rounded-lg border border-stone-300 bg-transparent p-3 disabled:opacity-50 dark:border-stone-600"
-          />
-          <div className="flex justify-between gap-3">
-            <button
-              type="button"
-              className={buttonStyle}
-              disabled={disabled || !chat.view.conversationId}
-              onClick={() => {
-                if (window.confirm(t('confirmDelete'))) void chat.remove();
-              }}
-            >
-              {t('deleteConversation')}
-            </button>
-            <button
-              type="submit"
-              className={buttonStyle}
-              disabled={disabled || !content.trim()}
-            >
-              {t('send')}
-            </button>
-          </div>
-        </form>
-      </section>
+      </div>
+      <ChatInputBackdrop />
+      <ChatInputView
+        key={chat.draftScope}
+        value={content}
+        onValueChange={text => {
+          if (scope) useLangchainDraftStore.getState().setText(scope, text);
+        }}
+        onSubmit={submit}
+        disabled={disabled}
+        isProcessing={chat.busy}
+        placeholder={t('placeholder')}
+        sendButtonAriaLabel={t('send')}
+        widthClass={widthClass}
+        onHeightChange={setInputHeight}
+      />
     </main>
   );
 }

@@ -1,6 +1,10 @@
 import { parseSseStream } from '@lib/utils/sse-parser';
 
 import {
+  type DifySubmissionOptions,
+  difySubmissionHeaders,
+} from '../submission';
+import {
   DifyWorkflowCompletionResponse,
   DifyWorkflowFinishedData,
   DifyWorkflowRequestPayload,
@@ -70,7 +74,8 @@ function sleep(ms: number): Promise<void> {
 
 export async function executeDifyWorkflow(
   payload: DifyWorkflowRequestPayload,
-  appId: string
+  appId: string,
+  options?: DifySubmissionOptions
 ): Promise<DifyWorkflowCompletionResponse> {
   console.log(
     '[Dify Workflow Service] Executing workflow (blocking mode):',
@@ -78,6 +83,7 @@ export async function executeDifyWorkflow(
   );
 
   const apiUrl = `${DIFY_API_BASE_URL}/${appId}/workflows/run`;
+  const headers = difySubmissionHeaders(options);
   const blockingPayload: DifyWorkflowRequestPayload = {
     ...payload,
     response_mode: 'blocking',
@@ -86,9 +92,7 @@ export async function executeDifyWorkflow(
   try {
     const response = await fetch(apiUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(blockingPayload),
     });
 
@@ -129,11 +133,13 @@ export async function executeDifyWorkflow(
 export async function streamDifyWorkflow(
   payload: DifyWorkflowRequestPayload,
   appId: string,
-  onProgressUpdate?: (event: DifyWorkflowSseEvent) => void
+  onProgressUpdate?: (event: DifyWorkflowSseEvent) => void,
+  options?: DifySubmissionOptions
 ): Promise<DifyWorkflowStreamResponse> {
   console.log('[Dify Workflow Service] Starting workflow stream:', payload);
 
   const apiUrl = `${DIFY_API_BASE_URL}/${appId}/workflows/run`;
+  const headers = difySubmissionHeaders(options);
   const streamingPayload: DifyWorkflowRequestPayload = {
     ...payload,
     response_mode: 'streaming',
@@ -142,9 +148,7 @@ export async function streamDifyWorkflow(
   try {
     const response = await fetch(apiUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(streamingPayload),
     });
 

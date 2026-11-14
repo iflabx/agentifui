@@ -6,8 +6,15 @@ import {
   bindThread,
   markRunUnknown,
   recordNativeRun,
+  recordRunPersistenceFailure,
   saveRunResult,
 } from './agent-runs-repository';
+import {
+  confirmSubmission,
+  markSubmissionSubmitting,
+  rejectSubmission,
+  rejectUnacceptedSubmission,
+} from './agent-submissions';
 import {
   type AGUIEvent,
   LangChainUpstreamError,
@@ -19,7 +26,14 @@ jest.mock('./agent-runs-repository', () => ({
   bindThread: jest.fn(),
   markRunUnknown: jest.fn(),
   recordNativeRun: jest.fn(),
+  recordRunPersistenceFailure: jest.fn().mockResolvedValue(undefined),
   saveRunResult: jest.fn(),
+}));
+jest.mock('./agent-submissions', () => ({
+  confirmSubmission: jest.fn().mockResolvedValue(undefined),
+  markSubmissionSubmitting: jest.fn().mockResolvedValue(undefined),
+  rejectSubmission: jest.fn().mockResolvedValue(undefined),
+  rejectUnacceptedSubmission: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('./langchain/transport', () => ({
   ...jest.requireActual('./langchain/transport'),
@@ -100,10 +114,14 @@ beforeEach(() => {
   ]);
 });
 
-async function run(overrides: Partial<AgentRunRecord> = {}) {
+async function run(
+  overrides: Partial<AgentRunRecord> = {},
+  rootTaskId?: string
+) {
   const events: unknown[] = [];
   const report = jest.fn();
   await executeAgentRun({
+    rootTaskId,
     app,
     run: { ...initial, ...overrides },
     content: 'one new input',
@@ -135,6 +153,253 @@ it('creates and binds a thread before one new user input, saves only current-run
   });
   expect(JSON.stringify(events)).not.toContain('native-run');
 });
+
+it('durably claims a governed turn before dispatch and confirms usage before forwarding events', async () => {
+  await run({}, 'root-task');
+  expect(markSubmissionSubmitting).toHaveBeenCalledWith('root-task');
+  expect(confirmSubmission).toHaveBeenNthCalledWith(1, 'root-task', 'accepted');
+  expect(confirmSubmission).toHaveBeenNthCalledWith(2, 'root-task', 'finished');
+  expect(
+    jest.mocked(markSubmissionSubmitting).mock.invocationCallOrder[0]
+  ).toBeLessThan(jest.mocked(streamTurn).mock.invocationCallOrder[0]);
+});
+
+it('does not confuse save-only failure with uncertain execution or dispatch a second turn', async () => {
+  jest
+    .mocked(saveRunResult)
+    .mockRejectedValue(new Error('synthetic save failure'));
+  const { events } = await run({}, 'root-task');
+  expect(confirmSubmission).toHaveBeenLastCalledWith('root-task', 'finished');
+  expect(recordRunPersistenceFailure).toHaveBeenCalledWith(
+    initial.id,
+    expect.objectContaining({ executionStatus: 'success' })
+  );
+  expect(markRunUnknown).not.toHaveBeenCalled();
+  expect(streamTurn).toHaveBeenCalledTimes(1);
+  expect(events.at(-1)).toMatchObject({
+    executionStatus: 'success',
+    persistenceStatus: 'failed',
+  });
+});
+
+it('saves known successful text even when governance finalization fails and never regenerates', async () => {
+  jest
+    .mocked(confirmSubmission)
+    .mockResolvedValueOnce(undefined)
+    .mockRejectedValueOnce(new Error('synthetic governance failure'));
+  const { events, report } = await run({}, 'root-task');
+  expect(confirmSubmission).toHaveBeenLastCalledWith('root-task', 'unknown');
+  expect(saveRunResult).toHaveBeenCalledWith(
+    initial.id,
+    expect.objectContaining({
+      executionStatus: 'success',
+      messages: [expect.objectContaining({ content: 'Example response' })],
+    })
+  );
+  expect(report).toHaveBeenCalledWith({
+    runId: initial.id,
+    code: 'AGENT_GOVERNANCE_UNAVAILABLE',
+  });
+  expect(streamTurn).toHaveBeenCalledTimes(1);
+  expect(createThread).toHaveBeenCalledTimes(1);
+  expect(markRunUnknown).not.toHaveBeenCalled();
+  expect(events.at(-1)).toMatchObject({
+    executionStatus: 'success',
+    persistenceStatus: 'saved',
+  });
+});
+
+it('records the same known snapshot when both governance recovery and message saving fail', async () => {
+  jest
+    .mocked(confirmSubmission)
+    .mockResolvedValueOnce(undefined)
+    .mockRejectedValueOnce(new Error('synthetic governance failure'))
+    .mockRejectedValueOnce(new Error('synthetic unknown write failure'));
+  jest
+    .mocked(saveRunResult)
+    .mockRejectedValueOnce(new Error('synthetic save failure'))
+    .mockRejectedValueOnce(new Error('synthetic retry failure'));
+  const { events } = await run({}, 'root-task');
+  const snapshot = jest.mocked(saveRunResult).mock.calls[0][1];
+  expect(snapshot).toMatchObject({
+    executionStatus: 'success',
+    messages: [{ content: 'Example response' }],
+  });
+  expect(saveRunResult).toHaveBeenNthCalledWith(2, initial.id, snapshot);
+  expect(recordRunPersistenceFailure).toHaveBeenCalledWith(
+    initial.id,
+    snapshot
+  );
+  expect(markRunUnknown).not.toHaveBeenCalled();
+  expect(streamTurn).toHaveBeenCalledTimes(1);
+  expect(events.at(-1)).toMatchObject({
+    executionStatus: 'success',
+    persistenceStatus: 'failed',
+  });
+});
+
+it('keeps ambiguous execution unknown and retains its partial text when governance writes fail', async () => {
+  stream(textEvents, new LangChainUpstreamError('UPSTREAM_INCOMPLETE'));
+  jest
+    .mocked(confirmSubmission)
+    .mockResolvedValueOnce(undefined)
+    .mockRejectedValueOnce(new Error('synthetic unknown failure'))
+    .mockRejectedValueOnce(new Error('synthetic unknown retry failure'));
+  const { events } = await run({}, 'root-task');
+  expect(confirmSubmission).toHaveBeenNthCalledWith(2, 'root-task', 'unknown');
+  expect(confirmSubmission).toHaveBeenLastCalledWith('root-task', 'unknown');
+  expect(rejectSubmission).not.toHaveBeenCalled();
+  expect(rejectUnacceptedSubmission).not.toHaveBeenCalled();
+  expect(saveRunResult).toHaveBeenCalledWith(
+    initial.id,
+    expect.objectContaining({
+      executionStatus: 'unknown',
+      messages: [expect.objectContaining({ content: 'Example response' })],
+    })
+  );
+  expect(streamTurn).toHaveBeenCalledTimes(1);
+  expect(events.at(-1)).toMatchObject({
+    executionStatus: 'unknown',
+    persistenceStatus: 'saved',
+  });
+});
+
+it.each(['setup', 'native refusal'])(
+  'saves the known failure even if governance rejection fails after %s',
+  async stage => {
+    if (stage === 'setup') {
+      jest
+        .mocked(createThread)
+        .mockRejectedValueOnce(new Error('synthetic setup failure'));
+      jest
+        .mocked(rejectSubmission)
+        .mockRejectedValueOnce(new Error('synthetic rejection failure'));
+    } else {
+      stream([], new LangChainUpstreamError('UPSTREAM_HTTP_ERROR', 403));
+      jest
+        .mocked(rejectUnacceptedSubmission)
+        .mockRejectedValueOnce(new Error('synthetic rejection failure'));
+    }
+    const { events } = await run({}, 'root-task');
+    expect(confirmSubmission).toHaveBeenLastCalledWith('root-task', 'unknown');
+    expect(saveRunResult).toHaveBeenCalledWith(
+      initial.id,
+      expect.objectContaining({ executionStatus: 'error', messages: [] })
+    );
+    expect(streamTurn).toHaveBeenCalledTimes(stage === 'setup' ? 0 : 1);
+    expect(events.at(-1)).toMatchObject({
+      executionStatus: 'error',
+      persistenceStatus: 'saved',
+    });
+  }
+);
+
+it('releases known pre-dispatch setup failure but retains ambiguous dispatched usage', async () => {
+  jest
+    .mocked(createThread)
+    .mockRejectedValueOnce(new Error('synthetic setup failure'));
+  await run({}, 'root-task');
+  expect(rejectSubmission).toHaveBeenCalledWith(
+    'root-task',
+    'AGENT_NOT_DISPATCHED'
+  );
+  expect(streamTurn).not.toHaveBeenCalled();
+  expect(saveRunResult).toHaveBeenCalledWith(
+    initial.id,
+    expect.objectContaining({ executionStatus: 'error', messages: [] })
+  );
+  jest.clearAllMocks();
+  stream([], new LangChainUpstreamError('UPSTREAM_INCOMPLETE'));
+  await run({ thread_id: 'native-thread' }, 'second-root');
+  expect(confirmSubmission).toHaveBeenCalledWith('second-root', 'unknown');
+  expect(rejectSubmission).not.toHaveBeenCalled();
+  expect(saveRunResult).toHaveBeenCalledWith(
+    initial.id,
+    expect.objectContaining({ executionStatus: 'unknown' })
+  );
+});
+
+it.each(['thread', 'binding', 'claim'])(
+  'does not retain an active run after an undispatched %s failure',
+  async stage => {
+    if (stage === 'thread')
+      jest
+        .mocked(createThread)
+        .mockRejectedValueOnce(new LangChainUpstreamError('UPSTREAM_TIMEOUT'));
+    if (stage === 'binding')
+      jest
+        .mocked(bindThread)
+        .mockRejectedValueOnce(new Error('synthetic binding failure'))
+        .mockRejectedValueOnce(new Error('synthetic binding failure'));
+    if (stage === 'claim')
+      jest
+        .mocked(markSubmissionSubmitting)
+        .mockRejectedValueOnce(new Error('synthetic claim failure'));
+    const { events } = await run({}, 'root-task');
+    expect(streamTurn).not.toHaveBeenCalled();
+    expect(confirmSubmission).not.toHaveBeenCalled();
+    expect(rejectSubmission).toHaveBeenCalledWith(
+      'root-task',
+      'AGENT_NOT_DISPATCHED'
+    );
+    expect(saveRunResult).toHaveBeenCalledWith(
+      initial.id,
+      expect.objectContaining({ executionStatus: 'error', messages: [] })
+    );
+    expect(events.at(-1)).toMatchObject({
+      executionStatus: 'error',
+      persistenceStatus: 'saved',
+    });
+  }
+);
+
+it.each([undefined, 'root-task'])(
+  'preserves undispatched execution failure when saving fails with root %s',
+  async rootTaskId => {
+    jest
+      .mocked(createThread)
+      .mockRejectedValueOnce(new Error('synthetic setup failure'));
+    jest
+      .mocked(saveRunResult)
+      .mockRejectedValueOnce(new Error('synthetic save failure'))
+      .mockRejectedValueOnce(new Error('synthetic save failure'));
+    const { events } = await run({}, rootTaskId);
+    expect(recordRunPersistenceFailure).toHaveBeenCalledWith(
+      initial.id,
+      expect.objectContaining({ executionStatus: 'error', messages: [] })
+    );
+    expect(markRunUnknown).not.toHaveBeenCalled();
+    expect(streamTurn).not.toHaveBeenCalled();
+    expect(events.at(-1)).toMatchObject({
+      executionStatus: 'error',
+      persistenceStatus: 'failed',
+    });
+  }
+);
+
+it.each([400, 401, 403, 404, 405, 413, 415, 422])(
+  'releases explicit pre-acceptance HTTP %s without charging or leaving unknown quota',
+  async status => {
+    stream([], new LangChainUpstreamError('UPSTREAM_HTTP_ERROR', status));
+    await run({}, 'root-task');
+    expect(rejectUnacceptedSubmission).toHaveBeenCalledWith('root-task');
+    expect(confirmSubmission).not.toHaveBeenCalled();
+    expect(saveRunResult).toHaveBeenCalledWith(
+      initial.id,
+      expect.objectContaining({ executionStatus: 'error' })
+    );
+  }
+);
+
+it.each([429, 500, 503])(
+  'retains unknown after ambiguous HTTP %s instead of assuming refusal',
+  async status => {
+    stream([], new LangChainUpstreamError('UPSTREAM_HTTP_ERROR', status));
+    await run({}, 'root-task');
+    expect(rejectUnacceptedSubmission).not.toHaveBeenCalled();
+    expect(confirmSubmission).toHaveBeenCalledWith('root-task', 'unknown');
+  }
+);
 
 it('reuses the trusted thread instead of creating one for continuation', async () => {
   await run({ thread_id: 'native-thread' });

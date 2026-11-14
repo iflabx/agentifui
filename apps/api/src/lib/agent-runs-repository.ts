@@ -2,6 +2,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { PoolClient, QueryResultRow } from 'pg';
 
 import { AGENT_APP_VISIBILITY_SQL, agentConfigFingerprint } from './agent-app';
+import { AgentPolicyError } from './agent-backends';
+import { admitSubmission } from './agent-submissions';
 import { runWithPgSystemContext } from './pg-context';
 
 export type AgentExecutionStatus =
@@ -47,6 +49,7 @@ export interface AgentRunRecord extends QueryResultRow {
 }
 
 export interface ReserveAgentRunInput {
+  governanceTaskId?: string;
   userId: string;
   serviceInstanceId: string;
   appInstanceId: string;
@@ -98,7 +101,8 @@ async function storage<T>(operation: () => Promise<T>): Promise<T> {
   try {
     return await operation();
   } catch (error) {
-    if (error instanceof AgentRunError) throw error;
+    if (error instanceof AgentRunError || error instanceof AgentPolicyError)
+      throw error;
     if ((error as { code?: string })?.code === '23505') {
       throw new AgentRunError(409, 'AGENT_RUN_CONFLICT');
     }
@@ -230,7 +234,7 @@ export async function reserveRun(
       await requireLiveApplication(client, normalized);
       const replay = await client.query<AgentRunRecord>(
         `${RUN_SELECT} WHERE r.user_id = $1::uuid AND r.service_instance_id = $2::uuid
-        AND r.submission_id = $3::uuid`,
+        AND r.submission_id = $3::uuid FOR UPDATE OF r`,
         [userId, serviceId, submissionId]
       );
       if (replay.rows[0]) {
@@ -242,6 +246,23 @@ export async function reserveRun(
           throw new AgentRunError(409, 'AGENT_SUBMISSION_MISMATCH');
         }
         await validateBinding(client, run.conversation_id, normalized);
+        if (input.governanceTaskId) {
+          await client.query(
+            `UPDATE agent_submissions SET run_id = $2::uuid, state = $3, updated_at = NOW()
+            WHERE root_task_id = $1::uuid AND backend_type = 'langchain' AND quota_state = 'none'
+              AND user_id = $4::uuid AND service_instance_id = $5::uuid
+              AND (run_id IS NULL OR run_id = $2::uuid) AND state IN ('registered','unknown')`,
+            [
+              input.governanceTaskId,
+              run.id,
+              ACTIVE_STATUSES.includes(run.execution_status)
+                ? 'unknown'
+                : 'finished',
+              userId,
+              serviceId,
+            ]
+          );
+        }
         return { run, replayed: true };
       }
       if (conversationId) {
@@ -285,6 +306,15 @@ export async function reserveRun(
       }
       const messageId = randomUUID();
       const runId = randomUUID();
+      if (input.governanceTaskId) {
+        await admitSubmission(
+          client,
+          input.governanceTaskId,
+          userId,
+          serviceId,
+          { userLimit, appLimit }
+        );
+      }
       await client.query(
         `INSERT INTO messages (id, conversation_id, user_id, role, content, metadata, sequence_index)
        SELECT $1::uuid, $2::uuid, $3::uuid, 'user', $4,
@@ -306,6 +336,12 @@ export async function reserveRun(
           messageId,
         ]
       );
+      if (input.governanceTaskId) {
+        await client.query(
+          `UPDATE agent_submissions SET run_id = $2::uuid WHERE root_task_id = $1::uuid`,
+          [input.governanceTaskId, runId]
+        );
+      }
       return { run: await loadRun(client, runId), replayed: false };
     })
   );
@@ -540,6 +576,24 @@ export async function markRunUnknown(
         [id, errorCode]
       );
       return loadRun(client, id);
+    })
+  );
+}
+
+export async function recordRunPersistenceFailure(
+  runId: string,
+  result: AgentRunResult
+): Promise<void> {
+  const snapshot = normalizeResult(result);
+  await storage(() =>
+    runWithPgSystemContext(async client => {
+      await client.query(
+        `UPDATE backend_runs SET execution_status = $2, persistence_status = 'failed',
+      result = COALESCE(result, $3::jsonb), updated_at = NOW() WHERE id = $1::uuid
+      AND persistence_status <> 'saved' AND (result IS NULL OR result = $3::jsonb)
+      AND (execution_status IN ('reserved','submitting','running','unknown') OR execution_status = $2)`,
+        [uuid(runId), snapshot.executionStatus, JSON.stringify(snapshot)]
+      );
     })
   );
 }

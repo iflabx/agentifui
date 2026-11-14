@@ -1,5 +1,6 @@
 import { createDecipheriv, createHash } from 'node:crypto';
 
+import { resolveBackendType } from './agent-backends';
 import {
   queryRowsWithPgSystemContext,
   queryRowsWithPgUserContext,
@@ -20,6 +21,7 @@ interface ServiceInstanceWithProviderRow {
 }
 
 export interface DifyAppConfig {
+  serviceInstanceId: string;
   apiKey: string;
   apiUrl: string;
   appId: string;
@@ -223,7 +225,7 @@ export async function resolveDifyConfig(
   );
   if (
     !serviceInstance ||
-    serviceInstance.config?.backend_type === 'langchain'
+    resolveBackendType(serviceInstance.config) !== 'dify'
   ) {
     return null;
   }
@@ -255,6 +257,7 @@ export async function resolveDifyConfig(
   }
 
   return {
+    serviceInstanceId: serviceInstance.id,
     apiKey,
     apiUrl: serviceInstance.provider_base_url,
     appId: serviceInstance.instance_id,

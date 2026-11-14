@@ -64,8 +64,9 @@ export function shouldBlockEnterSubmit(input: {
     input.isWaiting ||
     input.isValidatingAppConfig ||
     input.isProcessing ||
-    input.attachments.some(file => file.status === 'uploading') ||
-    input.attachments.some(file => file.status === 'error') ||
+    input.attachments.some(
+      file => file.status !== 'success' || !file.uploadedId
+    ) ||
     !input.message.trim() ||
     !input.canSubmitWithModel
   );

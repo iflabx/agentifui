@@ -46,7 +46,11 @@ export function useAgentChat(
   initialConversationId: string | null
 ) {
   const [view, setView] = useState<AgentViewState>(emptyView);
-  const [conversations, setConversations] = useState<AgentConversation[]>([]);
+  const [draftScope, setDraftScope] = useState(
+    initialConversationId || 'new:0'
+  );
+  const draftScopes = useRef(new Map<string, string>());
+  const newDraftVersion = useRef(0);
   const [appName, setAppName] = useState('');
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -62,21 +66,6 @@ export function useAgentChat(
   const sending = useRef(false);
   const generation = useRef(0);
   const entryConversationId = useRef(initialConversationId);
-  const submission = useRef<{ submissionId: string; content: string } | null>(
-    null
-  );
-
-  const refresh = useCallback(
-    async (signal?: AbortSignal) => {
-      const result = await agentRequest<{ conversations: AgentConversation[] }>(
-        appId,
-        '/conversations',
-        { signal }
-      );
-      setConversations(result.conversations);
-    },
-    [appId]
-  );
 
   const load = useCallback(
     async (
@@ -123,9 +112,21 @@ export function useAgentChat(
         );
         if (lifetime.signal.aborted) return;
         setAppName(result.app.name);
-        await refresh(lifetime.signal);
-        if (entryConversationId.current)
-          await load(entryConversationId.current, lifetime.signal);
+        if (entryConversationId.current) {
+          setHistoryLoading(true);
+          try {
+            await load(entryConversationId.current, lifetime.signal);
+          } catch (failure) {
+            if (!lifetime.signal.aborted) {
+              setHistoryFailed(true);
+              setError(
+                failure instanceof AgentRequestError ? failure.status : 500
+              );
+            }
+          } finally {
+            if (!lifetime.signal.aborted) setHistoryLoading(false);
+          }
+        }
         if (!lifetime.signal.aborted) setReady(true);
       } catch (failure) {
         if (!lifetime.signal.aborted)
@@ -138,12 +139,20 @@ export function useAgentChat(
       generation.current += 1;
       navigationVersion.current += 1;
     };
-  }, [appId, load, refresh]);
+  }, [appId, load]);
 
   const select = useCallback(
     async (conversationId: string | null) => {
-      if (sending.current) return;
       const version = ++navigationVersion.current;
+      controller.current?.abort();
+      controller.current = null;
+      sending.current = false;
+      setBusy(false);
+      setDraftScope(
+        conversationId
+          ? draftScopes.current.get(conversationId) || conversationId
+          : `new:${++newDraftVersion.current}`
+      );
       lastRouteConversation.current = conversationId;
       syncConversationUrl(conversationId);
       selecting.current = Boolean(conversationId);
@@ -171,16 +180,12 @@ export function useAgentChat(
   );
 
   useEffect(() => {
-    if (
-      !ready ||
-      busy ||
-      initialConversationId === observedRouteConversation.current
-    )
+    if (!ready || initialConversationId === observedRouteConversation.current)
       return;
     observedRouteConversation.current = initialConversationId;
     if (initialConversationId === lastRouteConversation.current) return;
     void Promise.resolve().then(() => select(initialConversationId));
-  }, [ready, busy, initialConversationId, select]);
+  }, [ready, initialConversationId, select]);
 
   const needsPolling = Boolean(view.run && !agentRunSettled(view.run));
   useEffect(() => {
@@ -188,6 +193,7 @@ export function useAgentChat(
     const polling = new AbortController();
     const runId = view.runId;
     const conversationId = view.conversationId;
+    const version = navigationVersion.current;
     let timer: ReturnType<typeof setTimeout>;
     let attempts = 0;
     const poll = async () => {
@@ -200,8 +206,8 @@ export function useAgentChat(
         if (polling.signal.aborted) return;
         const run = 'run' in result ? result.run : result;
         if (agentRunSettled(run)) {
-          await refresh(polling.signal);
-          if (conversationId) await load(conversationId, polling.signal);
+          if (conversationId)
+            await load(conversationId, polling.signal, version);
           if (polling.signal.aborted) return;
           setView(previous =>
             previous.runId === runId ? { ...previous, run } : previous
@@ -232,15 +238,7 @@ export function useAgentChat(
       polling.abort();
       clearTimeout(timer);
     };
-  }, [
-    appId,
-    busy,
-    view.runId,
-    view.conversationId,
-    needsPolling,
-    load,
-    refresh,
-  ]);
+  }, [appId, busy, view.runId, view.conversationId, needsPolling, load]);
 
   const send = async (content: string) => {
     if (
@@ -249,6 +247,7 @@ export function useAgentChat(
       sending.current ||
       selecting.current ||
       historyLoading ||
+      historyFailed ||
       unconfirmed ||
       (lastRouteConversation.current &&
         lastRouteConversation.current !== view.conversationId) ||
@@ -257,14 +256,18 @@ export function useAgentChat(
       return;
     sending.current = true;
     const currentGeneration = generation.current;
+    const version = navigationVersion.current;
     const requestController = new AbortController();
     const timeout = setTimeout(() => requestController.abort(), 150000);
     controller.current = requestController;
+    const ownsView = () =>
+      generation.current === currentGeneration &&
+      navigationVersion.current === version &&
+      controller.current === requestController;
     const payload = {
       submissionId: crypto.randomUUID(),
       content: content.trim(),
     };
-    submission.current = payload;
     setBusy(true);
     setError(null);
     setView(previous => ({
@@ -292,31 +295,30 @@ export function useAgentChat(
         signal: requestController.signal,
       });
       await consumeAgentStream(response, event => {
-        if (generation.current !== currentGeneration) return;
+        if (!ownsView()) return;
         latest = reduceAgentEvent(latest, event);
         setView(previous => reduceAgentEvent(previous, event));
         if (event.type === 'accepted') {
+          draftScopes.current.set(event.conversationId, draftScope);
+          if (draftScope.startsWith('new:')) newDraftVersion.current += 1;
           lastRouteConversation.current = event.conversationId;
           syncConversationUrl(event.conversationId);
           conversationEvents.emit();
         }
       });
-      if (generation.current !== currentGeneration) return;
+      if (!ownsView()) return Boolean(latest.runId);
       if (!latest.run || !agentRunSettled(latest.run)) {
         setView(markAgentStreamInterrupted);
         setUnconfirmed(true);
       } else {
-        submission.current = null;
         if (latest.conversationId)
-          await load(latest.conversationId, requestController.signal);
+          await load(latest.conversationId, requestController.signal, version);
         conversationEvents.emit();
       }
-      await refresh(requestController.signal);
     } catch (failure) {
-      if (generation.current !== currentGeneration) return;
+      if (!ownsView()) return Boolean(latest.runId);
       setError(failure instanceof AgentRequestError ? failure.status : 500);
       if (failure instanceof AgentRequestError && !latest.runId) {
-        submission.current = null;
         setView(view);
       } else {
         setView(markAgentStreamInterrupted);
@@ -324,8 +326,11 @@ export function useAgentChat(
       }
     } finally {
       clearTimeout(timeout);
-      sending.current = false;
-      if (generation.current === currentGeneration) setBusy(false);
+      if (ownsView()) {
+        sending.current = false;
+        controller.current = null;
+        setBusy(false);
+      }
     }
     return Boolean(latest.runId);
   };
@@ -341,15 +346,15 @@ export function useAgentChat(
         { method: 'DELETE' }
       );
       if (version === navigationVersion.current) await select(null);
-      await refresh();
       conversationEvents.emit();
     } catch (failure) {
-      setError(failure instanceof AgentRequestError ? failure.status : 500);
+      if (version === navigationVersion.current)
+        setError(failure instanceof AgentRequestError ? failure.status : 500);
     }
   };
   return {
     view,
-    conversations,
+    draftScope,
     appName,
     ready,
     busy,

@@ -26,6 +26,10 @@ import { useCallback, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 
+import type {
+  ChatSubmissionAccepted,
+  ChatViewScope,
+} from './chat-interface/types';
 import {
   buildStreamingConversationPayload,
   buildTempConversationId,
@@ -84,7 +88,9 @@ export function useCreateConversation(): UseCreateConversationReturn {
       appId: string,
       userIdentifier: string,
       onDbIdCreated?: OnConversationDbIdCreated,
-      onNodeEvent?: OnCreateConversationNodeEvent
+      onNodeEvent?: OnCreateConversationNodeEvent,
+      viewScope?: ChatViewScope,
+      onAccepted?: (accepted: ChatSubmissionAccepted) => void
     ): Promise<CreateConversationResult> => {
       setIsLoading(true);
       setError(null);
@@ -98,12 +104,24 @@ export function useCreateConversation(): UseCreateConversationReturn {
       });
       updateStatusInPendingStore(tempConvId, 'creating');
 
-      applyTemporaryConversationUi(tempConvId, setCurrentChatConversationId);
+      if (!viewScope || viewScope.isCurrent()) {
+        viewScope?.onRouteAdopted(`/chat/${tempConvId}`);
+        applyTemporaryConversationUi(tempConvId, setCurrentChatConversationId);
+      }
 
       let streamResponse: DifyStreamResponse | null = null;
       let realConvIdFromStream: string | null = null;
       let taskIdFromStream: string | null = null;
       let persistConversationPromise: Promise<string | null> | null = null;
+      let settlePersistence!: (dbId: string | null) => void;
+      const conversationPersistencePromise = new Promise<string | null>(
+        resolve => {
+          settlePersistence = resolve;
+        }
+      );
+      const settleUncreatedConversation = () => {
+        if (!persistConversationPromise) settlePersistence(null);
+      };
       let earlyTitleResolutionScheduled = false;
       let postStreamTitleRecoveryScheduled = false;
 
@@ -137,6 +155,7 @@ export function useCreateConversation(): UseCreateConversationReturn {
           );
           return null;
         });
+        void persistConversationPromise.then(settlePersistence);
 
         return persistConversationPromise;
       };
@@ -226,7 +245,10 @@ export function useCreateConversation(): UseCreateConversationReturn {
                 `[useCreateConversation] Real conversation ID received from stream: ${id}`
               );
 
-              syncRealConversationUi(tempConvId, id);
+              if (!viewScope || viewScope.isCurrent()) {
+                viewScope?.onRouteAdopted(`/chat/${id}`);
+                syncRealConversationUi(tempConvId, id);
+              }
 
               setRealIdAndStatus(
                 tempConvId,
@@ -243,7 +265,32 @@ export function useCreateConversation(): UseCreateConversationReturn {
               schedulePostStreamTitleRecovery(id);
             }
           },
-          onNodeEvent
+          onNodeEvent,
+          undefined,
+          binding =>
+            onAccepted?.({ ...binding, conversationPersistencePromise })
+        );
+
+        const sourceStream = streamResponse.answerStream;
+        const boundStream = (async function* () {
+          try {
+            yield* sourceStream;
+          } finally {
+            settleUncreatedConversation();
+          }
+        })();
+        const returnBoundStream = boundStream.return.bind(boundStream);
+        boundStream.return = async value => {
+          try {
+            await sourceStream.return(value);
+            return await returnBoundStream(value);
+          } finally {
+            settleUncreatedConversation();
+          }
+        };
+        void streamResponse.completionPromise?.then(
+          settleUncreatedConversation,
+          settleUncreatedConversation
         );
 
         if (!realConvIdFromStream) {
@@ -266,7 +313,10 @@ export function useCreateConversation(): UseCreateConversationReturn {
           );
           updateStatusInPendingStore(tempConvId, 'title_fetching');
 
-          syncFallbackConversationPath(tempConvId, realConvIdFromStream);
+          if (!viewScope || viewScope.isCurrent()) {
+            viewScope?.onRouteAdopted(`/chat/${realConvIdFromStream}`);
+            syncFallbackConversationPath(tempConvId, realConvIdFromStream);
+          }
         }
 
         if (realConvIdFromStream) {
@@ -278,27 +328,35 @@ export function useCreateConversation(): UseCreateConversationReturn {
           schedulePostStreamTitleRecovery(realConvIdFromStream);
         }
 
-        setIsLoading(false);
+        if (!viewScope || viewScope.isCurrent()) setIsLoading(false);
         return {
           tempConvId,
           realConvId: realConvIdFromStream || undefined,
           taskId: taskIdFromStream || undefined,
-          answerStream: streamResponse.answerStream,
+          answerStream: boundStream,
           completionPromise: streamResponse.completionPromise,
-          conversationPersistencePromise:
-            persistConversationPromise || undefined,
+          conversationPersistencePromise,
+          getBinding: () => ({
+            externalId:
+              streamResponse?.getConversationId() || realConvIdFromStream,
+            taskId: streamResponse?.getTaskId() || taskIdFromStream,
+          }),
         };
       } catch (e) {
+        settleUncreatedConversation();
         console.error(
           '[useCreateConversation] Error initiating new conversation:',
           e
         );
-        setError(e instanceof Error ? e : new Error(String(e)));
-        setIsLoading(false);
+        if (!viewScope || viewScope.isCurrent()) {
+          setError(e instanceof Error ? e : new Error(String(e)));
+          setIsLoading(false);
+        }
         updateStatusInPendingStore(tempConvId, 'failed');
         updateTitleInPendingStore(tempConvId, t('createFailed'), true);
         return {
           tempConvId,
+          conversationPersistencePromise,
           error: e instanceof Error ? e : new Error(String(e)),
         };
       }

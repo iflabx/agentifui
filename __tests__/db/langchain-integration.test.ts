@@ -5,6 +5,10 @@ import type { AddressInfo } from 'node:net';
 import { Pool } from 'pg';
 
 import type { ApiRuntimeConfig } from '../../apps/api/src/config';
+import {
+  registerSubmission,
+  submissionHash,
+} from '../../apps/api/src/lib/agent-submissions';
 import { getPgPool } from '../../apps/api/src/lib/pg-context';
 import { createApiServer } from '../../apps/api/src/server';
 import { resolveTestDatabaseUrl } from './helpers/test-database-url';
@@ -418,6 +422,10 @@ afterEach(async () => {
   await database.query(`DROP TRIGGER IF EXISTS ${triggerName} ON messages`);
   await database.query(`DROP FUNCTION IF EXISTS ${triggerName}()`);
   await database.query(
+    'DELETE FROM agent_submissions WHERE user_id = ANY($1::uuid[])',
+    [actors]
+  );
+  await database.query(
     'DELETE FROM conversations WHERE user_id = ANY($1::uuid[])',
     [actors]
   );
@@ -474,6 +482,71 @@ it('exercises FORCE RLS with a non-superuser role and no implicit legacy access'
     (await getPgPool().query('SELECT * FROM backend_conversations')).rows
   ).toEqual([]);
   expect((await getStoredRun(ids.runId)).execution_status).toBe('success');
+});
+
+it('settles an attached legacy run when the old API writes a terminal status without charging or executing twice', async () => {
+  const submissionId = randomUUID();
+  const first = await submit(0, 'legacy running operation', { submissionId });
+  const ids = accepted(first.body);
+  const usage = (
+    await database.query(
+      'SELECT used_count FROM group_app_permissions WHERE group_id=$1 AND service_instance_id=$2',
+      [groupId, applications[0]]
+    )
+  ).rows[0].used_count;
+  await database.query('DELETE FROM agent_submissions WHERE run_id=$1', [
+    ids.runId,
+  ]);
+  await database.query(
+    "UPDATE backend_runs SET execution_status='running' WHERE id=$1",
+    [ids.runId]
+  );
+  const replay = await submit(0, 'legacy running operation', {
+    submissionId,
+    server: 1,
+  });
+  expect(accepted(replay.body).runId).toBe(ids.runId);
+  expect(
+    (
+      await database.query(
+        'SELECT state,quota_state FROM agent_submissions WHERE run_id=$1',
+        [ids.runId]
+      )
+    ).rows[0]
+  ).toEqual({ state: 'unknown', quota_state: 'none' });
+  await database.query(
+    "UPDATE backend_runs SET execution_status='success' WHERE id=$1",
+    [ids.runId]
+  );
+  expect(
+    (
+      await database.query(
+        'SELECT state,quota_state FROM agent_submissions WHERE run_id=$1',
+        [ids.runId]
+      )
+    ).rows[0]
+  ).toEqual({ state: 'finished', quota_state: 'none' });
+  const again = await submit(0, 'legacy running operation', { submissionId });
+  expect(accepted(again.body).runId).toBe(ids.runId);
+  expect(
+    (
+      await database.query(
+        'SELECT used_count FROM group_app_permissions WHERE group_id=$1 AND service_instance_id=$2',
+        [groupId, applications[0]]
+      )
+    ).rows[0].used_count
+  ).toBe(usage);
+  await expect(
+    database.query('UPDATE service_instances SET instance_id=$2 WHERE id=$1', [
+      applications[0],
+      `${marker}-legacy-finished`,
+    ])
+  ).resolves.toBeDefined();
+  await database.query(
+    'UPDATE service_instances SET instance_id=$2 WHERE id=$1',
+    [applications[0], `${marker}-0`]
+  );
+  expect(modelCalls()).toHaveLength(1);
 });
 
 it('authorizes entry, reports capabilities and never returns private config or service credentials', async () => {
@@ -732,7 +805,8 @@ it('keeps non-UUID application identifiers case-sensitive for generic creation',
     expect(
       (
         await database.query(
-          'SELECT count(*)::int AS count FROM backend_conversations'
+          'SELECT count(*)::int AS count FROM backend_conversations WHERE service_instance_id=ANY($1::uuid[])',
+          [applications]
         )
       ).rows[0].count
     ).toBe(0);
@@ -964,6 +1038,55 @@ it('deduplicates simultaneous first submissions across two API instances before 
   expect(modelCalls()).toHaveLength(1);
 });
 
+it('does not dispatch a replay before the registered submission has a run binding', async () => {
+  const submissionId = randomUUID();
+  const content = 'registered request';
+  const address = upstream.address() as AddressInfo;
+  const registration = await registerSubmission({
+    userId: actors[0],
+    serviceInstanceId: applications[0],
+    submissionId,
+    backendType: 'langchain',
+    targetFingerprint: submissionHash([
+      applications[0],
+      `http://127.0.0.1:${address.port}`,
+      'agent',
+    ]),
+    request: { content, conversationId: null },
+  });
+  expect(registration.replayed).toBe(false);
+  const responses = await Promise.all(
+    [0, 1].map(server => submit(0, content, { submissionId, server }))
+  );
+  for (const response of responses) {
+    expect(response.statusCode).toBe(409);
+    expect(response.json().app_error).toMatchObject({
+      code: 'AGENT_SUBMISSION_IN_PROGRESS',
+      retryable: false,
+    });
+    expect(response.headers['x-agentifui-root-task-id']).toBe(
+      registration.task.root_task_id
+    );
+  }
+  expect(upstreamRequests).toHaveLength(0);
+  expect(
+    (
+      await database.query(
+        'SELECT state,quota_state,run_id FROM agent_submissions WHERE root_task_id=$1',
+        [registration.task.root_task_id]
+      )
+    ).rows
+  ).toEqual([{ state: 'registered', quota_state: 'none', run_id: null }]);
+  expect(
+    (
+      await database.query(
+        'SELECT count(*)::int AS count FROM backend_runs WHERE user_id=$1 AND submission_id=$2',
+        [actors[0], submissionId]
+      )
+    ).rows[0].count
+  ).toBe(0);
+});
+
 it('admits only one reservation when both replicas receive a new submission simultaneously', async () => {
   const submissionId = randomUUID();
   const responses = await Promise.all(
@@ -971,8 +1094,22 @@ it('admits only one reservation when both replicas receive a new submission simu
       submit(0, 'parallel first request', { submissionId, server: index % 2 })
     )
   );
-  for (const response of responses) expect(response.statusCode).toBe(200);
-  const references = responses.map(response => accepted(response.body));
+  const completed = responses.filter(response => response.statusCode === 200);
+  expect(completed.length).toBeGreaterThanOrEqual(1);
+  for (const response of responses.filter(
+    response => response.statusCode !== 200
+  )) {
+    expect(response.statusCode).toBe(409);
+    expect(response.json().app_error.code).toBe('AGENT_SUBMISSION_IN_PROGRESS');
+  }
+  const replay = await submit(0, 'parallel first request', {
+    submissionId,
+    server: 1,
+  });
+  expect(replay.statusCode).toBe(200);
+  const references = [...completed, replay].map(response =>
+    accepted(response.body)
+  );
   expect(new Set(references.map(item => item.runId)).size).toBe(1);
   expect(new Set(references.map(item => item.conversationId)).size).toBe(1);
   expect(modelCalls()).toHaveLength(1);

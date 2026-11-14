@@ -148,6 +148,8 @@ interface AssistantMessageProps {
   wasManuallyStopped: boolean;
   metadata?: Record<string, any>; // Message metadata
   className?: string;
+  onRegenerate?: () => void;
+  onFeedback?: (isPositive: boolean) => void;
 }
 
 /**
@@ -164,7 +166,16 @@ interface AssistantMessageProps {
  * Uses React.memo for performance optimization.
  */
 export const AssistantMessage: React.FC<AssistantMessageProps> = React.memo(
-  ({ id, content, isStreaming, wasManuallyStopped, metadata, className }) => {
+  ({
+    id,
+    content,
+    isStreaming,
+    wasManuallyStopped,
+    metadata,
+    className,
+    onRegenerate,
+    onFeedback,
+  }) => {
     const t = useTranslations('pages.chat');
 
     const normalizedContent = useMemo(() => {
@@ -519,10 +530,8 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = React.memo(
           <AssistantMessageActions
             messageId={id}
             content={extractMainContentForCopy(blocks) || undefined}
-            onRegenerate={() => console.log('Regenerate message', id)}
-            onFeedback={isPositive =>
-              console.log('Feedback', isPositive ? 'positive' : 'negative', id)
-            }
+            onRegenerate={onRegenerate}
+            onFeedback={onFeedback}
             isRegenerating={isStreaming}
             className={cn(
               '-ml-2',

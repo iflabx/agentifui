@@ -1,6 +1,8 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 
 import type { ApiRuntimeConfig } from '../config';
+import { AgentPolicyError, describeBackend } from '../lib/agent-backends';
+import { getSubmissionForActor } from '../lib/agent-submissions';
 import {
   queryRowsWithPgSystemContext,
   queryRowsWithPgUserContext,
@@ -54,6 +56,7 @@ function toAppDetail(row: AppRow) {
     is_default: row.is_default,
     visibility: row.visibility,
     config: publicAppConfig(row.config),
+    descriptor: describeBackend(row.config),
     created_at: row.created_at,
     updated_at: row.updated_at,
     provider_name: row.provider_name,
@@ -74,6 +77,7 @@ function toAppListItem(row: AppRow) {
     display_name: row.display_name || undefined,
     description: row.description || undefined,
     config: publicAppConfig(row.config),
+    descriptor: describeBackend(row.config),
     visibility: row.visibility || 'public',
   };
 }
@@ -255,6 +259,31 @@ async function requireActor(
 export const internalAppsRoutes: FastifyPluginAsync<
   InternalAppsRoutesOptions
 > = async (app, options) => {
+  app.get<{ Params: { appId: string; submissionId: string } }>(
+    '/api/internal/apps/:appId/submissions/:submissionId',
+    async (request, reply) => {
+      const actor = await requireActor(request, options.config);
+      if (!actor.ok) return reply.status(actor.statusCode).send(actor.payload);
+      reply.header('cache-control', 'private, no-store');
+      try {
+        return await getSubmissionForActor(
+          actor.actor.userId,
+          request.params.appId,
+          request.params.submissionId
+        );
+      } catch (error) {
+        if (!(error instanceof AgentPolicyError)) throw error;
+        return reply.status(error.statusCode).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: error.statusCode,
+            code: error.code,
+            userMessage: error.code,
+          })
+        );
+      }
+    }
+  );
   app.get<{
     Querystring: { scope?: string; instanceId?: string; mode?: string };
   }>('/api/internal/apps', async (request, reply) => {
@@ -410,6 +439,15 @@ export const internalAppsRoutes: FastifyPluginAsync<
         apps: orderedDetails.map(toAppListItem),
       });
     } catch (error) {
+      if (error instanceof AgentPolicyError)
+        return reply.status(error.statusCode).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: error.statusCode,
+            code: error.code,
+            userMessage: error.code,
+          })
+        );
       request.log.error(
         { err: error },
         '[FastifyAPI][internal-apps] GET failed'
