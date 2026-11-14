@@ -22,7 +22,7 @@ import {
 import React from 'react';
 
 import { useTranslations } from 'next-intl';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 import { SidebarButton } from './sidebar-button';
 
@@ -34,11 +34,16 @@ export function SidebarHeader({ isHovering = false }: SidebarHeaderProps) {
   const { isExpanded, toggleSidebar } = useSidebarStore();
   const router = useRouter();
   const pathname = usePathname() ?? '';
+  const searchParams = useSearchParams();
   const t = useTranslations('sidebar');
 
   const { selectedType, selectedId, selectItem } = useSidebarStore();
+  const langchainAppMatch = pathname.match(/^\/apps\/langchain\/([^/]+)$/);
+  const isLangchainNewChat =
+    Boolean(langchainAppMatch) && !searchParams?.get('conversationId');
   const isNewChatActive =
-    pathname === '/chat/new' && (selectedType !== 'chat' || !selectedId);
+    (pathname === '/chat/new' && (selectedType !== 'chat' || !selectedId)) ||
+    isLangchainNewChat;
   const isHistoryActive = pathname === '/chat/history';
   const isAppsActive = pathname === '/apps';
 
@@ -60,13 +65,22 @@ export function SidebarHeader({ isHovering = false }: SidebarHeaderProps) {
   const { clearConversationState } = useChatInterface();
 
   const handleNewChat = () => {
-    const isAlreadyOnNewChat = window.location.pathname === '/chat/new';
+    const currentLangchainApp = window.location.pathname.match(
+      /^\/apps\/langchain\/([^/]+)$/
+    );
+    const targetPath = currentLangchainApp
+      ? `/apps/langchain/${currentLangchainApp[1]}`
+      : '/chat/new';
+    const isAlreadyOnNewChat =
+      window.location.pathname === targetPath &&
+      (!currentLangchainApp ||
+        !new URLSearchParams(window.location.search).has('conversationId'));
     if (isAlreadyOnNewChat) {
       return;
     }
 
     // Immediately route to the new chat page
-    router.push('/chat/new');
+    router.push(targetPath);
 
     // Delay cleaning state to ensure routing is complete
     setTimeout(() => {
@@ -85,7 +99,11 @@ export function SidebarHeader({ isHovering = false }: SidebarHeaderProps) {
       setIsWaitingForResponse(false);
 
       const { selectItem } = useSidebarStore.getState();
-      selectItem('chat', null, true);
+      if (currentLangchainApp) {
+        selectItem('app', decodeURIComponent(currentLangchainApp[1]), true);
+      } else {
+        selectItem('chat', null, true);
+      }
     }, 100);
   };
 
