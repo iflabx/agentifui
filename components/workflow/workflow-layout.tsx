@@ -73,6 +73,7 @@ export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
     currentExecution,
     executeWorkflow,
     stopWorkflowExecution,
+    canStop,
     retryExecution,
     resetExecution,
     clearExecutionState,
@@ -408,7 +409,7 @@ export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
                 forceShowResult={
                   isShowingRestoredExecution && !!activeExecutionResult
                 }
-                onStop={handleStopExecution}
+                onStop={canStop ? handleStopExecution : undefined}
                 onRetry={handleRetryExecution}
                 onReset={handleCompleteReset}
                 onCloseResult={
@@ -486,7 +487,7 @@ export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
                     forceShowResult={
                       isShowingRestoredExecution && !!activeExecutionResult
                     }
-                    onStop={handleStopExecution}
+                    onStop={canStop ? handleStopExecution : undefined}
                     onRetry={handleRetryExecution}
                     onReset={handleCompleteReset}
                     onCloseResult={

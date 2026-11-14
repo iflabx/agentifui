@@ -113,6 +113,9 @@ export async function getCurrentSession(options?: {
   const requestPromise = (async () => {
     try {
       const session = await fetchCurrentSessionUncached();
+      if (getSessionCacheSnapshot().generation !== cache.generation) {
+        return getSessionCacheSnapshot().value;
+      }
       setSessionCacheResolved(session);
       return session;
     } catch (error) {
@@ -129,7 +132,8 @@ export async function getCurrentSession(options?: {
       }
       throw error;
     } finally {
-      setSessionInflight(null);
+      if (getSessionCacheSnapshot().generation === cache.generation)
+        setSessionInflight(null);
     }
   })();
 

@@ -45,7 +45,7 @@ function readQueryValue(value: unknown): string {
   return value.trim();
 }
 
-function toAppDetail(row: AppRow) {
+function toAppDetail(row: AppRow, actorRole?: string | null) {
   return {
     id: row.id,
     provider_id: row.provider_id,
@@ -56,7 +56,7 @@ function toAppDetail(row: AppRow) {
     is_default: row.is_default,
     visibility: row.visibility,
     config: publicAppConfig(row.config),
-    descriptor: describeBackend(row.config),
+    descriptor: describeBackend(row.config, actorRole),
     created_at: row.created_at,
     updated_at: row.updated_at,
     provider_name: row.provider_name,
@@ -69,7 +69,7 @@ function toAppDetail(row: AppRow) {
   };
 }
 
-function toAppListItem(row: AppRow) {
+function toAppListItem(row: AppRow, actorRole?: string | null) {
   return {
     id: row.id,
     name: row.display_name || row.instance_id,
@@ -77,7 +77,7 @@ function toAppListItem(row: AppRow) {
     display_name: row.display_name || undefined,
     description: row.description || undefined,
     config: publicAppConfig(row.config),
-    descriptor: describeBackend(row.config),
+    descriptor: describeBackend(row.config, actorRole),
     visibility: row.visibility || 'public',
   };
 }
@@ -357,7 +357,10 @@ export const internalAppsRoutes: FastifyPluginAsync<
           );
         }
 
-        return reply.send({ success: true, app: toAppDetail(detail) });
+        return reply.send({
+          success: true,
+          app: toAppDetail(detail, actor?.role),
+        });
       }
 
       if (mode === 'default') {
@@ -396,7 +399,10 @@ export const internalAppsRoutes: FastifyPluginAsync<
             defaultMissing: true,
           });
         }
-        return reply.send({ success: true, app: toAppDetail(rows[0]) });
+        return reply.send({
+          success: true,
+          app: toAppDetail(rows[0], actor?.role),
+        });
       }
 
       const scopedRows = await queryScopedAppRows(
@@ -436,7 +442,7 @@ export const internalAppsRoutes: FastifyPluginAsync<
 
       return reply.send({
         success: true,
-        apps: orderedDetails.map(toAppListItem),
+        apps: orderedDetails.map(row => toAppListItem(row, actor?.role)),
       });
     } catch (error) {
       if (error instanceof AgentPolicyError)
@@ -537,7 +543,7 @@ export const internalAppsRoutes: FastifyPluginAsync<
 
       return reply.send({
         success: true,
-        app: toAppDetail(rows[0]),
+        app: toAppDetail(rows[0], admin.actor.role),
       });
     } catch (error) {
       request.log.error(

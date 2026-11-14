@@ -222,6 +222,9 @@ export interface ServiceInstanceConfig {
 
 // ServiceInstance interface, with visibility field
 export interface ServiceInstance {
+  descriptor?: {
+    effectiveActions: { cancellation: boolean };
+  };
   id: string;
   provider_id: string;
   display_name: string | null;

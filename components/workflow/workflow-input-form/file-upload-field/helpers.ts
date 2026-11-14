@@ -1,6 +1,25 @@
 import { formatBytes } from '@lib/utils';
 
-export interface UploadFile {
+export interface WorkflowUploadOwner {
+  app_id: string;
+  actor_id: string;
+  actor_epoch: number;
+}
+
+export function isWorkflowUploadOwner(
+  value: unknown,
+  owner: WorkflowUploadOwner
+): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const file = value as Record<string, unknown>;
+  return (
+    file.app_id === owner.app_id &&
+    file.actor_id === owner.actor_id &&
+    file.actor_epoch === owner.actor_epoch
+  );
+}
+
+export interface UploadFile extends Partial<WorkflowUploadOwner> {
   id: string;
   file: File;
   name: string;
@@ -36,7 +55,7 @@ export function isProcessedFileItem(item: unknown): boolean {
 
 export function createUploadFiles(files: File[]): UploadFile[] {
   return files.map(file => ({
-    id: `${file.name}-${file.lastModified}-${file.size}`,
+    id: `${file.name}-${file.lastModified}-${file.size}-${crypto.randomUUID()}`,
     file,
     name: file.name,
     size: file.size,
@@ -72,10 +91,16 @@ export function getDifyFileType(
 
 export function getSuccessfulFilesPayload(
   uploadFiles: UploadFile[],
-  isSingleFileMode: boolean
+  isSingleFileMode: boolean,
+  owner?: WorkflowUploadOwner
 ) {
   const successfulFiles = uploadFiles
-    .filter(file => file.status === 'success' && file.uploadedId)
+    .filter(
+      file =>
+        file.status === 'success' &&
+        file.uploadedId &&
+        (!owner || isWorkflowUploadOwner(file, owner))
+    )
     .map(file => ({
       type: getDifyFileType(file),
       transfer_method: 'local_file' as const,
@@ -83,6 +108,13 @@ export function getSuccessfulFilesPayload(
       name: file.name,
       size: file.size,
       mime_type: file.type,
+      ...(file.app_id && file.actor_id && typeof file.actor_epoch === 'number'
+        ? {
+            app_id: file.app_id,
+            actor_id: file.actor_id,
+            actor_epoch: file.actor_epoch,
+          }
+        : {}),
     }));
 
   return {

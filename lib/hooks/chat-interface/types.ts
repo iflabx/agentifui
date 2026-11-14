@@ -67,6 +67,7 @@ export interface ChatStreamingCheckSnapshot {
 }
 export interface ChatViewScope {
   isCurrent: () => boolean;
+  isStopped?: () => boolean;
   onRouteAdopted: (pathname: string) => void;
 }
 

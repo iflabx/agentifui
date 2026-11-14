@@ -25,6 +25,9 @@ export function observeDifyResponse(
     upstream.headers.get('content-type') ?? ''
   );
   let buffer = '';
+  let dataLines: string[] = [];
+  let frameSize = 0;
+  let skipLineFeed = false;
   let accepted = false;
   let terminal = false;
   let workflow = path.startsWith('workflows/');
@@ -79,12 +82,55 @@ export function observeDifyResponse(
       terminal = true;
     }
   };
+  const inspectFrame = async () => {
+    const payload = dataLines.join('\n');
+    dataLines = [];
+    frameSize = 0;
+    if (!payload) return;
+    try {
+      await inspect(JSON.parse(payload));
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+    }
+  };
+  const processText = async (text: string) => {
+    if (!sse) {
+      buffer += text;
+      if (buffer.length > 1024 * 1024)
+        throw new Error('AGENT_UPSTREAM_EVENT_TOO_LARGE');
+      return;
+    }
+    for (const character of text) {
+      if (skipLineFeed) {
+        skipLineFeed = false;
+        if (character === '\n') continue;
+      }
+      if (character === '\r' || character === '\n') {
+        if (!buffer) await inspectFrame();
+        else if (buffer.startsWith('data:')) {
+          const value = buffer.slice(5);
+          dataLines.push(value.startsWith(' ') ? value.slice(1) : value);
+        }
+        buffer = '';
+        skipLineFeed = character === '\r';
+      } else {
+        buffer += character;
+        frameSize += 1;
+        if (frameSize > 1024 * 1024)
+          throw new Error('AGENT_UPSTREAM_EVENT_TOO_LARGE');
+      }
+    }
+  };
   const body = new ReadableStream<Uint8Array>({
     async pull(controller) {
       try {
         const chunk = await reader.read();
         if (chunk.done) {
-          buffer += decoder.decode();
+          await processText(decoder.decode());
+          if (sse) {
+            if (buffer.startsWith('data:')) dataLines.push(buffer.slice(5));
+            await inspectFrame();
+          }
           if (!sse && buffer) {
             try {
               await inspect(JSON.parse(buffer));
@@ -97,29 +143,7 @@ export function observeDifyResponse(
           reader.releaseLock();
           return;
         }
-        buffer += decoder.decode(chunk.value, { stream: true });
-        if (buffer.length > 1024 * 1024)
-          throw new Error('AGENT_UPSTREAM_EVENT_TOO_LARGE');
-        if (sse) {
-          let boundary = /\r?\n\r?\n/.exec(buffer);
-          while (boundary) {
-            const frame = buffer.slice(0, boundary.index);
-            buffer = buffer.slice(boundary.index + boundary[0].length);
-            const payload = frame
-              .split(/\r?\n/)
-              .filter(line => line.startsWith('data:'))
-              .map(line => line.slice(5).trimStart())
-              .join('\n');
-            if (payload) {
-              try {
-                await inspect(JSON.parse(payload));
-              } catch (error) {
-                if (!(error instanceof SyntaxError)) throw error;
-              }
-            }
-            boundary = /\r?\n\r?\n/.exec(buffer);
-          }
-        }
+        await processText(decoder.decode(chunk.value, { stream: true }));
         controller.enqueue(chunk.value);
       } catch (error) {
         await confirmSubmission(taskId, 'unknown').catch(() => undefined);

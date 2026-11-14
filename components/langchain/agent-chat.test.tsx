@@ -1,3 +1,4 @@
+import { AgentRequestError } from '@lib/services/client/langchain-api';
 import { useLangchainDraftStore } from '@lib/stores/langchain-draft-store';
 import {
   act,
@@ -22,6 +23,9 @@ jest.mock('next-intl', () => ({ useTranslations: () => (key: string) => key }));
 jest.mock('react-markdown', () => ({ __esModule: true, default: () => null }));
 jest.mock('remark-gfm', () => ({ __esModule: true, default: () => undefined }));
 jest.mock('./use-agent-chat', () => ({ useAgentChat: jest.fn() }));
+jest.mock('@lib/hooks/use-combined-conversations', () => ({
+  conversationEvents: { emit: jest.fn() },
+}));
 jest.mock('@lib/hooks/use-chat-width', () => ({
   useChatWidth: () => ({ widthClass: 'max-w-3xl', paddingClass: 'px-4' }),
 }));
@@ -72,6 +76,11 @@ jest.mock(
 
 describe('Agent chat draft', () => {
   const send = jest.fn();
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -86,6 +95,8 @@ describe('Agent chat draft', () => {
       busy: false,
       error: null,
       unconfirmed: false,
+      statusCheckExhausted: false,
+      retryStatus: jest.fn(),
       historyLoading: false,
       historyFailed: false,
       send,
@@ -99,6 +110,158 @@ describe('Agent chat draft', () => {
     render(<AgentChat appId="app" conversationId={null} />);
     expect(screen.getByRole('main')).toHaveClass('pt-16', 'md:pt-12');
   });
+
+  it.each([
+    [
+      429,
+      'AGENT_QUOTA_EXCEEDED',
+      false,
+      'Usage allowance exhausted',
+      'Usage allowance exhausted',
+    ],
+    [
+      429,
+      'AGENT_CONCURRENCY_LIMIT',
+      true,
+      'Another task is active',
+      'Another task is active',
+    ],
+    [400, 'CONTENT_MODERATION_BLOCKED', true, 'Moderation blocked', 'blocked'],
+    [
+      503,
+      'CONTENT_MODERATION_UNAVAILABLE',
+      true,
+      'Moderation unavailable',
+      'unavailable',
+    ],
+  ] as const)(
+    'renders the actual %s/%s policy error',
+    (_status, code, retryable, message, expected) => {
+      const original = jest.mocked(useAgentChat).getMockImplementation()!(
+        'app',
+        null
+      );
+      jest.mocked(useAgentChat).mockReturnValue({
+        ...original,
+        error: new AgentRequestError(_status, {
+          code,
+          retryable,
+          userMessage: message,
+          source: 'fastify-api',
+          severity: 'warn',
+          requestId: 'synthetic-request',
+          occurredAt: '2026-01-01T00:00:00.000Z',
+        }),
+      });
+      render(<AgentChat appId="app" conversationId={null} />);
+      expect(screen.getByRole('alert')).toHaveTextContent(expected);
+      expect(screen.getByRole('alert')).not.toHaveTextContent('rateLimited');
+    }
+  );
+
+  it('does not label an unclassified HTTP 429 as the active-run limit', () => {
+    const original = jest.mocked(useAgentChat).getMockImplementation()!(
+      'app',
+      null
+    );
+    jest
+      .mocked(useAgentChat)
+      .mockReturnValue({ ...original, error: new AgentRequestError(429) });
+    render(<AgentChat appId="app" conversationId={null} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('requestFailed');
+    expect(screen.getByRole('alert')).not.toHaveTextContent('rateLimited');
+  });
+
+  it.each([
+    [
+      429,
+      'AGENT_QUOTA_EXCEEDED',
+      false,
+      'Usage allowance exhausted',
+      'Usage allowance exhausted',
+    ],
+    [
+      429,
+      'AGENT_CONCURRENCY_LIMIT',
+      true,
+      'Another task is active',
+      'Another task is active',
+    ],
+    [400, 'CONTENT_MODERATION_BLOCKED', true, 'Moderation blocked', 'blocked'],
+    [
+      503,
+      'CONTENT_MODERATION_UNAVAILABLE',
+      true,
+      'Moderation unavailable',
+      'unavailable',
+    ],
+    [503, 'AUTH_VERIFY_FAILED', false, 'AUTH_VERIFY_FAILED', 'requestFailed'],
+    [
+      503,
+      'AGENT_REQUEST_FAILED',
+      false,
+      'AGENT_REQUEST_FAILED',
+      'requestFailed',
+    ],
+    [
+      429,
+      'RATE_LIMITED',
+      false,
+      'Upstream allowance exhausted',
+      'Upstream allowance exhausted',
+    ],
+  ] as const)(
+    'consumes the %s/%s response through the real client, hook and page',
+    async (status, code, retryable, userMessage, expected) => {
+      jest
+        .mocked(useAgentChat)
+        .mockImplementation(
+          jest.requireActual<typeof import('./use-agent-chat')>(
+            './use-agent-chat'
+          ).useAgentChat
+        );
+      global.fetch = jest.fn().mockImplementation(async (_url, init) =>
+        init?.method === 'POST'
+          ? {
+              ok: false,
+              status,
+              json: async () => ({
+                app_error: {
+                  code,
+                  retryable,
+                  userMessage,
+                  source: 'fastify-api',
+                  severity: 'warn',
+                  requestId: 'synthetic-request',
+                  occurredAt: '2026-01-01T00:00:00.000Z',
+                },
+              }),
+            }
+          : { ok: true, json: async () => ({ app: { name: 'Agent' } }) }
+      );
+      render(<AgentChat appId="app" conversationId={null} />);
+      await waitFor(() =>
+        expect(screen.getByRole('textbox')).not.toBeDisabled()
+      );
+      fireEvent.change(screen.getByRole('textbox'), {
+        target: { value: 'Rejected input' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'send' }));
+      await waitFor(() =>
+        expect(screen.getByRole('alert')).toHaveTextContent(expected)
+      );
+      if (
+        code !== 'CONTENT_MODERATION_BLOCKED' &&
+        code !== 'CONTENT_MODERATION_UNAVAILABLE'
+      )
+        expect(screen.getByRole('alert')).toHaveTextContent(
+          'synthetic-request'
+        );
+      expect(screen.getByRole('textbox')).toHaveValue('Rejected input');
+      expect(screen.getByRole('alert')).not.toHaveTextContent('rateLimited');
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+    }
+  );
 
   it('preserves a rejected draft without resubmitting', async () => {
     send.mockResolvedValue(false);

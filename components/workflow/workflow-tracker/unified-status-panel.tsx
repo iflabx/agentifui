@@ -23,7 +23,7 @@ interface UnifiedStatusPanelProps {
   error: string | null;
   canRetry: boolean;
   currentExecution: AppExecution | null;
-  onStop: () => void;
+  onStop?: () => void;
   onRetry: () => void;
   onReset: () => void;
   onShowResult: () => void;
@@ -142,7 +142,7 @@ export function UnifiedStatusPanel({
                 )}
 
               {/* Stop button */}
-              {isExecuting && (
+              {isExecuting && onStop && (
                 <button
                   onClick={onStop}
                   className={cn(

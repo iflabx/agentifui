@@ -1,3 +1,5 @@
+import { syncChatDraftActor } from '@lib/stores/chat-draft-lifecycle';
+
 import type { BetterAuthSession } from './types';
 
 const AUTH_STATE_CHANGE_EVENT = 'agentifui:auth-state-changed';
@@ -9,6 +11,7 @@ let sessionCacheValue: BetterAuthSession | null = null;
 let sessionCacheAt = 0;
 let sessionInflight: Promise<BetterAuthSession | null> | null = null;
 let sessionBackoffUntil = 0;
+let sessionGeneration = 0;
 
 function parsePositiveIntEnv(
   value: string | undefined,
@@ -43,6 +46,7 @@ export function getSessionStaleGraceMs(): number {
 }
 
 export function clearSessionCache(): void {
+  sessionGeneration += 1;
   sessionCacheValue = null;
   sessionCacheAt = 0;
   sessionInflight = null;
@@ -79,16 +83,20 @@ export function getSessionCacheSnapshot(): {
   cachedAt: number;
   inflight: Promise<BetterAuthSession | null> | null;
   backoffUntil: number;
+  generation: number;
 } {
   return {
     value: sessionCacheValue,
     cachedAt: sessionCacheAt,
     inflight: sessionInflight,
     backoffUntil: sessionBackoffUntil,
+    generation: sessionGeneration,
   };
 }
 
 export function setSessionCacheResolved(value: BetterAuthSession | null): void {
+  if (typeof window !== 'undefined')
+    syncChatDraftActor(value?.user?.id || null);
   sessionCacheValue = value;
   sessionCacheAt = Date.now();
   sessionBackoffUntil = 0;

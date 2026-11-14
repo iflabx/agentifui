@@ -3,9 +3,8 @@
 import { Popover, PopoverItem } from '@components/ui/popover';
 import { hideActiveTooltip } from '@components/ui/tooltip';
 import { TooltipWrapper } from '@components/ui/tooltip-wrapper';
-import { useFileTypes } from '@lib/hooks/use-file-types';
+import type { useFileTypes } from '@lib/hooks/use-file-types';
 import { useMobile } from '@lib/hooks/use-mobile';
-import { useAttachmentStore } from '@lib/stores/attachment-store';
 import { cn } from '@lib/utils';
 import { Loader2, Paperclip } from 'lucide-react';
 
@@ -22,6 +21,8 @@ export type FileSelectCallback = (
 ) => void;
 
 interface FileTypeSelectorProps {
+  config: ReturnType<typeof useFileTypes>;
+  attachmentCount: number;
   onFileSelect: FileSelectCallback;
   disabled?: boolean;
   ariaLabel?: string;
@@ -33,17 +34,18 @@ export const FileTypeSelector = ({
   disabled = false,
   ariaLabel,
   className,
+  config,
+  attachmentCount,
 }: FileTypeSelectorProps) => {
-  const { fileTypes, uploadConfig, isLoading, error } = useFileTypes();
+  const { fileTypes, uploadConfig, isLoading, error } = config;
   const isMobile = useMobile();
   const [isOpen, setIsOpen] = useState(false);
-  const attachmentFiles = useAttachmentStore(state => state.files);
   const t = useTranslations('pages.chat');
 
   // Logic to check if files can be uploaded
   // Considers admin interface configuration and current uploaded file count
   const canUpload = uploadConfig.enabled && uploadConfig.maxFiles > 0;
-  const hasReachedLimit = attachmentFiles.length >= uploadConfig.maxFiles;
+  const hasReachedLimit = attachmentCount >= uploadConfig.maxFiles;
   const isDisabled = disabled || !canUpload || hasReachedLimit;
 
   // Generate tooltip content
@@ -63,7 +65,7 @@ export const FileTypeSelector = ({
       });
     }
     return t('fileTypeSelector.addAttachment', {
-      currentFiles: attachmentFiles.length,
+      currentFiles: attachmentCount,
       maxFiles: uploadConfig.maxFiles,
     });
   };
@@ -215,7 +217,7 @@ export const FileTypeSelector = ({
                   )}
                 >
                   {t('fileTypeSelector.reachedLimit', {
-                    currentFiles: attachmentFiles.length,
+                    currentFiles: attachmentCount,
                     maxFiles: uploadConfig.maxFiles,
                   })}
                 </div>

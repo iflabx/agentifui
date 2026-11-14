@@ -116,6 +116,7 @@ async function handleDifyProxyRequest(
     const registration = await registerSubmission({
       userId: context.actor.userId,
       serviceInstanceId: target.serviceInstanceId,
+      credentialVersion: target.credentialVersion,
       submissionId: submissionId(request.headers[SUBMISSION_HEADER]),
       backendType: 'dify',
       targetFingerprint: submissionHash([

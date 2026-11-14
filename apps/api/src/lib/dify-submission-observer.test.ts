@@ -20,6 +20,45 @@ function response(events: unknown[]) {
 describe('Dify native acceptance evidence without browser persistence changes', () => {
   beforeEach(() => jest.clearAllMocks());
 
+  it.each(['\n', '\r\n', '\r'])(
+    'observes %j framing across byte chunks without changing forwarded bytes',
+    async newline => {
+      const text = [
+        ': comment',
+        'data: {"event":"message",',
+        'data: "task_id":"task","answer":"中文"}',
+        '',
+        'data: {"event":"message_end","task_id":"task"}',
+        '',
+        'data: {"event":"message_end","task_id":"task"}',
+        '',
+        '',
+      ].join(newline);
+      const bytes = new TextEncoder().encode(text);
+      const upstream = new Response(
+        new ReadableStream({
+          start(controller) {
+            for (const byte of bytes)
+              controller.enqueue(new Uint8Array([byte]));
+            controller.close();
+          },
+        }),
+        { headers: { 'content-type': 'text/event-stream' } }
+      );
+      const forwarded = new Uint8Array(
+        await observeDifyResponse(
+          upstream,
+          'root',
+          'chat-messages'
+        ).arrayBuffer()
+      );
+      expect(forwarded).toEqual(bytes);
+      expect(confirmSubmission).toHaveBeenNthCalledWith(1, 'root', 'accepted');
+      expect(confirmSubmission).toHaveBeenNthCalledWith(2, 'root', 'finished');
+      expect(confirmSubmission).toHaveBeenCalledTimes(2);
+    }
+  );
+
   it('preserves exact bytes, confirms once and closes only on a native terminal', async () => {
     const original = response([
       { event: 'message', task_id: 'task', answer: 'synthetic text' },

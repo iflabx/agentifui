@@ -12,6 +12,8 @@ type AgentErrorKind =
   | 'tool_runtime_failure'
   | 'upstream_unavailable'
   | 'quota_exceeded'
+  | 'concurrency_limited'
+  | 'usage_quota_exceeded'
   | 'auth_failed'
   | 'unknown';
 
@@ -76,6 +78,20 @@ function resolveMessages(
 } {
   if (useZh) {
     switch (kind) {
+      case 'concurrency_limited':
+        return {
+          code: 'AGENT_CONCURRENCY_LIMIT',
+          retryable: true,
+          userMessage: '当前已有任务正在执行，请等待任务结束后重试。',
+          suggestion: '请勿重复提交；若任务状态未知，请先检查原任务状态。',
+        };
+      case 'usage_quota_exceeded':
+        return {
+          code: 'AGENT_QUOTA_EXCEEDED',
+          retryable: false,
+          userMessage: '当前应用的使用次数额度已用尽。',
+          suggestion: '请联系管理员调整应用的使用额度。',
+        };
       case 'content_blocked':
         return {
           code: 'CONTENT_MODERATION_BLOCKED',
@@ -141,6 +157,23 @@ function resolveMessages(
   }
 
   switch (kind) {
+    case 'concurrency_limited':
+      return {
+        code: 'AGENT_CONCURRENCY_LIMIT',
+        retryable: true,
+        userMessage:
+          'Another task is still active. Wait for it to finish before retrying.',
+        suggestion:
+          'Do not resubmit an uncertain task; check its status first.',
+      };
+    case 'usage_quota_exceeded':
+      return {
+        code: 'AGENT_QUOTA_EXCEEDED',
+        retryable: false,
+        userMessage: 'The application usage allowance has been exhausted.',
+        suggestion:
+          'Ask an administrator to adjust the application usage allowance.',
+      };
     case 'content_blocked':
       return {
         code: 'CONTENT_MODERATION_BLOCKED',
@@ -223,6 +256,9 @@ function classifyErrorKind(
 ): AgentErrorKind {
   const message = rawMessage || '';
   const normalizedCode = (code || '').toLowerCase();
+  if (normalizedCode === 'agent_concurrency_limit')
+    return 'concurrency_limited';
+  if (normalizedCode === 'agent_quota_exceeded') return 'usage_quota_exceeded';
 
   if (normalizedCode === 'content_moderation_blocked') {
     return 'content_blocked';

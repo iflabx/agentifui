@@ -96,7 +96,7 @@ async function fetchDefaultAppInstance() {
   return null;
 }
 
-async function fetchActiveAppInstance(instanceId: string) {
+export async function fetchActiveAppInstance(instanceId: string) {
   const result = await fetchAppFromInternalApi(
     new URLSearchParams({ instanceId: instanceId.trim() })
   );
@@ -185,9 +185,8 @@ export const useCurrentAppStore = create<CurrentAppState>()(
         // Security check: ensure user is logged in before initializing app store
         // Prevent unauthenticated users from triggering cache creation
         try {
-          const { getCurrentUser } = await import(
-            '@lib/auth/better-auth/http-client'
-          );
+          const { getCurrentUser } =
+            await import('@lib/auth/better-auth/http-client');
           const user = await getCurrentUser();
 
           if (!user) {

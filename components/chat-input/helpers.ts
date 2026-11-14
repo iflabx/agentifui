@@ -40,6 +40,10 @@ export function buildSubmitFiles(
     name: file.name,
     size: file.size,
     mime_type: file.type,
+    ...(file.uploadedAppId ? { app_id: file.uploadedAppId } : {}),
+    ...(file.uploadedActorId
+      ? { actor_id: file.uploadedActorId, actor_epoch: file.uploadedActorEpoch }
+      : {}),
   }));
 
   return files.length > 0 ? files : undefined;

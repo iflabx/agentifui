@@ -11,6 +11,7 @@ export interface AgentApp {
   name: string;
   baseUrl: string;
   apiKey: string;
+  credentialVersion?: string;
   assistantId: string;
   fingerprint: string;
 }
@@ -42,6 +43,7 @@ interface AgentAppRow {
   base_url: string;
   config: Record<string, unknown> | null;
   key_value: string | null;
+  credential_version?: string;
 }
 
 export const AGENT_APP_VISIBILITY_SQL = `
@@ -95,8 +97,12 @@ export async function resolveAgentApp(
        p.base_url, (
          SELECT key_value FROM api_keys
          WHERE service_instance_id = si.id AND is_default = TRUE
-         ORDER BY created_at ASC LIMIT 1
-       ) AS key_value
+         ORDER BY created_at ASC, id ASC LIMIT 1
+       ) AS key_value, (
+         SELECT credential_version::text FROM api_keys
+         WHERE service_instance_id = si.id AND is_default = TRUE
+         ORDER BY created_at ASC, id ASC LIMIT 1
+       ) AS credential_version
      FROM service_instances si
      JOIN providers p ON p.id = si.provider_id AND p.is_active = TRUE
      WHERE si.id = $1::uuid AND ${AGENT_APP_VISIBILITY_SQL}
@@ -146,6 +152,7 @@ export async function resolveAgentApp(
     name: row.display_name || row.instance_id,
     baseUrl,
     apiKey,
+    credentialVersion: row.credential_version,
     assistantId,
     fingerprint: agentConfigFingerprint(row.id, baseUrl, assistantId),
   };

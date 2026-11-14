@@ -3,6 +3,7 @@
  * Used to clear all related caches during login, logout, or user switching.
  */
 import { clearProfileCache } from '@lib/hooks/use-profile';
+import { syncChatDraftActor } from '@lib/stores/chat-draft-lifecycle';
 
 function clearDifyConfigCacheClientSafe() {
   // Dify runtime config cache lives on server process; browser side only needs
@@ -248,6 +249,7 @@ export const clearCacheOnLogin = (): void => {
  * Clear sensitive cache on logout.
  */
 export const clearCacheOnLogout = (): void => {
+  syncChatDraftActor(null);
   console.log('[Cache Cleanup] Clear cache on logout');
   clearSensitiveCache();
 };

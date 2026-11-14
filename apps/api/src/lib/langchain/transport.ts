@@ -20,6 +20,8 @@ export interface LangChainTurn {
   messageId: string;
   content: string;
   signal?: AbortSignal;
+  beforeDispatch?: () => Promise<void>;
+  onDispatch?: () => void;
 }
 
 export type LangChainRunStatus =
@@ -272,6 +274,7 @@ export async function* streamTurn(
     }
   }
   const request = requestConfig(config, '/ag-ui');
+  await turn.beforeDispatch?.();
   const controller = new AbortController();
   let timedOut = false;
   const abort = () => controller.abort();
@@ -285,6 +288,7 @@ export async function* streamTurn(
   }, STREAM_TIMEOUT_MS);
   let response: Response | undefined;
   try {
+    turn.onDispatch?.();
     response = await fetch(request.url, {
       method: 'POST',
       headers: { ...request.headers, Accept: 'text/event-stream' },

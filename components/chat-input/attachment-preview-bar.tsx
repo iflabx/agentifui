@@ -1,7 +1,6 @@
 'use client';
 
-import { useFileTypes } from '@lib/hooks/use-file-types';
-import { useAttachmentStore } from '@lib/stores/attachment-store';
+import type { AttachmentFile } from '@lib/stores/attachment-store';
 import { cn } from '@lib/utils';
 
 import React, { useEffect, useRef } from 'react';
@@ -14,6 +13,9 @@ import { AttachmentPreviewItem } from './attachment-preview-item';
  * Attachment preview bar component properties
  */
 interface AttachmentPreviewBarProps {
+  files: AttachmentFile[];
+  uploadConfig: { enabled: boolean; maxFiles: number };
+  onRemove: (id: string) => void;
   /** Callback function to notify parent component of height changes */
   onHeightChange: (height: number) => void;
   /** Retry upload callback */
@@ -33,9 +35,10 @@ interface AttachmentPreviewBarProps {
 export const AttachmentPreviewBar: React.FC<AttachmentPreviewBarProps> = ({
   onHeightChange,
   onRetryUpload,
+  files,
+  uploadConfig,
+  onRemove,
 }) => {
-  const files = useAttachmentStore(state => state.files);
-  const { uploadConfig } = useFileTypes();
   const containerRef = useRef<HTMLDivElement>(null);
   const t = useTranslations('components.chatInput.attachmentPreview');
 
@@ -132,6 +135,7 @@ export const AttachmentPreviewBar: React.FC<AttachmentPreviewBarProps> = ({
               key={file.id}
               attachment={file}
               onRetry={onRetryUpload}
+              onRemove={onRemove}
             />
           ))}
         </div>

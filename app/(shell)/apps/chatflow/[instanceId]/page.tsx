@@ -57,6 +57,7 @@ export default function AppDetailPage() {
   const {
     handleSubmit: originalHandleSubmit,
     handleChatflowSubmit,
+    formIdentity,
     isWaitingForResponse,
     clearConversationState,
   } = chatflowInterface;
@@ -408,6 +409,7 @@ export default function AppDetailPage() {
             >
               <div className="py-8">
                 <ChatflowInputArea
+                  key={formIdentity}
                   instanceId={instanceId}
                   onSubmit={handleChatflowSubmit}
                   isProcessing={isProcessing}

@@ -36,6 +36,14 @@ export function toSuccessResponse(data: unknown): ApiActionResponse {
 }
 
 export function toFailureResponse(error: unknown): ApiActionResponse {
+  if (
+    error instanceof Error &&
+    'code' in error &&
+    error.code === '23514' &&
+    ['AGENT_CONFIG_BUSY', 'AGENT_QUOTA_BUSY'].includes(error.message)
+  ) {
+    return toErrorResponse(error.message, 409);
+  }
   const message =
     error instanceof Error && error.message.trim().length > 0
       ? error.message

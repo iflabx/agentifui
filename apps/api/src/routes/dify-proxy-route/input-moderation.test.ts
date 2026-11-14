@@ -2,6 +2,7 @@
 import type { FastifyRequest } from 'fastify';
 
 import type { ApiRuntimeConfig } from '../../config';
+import { moderateInputText } from '../../lib/agent-input-moderation';
 import {
   extractModerationText,
   runInputModeration,
@@ -86,6 +87,62 @@ describe('input moderation helpers', () => {
 
   afterAll(() => {
     global.fetch = originalFetch;
+  });
+
+  it.each(['dify', 'langchain'])(
+    'keeps the %s moderation deadline through a stalled response body',
+    async backend => {
+      jest.useFakeTimers();
+      const cancel = jest.fn();
+      mockedFetch.mockResolvedValueOnce(
+        new Response(new ReadableStream({ pull() {}, cancel }), { status: 200 })
+      );
+      try {
+        const running =
+          backend === 'dify'
+            ? runInputModeration({
+                request: createRequest(),
+                config: createConfig(),
+                context: createContext(),
+                targetConfig: createTargetConfig(),
+              })
+            : moderateInputText({
+                request: createRequest(),
+                config: createConfig(),
+                userId: 'user-1',
+                text: 'Hello',
+              });
+        await jest.advanceTimersByTimeAsync(5001);
+        expect(await running).toMatchObject({ outcome: 'unavailable' });
+        expect(cancel).toHaveBeenCalled();
+        expect(mockedFetch).toHaveBeenCalledTimes(1);
+      } finally {
+        jest.useRealTimers();
+      }
+    }
+  );
+
+  it('cancels an oversized moderation body instead of buffering it without a bound', async () => {
+    const cancel = jest.fn();
+    mockedFetch.mockResolvedValueOnce(
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new Uint8Array(256 * 1024 + 1));
+          },
+          cancel,
+        })
+      )
+    );
+    expect(
+      await runInputModeration({
+        request: createRequest(),
+        config: createConfig(),
+        context: createContext(),
+        targetConfig: createTargetConfig(),
+      })
+    ).toMatchObject({ outcome: 'unavailable' });
+    expect(cancel).toHaveBeenCalled();
   });
 
   it('matches only POST chat/completion endpoints', () => {

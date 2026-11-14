@@ -1,8 +1,8 @@
 'use client';
 
 import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
-import { useCurrentApp } from '@lib/hooks/use-current-app';
 import { uploadDifyFile } from '@lib/services/dify/file-service';
+import { useChatInputStore } from '@lib/stores/chat-input-store';
 import { cn } from '@lib/utils';
 import { AlertCircle } from 'lucide-react';
 
@@ -12,6 +12,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -21,6 +22,7 @@ import { useTranslations } from 'next-intl';
 import {
   type FileUploadFieldConfig,
   type UploadFile,
+  type WorkflowUploadOwner,
   createUploadFiles,
   getDifyFileType,
   getFileSizeHint,
@@ -42,7 +44,22 @@ interface FileUploadFieldProps {
   isSingleFileMode?: boolean;
 }
 
-export function FileUploadField({
+export function FileUploadField(props: FileUploadFieldProps) {
+  const { session, loading } = useAuthSession();
+  const actorEpoch = useChatInputStore(state => state.actorEpoch);
+  const userId = session?.user?.id;
+  return (
+    <ScopedFileUploadField
+      key={JSON.stringify([props.instanceId, userId, actorEpoch])}
+      {...props}
+      userId={userId}
+      actorEpoch={actorEpoch}
+      loading={loading}
+    />
+  );
+}
+
+function ScopedFileUploadField({
   config,
   value,
   onChange,
@@ -50,13 +67,44 @@ export function FileUploadField({
   label,
   instanceId,
   isSingleFileMode = false,
-}: FileUploadFieldProps) {
-  const { session } = useAuthSession();
-  const { currentAppId } = useCurrentApp();
+  userId,
+  actorEpoch,
+  loading,
+}: FileUploadFieldProps & {
+  userId: string | undefined;
+  actorEpoch: number;
+  loading: boolean;
+}) {
   const t = useTranslations('pages.workflow.fileUpload');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([]);
   const lastSuccessIdsRef = useRef('');
+  const attempts = useRef(new Map<string, symbol>());
+  const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  const activeViewRef = useRef(false);
+  const owner = useMemo<WorkflowUploadOwner | null>(
+    () =>
+      userId && instanceId
+        ? { app_id: instanceId, actor_id: userId, actor_epoch: actorEpoch }
+        : null,
+    [instanceId, userId, actorEpoch]
+  );
+  useLayoutEffect(() => {
+    activeViewRef.current = true;
+    const viewAttempts = attempts.current;
+    const viewTimers = timers.current;
+    const unsubscribe = useChatInputStore.subscribe(next => {
+      if (next.actorEpoch !== actorEpoch || next.actorId !== userId)
+        activeViewRef.current = false;
+    });
+    return () => {
+      activeViewRef.current = false;
+      unsubscribe();
+      viewAttempts.clear();
+      viewTimers.forEach(timer => clearTimeout(timer));
+      viewTimers.clear();
+    };
+  }, [actorEpoch, userId]);
 
   useEffect(() => {
     if (!value || (Array.isArray(value) && value.length === 0)) {
@@ -85,12 +133,17 @@ export function FileUploadField({
   }, [value]);
 
   useLayoutEffect(() => {
-    const payload = getSuccessfulFilesPayload(uploadFiles, isSingleFileMode);
+    if (!activeViewRef.current || !owner || loading) return;
+    const payload = getSuccessfulFilesPayload(
+      uploadFiles,
+      isSingleFileMode,
+      owner
+    );
     if (lastSuccessIdsRef.current !== payload.successIds) {
       lastSuccessIdsRef.current = payload.successIds;
       onChange(payload.value);
     }
-  }, [uploadFiles, isSingleFileMode, onChange]);
+  }, [uploadFiles, isSingleFileMode, onChange, owner, loading]);
 
   const updateFileStatus = useCallback(
     (
@@ -98,7 +151,8 @@ export function FileUploadField({
       status: UploadFile['status'],
       progress?: number,
       nextError?: string,
-      uploadedId?: string
+      uploadedId?: string,
+      uploadOwner?: WorkflowUploadOwner
     ) => {
       setUploadFiles(prev =>
         prev.map(file =>
@@ -109,6 +163,7 @@ export function FileUploadField({
                 progress: progress ?? file.progress,
                 error: status === 'error' ? nextError : undefined,
                 uploadedId: status === 'success' ? uploadedId : file.uploadedId,
+                ...uploadOwner,
               }
             : file
         )
@@ -119,25 +174,56 @@ export function FileUploadField({
 
   const uploadFileToDify = useCallback(
     async (uploadFile: UploadFile) => {
-      const userIdToUse = session?.user?.id || 'workflow-user-id';
+      const input = useChatInputStore.getState();
+      if (
+        !activeViewRef.current ||
+        loading ||
+        !userId ||
+        !instanceId ||
+        !attempts.current.has(uploadFile.id) ||
+        input.actorId !== userId ||
+        input.actorEpoch !== actorEpoch
+      )
+        return;
+      const uploadOwner = {
+        app_id: instanceId,
+        actor_id: userId,
+        actor_epoch: actorEpoch,
+      };
+      const attempt = Symbol(uploadFile.id);
+      attempts.current.set(uploadFile.id, attempt);
+      const isCurrent = () =>
+        activeViewRef.current &&
+        attempts.current.get(uploadFile.id) === attempt &&
+        useChatInputStore.getState().actorId === uploadOwner.actor_id &&
+        useChatInputStore.getState().actorEpoch === uploadOwner.actor_epoch;
 
       try {
-        updateFileStatus(uploadFile.id, 'uploading', 0);
-        const appIdToUse = currentAppId || instanceId;
+        updateFileStatus(
+          uploadFile.id,
+          'uploading',
+          0,
+          undefined,
+          undefined,
+          uploadOwner
+        );
         const response = await uploadDifyFile(
-          appIdToUse,
+          uploadOwner.app_id,
           uploadFile.file,
-          userIdToUse
+          uploadOwner.actor_id
         );
 
+        if (!isCurrent()) return;
         updateFileStatus(
           uploadFile.id,
           'success',
           undefined,
           undefined,
-          response.id
+          response.id,
+          uploadOwner
         );
       } catch (uploadError) {
+        if (!isCurrent()) return;
         const errorMessage =
           (uploadError as Error).message || t('uploadFailed');
         updateFileStatus(uploadFile.id, 'error', undefined, errorMessage);
@@ -147,20 +233,24 @@ export function FileUploadField({
         );
       }
     },
-    [currentAppId, instanceId, session?.user?.id, t, updateFileStatus]
+    [instanceId, userId, actorEpoch, loading, t, updateFileStatus]
   );
 
   const handleFileSelect = useCallback(
     (newFiles: File[]) => {
+      if (!activeViewRef.current || loading || !owner) return;
       const newUploadFiles = createUploadFiles(newFiles);
       newUploadFiles.forEach(uploadFile => {
-        setTimeout(() => {
+        attempts.current.set(uploadFile.id, Symbol(uploadFile.id));
+        const timer = setTimeout(() => {
+          timers.current.delete(timer);
           void uploadFileToDify(uploadFile);
         }, 100);
+        timers.current.add(timer);
       });
       setUploadFiles(prev => [...prev, ...newUploadFiles]);
     },
-    [uploadFileToDify]
+    [uploadFileToDify, loading, owner]
   );
 
   const handleFileInputChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -172,6 +262,8 @@ export function FileUploadField({
   };
 
   const handleRemoveFile = (id: string) => {
+    if (!activeViewRef.current) return;
+    attempts.current.delete(id);
     setUploadFiles(prev => prev.filter(file => file.id !== id));
   };
 

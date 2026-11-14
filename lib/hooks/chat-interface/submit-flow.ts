@@ -345,6 +345,7 @@ export async function executeChatSubmit(
       },
       isCurrent,
       answerStream,
+      isStopped: input.viewScope?.isStopped,
       assistantMessageId,
       isNewConversationFlow,
       finalRealConvId,
@@ -379,6 +380,7 @@ export async function executeChatSubmit(
       completionData,
       incompleteAnswerMessage: input.incompleteAnswerMessage,
       assistantWasManuallyStopped:
+        input.viewScope?.isStopped?.() === true ||
         latestAssistantMessage?.wasManuallyStopped === true,
       updateMessage: input.updateMessage,
     });

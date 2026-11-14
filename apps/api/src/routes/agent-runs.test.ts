@@ -7,6 +7,7 @@ import { AgentPolicyError } from '../lib/agent-backends';
 import { moderateInputText } from '../lib/agent-input-moderation';
 import { executeAgentRun } from '../lib/agent-run-execution';
 import {
+  AgentRunError,
   type AgentRunRecord,
   getRunForActor,
   reserveRun,
@@ -82,7 +83,7 @@ beforeEach(() => {
   jest.mocked(reserveRun).mockResolvedValue({ run, replayed: false });
 });
 
-async function request(method: 'POST' | 'GET' = 'POST') {
+async function request(method: 'POST' | 'GET' = 'POST', language?: string) {
   const server = Fastify({ logger: false });
   await server.register(agentRunsRoutes, {
     config: { corsAllowedOrigins: [] } as unknown as ApiRuntimeConfig,
@@ -90,6 +91,7 @@ async function request(method: 'POST' | 'GET' = 'POST') {
   try {
     return await server.inject({
       method,
+      ...(language ? { headers: { 'accept-language': language } } : {}),
       url: `/api/internal/apps/${APP}/agent/runs${method === 'GET' ? `/${RUN}` : ''}`,
       ...(method === 'POST' ? { payload } : {}),
     });
@@ -117,12 +119,56 @@ it.each(['block', 'unavailable'] as const)(
           ? { outcome, categories: ['synthetic'] }
           : { outcome, reason: 'synthetic outage' }
       );
-    expect((await request()).statusCode).toBe(outcome === 'block' ? 400 : 503);
+    const response = await request();
+    expect(response.statusCode).toBe(outcome === 'block' ? 400 : 503);
+    expect(response.json().app_error).toMatchObject({
+      code:
+        outcome === 'block'
+          ? 'CONTENT_MODERATION_BLOCKED'
+          : 'CONTENT_MODERATION_UNAVAILABLE',
+      retryable: true,
+      userMessage: expect.stringMatching(
+        outcome === 'block' ? /moderation/i : /temporarily unavailable/i
+      ),
+    });
     expect(rejectSubmission).toHaveBeenCalled();
     expect(reserveRun).not.toHaveBeenCalled();
     expect(executeAgentRun).not.toHaveBeenCalled();
   }
 );
+
+it.each([
+  ['AGENT_QUOTA_EXCEEDED', false, /usage allowance/i],
+  ['AGENT_CONCURRENCY_LIMIT', true, /another task/i],
+] as const)(
+  'returns distinct policy semantics for %s',
+  async (code, retryable, message) => {
+    jest
+      .mocked(reserveRun)
+      .mockRejectedValueOnce(new AgentPolicyError(429, code));
+    const response = await request();
+    expect(response.statusCode).toBe(429);
+    expect(response.json().app_error).toMatchObject({
+      code,
+      retryable,
+      userMessage: expect.stringMatching(message),
+    });
+    expect(executeAgentRun).not.toHaveBeenCalled();
+  }
+);
+
+it('localizes policy errors with the same locale rule as the Dify proxy', async () => {
+  jest
+    .mocked(reserveRun)
+    .mockRejectedValueOnce(new AgentPolicyError(429, 'AGENT_QUOTA_EXCEEDED'));
+  const response = await request('POST', 'zh-CN,en;q=0.8');
+  expect(response.json().app_error).toMatchObject({
+    code: 'AGENT_QUOTA_EXCEEDED',
+    retryable: false,
+    userMessage:
+      '\u5f53\u524d\u5e94\u7528\u7684\u4f7f\u7528\u6b21\u6570\u989d\u5ea6\u5df2\u7528\u5c3d\u3002',
+  });
+});
 
 it('reserves against the registered root and dispatches just once', async () => {
   const response = await request();
@@ -196,4 +242,38 @@ it('save-only status retry never registers, moderates, reserves or redispatches'
   expect(moderateInputText).not.toHaveBeenCalled();
   expect(reserveRun).not.toHaveBeenCalled();
   expect(executeAgentRun).not.toHaveBeenCalled();
+});
+
+it('returns only authorized visible snapshot fields while a known save continues failing', async () => {
+  jest.mocked(getRunForActor).mockResolvedValue({
+    ...run,
+    execution_status: 'success',
+    persistence_status: 'failed',
+    result: {
+      executionStatus: 'success',
+      messages: [{ id: 'answer', content: 'Known answer', order: 0 }],
+    },
+  });
+  jest
+    .mocked(saveRunResult)
+    .mockRejectedValue(new AgentRunError(503, 'AGENT_STORAGE_UNAVAILABLE'));
+  const response = await request('GET');
+  expect(response.statusCode).toBe(200);
+  expect(response.json()).toMatchObject({
+    executionStatus: 'success',
+    persistenceStatus: 'failed',
+    errorCode: 'AGENT_SAVE_FAILED',
+    recoveryMessages: [
+      {
+        id: 'answer',
+        role: 'assistant',
+        content: 'Known answer',
+        metadata: { backend_run_id: RUN, projection_order: 0 },
+      },
+    ],
+  });
+  expect(response.json()).not.toHaveProperty('result');
+  expect(response.json()).not.toHaveProperty('config_fingerprint');
+  expect(executeAgentRun).not.toHaveBeenCalled();
+  expect(registerSubmission).not.toHaveBeenCalled();
 });

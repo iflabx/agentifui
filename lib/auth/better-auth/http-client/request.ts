@@ -1,3 +1,5 @@
+import { syncChatDraftActor } from '@lib/stores/chat-draft-lifecycle';
+
 import { emitAuthStateChanged } from './cache';
 import type { AuthJsonResult, BetterAuthUser } from './types';
 
@@ -114,6 +116,7 @@ export async function signOutCurrentSession() {
       body: JSON.stringify({}),
     }
   );
+  if (typeof window !== 'undefined') syncChatDraftActor(null);
   emitAuthStateChanged();
   return payload;
 }
