@@ -28,18 +28,12 @@ export function captureDifyInputSubmission(message: string, userId: string) {
     accepted = true;
     useChatInputStore.getState().consumeSnapshot(snapshot);
     useAttachmentStore.getState().consumeFiles(snapshot.scope, files);
-    void (async () => {
-      if (binding.conversationPersistencePromise) {
-        const dbId = await binding.conversationPersistencePromise;
-        if (!dbId) return;
-      }
-      if (!ownsActor()) return;
-      await bindChatInputConversation(
-        snapshot.scope,
-        userId,
-        appId,
-        binding.externalId
-      );
-    })().catch(() => undefined);
+    void bindChatInputConversation(
+      snapshot.scope,
+      userId,
+      appId,
+      binding.externalId,
+      binding.conversationPersistencePromise
+    ).catch(() => undefined);
   };
 }

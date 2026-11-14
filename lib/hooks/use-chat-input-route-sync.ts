@@ -36,7 +36,8 @@ export async function bindChatInputConversation(
   scope: string,
   userId: string,
   appId: string,
-  externalId: string
+  externalId: string,
+  conversationPersistencePromise?: Promise<string | null>
 ) {
   const actorEpoch = useChatInputStore.getState().actorEpoch;
   const prefix = JSON.stringify([actorEpoch, userId, appId]).slice(0, -1) + ',';
@@ -45,6 +46,15 @@ export async function bindChatInputConversation(
     JSON.stringify([actorEpoch, userId, appId, externalId]),
     scope
   );
+  if (conversationPersistencePromise) {
+    const dbId = await conversationPersistencePromise;
+    if (!dbId) return;
+  }
+  if (
+    useChatInputStore.getState().actorId !== userId ||
+    useChatInputStore.getState().actorEpoch !== actorEpoch
+  )
+    return;
   const result = await getConversationByExternalId(externalId);
   const input = useChatInputStore.getState();
   if (

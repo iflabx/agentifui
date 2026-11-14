@@ -51,7 +51,8 @@ describe('submission-local Dify input acceptance', () => {
       original,
       'actor',
       'app',
-      'external-A'
+      'external-A',
+      undefined
     );
   });
 
@@ -80,7 +81,7 @@ describe('submission-local Dify input acceptance', () => {
     expect(bindChatInputConversation).not.toHaveBeenCalled();
   });
 
-  it('waits for persistence before binding and ignores actor changes during that wait', async () => {
+  it('registers the accepted scope immediately while passing persistence to the binder', async () => {
     let finish!: (value: string | null) => void;
     const conversationPersistencePromise = new Promise<string | null>(
       resolve => {
@@ -94,10 +95,16 @@ describe('submission-local Dify input acceptance', () => {
       conversationPersistencePromise,
     });
     expect(useChatInputStore.getState().message).toBe('');
-    expect(bindChatInputConversation).not.toHaveBeenCalled();
+    expect(bindChatInputConversation).toHaveBeenCalledWith(
+      expect.any(String),
+      'actor',
+      'app',
+      'external-A',
+      conversationPersistencePromise
+    );
     useChatInputStore.getState().setActor('other');
     finish('db-A');
     await conversationPersistencePromise;
-    expect(bindChatInputConversation).not.toHaveBeenCalled();
+    expect(bindChatInputConversation).toHaveBeenCalledTimes(1);
   });
 });
