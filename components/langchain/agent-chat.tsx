@@ -139,7 +139,7 @@ function AgentChatSession({
   };
 
   return (
-    <main className="relative flex h-full min-h-0 w-full flex-col text-stone-800 dark:text-stone-200">
+    <main className="relative flex h-full min-h-0 w-full flex-col pt-16 text-stone-800 md:pt-12 dark:text-stone-200">
       <header
         className={cn(
           'mx-auto flex w-full shrink-0 items-center justify-between gap-3 py-3',

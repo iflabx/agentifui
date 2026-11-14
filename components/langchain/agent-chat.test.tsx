@@ -95,6 +95,11 @@ describe('Agent chat draft', () => {
     });
   });
 
+  it('reserves space for fixed desktop and mobile shell navigation', () => {
+    render(<AgentChat appId="app" conversationId={null} />);
+    expect(screen.getByRole('main')).toHaveClass('pt-16', 'md:pt-12');
+  });
+
   it('preserves a rejected draft without resubmitting', async () => {
     send.mockResolvedValue(false);
     render(<AgentChat appId="app" conversationId={null} />);
