@@ -1,8 +1,5 @@
 import { validateDifyFormData } from '@lib/services/dify/validation';
-import {
-  ServiceInstance,
-  useApiConfigStore,
-} from '@lib/stores/api-config-store';
+import { useApiConfigStore } from '@lib/stores/api-config-store';
 import type { DifyAppType } from '@lib/types/dify-app-types';
 import type { DifyParametersSimplifiedConfig } from '@lib/types/dify-parameters';
 import { toast } from 'sonner';
@@ -15,9 +12,11 @@ import { useTranslations } from 'next-intl';
 import type { InstanceFormProps } from './instance-form-types';
 import {
   buildSimplifiedDifyParameters,
+  changeInstanceBackend,
   createEmptyInstanceFormData,
   createInstanceFormDataFromInstance,
   getInitialProviderId,
+  prepareInstanceFormForSave,
   validateInstanceIdValue,
 } from './instance-form-utils';
 
@@ -47,6 +46,7 @@ export function useInstanceFormState({
   const [setAsDefault, setSetAsDefault] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [instanceIdError, setInstanceIdError] = useState('');
+  const isLangChain = formData.config.backend_type === 'langchain';
 
   const currentInstance = instance
     ? serviceInstances.find(item => item.id === instance.id)
@@ -135,7 +135,21 @@ export function useInstanceFormState({
         return;
       }
 
-      const validationErrors = validateDifyFormData(formData);
+      const validationErrors = isLangChain
+        ? [
+            !formData.instance_id.trim() &&
+              t('backend.validation.instanceIdRequired'),
+            !formData.display_name.trim() &&
+              t('backend.validation.displayNameRequired'),
+            !formData.config.langchain?.assistant_id.trim() &&
+              t('backend.validation.assistantIdRequired'),
+            !formData.config.api_url.trim() &&
+              t('validation.fillApiCredentials'),
+            (!isEditing || !hasApiKey) &&
+              !formData.apiKey.trim() &&
+              t('validation.fillApiCredentials'),
+          ].filter(Boolean)
+        : validateDifyFormData(formData);
       if (validationErrors.length > 0) {
         toast.error(t('validation.formValidationFailed'), {
           description: validationErrors.join('\n'),
@@ -144,25 +158,17 @@ export function useInstanceFormState({
       }
 
       onSave({
-        ...formData,
-        instance_id: formData.instance_id.trim(),
-        config: {
-          ...formData.config,
-          app_metadata: {
-            ...formData.config.app_metadata,
-            dify_apptype: formData.config.app_metadata.dify_apptype,
-            is_marketplace_app:
-              formData.config.app_metadata.app_type === 'marketplace',
-          },
-        },
-        setAsDefault,
+        ...prepareInstanceFormForSave(formData),
+        setAsDefault: !isLangChain && setAsDefault,
         selectedProviderId: isEditing ? undefined : selectedProviderId,
       });
     },
     [
       formData,
+      hasApiKey,
       instanceIdError,
       isEditing,
+      isLangChain,
       onSave,
       selectedProviderId,
       setAsDefault,
@@ -192,6 +198,9 @@ export function useInstanceFormState({
   );
 
   const handleSyncFromDify = useCallback(async () => {
+    if (formData.config.backend_type === 'langchain') {
+      return;
+    }
     if (!isEditing && (!formData.config.api_url || !formData.apiKey)) {
       toast.warning(t('validation.fillApiCredentials'));
       return;
@@ -215,9 +224,8 @@ export function useInstanceFormState({
 
       if (isEditing) {
         try {
-          const { getDifyAppInfo, getDifyAppParameters } = await import(
-            '@lib/services/dify/app-browser-service'
-          );
+          const { getDifyAppInfo, getDifyAppParameters } =
+            await import('@lib/services/dify/app-browser-service');
           [appInfo, difyParams] = await Promise.all([
             getDifyAppInfo(formData.instance_id),
             getDifyAppParameters(formData.instance_id),
@@ -367,6 +375,12 @@ export function useInstanceFormState({
     }));
   }, []);
 
+  const updateBackend = useCallback((backend: 'dify' | 'langchain') => {
+    setFormData(prev => changeInstanceBackend(prev, backend));
+    setSetAsDefault(false);
+    setShowDifyPanel(false);
+  }, []);
+
   const updateDifyAppType = useCallback((type: DifyAppType) => {
     setFormData(prev => ({
       ...prev,
@@ -399,6 +413,8 @@ export function useInstanceFormState({
     tButtons,
     tDifyParametersPanel,
     formData,
+    isLangChain,
+    updateBackend,
     setFormData,
     baselineData,
     selectedProviderId,

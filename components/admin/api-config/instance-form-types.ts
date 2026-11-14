@@ -14,14 +14,16 @@ export interface InstanceFormData {
   api_path: string;
   apiKey: string;
   config: {
+    backend_type?: 'dify' | 'langchain';
+    langchain?: { assistant_id: string };
     api_url: string;
     app_metadata: {
       app_type: 'model' | 'marketplace';
-      dify_apptype: DifyAppType;
+      dify_apptype?: DifyAppType;
       tags: string[];
       is_marketplace_app?: boolean;
     };
-    dify_parameters: DifyParametersSimplifiedConfig;
+    dify_parameters?: DifyParametersSimplifiedConfig;
   };
 }
 

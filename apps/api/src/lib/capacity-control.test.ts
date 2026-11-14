@@ -2,7 +2,10 @@
 import Fastify from 'fastify';
 import { get } from 'node:http';
 
-import { installCapacityControl } from './capacity-control';
+import {
+  installCapacityControl,
+  trackApiBackgroundTask,
+} from './capacity-control';
 import {
   isRealtimeOutboxBusy,
   setRealtimeOutboxPaused,
@@ -34,6 +37,32 @@ test('capacity control is absent unless explicitly enabled', async () => {
   installCapacityControl(app, '');
   expect((await app.inject('/__agentifui/capacity')).statusCode).toBe(404);
   await app.close();
+});
+
+test('tracks detached generation work for draining after the HTTP client has gone', async () => {
+  const app = Fastify();
+  installCapacityControl(app, token);
+  let finish!: () => void;
+  const task = new Promise<void>(resolve => {
+    finish = resolve;
+  });
+  trackApiBackgroundTask(task);
+  try {
+    expect(
+      (await app.inject({ url: '/__agentifui/capacity', headers })).json()
+        .backgroundTasks
+    ).toBe(1);
+    finish();
+    await task;
+    expect(
+      (await app.inject({ url: '/__agentifui/capacity', headers })).json()
+        .backgroundTasks
+    ).toBe(0);
+  } finally {
+    finish();
+    await task;
+    await app.close();
+  }
 });
 
 test('requires a private token and a loopback transport, not forwarded headers', async () => {

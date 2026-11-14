@@ -24,6 +24,8 @@ export function InstanceForm(props: InstanceFormProps) {
   const {
     providers,
     formData,
+    isLangChain,
+    updateBackend,
     setFormData,
     selectedProviderId,
     setSelectedProviderId,
@@ -54,21 +56,27 @@ export function InstanceForm(props: InstanceFormProps) {
           'border-stone-200 bg-white dark:border-stone-600 dark:bg-stone-800'
         )}
       >
-        <InstanceFormHeader
-          isEditing={isEditing}
-          instanceId={instance?.id}
-          instanceName={formData.display_name || 'this app'}
-          isCurrentDefault={isCurrentDefault}
-          setAsDefault={setAsDefault}
-          onToggleSetAsDefault={() => setSetAsDefault(!setAsDefault)}
-          hasUnsavedChanges={hasUnsavedChanges}
-          isSyncing={isSyncing}
-          canSync={
-            isEditing || Boolean(formData.config.api_url && formData.apiKey)
-          }
-          onOpenDifyPanel={() => setShowDifyPanel(true)}
-          onSyncFromDify={handleSyncFromDify}
-        />
+        {isLangChain ? (
+          <h3 className="mb-6 font-serif text-lg font-bold text-stone-900 dark:text-stone-100">
+            {isEditing ? t('title.edit') : t('title.add')}
+          </h3>
+        ) : (
+          <InstanceFormHeader
+            isEditing={isEditing}
+            instanceId={instance?.id}
+            instanceName={formData.display_name || 'this app'}
+            isCurrentDefault={isCurrentDefault}
+            setAsDefault={setAsDefault}
+            onToggleSetAsDefault={() => setSetAsDefault(!setAsDefault)}
+            hasUnsavedChanges={hasUnsavedChanges}
+            isSyncing={isSyncing}
+            canSync={
+              isEditing || Boolean(formData.config.api_url && formData.apiKey)
+            }
+            onOpenDifyPanel={() => setShowDifyPanel(true)}
+            onSyncFromDify={handleSyncFromDify}
+          />
+        )}
 
         <InstanceProviderCard
           isEditing={isEditing}
@@ -79,6 +87,57 @@ export function InstanceForm(props: InstanceFormProps) {
         />
 
         <form onSubmit={handleSubmit} className="space-y-6">
+          <div>
+            <label
+              htmlFor="instance-backend"
+              className="mb-2 block font-serif text-sm font-medium text-stone-700 dark:text-stone-300"
+            >
+              {t('backend.label')}
+            </label>
+            <select
+              id="instance-backend"
+              name="backend_type"
+              value={formData.config.backend_type || 'dify'}
+              onChange={event =>
+                updateBackend(event.target.value as 'dify' | 'langchain')
+              }
+              disabled={isSyncing || isProcessing}
+              className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 font-serif text-stone-900 dark:border-stone-600 dark:bg-stone-700 dark:text-stone-100"
+            >
+              <option value="dify">Dify</option>
+              <option value="langchain">LangChain</option>
+            </select>
+          </div>
+
+          {isLangChain && (
+            <div>
+              <label
+                htmlFor="instance-assistant-id"
+                className="mb-2 block font-serif text-sm font-medium text-stone-700 dark:text-stone-300"
+              >
+                {t('backend.assistantId')}
+              </label>
+              <input
+                id="instance-assistant-id"
+                name="assistant_id"
+                value={formData.config.langchain?.assistant_id || ''}
+                onChange={event =>
+                  setFormData(prev => ({
+                    ...prev,
+                    config: {
+                      ...prev.config,
+                      langchain: { assistant_id: event.target.value },
+                    },
+                  }))
+                }
+                required
+                className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 font-serif text-stone-900 dark:border-stone-600 dark:bg-stone-700 dark:text-stone-100"
+              />
+              <p className="mt-2 font-serif text-xs text-stone-500 dark:text-stone-400">
+                {t('backend.langchainNote')}
+              </p>
+            </div>
+          )}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <InstanceIdField
               value={formData.instance_id}
@@ -128,7 +187,7 @@ export function InstanceForm(props: InstanceFormProps) {
             selectedProviderId={selectedProviderId}
           />
 
-          {!isEditing && (
+          {!isEditing && !isLangChain && (
             <div className="flex justify-center">
               <button
                 type="button"
@@ -175,84 +234,88 @@ export function InstanceForm(props: InstanceFormProps) {
             />
           </div>
 
-          <div>
-            <label
-              className={cn(
-                'mb-3 block font-serif text-sm font-medium',
-                'text-stone-700 dark:text-stone-300'
-              )}
-            >
-              {t('appType.label')}
-            </label>
-            <div className="flex gap-4">
-              {(['model', 'marketplace'] as const).map(appType => {
-                const selected =
-                  formData.config.app_metadata.app_type === appType;
-                return (
-                  <button
-                    key={appType}
-                    type="button"
-                    onClick={() => updateAppType(appType)}
-                    className={cn(
-                      'flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-colors',
-                      selected
-                        ? 'border-stone-400 bg-stone-100 dark:border-stone-500 dark:bg-stone-700/50'
-                        : 'border-stone-300 hover:border-stone-400 dark:border-stone-600 dark:hover:border-stone-500'
-                    )}
-                  >
-                    <div
+          {!isLangChain && (
+            <div>
+              <label
+                className={cn(
+                  'mb-3 block font-serif text-sm font-medium',
+                  'text-stone-700 dark:text-stone-300'
+                )}
+              >
+                {t('appType.label')}
+              </label>
+              <div className="flex gap-4">
+                {(['model', 'marketplace'] as const).map(appType => {
+                  const selected =
+                    formData.config.app_metadata.app_type === appType;
+                  return (
+                    <button
+                      key={appType}
+                      type="button"
+                      onClick={() => updateAppType(appType)}
                       className={cn(
-                        'flex h-4 w-4 items-center justify-center rounded-full border-2',
+                        'flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-colors',
                         selected
-                          ? 'border-stone-600 bg-stone-600 dark:border-stone-400 dark:bg-stone-400'
-                          : 'border-stone-400 dark:border-stone-500'
+                          ? 'border-stone-400 bg-stone-100 dark:border-stone-500 dark:bg-stone-700/50'
+                          : 'border-stone-300 hover:border-stone-400 dark:border-stone-600 dark:hover:border-stone-500'
                       )}
                     >
-                      {selected && (
+                      <div
+                        className={cn(
+                          'flex h-4 w-4 items-center justify-center rounded-full border-2',
+                          selected
+                            ? 'border-stone-600 bg-stone-600 dark:border-stone-400 dark:bg-stone-400'
+                            : 'border-stone-400 dark:border-stone-500'
+                        )}
+                      >
+                        {selected && (
+                          <div
+                            className={cn(
+                              'h-2 w-2 rounded-full',
+                              'bg-white dark:bg-stone-800'
+                            )}
+                          />
+                        )}
+                      </div>
+                      <div>
                         <div
                           className={cn(
-                            'h-2 w-2 rounded-full',
-                            'bg-white dark:bg-stone-800'
+                            'font-serif text-sm font-medium',
+                            'text-stone-900 dark:text-stone-100'
                           )}
-                        />
-                      )}
-                    </div>
-                    <div>
-                      <div
-                        className={cn(
-                          'font-serif text-sm font-medium',
-                          'text-stone-900 dark:text-stone-100'
-                        )}
-                      >
-                        {t(`appType.${appType}.title`)}
+                        >
+                          {t(`appType.${appType}.title`)}
+                        </div>
+                        <div
+                          className={cn(
+                            'font-serif text-xs',
+                            'text-stone-600 dark:text-stone-400'
+                          )}
+                        >
+                          {t(`appType.${appType}.description`)}
+                        </div>
                       </div>
-                      <div
-                        className={cn(
-                          'font-serif text-xs',
-                          'text-stone-600 dark:text-stone-400'
-                        )}
-                      >
-                        {t(`appType.${appType}.description`)}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
+                    </button>
+                  );
+                })}
+              </div>
+              <p
+                className={cn(
+                  'mt-2 font-serif text-xs',
+                  'text-stone-500 dark:text-stone-400'
+                )}
+              >
+                {t('appType.note')}
+              </p>
             </div>
-            <p
-              className={cn(
-                'mt-2 font-serif text-xs',
-                'text-stone-500 dark:text-stone-400'
-              )}
-            >
-              {t('appType.note')}
-            </p>
-          </div>
+          )}
 
-          <DifyAppTypeSelector
-            value={formData.config.app_metadata.dify_apptype}
-            onChange={updateDifyAppType}
-          />
+          {!isLangChain && (
+            <DifyAppTypeSelector
+              value={formData.config.app_metadata.dify_apptype || 'chatbot'}
+              onChange={updateDifyAppType}
+            />
+          )}
 
           <TagsSelector
             tags={formData.config.app_metadata.tags}
@@ -263,15 +326,17 @@ export function InstanceForm(props: InstanceFormProps) {
         </form>
       </div>
 
-      <DifyParametersPanel
-        isOpen={showDifyPanel}
-        onClose={() => setShowDifyPanel(false)}
-        config={formData.config.dify_parameters || {}}
-        onSave={handleDifyParametersSave}
-        instanceName={
-          formData.display_name || panelTranslations('defaultInstanceName')
-        }
-      />
+      {!isLangChain && (
+        <DifyParametersPanel
+          isOpen={showDifyPanel}
+          onClose={() => setShowDifyPanel(false)}
+          config={formData.config.dify_parameters || {}}
+          onSave={handleDifyParametersSave}
+          instanceName={
+            formData.display_name || panelTranslations('defaultInstanceName')
+          }
+        />
+      )}
     </>
   );
 }

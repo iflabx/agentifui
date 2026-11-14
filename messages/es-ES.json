@@ -1454,6 +1454,16 @@
           "difyConfig": {
             "title": "Configuración de Parámetros de Dify",
             "appTypeNote": "Las aplicaciones con tipo \"Modelo\" aparecerán en el selector de modelos de la interfaz de chat"
+          },
+          "backend": {
+            "label": "Backend",
+            "assistantId": "Assistant ID",
+            "langchainNote": "Use the assistant exposed by this service. Text and read-only tools only; service credentials stay on the server.",
+            "validation": {
+              "instanceIdRequired": "Enter an application identifier.",
+              "displayNameRequired": "Enter a display name.",
+              "assistantIdRequired": "Enter an assistant identifier."
+            }
           }
         },
         "useApiConfigEvents": {
@@ -2725,5 +2735,32 @@
       "size": "Tamaño:"
     },
     "closeButton": "Cerrar vista previa"
+  },
+  "langchain": {
+    "title": "LangChain Agent",
+    "capabilities": "Text chat, conversation memory and read-only tool summaries. Files and execution cancellation are not supported.",
+    "newConversation": "New conversation",
+    "history": "Conversation history",
+    "untitled": "Untitled conversation",
+    "emptyHistory": "No saved conversations yet.",
+    "loading": "Loading…",
+    "loginRequired": "Sign in to use this application.",
+    "unavailable": "This application or conversation is unavailable, or you no longer have access.",
+    "rateLimited": "The active-run limit has been reached. Wait for the current run to finish.",
+    "requestFailed": "The request could not be completed. Check the run status before sending again.",
+    "you": "You",
+    "assistant": "Assistant",
+    "tool": "Tool",
+    "saved": "Completed and saved",
+    "saveIncomplete": "Execution completed, but saving is not confirmed.",
+    "failed": "Execution failed or was interrupted. Any saved partial response remains in history.",
+    "unknown": "Execution outcome is not confirmed.",
+    "running": "Running…",
+    "noAutomaticRetry": "Do not resend automatically: the backend may still be executing. Status checks are bounded and do not restart generation.",
+    "message": "Message",
+    "placeholder": "Send a text message to this Agent…",
+    "confirmDelete": "Delete this local conversation? This does not delete the upstream Agent memory.",
+    "deleteConversation": "Delete conversation",
+    "send": "Send"
   }
 }

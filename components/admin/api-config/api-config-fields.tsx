@@ -1,14 +1,14 @@
 'use client';
 
 import { useTheme } from '@lib/hooks/use-theme';
-import type { DifyAppType } from '@lib/types/dify-app-types';
-import type { DifyParametersSimplifiedConfig } from '@lib/types/dify-parameters';
 import { cn } from '@lib/utils';
 import { Eye, EyeOff, Globe, Key } from 'lucide-react';
 
 import { useState } from 'react';
 
 import { useTranslations } from 'next-intl';
+
+import type { InstanceFormData } from './instance-form-types';
 
 interface Provider {
   id: string;
@@ -18,23 +18,6 @@ interface Provider {
 
 interface Instance {
   provider_id?: string;
-}
-
-interface InstanceFormData {
-  instance_id: string;
-  display_name: string;
-  description: string;
-  api_path: string;
-  apiKey: string;
-  config: {
-    api_url: string;
-    app_metadata: {
-      app_type: 'model' | 'marketplace';
-      dify_apptype: DifyAppType;
-      tags: string[];
-    };
-    dify_parameters: DifyParametersSimplifiedConfig;
-  };
 }
 
 interface ApiConfigFieldsProps {
@@ -59,6 +42,10 @@ export const ApiConfigFields = ({
   const { isDark } = useTheme();
   const [showApiKey, setShowApiKey] = useState(false);
   const t = useTranslations('pages.admin.apiConfig.fields');
+  const fallbackApiUrl =
+    formData.config.backend_type === 'langchain'
+      ? ''
+      : 'https://api.dify.ai/v1';
 
   const getApiUrl = () => {
     if (formData.config.api_url) return formData.config.api_url;
@@ -67,10 +54,10 @@ export const ApiConfigFields = ({
       const currentProvider = providers.find(
         p => p.id === instance.provider_id
       );
-      return currentProvider?.base_url || 'https://api.dify.ai/v1';
+      return currentProvider?.base_url || fallbackApiUrl;
     } else {
       const selectedProvider = providers.find(p => p.id === selectedProviderId);
-      return selectedProvider?.base_url || 'https://api.dify.ai/v1';
+      return selectedProvider?.base_url || fallbackApiUrl;
     }
   };
 
@@ -89,6 +76,7 @@ export const ApiConfigFields = ({
       <div>
         <div className="mb-2 flex items-center justify-between">
           <label
+            htmlFor="instance-api-url"
             className={cn(
               'font-serif text-sm font-medium',
               isDark ? 'text-stone-300' : 'text-stone-700'
@@ -111,6 +99,8 @@ export const ApiConfigFields = ({
         </div>
 
         <input
+          id="instance-api-url"
+          name="api_url"
           type="url"
           value={getApiUrl()}
           disabled={true}
@@ -154,6 +144,7 @@ export const ApiConfigFields = ({
       <div>
         <div className="mb-2 flex items-start justify-between">
           <label
+            htmlFor="instance-api-key"
             className={cn(
               'font-serif text-sm font-medium',
               isDark ? 'text-stone-300' : 'text-stone-700'
@@ -183,6 +174,8 @@ export const ApiConfigFields = ({
 
         <div className="relative">
           <input
+            id="instance-api-key"
+            name="api_key"
             type={showApiKey ? 'text' : 'password'}
             value={formData.apiKey}
             onChange={e =>
@@ -197,7 +190,10 @@ export const ApiConfigFields = ({
             placeholder={
               isEditing ? t('keyPlaceholderEdit') : t('keyPlaceholderNew')
             }
-            required={!isEditing}
+            required={
+              !isEditing ||
+              (formData.config.backend_type === 'langchain' && !hasApiKey)
+            }
           />
           <button
             type="button"

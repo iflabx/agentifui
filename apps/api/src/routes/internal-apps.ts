@@ -5,6 +5,7 @@ import {
   queryRowsWithPgSystemContext,
   queryRowsWithPgUserContext,
 } from '../lib/pg-context';
+import { publicAppConfig } from '../lib/public-app-config';
 import { buildRouteErrorPayload } from '../lib/route-error';
 import {
   type ActorIdentity,
@@ -49,10 +50,10 @@ function toAppDetail(row: AppRow) {
     display_name: row.display_name,
     description: row.description,
     instance_id: row.instance_id,
-    api_path: row.api_path,
+    api_path: row.config?.backend_type === 'langchain' ? '' : row.api_path,
     is_default: row.is_default,
     visibility: row.visibility,
-    config: row.config || {},
+    config: publicAppConfig(row.config),
     created_at: row.created_at,
     updated_at: row.updated_at,
     provider_name: row.provider_name,
@@ -72,7 +73,7 @@ function toAppListItem(row: AppRow) {
     instance_id: row.instance_id,
     display_name: row.display_name || undefined,
     description: row.description || undefined,
-    config: row.config || {},
+    config: publicAppConfig(row.config),
     visibility: row.visibility || 'public',
   };
 }

@@ -18,6 +18,7 @@ import { adminStatusRoutes } from './routes/admin-status';
 import { adminTranslationsRoutes } from './routes/admin-translations';
 import { adminUsersRoutes } from './routes/admin-users';
 import { adminUsersForGroupRoutes } from './routes/admin-users-for-group';
+import { agentRunsRoutes } from './routes/agent-runs';
 import { contentPagesRoutes } from './routes/content-pages';
 import { difyProxyRoutes } from './routes/dify-proxy';
 import { healthRoutes } from './routes/health';
@@ -174,6 +175,7 @@ export async function createApiServer(config: ApiRuntimeConfig) {
   await app.register(difyProxyRoutes, { config });
   await app.register(healthRoutes, { config });
   await app.register(internalAppsRoutes, { config });
+  await app.register(agentRunsRoutes, { config });
   await app.register(internalDataRoutes, { config });
   await app.register(internalDifyConfigRoutes, { config });
   await app.register(internalErrorEventsClientRoutes, { config });
