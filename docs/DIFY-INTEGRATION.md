@@ -1,5 +1,10 @@
 # Dify Service API Compatibility
 
+For provider/application setup through the website, start with the
+[administrator guide](ADMIN-GUIDE.md#dify). For end-user behavior, see the
+[user guide](USER-GUIDE.md). This document describes integration contracts rather
+than a complete upstream feature list.
+
 AgentifUI uses Dify's application-scoped Service API, normally served under
 `/v1`. Compatibility work targets the Dify `1.19.0` tagged implementation; this
 does not mean every newer Dify feature is available in the AgentifUI interface.
@@ -13,8 +18,12 @@ cached browser pages must be refreshed after this coordinated upgrade. The
 Dify service helpers create a new UUID per generation; their final optional
 `{ submissionId }` argument lets an explicit replay reuse the original UUID.
 Do not automatically resend a generation after a network interruption, and do
-not reuse an ID for a new question. Upstream `user` binding and browser-side
-conversation/message persistence are unchanged.
+not reuse an ID for a new question. Existing legacy paths retain upstream `user`
+binding and browser-side conversation/message saving. Explicitly negotiated
+AG-UI chatbot conversations instead use trusted server bindings and server-side
+saving; see the [compatibility reference](COMPATIBILITY.md) and
+[AG-UI integration](AGUI-INTEGRATION.md). Never enable both persistence writers
+for the same conversation.
 
 ## Implementation Boundaries
 

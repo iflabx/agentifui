@@ -2,7 +2,10 @@
 
 ## Scope
 
-This document describes the current repository architecture as of March 12, 2026. It is intentionally narrower than a long-term vision document: the goal is to explain how the codebase works today.
+This document describes the current repository architecture, updated November 15, 2026. It is intentionally narrower than a long-term vision document: the goal is
+to explain how the codebase works today. For local setup, source navigation and
+change examples, use the [developer guide](DEVELOPMENT.md); for submission rules,
+use [Contributing](../CONTRIBUTING.md).
 
 ## Repository Shape
 
@@ -27,7 +30,7 @@ Browser
           -> PostgreSQL
           -> Redis
           -> MinIO / S3
-          -> Dify upstreams
+          -> Dify or compatible LangChain services
 ```
 
 The split is deliberate:
@@ -59,6 +62,7 @@ When `FASTIFY_PROXY_ENABLED` is on, Next.js rewrites selected prefixes to Fastif
 The active list includes:
 
 - `/api/dify`
+- `/api/content`
 - `/api/internal/data`
 - `/api/internal/apps`
 - `/api/internal/profile`
@@ -94,6 +98,45 @@ Fastify routes live in `apps/api/src/routes/` and use `apps/api/src/lib/` plus s
 - auth/session lookup for proxied requests
 - storage and realtime route behavior
 - operational health and observability endpoints
+
+## Agent Execution And Shared Interaction
+
+The shared product API under `/api/internal/apps/:appId/agent` is registered in
+`apps/api/src/routes/agent-runs.ts`, within the existing `/api/internal/apps`
+rewrite prefix. It resolves application access and trusted local conversation/run
+bindings before backend execution. It is not an unauthenticated pass-through to
+an arbitrary Agent URL or a promise of a standard AG-UI HTTP endpoint.
+
+- `apps/api/src/lib/agent-app.ts` and the submission/run repositories resolve
+  backend configuration, actor access, admission and persistent identities.
+- `apps/api/src/lib/agui/` adapts the bounded negotiated Dify/LangChain paths;
+  `apps/api/src/lib/langchain/` owns native LangChain transport and the optional
+  human-input contract. Native service differences stay behind these boundaries.
+- `packages/shared/src/agui/` holds event schemas/writing and pure display/history
+  projections. It has no database or backend credentials. Schema-valid upstream
+  data is not automatically safe public output.
+- `components/langchain/agent-chat.tsx` integrates shared product chat components
+  and history. The directory name does not make the negotiated Dify path a second
+  navigation or persistence system.
+
+LangChain and explicitly opted-in Dify marketplace chatbots use negotiated AG-UI
+with server-managed saving. The Dify opt-in is text-only; existing Dify model,
+chatflow, workflow and other compatible paths retain their own behavior and
+browser-managed saving where applicable. A conversation must not have both a
+browser and server history writer.
+
+`backend_conversations`, `backend_runs`, `agent_submissions` and
+`backend_run_interactions` complement the existing local conversations/messages.
+They track native bindings, execution versus saving, task admission and optional
+approve/reject decisions. Backend identifiers supplied by the browser never replace
+actor-scoped ownership checks. A disconnect is not cancellation, a known saved
+result can support save-only recovery, and an unknown dispatch/resume must not
+be blindly replayed. There is no general process-crash stream recovery.
+
+See [AG-UI integration](AGUI-INTEGRATION.md),
+[LangChain integration](LANGCHAIN-INTEGRATION.md), [Dify integration](DIFY-INTEGRATION.md)
+and [generation governance](AGENT-GOVERNANCE.md) for exact negotiated profiles,
+capabilities, migration requirements and failure semantics.
 
 ## PostgreSQL Security Model
 
@@ -183,15 +226,28 @@ The recent `/api/internal/error-events/client` cutover is an example of this pat
 
 ## Deployment Model
 
-The supported production shape is:
+Two application installation paths share the same Web/API and data boundaries:
 
-- `AgentifUI-Prod` - Next.js process managed by PM2
-- `AgentifUI-API-Prod` - Fastify process managed by PM2
-- deployment entrypoint: `pnpm run deploy`
-- PM2 config: `ecosystem.prod.config.js`
-- smoke check: `scripts/smoke-prod.sh`
+- **Host/PM2:** `AgentifUI-Prod` runs Next.js and `AgentifUI-API-Prod` runs
+  Fastify. The deployment entrypoint is `pnpm run deploy`, with
+  `ecosystem.prod.config.js` and `scripts/smoke-prod.sh`.
+- **Docker:** one application image runs separate Web/API services through
+  `compose.yaml`; data services can use the optional profile or external
+  dependencies. The optional manual-capacity topology manages replicas through
+  its own gateway/connection-pool configuration, not ordinary bridge scaling.
 
-There is no separate public staging runbook in this repository. The documented public flows are `dev`, isolated `test`, and `prod`.
+Both require PostgreSQL, Redis, S3-compatible storage and persistent runtime
+content outside replaceable releases. Environment configuration, native backend
+credentials and user/operational data are not part of the image/source defaults.
+Public Web settings and prepared interface translations are build inputs;
+database startup does not automatically apply migrations.
+
+Follow [host deployment](QUICK-DEPLOYMENT.md), [Docker](DOCKER.md),
+[manual Docker capacity](DOCKER-CAPACITY.md), [configuration](CONFIGURATION.md)
+and [operations](OPERATIONS.md) for commands. Ordinary feature Stage acceptance
+uses a separate PM2 production build; relevant Docker validation is additional
+for deployment/image/startup changes and Docker deliveries. Private environment
+topology is not a prerequisite for a public contributor's local setup.
 
 ## CI Model
 
@@ -222,3 +278,7 @@ These are the current rules worth preserving:
 3. Business data should flow through PostgreSQL with RLS-aware actor context.
 4. Test and CI environments should use isolated database, Redis, and bucket namespaces.
 5. Disabled compatibility routes should fail closed, not silently serve stale business logic.
+6. Shared interaction does not erase backend capability differences or authorize
+   arbitrary upstream metadata/tool output for the browser.
+7. A conversation has one persistence owner; execution, saving and human decisions
+   retain trusted local identities and explicit unknown-outcome handling.

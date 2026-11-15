@@ -15,6 +15,11 @@ It assumes:
    - `AgentifUI-API-Prod` for Fastify
 4. The supported deploy entrypoint is `pnpm run deploy` (explicit `run`).
 
+After deployment, follow the [administrator guide](ADMIN-GUIDE.md) for first
+administrator bootstrap and Dify/LangChain application setup, and give users the
+[user guide](USER-GUIDE.md). The [operations guide](OPERATIONS.md) covers routine
+checks and incident diagnosis without replacing the deployment steps below.
+
 ## 2. Prerequisites
 
 Install and prepare:
@@ -52,6 +57,15 @@ default privileges or an explicit grant to that role. The old release can
 run with the additional empty table, so code rollback does not require
 dropping it. Do not run an unreviewed authentication CLI migration against
 an existing production database.
+
+That SSO migration is not the complete upgrade list for newer versions. Current
+multi-backend generation also needs the ordered migrations in
+[Generation Governance](AGENT-GOVERNANCE.md#deployment-and-request-contract).
+Negotiated Dify conversations and LangChain human input have additional migrations
+there, including the resume dispatch fence. Apply every pending migration between
+the installed and target versions, with runtime grants; a Dify-only installation
+still needs the shared governance schema. Resolve pending human-input work before
+reverting to code that cannot display or resume it.
 
 ## 3. Create `.env.prod`
 

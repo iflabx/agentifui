@@ -3,7 +3,7 @@
 > Community Edition: Apache 2.0
 > Commercial licensing and support: contact [license@iflabx.com](mailto:license@iflabx.com)
 
-AgentifUI is a monorepo for an enterprise-oriented AI application frontend built on Next.js 16, React 19, Fastify, PostgreSQL, Redis, MinIO, better-auth, and Dify. The current codebase uses a split runtime:
+AgentifUI is an enterprise-oriented Agent UI for existing Dify applications and compatible LangChain Agent services, with a shared AG-UI interaction foundation for supported paths. It does not build or host the Agents themselves. The monorepo uses Next.js 16, React 19, Fastify, PostgreSQL, Redis, MinIO/S3 and better-auth, with a split runtime:
 
 - `app/` serves the Next.js UI, auth handlers, and compatibility API stubs.
 - `apps/api/` runs the Fastify sidecar for business APIs and proxy-heavy routes.
@@ -12,13 +12,21 @@ AgentifUI is a monorepo for an enterprise-oriented AI application frontend built
 ## Key Capabilities
 
 - Multi-app UI for chat, agent, chatbot, chatflow, workflow, and text generation flows
+- Dify and compatible LangChain backends, with shared chat/history and explicitly bounded AG-UI support
+- Optional native LangChain human confirmation with approve/reject; not general Dify human-input support
 - better-auth based login, SSO, local-password fallback controls, and phone-OTP support
 - Fastify sidecar for selected `/api/*` prefixes, with cutover and smoke-check scripts
 - PostgreSQL-backed persistence with runtime actor context and RLS-aware access patterns
 - Redis-backed cache invalidation, realtime broker helpers, and shared prefixes for isolation
 - MinIO/S3 avatar and content-image upload flows
 - Error-event capture pipeline for frontend and API failures
-- Production deployment via PM2, `pnpm run deploy`, and smoke verification
+- Self-hosted Docker Compose or host/PM2 deployment, upgrade/recovery runbooks and optional manual Docker scaling
+
+Start with the [documentation index](docs/README.md) for installation, operation,
+administration and end-user guides. Use docs from the tag/commit you install;
+`main` can describe functionality newer than the latest released version.
+For working on the source, read the [developer guide](docs/DEVELOPMENT.md) and
+[contribution workflow](CONTRIBUTING.md).
 
 ## Tech Stack
 
@@ -38,7 +46,7 @@ AgentifUI is a monorepo for an enterprise-oriented AI application frontend built
 Browser
   -> Next.js App Router (UI, SSR, auth routes, compatibility stubs)
   -> selected /api/* rewrites -> Fastify sidecar
-  -> PostgreSQL / Redis / MinIO / Dify
+  -> PostgreSQL / Redis / MinIO / Dify or compatible LangChain service
 ```
 
 Notes:
@@ -66,6 +74,7 @@ pnpm install --frozen-lockfile
 cp .env.example .env.dev
 # edit .env.dev
 
+pnpm build:shared
 pnpm dev:all
 ```
 
@@ -87,13 +96,14 @@ Useful variants:
 
 ### Production Deployment
 
-Use the public runbooks:
+Choose one installation path, then complete administrator/application setup:
 
 - [Docker Compose installation](docs/DOCKER.md) (build locally; no registry account needed)
-- `docs/CONFIGURATION.md`
-- `docs/QUICK-DEPLOYMENT.md`
-- `docs/SINGLE-HOST-HIGH-CONCURRENCY.md`
-- `docs/TEST-ENV.md`
+- [Host/PM2 installation](docs/QUICK-DEPLOYMENT.md)
+- [Runtime configuration](docs/CONFIGURATION.md)
+- [Administrator and first-application setup](docs/ADMIN-GUIDE.md)
+- [Operations, upgrades and recovery](docs/OPERATIONS.md)
+- [Optional manual Docker capacity](docs/DOCKER-CAPACITY.md)
 
 ## Common Commands
 
@@ -130,17 +140,18 @@ Dify modes and existing conversations retain their compatible paths.
 
 ## Additional Docs
 
-- `CONTRIBUTING.md`
-- `docs/architecture.md`
-- `docs/DATABASE-DESIGN.md`
-- `docs/DIFY-INTEGRATION.md`
-- `docs/PUBLICATION.md`
-- `docs/FONTS.md`
-- `docs/SINGLE-HOST-HIGH-CONCURRENCY.md`
+- [All documentation by role and task](docs/README.md)
+- [From installation to your first conversation](docs/GETTING-STARTED.md)
+- [Compatibility and capability matrix](docs/COMPATIBILITY.md) and [deployment security/data handling](docs/SECURITY-PRIVACY.md)
+- [End-user guide](docs/USER-GUIDE.md) and [administrator guide](docs/ADMIN-GUIDE.md)
+- [Dify integration](docs/DIFY-INTEGRATION.md), [LangChain integration](docs/LANGCHAIN-INTEGRATION.md) and [AG-UI integration](docs/AGUI-INTEGRATION.md)
+- [Architecture](docs/architecture.md) and [database design](docs/DATABASE-DESIGN.md)
+- [Contributing](CONTRIBUTING.md), [test environments](docs/TEST-ENV.md) and [publishing safely](docs/PUBLICATION.md)
 
 ## Contributing and Support
 
 - Open issues and pull requests at [`iflabx/agentifui`](https://github.com/iflabx/agentifui).
 - Read `CONTRIBUTING.md` before sending a PR.
-- Report security issues to [security@iflabx.com](mailto:security@iflabx.com).
+- Report vulnerabilities privately using [the security policy](SECURITY.md),
+  which lists [security@iflabx.com](mailto:security@iflabx.com) as the contact.
 - See `.github/TRADEMARK_POLICY.md` for trademark usage.

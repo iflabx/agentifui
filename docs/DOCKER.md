@@ -6,6 +6,11 @@ For an optional host-network installation with a selectable initial size and
 later manual application scaling, see [Manual Docker Capacity](DOCKER-CAPACITY.md).
 The default bridge path below remains a single Web/API installation.
 
+After installing, use the [administrator guide](ADMIN-GUIDE.md) to configure the
+first application, the [user guide](USER-GUIDE.md) for end-user tasks and
+[operations](OPERATIONS.md) for routine maintenance. The [documentation index](README.md)
+separates these tasks from optional integration and capacity references.
+
 This is the source-build installation path, alongside the
 [host/PM2 runbook](QUICK-DEPLOYMENT.md). Use Docker Engine with Compose V2 and
 BuildKit on a Linux server. No Docker Hub/GHCR account, image push, PM2, host Node,
@@ -164,8 +169,9 @@ recursively changes ownership of existing data.
 Before opening the installation to other users, create and verify the operator's
 account through the normal registration/login flow. Use a restricted proxy or
 SSH tunnel during this bootstrap; do not make the first registrant an automatic
-administrator. If needed, enable email registration explicitly in the isolated
-installation's `auth_settings` using the migration owner. After the operator has
+administrator. Email signup needs `AUTH_EMAIL_DISABLED=0` and working SMTP;
+legacy registration fields in `auth_settings` are not a universal signup-policy
+switch. After the operator has
 logged in and a profile exists, promote only that verified account with a
 reviewed SQL command (replace the example address):
 
@@ -270,6 +276,11 @@ connectivity and restoration have been validated.
    ```
 
    For an external database, use its migration-owner connection instead.
+
+   Review the current [generation migrations](AGENT-GOVERNANCE.md#deployment-and-request-contract),
+   including shared governance required for Dify-only deployments and any
+   negotiated-conversation/human-input additions in the target release. Resolve
+   pending human decisions before reverting to code that cannot handle them.
 
 3. Set a new immutable `AGENTIF_IMAGE` and verified `SOURCE_COMMIT` in a new private
    config copy. Retain the project name so existing named volumes are reused.
