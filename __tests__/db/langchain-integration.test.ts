@@ -14,6 +14,7 @@ import { getPgPool } from '../../apps/api/src/lib/pg-context';
 import { createApiServer } from '../../apps/api/src/server';
 import { parseAgentEvent } from '../../packages/shared/src/agui';
 import { resolveTestDatabaseUrl } from './helpers/test-database-url';
+import { createTestRole, dropTestRole } from './helpers/test-role';
 
 jest.mock('../../apps/api/src/lib/error-events', () => ({
   recordApiErrorEvent: jest.fn().mockResolvedValue(undefined),
@@ -340,16 +341,7 @@ beforeAll(async () => {
     });
   });
   await new Promise<void>(resolve => upstream.listen(0, '127.0.0.1', resolve));
-  await database.query(
-    `CREATE ROLE ${roleName} NOLOGIN NOSUPERUSER NOBYPASSRLS`
-  );
-  await database.query(`GRANT USAGE ON SCHEMA public TO ${roleName}`);
-  await database.query(
-    `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${roleName}`
-  );
-  await database.query(
-    `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${roleName}`
-  );
+  await createTestRole(database, roleName);
   for (const [index, id] of actors.entries()) {
     await database.query(
       'INSERT INTO auth_users (id,name,email) VALUES ($1,$2,$3)',
@@ -470,8 +462,7 @@ afterAll(async () => {
     ]);
     await database.query('DELETE FROM groups WHERE id = $1', [groupId]);
     await database.query('DELETE FROM providers WHERE id = $1', [providerId]);
-    await database.query(`DROP OWNED BY ${roleName}`);
-    await database.query(`DROP ROLE ${roleName}`);
+    await dropTestRole(database, roleName);
     await database.end();
   }
   for (const key of [

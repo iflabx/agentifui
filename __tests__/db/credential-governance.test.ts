@@ -17,6 +17,7 @@ import { resolveDifyConfig } from '../../apps/api/src/lib/dify-config';
 import { getPgPool } from '../../apps/api/src/lib/pg-context';
 import { createApiServer } from '../../apps/api/src/server';
 import { resolveTestDatabaseUrl } from './helpers/test-database-url';
+import { createTestRole, dropTestRole } from './helpers/test-role';
 
 jest.mock('../../apps/api/src/lib/error-events', () => ({
   recordApiErrorEvent: jest.fn().mockResolvedValue(undefined),
@@ -157,14 +158,7 @@ async function pending(
 beforeAll(async () => {
   const url = resolveTestDatabaseUrl();
   database = new Pool({ connectionString: url });
-  await database.query(`CREATE ROLE ${role} NOLOGIN NOSUPERUSER NOBYPASSRLS`);
-  await database.query(`GRANT USAGE ON SCHEMA public TO ${role}`);
-  await database.query(
-    `GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO ${role}`
-  );
-  await database.query(
-    `GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO ${role}`
-  );
+  await createTestRole(database, role);
   for (const [index, id] of actors.entries()) {
     await database.query(
       'INSERT INTO auth_users(id,name,email) VALUES($1,$2,$3)',
@@ -280,8 +274,7 @@ afterAll(async () => {
     await database.query('DELETE FROM auth_users WHERE id=ANY($1::uuid[])', [
       actors,
     ]);
-    await database.query(`DROP OWNED BY ${role}`);
-    await database.query(`DROP ROLE ${role}`);
+    await dropTestRole(database, role);
     await database.end();
   }
   for (const key of [
