@@ -38,7 +38,9 @@ export function SidebarHeader({ isHovering = false }: SidebarHeaderProps) {
   const t = useTranslations('sidebar');
 
   const { selectedType, selectedId, selectItem } = useSidebarStore();
-  const langchainAppMatch = pathname.match(/^\/apps\/langchain\/([^/]+)$/);
+  const langchainAppMatch = pathname.match(
+    /^\/apps\/(?:langchain|agent-chat)\/([^/]+)$/
+  );
   const isLangchainNewChat =
     Boolean(langchainAppMatch) && !searchParams?.get('conversationId');
   const isNewChatActive =
@@ -66,10 +68,10 @@ export function SidebarHeader({ isHovering = false }: SidebarHeaderProps) {
 
   const handleNewChat = () => {
     const currentLangchainApp = window.location.pathname.match(
-      /^\/apps\/langchain\/([^/]+)$/
+      /^\/apps\/(langchain|agent-chat)\/([^/]+)$/
     );
     const targetPath = currentLangchainApp
-      ? `/apps/langchain/${currentLangchainApp[1]}`
+      ? `/apps/${currentLangchainApp[1]}/${currentLangchainApp[2]}`
       : '/chat/new';
     const isAlreadyOnNewChat =
       window.location.pathname === targetPath &&
@@ -100,7 +102,7 @@ export function SidebarHeader({ isHovering = false }: SidebarHeaderProps) {
 
       const { selectItem } = useSidebarStore.getState();
       if (currentLangchainApp) {
-        selectItem('app', decodeURIComponent(currentLangchainApp[1]), true);
+        selectItem('app', decodeURIComponent(currentLangchainApp[2]), true);
       } else {
         selectItem('chat', null, true);
       }

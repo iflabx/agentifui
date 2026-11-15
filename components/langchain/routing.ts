@@ -3,18 +3,47 @@ interface ConversationRoute {
   db_pk?: string;
   external_id?: string | null;
   app_id?: string | null;
+  interaction_protocol?: 'ag-ui/1.0' | null;
   metadata?: Record<string, unknown> | null;
+}
+
+export function agentAppPath(
+  appId: string,
+  config?: {
+    backend_type?: unknown;
+    interaction_protocol?: unknown;
+    app_metadata?: { app_type?: unknown; dify_apptype?: unknown };
+  } | null
+): string | null {
+  if (
+    config?.backend_type === 'langchain' ||
+    ((config?.backend_type === undefined || config.backend_type === 'dify') &&
+      config?.interaction_protocol === 'ag-ui/1.0' &&
+      config.app_metadata?.app_type === 'marketplace' &&
+      config.app_metadata?.dify_apptype === 'chatbot')
+  )
+    return `/apps/agent-chat/${encodeURIComponent(appId)}`;
+  return null;
+}
+
+export function agentConversationPath(
+  conversation: ConversationRoute
+): string | null {
+  if (!conversation.app_id) return null;
+  const prefix =
+    conversation.interaction_protocol === 'ag-ui/1.0'
+      ? 'agent-chat'
+      : conversation.metadata?.backend_type === 'langchain'
+        ? 'langchain'
+        : null;
+  if (!prefix) return null;
+  return `/apps/${prefix}/${encodeURIComponent(conversation.app_id)}?conversationId=${encodeURIComponent(conversation.db_pk || conversation.id)}`;
 }
 
 export function langchainConversationPath(
   conversation: ConversationRoute
 ): string | null {
-  if (
-    conversation.metadata?.backend_type !== 'langchain' ||
-    !conversation.app_id
-  )
-    return null;
-  return `/apps/langchain/${encodeURIComponent(conversation.app_id)}?conversationId=${encodeURIComponent(conversation.db_pk || conversation.id)}`;
+  return agentConversationPath(conversation);
 }
 
 export function historyConversationPath(
@@ -22,10 +51,10 @@ export function historyConversationPath(
   conversations: ConversationRoute[]
 ): string {
   const conversation = conversations.find(
-    item => (item.external_id || item.id) === id
+    item => item.id === id || item.db_pk === id || item.external_id === id
   );
   return (
-    (conversation && langchainConversationPath(conversation)) ||
+    (conversation && agentConversationPath(conversation)) ||
     `/chat/${encodeURIComponent(id)}`
   );
 }
@@ -37,7 +66,8 @@ export function isCurrentLangchainConversation(
 ): boolean {
   const url = new URL(href);
   return (
-    url.pathname === `/apps/langchain/${encodeURIComponent(appId)}` &&
-    url.searchParams.get('conversationId') === conversationId
+    ['langchain', 'agent-chat'].some(
+      prefix => url.pathname === `/apps/${prefix}/${encodeURIComponent(appId)}`
+    ) && url.searchParams.get('conversationId') === conversationId
   );
 }

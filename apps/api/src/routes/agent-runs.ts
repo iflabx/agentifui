@@ -2,7 +2,6 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 
 import type { ApiRuntimeConfig } from '../config';
 import {
-  AGENT_CAPABILITIES,
   AgentAppError,
   readAgentAdmissionLimits,
   resolveAgentApp,
@@ -28,12 +27,20 @@ import {
   rejectSubmission,
   submissionHash,
 } from '../lib/agent-submissions';
+import {
+  describeNegotiatedRuntime,
+  executeNegotiatedAgentRun,
+} from '../lib/agui/runtime';
 import { trackApiBackgroundTask } from '../lib/capacity-control';
 import { getRun } from '../lib/langchain/transport';
 import { queryRowsWithPgSystemContext } from '../lib/pg-context';
 import { buildRouteErrorPayload } from '../lib/route-error';
 import { resolveIdentityFromSession } from '../lib/session-identity';
 import { resolveRequestLocale } from './dify-proxy-route/helpers';
+import {
+  buildTrustedUserInputs,
+  loadTrustedUserProfile,
+} from './dify-proxy-route/trusted-user-context';
 
 const UUID_PATTERN =
   /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
@@ -61,7 +68,8 @@ async function context(request: FastifyRequest, config: ApiRuntimeConfig) {
   }
   const app = await resolveAgentApp(
     uuid(routeParams(request).appId),
-    identity.identity.userId
+    identity.identity.userId,
+    { allowDify: true }
   );
   return { actor: identity.identity, app };
 }
@@ -149,8 +157,12 @@ export const agentRunsRoutes: FastifyPluginAsync<{
   server.get('/api/internal/apps/:appId/agent', async request => {
     const { app } = await context(request, options.config);
     return {
-      app: { id: app.id, name: app.name, backendType: 'langchain' },
-      capabilities: AGENT_CAPABILITIES,
+      app: {
+        id: app.id,
+        name: app.name,
+        backendType: app.backendType ?? 'langchain',
+      },
+      ...describeNegotiatedRuntime(app),
     };
   });
 
@@ -160,6 +172,12 @@ export const agentRunsRoutes: FastifyPluginAsync<{
     async (request, reply) => {
       requireSameOrigin(request, options.config);
       const { app, actor } = await context(request, options.config);
+      const protocol = request.headers['x-agentifui-protocol'];
+      if (protocol !== undefined && protocol !== 'ag-ui/1.0')
+        throw new AgentAppError(400, 'AGENT_PROTOCOL_UNSUPPORTED');
+      const agui = protocol === 'ag-ui/1.0';
+      if (app.backendType === 'dify' && !agui)
+        throw new AgentAppError(409, 'AGENT_PROTOCOL_REQUIRED');
       const body = request.body as Record<string, unknown> | null;
       if (
         !body ||
@@ -174,12 +192,18 @@ export const agentRunsRoutes: FastifyPluginAsync<{
       ) {
         throw new AgentAppError(400, 'INVALID_AGENT_REQUEST');
       }
+      if (
+        app.backendType === 'dify' &&
+        !body.conversationId &&
+        app.interactionProtocol !== 'ag-ui/1.0'
+      )
+        throw new AgentAppError(409, 'AGENT_INTERACTION_NOT_ENABLED');
       const registration = await registerSubmission({
         credentialVersion: app.credentialVersion,
         userId: actor.userId,
         serviceInstanceId: app.id,
         submissionId: uuid(body.submissionId),
-        backendType: 'langchain',
+        backendType: app.backendType ?? 'langchain',
         targetFingerprint: submissionHash([
           app.id,
           app.baseUrl,
@@ -197,12 +221,21 @@ export const agentRunsRoutes: FastifyPluginAsync<{
           409,
           registration.task.error_code ?? 'AGENT_SUBMISSION_IN_PROGRESS'
         );
+      let difyInputs: Record<string, string> = {};
       if (!registration.replayed) {
+        if (app.backendType === 'dify')
+          difyInputs = buildTrustedUserInputs(
+            actor,
+            await loadTrustedUserProfile(actor.userId)
+          );
         const moderation = await moderateInputText({
           request,
           config: options.config,
           userId: actor.userId,
-          text: body.content,
+          text:
+            app.backendType === 'dify'
+              ? [body.content, ...Object.values(difyInputs)].join('\n')
+              : body.content,
         });
         if (
           moderation.outcome === 'block' ||
@@ -223,6 +256,7 @@ export const agentRunsRoutes: FastifyPluginAsync<{
       try {
         reservation = await reserveRun({
           governanceTaskId: rootTaskId,
+          backendType: app.backendType ?? 'langchain',
           userId: actor.userId,
           serviceInstanceId: app.id,
           appInstanceId: app.instanceId,
@@ -246,6 +280,13 @@ export const agentRunsRoutes: FastifyPluginAsync<{
         throw error;
       }
       const { run, replayed } = reservation;
+      if (agui && replayed) {
+        return reply.status(409).send({
+          code: 'AGENT_SUBMISSION_REPLAY',
+          run: publicAgentRun(run),
+        });
+      }
+      if (agui) reply.header('x-agentifui-protocol', 'ag-ui/1.0');
       reply.header('content-type', 'text/event-stream; charset=utf-8');
       reply.header('cache-control', 'no-cache, no-transform');
       reply.header('x-accel-buffering', 'no');
@@ -268,12 +309,13 @@ export const agentRunsRoutes: FastifyPluginAsync<{
           reply.raw.destroy();
         }
       };
-      emit({
-        type: 'accepted',
-        conversationId: run.conversation_id,
-        runId: run.id,
-        userMessageId: run.user_message_id,
-      });
+      if (!agui)
+        emit({
+          type: 'accepted',
+          conversationId: run.conversation_id,
+          runId: run.id,
+          userMessageId: run.user_message_id,
+        });
       if (replayed) {
         emit(runStatusEvent(run));
         reply.raw.end();
@@ -284,24 +326,31 @@ export const agentRunsRoutes: FastifyPluginAsync<{
           reply.raw.write(': keepalive\n\n');
       }, 15000);
       heartbeat.unref();
-      const task = executeAgentRun({
+      const execution = {
         rootTaskId,
         app,
         run,
         content: body.content,
         emit,
-        report: value =>
+        ...(agui ? { agui: { emit } } : {}),
+        report: (value: { runId: string; code: string }) =>
           request.log.warn(value, '[Agent] run requires attention'),
-      })
+      };
+      const task = (
+        agui
+          ? executeNegotiatedAgentRun({ ...execution, inputs: difyInputs })
+          : executeAgentRun(execution)
+      )
         .catch(() => {
-          emit({
-            type: 'status',
-            runId: run.id,
-            conversationId: run.conversation_id,
-            executionStatus: 'unknown',
-            persistenceStatus: 'failed',
-            errorCode: 'AGENT_RESULT_UNKNOWN',
-          });
+          if (!agui)
+            emit({
+              type: 'status',
+              runId: run.id,
+              conversationId: run.conversation_id,
+              executionStatus: 'unknown',
+              persistenceStatus: 'failed',
+              errorCode: 'AGENT_RESULT_UNKNOWN',
+            });
         })
         .finally(() => {
           clearInterval(heartbeat);
@@ -319,8 +368,9 @@ export const agentRunsRoutes: FastifyPluginAsync<{
       `SELECT c.id::text, c.title, c.updated_at::text, c.last_message_preview
        FROM conversations c JOIN backend_conversations b ON b.conversation_id = c.id
        WHERE c.user_id = $1::uuid AND b.service_instance_id = $2::uuid AND c.status = 'active'
+         AND b.config_fingerprint = $3 AND b.backend_type = $4
        ORDER BY c.updated_at DESC, c.id DESC LIMIT 100`,
-      [actor.userId, app.id]
+      [actor.userId, app.id, app.fingerprint, app.backendType ?? 'langchain']
     );
     return { conversations };
   });
@@ -331,30 +381,68 @@ export const agentRunsRoutes: FastifyPluginAsync<{
       const { app, actor } = await context(request, options.config);
       const conversationId = uuid(routeParams(request).conversationId);
       const conversations = await queryRowsWithPgSystemContext(
-        `SELECT c.id::text, c.title, c.updated_at::text, c.status, c.app_id, c.metadata
+        `SELECT c.id::text, c.title, c.updated_at::text, c.status, c.app_id, c.metadata,
+          EXISTS (SELECT 1 FROM messages legacy WHERE legacy.conversation_id = c.id
+            AND legacy.metadata ? 'tools' AND legacy.metadata->'tools' <> '[]'::jsonb)
+          OR EXISTS (SELECT 1 FROM backend_runs legacy WHERE legacy.conversation_id = c.id
+            AND NOT (legacy.result ? 'agui') AND jsonb_path_exists(legacy.result, '$.messages[*].tools[*]')) AS legacy_tools
        FROM conversations c JOIN backend_conversations b ON b.conversation_id = c.id
        WHERE c.id = $1::uuid AND c.user_id = $2::uuid
-         AND b.service_instance_id = $3::uuid AND c.status = 'active' LIMIT 1`,
-        [conversationId, actor.userId, app.id]
+         AND b.service_instance_id = $3::uuid AND c.status = 'active'
+         AND b.config_fingerprint = $4 AND b.backend_type = $5 LIMIT 1`,
+        [
+          conversationId,
+          actor.userId,
+          app.id,
+          app.fingerprint,
+          app.backendType ?? 'langchain',
+        ]
       );
       if (!conversations[0])
         throw new AgentAppError(404, 'AGENT_CONVERSATION_NOT_FOUND');
-      const messages = await queryRowsWithPgSystemContext(
-        `SELECT id::text, role::text, content, metadata, status::text, created_at::text
+      const query = request.query as Record<string, unknown>;
+      const before = query.before === undefined ? null : Number(query.before);
+      const limit = query.limit === undefined ? 100 : Number(query.limit);
+      if (
+        (before !== null && (!Number.isSafeInteger(before) || before < 0)) ||
+        !Number.isSafeInteger(limit) ||
+        limit < 1 ||
+        limit > 100
+      )
+        throw new AgentAppError(400, 'INVALID_AGENT_REQUEST');
+      const page = await queryRowsWithPgSystemContext(
+        `SELECT id::text, role::text, content, metadata, status::text, created_at::text, sequence_index
        FROM messages WHERE conversation_id = $1::uuid
-       ORDER BY sequence_index ASC, created_at ASC, id ASC LIMIT 2000`,
-        [conversationId]
+         AND ($2::integer IS NULL OR sequence_index < $2)
+       ORDER BY sequence_index DESC, created_at DESC, id DESC LIMIT $3`,
+        [conversationId, before, limit + 1]
       );
+      const messages = page.slice(0, limit).reverse();
+      const messageIds = messages.map(message => String(message.id));
+      const runIds = messages.flatMap(message => {
+        const id = (message.metadata as Record<string, unknown> | null)
+          ?.backend_run_id;
+        return typeof id === 'string' ? [id] : [];
+      });
       const runs = await queryRowsWithPgSystemContext<AgentRunRecord>(
         `SELECT id, conversation_id, execution_status, persistence_status, error_code, created_at, updated_at,
-          CASE WHEN persistence_status <> 'saved' THEN result ELSE NULL END AS result
-       FROM backend_runs WHERE conversation_id = $1::uuid ORDER BY created_at DESC LIMIT 100`,
-        [conversationId]
+          CASE WHEN persistence_status <> 'saved' OR result ? 'agui' THEN result ELSE NULL END AS result
+       FROM backend_runs WHERE conversation_id = $1::uuid
+         AND (user_message_id = ANY($2::uuid[]) OR id::text = ANY($3::text[]))
+       ORDER BY created_at DESC, id DESC LIMIT 100`,
+        [conversationId, messageIds, runIds]
       );
+      const { legacy_tools: legacyTools, ...conversation } = conversations[0];
       return {
-        conversation: conversations[0],
+        conversation: { ...conversation, interaction_protocol: 'ag-ui/1.0' },
         messages,
         runs: runs.map(publicAgentRun),
+        nextCursor:
+          page.length > limit ? String(messages[0].sequence_index) : null,
+        protocol:
+          app.backendType !== 'dify' && legacyTools
+            ? 'agentifui/legacy'
+            : 'ag-ui/1.0',
       };
     }
   );
@@ -368,8 +456,15 @@ export const agentRunsRoutes: FastifyPluginAsync<{
         `UPDATE conversations c SET status = 'deleted', updated_at = NOW()
        FROM backend_conversations b WHERE b.conversation_id = c.id
          AND c.id = $1::uuid AND c.user_id = $2::uuid AND b.service_instance_id = $3::uuid
+         AND b.config_fingerprint = $4 AND b.backend_type = $5
          AND c.status = 'active' RETURNING c.id`,
-        [uuid(routeParams(request).conversationId), actor.userId, app.id]
+        [
+          uuid(routeParams(request).conversationId),
+          actor.userId,
+          app.id,
+          app.fingerprint,
+          app.backendType ?? 'langchain',
+        ]
       );
       if (!rows[0])
         throw new AgentAppError(404, 'AGENT_CONVERSATION_NOT_FOUND');
@@ -406,6 +501,7 @@ export const agentRunsRoutes: FastifyPluginAsync<{
     let upstreamStatus: string | undefined;
     const stale = Date.now() - new Date(run.updated_at).getTime() > 180000;
     if (
+      app.backendType !== 'dify' &&
       (run.execution_status === 'unknown' || stale) &&
       run.thread_id &&
       run.native_run_id &&

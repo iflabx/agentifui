@@ -152,6 +152,7 @@ jobs:
 
       - name: Run TypeScript type checks
         run: |
+          pnpm run build:shared
           pnpm run type-check
           pnpm --filter @agentifui/shared type-check
           pnpm --filter @agentifui/api type-check
@@ -302,6 +303,9 @@ jobs:
         uses: ./.github/actions/publication-check
         with:
           install-only: 'true'
+
+      - name: Build shared package for tests
+        run: pnpm run build:shared
 
       - name: Run tests
         run: pnpm test --maxWorkers=2

@@ -5,12 +5,14 @@ import type { AddressInfo } from 'node:net';
 import { Pool } from 'pg';
 
 import type { ApiRuntimeConfig } from '../../apps/api/src/config';
+import { recordRunPersistenceFailure } from '../../apps/api/src/lib/agent-runs-repository';
 import {
   registerSubmission,
   submissionHash,
 } from '../../apps/api/src/lib/agent-submissions';
 import { getPgPool } from '../../apps/api/src/lib/pg-context';
 import { createApiServer } from '../../apps/api/src/server';
+import { parseAgentEvent } from '../../packages/shared/src/agui';
 import { resolveTestDatabaseUrl } from './helpers/test-database-url';
 
 jest.mock('../../apps/api/src/lib/error-events', () => ({
@@ -109,12 +111,16 @@ async function submit(
     submissionId?: string;
     conversationId?: string;
     extra?: Record<string, unknown>;
+    protocol?: string;
   } = {}
 ) {
   return servers[options.server ?? 0].inject({
     method: 'POST',
     url: `/api/internal/apps/${applications[options.app ?? 0]}/agent/runs`,
-    headers: { cookie: `session_token=${tokens[actor]}` },
+    headers: {
+      cookie: `session_token=${tokens[actor]}`,
+      ...(options.protocol ? { 'x-agentifui-protocol': options.protocol } : {}),
+    },
     payload: {
       submissionId: options.submissionId ?? randomUUID(),
       content,
@@ -296,7 +302,11 @@ beforeAll(async () => {
           ? 'persist-retry-answer'
           : content === 'slow-save'
             ? 'slow-save-answer'
-            : `synthetic answer ${thread.turns.length}`;
+            : content === 'budget'
+              ? 'x'.repeat(60000)
+              : content === 'escaped-budget'
+                ? '\u0001'.repeat(40000)
+                : `synthetic answer ${thread.turns.length}`;
       text('assistant-final', answer);
       const finish = () => {
         if (response.writableEnded) return;
@@ -1673,4 +1683,392 @@ it('soft-deletes only the owned local conversation and does not claim upstream m
   expect(
     events((await submit(0, 'new conversation')).body).at(-1)
   ).toMatchObject({ executionStatus: 'success' });
+});
+
+describe('negotiated AG-UI persistence and protocol', () => {
+  const protocol = 'ag-ui/1.0';
+
+  function aguiAcceptance(body: string) {
+    const stream = events(body);
+    expect(stream[0]).toMatchObject({
+      type: 'RUN_STARTED',
+      protocolVersion: '1.0',
+    });
+    for (const event of stream) expect(parseAgentEvent(event)).toBeDefined();
+    expect(
+      stream.some(event =>
+        ['accepted', 'text', 'tool', 'status'].includes(event.type)
+      )
+    ).toBe(false);
+    return {
+      runId: stream[0].runId as string,
+      conversationId: stream[0].threadId as string,
+    };
+  }
+
+  it('persists two rounds and ordered activities across API replicas without forwarding history to native memory', async () => {
+    const first = await submit(0, 'tools', { protocol });
+    expect(first.statusCode).toBe(200);
+    const ids = aguiAcceptance(first.body);
+    expect(events(first.body).at(-1)).toMatchObject({
+      type: 'RUN_FINISHED',
+      outcome: { type: 'success' },
+    });
+    const storedFirst = await getStoredRun(ids.runId);
+    const second = await submit(0, 'second turn', {
+      protocol,
+      conversationId: ids.conversationId,
+      server: 1,
+    });
+    const next = aguiAcceptance(second.body);
+    const storedSecond = await getStoredRun(next.runId);
+    expect(storedFirst.persistence_status).toBe('saved');
+    expect(storedSecond.persistence_status).toBe('saved');
+    expect(storedFirst.result.agui.outputMessageIds).toHaveLength(3);
+    expect(storedSecond.result.agui.outputMessageIds).toEqual(
+      storedSecond.result.messages.map((message: { id: string }) => message.id)
+    );
+    expect(
+      storedSecond.result.agui.messages.filter(
+        (message: { role: string }) => message.role === 'activity'
+      )
+    ).toEqual(
+      storedFirst.result.agui.messages.filter(
+        (message: { role: string }) => message.role === 'activity'
+      )
+    );
+    expect(modelCalls()).toHaveLength(2);
+    expect(modelCalls()[0].body.threadId).toBe(modelCalls()[1].body.threadId);
+    for (const call of modelCalls()) expect(call.body.messages).toHaveLength(1);
+    const history = await request(
+      0,
+      `/api/internal/apps/${applications[0]}/agent/conversations/${ids.conversationId}`,
+      1
+    );
+    expect(history.statusCode).toBe(200);
+    expect(history.json().messages).toHaveLength(5);
+    expect(history.json().runs).toHaveLength(2);
+    for (const run of history.json().runs)
+      expect(run.agui.schemaVersion).toBe(2);
+    const nativeIds = [
+      storedFirst.native_run_id,
+      storedSecond.native_run_id,
+      String(modelCalls()[0].body.threadId),
+      privateMarker,
+      serviceKey,
+    ];
+    for (const value of nativeIds) {
+      expect(first.body + second.body + history.body).not.toContain(value);
+    }
+  });
+
+  it('deduplicates the same negotiated submission across replicas without another model call', async () => {
+    const submissionId = randomUUID();
+    const responses = await Promise.all(
+      [0, 1].map(server =>
+        submit(0, 'normal', { protocol, submissionId, server })
+      )
+    );
+    expect(responses.map(response => response.statusCode).sort()).toEqual([
+      200, 409,
+    ]);
+    const success = responses.find(response => response.statusCode === 200)!;
+    const ids = aguiAcceptance(success.body);
+    const replay = await submit(0, 'normal', {
+      protocol,
+      submissionId,
+      server: 1,
+    });
+    expect(replay.statusCode).toBe(409);
+    expect(replay.json()).toMatchObject({
+      code: 'AGENT_SUBMISSION_REPLAY',
+      run: { runId: ids.runId, persistenceStatus: 'saved' },
+    });
+    expect(modelCalls()).toHaveLength(1);
+    const messages = await database.query(
+      'SELECT id FROM messages WHERE conversation_id=$1',
+      [ids.conversationId]
+    );
+    expect(messages.rows).toHaveLength(2);
+  });
+
+  it('keeps execution successful while retrying only failed snapshot materialization', async () => {
+    await installSaveTrigger('failure');
+    const response = await submit(0, 'persist-failure', { protocol });
+    const ids = aguiAcceptance(response.body);
+    expect(events(response.body).at(-1)).toMatchObject({
+      type: 'RUN_FINISHED',
+      outcome: { type: 'success' },
+    });
+    const failed = await getStoredRun(ids.runId);
+    expect(failed.persistence_status).toBe('failed');
+    expect(failed.result.agui.status).toBe('succeeded');
+    const query = await request(
+      0,
+      `/api/internal/apps/${applications[0]}/agent/runs/${ids.runId}`,
+      1
+    );
+    expect(query.json()).toMatchObject({
+      executionStatus: 'success',
+      persistenceStatus: 'failed',
+      agui: { status: 'succeeded' },
+    });
+    await database.query(`DROP TRIGGER ${triggerName} ON messages`);
+    const saved = await request(
+      0,
+      `/api/internal/apps/${applications[0]}/agent/runs/${ids.runId}`,
+      1
+    );
+    expect(saved.json()).toMatchObject({
+      persistenceStatus: 'saved',
+      agui: failed.result.agui,
+    });
+    expect((await getStoredRun(ids.runId)).result).toEqual(failed.result);
+    expect(modelCalls()).toHaveLength(1);
+  });
+
+  it('retains unknown on truncated native SSE and queries without regenerating', async () => {
+    const response = await submit(0, 'eof', { protocol });
+    const ids = aguiAcceptance(response.body);
+    expect(events(response.body).at(-1)).toMatchObject({
+      type: 'RUN_ERROR',
+      code: 'AGENT_STREAM_INCOMPLETE',
+    });
+    const stored = await getStoredRun(ids.runId);
+    expect(stored).toMatchObject({
+      execution_status: 'unknown',
+      persistence_status: 'saved',
+      result: { agui: { status: 'unknown' } },
+    });
+    const query = await request(
+      0,
+      `/api/internal/apps/${applications[0]}/agent/runs/${ids.runId}`,
+      1
+    );
+    expect(query.json()).toMatchObject({
+      executionStatus: 'unknown',
+      upstreamStatus: 'success',
+      agui: { status: 'unknown' },
+    });
+    expect(modelCalls()).toHaveLength(1);
+  });
+
+  it('rejects forged history and other owners without executing or exposing the run', async () => {
+    const ids = aguiAcceptance((await submit(0, 'normal', { protocol })).body);
+    const count = upstreamRequests.length;
+    expect(
+      (
+        await submit(1, 'stolen', {
+          protocol,
+          conversationId: ids.conversationId,
+        })
+      ).statusCode
+    ).toBe(409);
+    expect(
+      (
+        await submit(0, 'forged', {
+          protocol,
+          extra: { history: [], outputMessageIds: [] },
+        })
+      ).statusCode
+    ).toBe(400);
+    expect(
+      (
+        await request(
+          1,
+          `/api/internal/apps/${applications[0]}/agent/runs/${ids.runId}`
+        )
+      ).statusCode
+    ).toBe(404);
+    expect(upstreamRequests).toHaveLength(count);
+  });
+
+  it.each([
+    ['budget', 400000],
+    ['escaped-budget', 100000],
+  ] as const)(
+    'bounds the complete persisted result before publishing %s output',
+    async (content, historyBytes) => {
+      const ids = aguiAcceptance(
+        (await submit(0, 'normal', { protocol })).body
+      );
+      await database.query(
+        "UPDATE messages SET content=$2 WHERE conversation_id=$1 AND role='assistant'",
+        [ids.conversationId, 'h'.repeat(historyBytes)]
+      );
+      const response = await submit(0, content, {
+        protocol,
+        conversationId: ids.conversationId,
+      });
+      const next = aguiAcceptance(response.body);
+      expect(events(response.body).at(-1)).toMatchObject({
+        type: 'RUN_ERROR',
+        code: 'AGENT_STREAM_INCOMPLETE',
+      });
+      const stored = await getStoredRun(next.runId);
+      expect(stored).toMatchObject({
+        execution_status: 'unknown',
+        persistence_status: 'saved',
+        result: { agui: { status: 'unknown' }, messages: [{ content: '' }] },
+      });
+      expect(
+        Buffer.byteLength(JSON.stringify(stored.result))
+      ).toBeLessThanOrEqual(512000);
+      expect(modelCalls()).toHaveLength(2);
+      const queried = await request(
+        0,
+        `/api/internal/apps/${applications[0]}/agent/runs/${next.runId}`,
+        1
+      );
+      expect(queried.json()).toMatchObject({
+        executionStatus: 'unknown',
+        persistenceStatus: 'saved',
+      });
+      expect(modelCalls()).toHaveLength(2);
+    }
+  );
+
+  it('rejects history that cannot fit a persistable result before native dispatch', async () => {
+    const ids = aguiAcceptance((await submit(0, 'normal', { protocol })).body);
+    await database.query(
+      "UPDATE messages SET content=$2 WHERE conversation_id=$1 AND role='assistant'",
+      [ids.conversationId, 'h'.repeat(512000)]
+    );
+    const response = await submit(0, 'too much history', {
+      protocol,
+      conversationId: ids.conversationId,
+    });
+    expect(events(response.body)).toEqual([
+      {
+        type: 'RUN_ERROR',
+        code: 'AGENT_RUN_FAILED',
+        message: 'Agent execution failed.',
+      },
+    ]);
+    expect(modelCalls()).toHaveLength(1);
+    const failed = (
+      await database.query(
+        'SELECT execution_status,persistence_status,error_code FROM backend_runs WHERE conversation_id=$1 ORDER BY created_at DESC LIMIT 1',
+        [ids.conversationId]
+      )
+    ).rows[0];
+    expect(failed).toEqual({
+      execution_status: 'error',
+      persistence_status: 'saved',
+      error_code: 'AGENT_RESULT_LIMIT',
+    });
+  });
+
+  it('does not silently omit legacy tool summaries or dispatch the negotiated continuation', async () => {
+    const ids = accepted((await submit(0, 'tools')).body);
+    const response = await submit(0, 'switch protocol', {
+      protocol,
+      conversationId: ids.conversationId,
+    });
+    expect(events(response.body)[0]).toMatchObject({ type: 'RUN_ERROR' });
+    expect(modelCalls()).toHaveLength(1);
+    const failed = (
+      await database.query(
+        'SELECT error_code FROM backend_runs WHERE conversation_id=$1 ORDER BY created_at DESC LIMIT 1',
+        [ids.conversationId]
+      )
+    ).rows[0];
+    expect(failed.error_code).toBe('AGENT_HISTORY_LEGACY_TOOLS_UNSUPPORTED');
+    const legacy = await submit(0, 'continue legacy', {
+      conversationId: ids.conversationId,
+    });
+    expect(events(legacy.body).at(-1)).toMatchObject({
+      executionStatus: 'success',
+      persistenceStatus: 'saved',
+    });
+    expect(modelCalls()).toHaveLength(2);
+  });
+
+  it('durably records failed persistence even when the supplied result cannot be normalized', async () => {
+    const inFlight = submit(0, 'hold-budget-fallback', { protocol });
+    await waitFor(
+      () => pending.size,
+      size => size === 1
+    );
+    const active = await waitFor(
+      async () =>
+        (
+          await database.query(
+            "SELECT id FROM backend_runs WHERE user_id=$1 AND execution_status='running'",
+            [actors[0]]
+          )
+        ).rows[0],
+      run => Boolean(run)
+    );
+    try {
+      await recordRunPersistenceFailure(active.id, {
+        executionStatus: 'unknown',
+        messages: [{ id: randomUUID(), content: 'x'.repeat(512001) }],
+      });
+      expect(await getStoredRun(active.id)).toMatchObject({
+        execution_status: 'unknown',
+        persistence_status: 'failed',
+        error_code: 'AGENT_RESULT_UNAVAILABLE',
+        result: null,
+      });
+    } finally {
+      await finishPending();
+      await inFlight;
+    }
+  });
+
+  it('continues negotiated execution and saving after a real browser socket disconnect', async () => {
+    const port = (servers[0].server.address() as AddressInfo).port;
+    const body = JSON.stringify({
+      submissionId: randomUUID(),
+      content: 'hold-agui-disconnect',
+    });
+    const runId = await new Promise<string>((resolve, reject) => {
+      const client = httpRequest(
+        {
+          host: '127.0.0.1',
+          port,
+          path: `/api/internal/apps/${applications[0]}/agent/runs`,
+          method: 'POST',
+          headers: {
+            cookie: `session_token=${tokens[0]}`,
+            'x-agentifui-protocol': protocol,
+            'content-type': 'application/json',
+            'content-length': Buffer.byteLength(body),
+          },
+        },
+        response => {
+          let received = '';
+          response.on('data', chunk => {
+            received += chunk.toString();
+            if (!received.includes('\n\n')) return;
+            resolve(aguiAcceptance(received).runId);
+            response.destroy();
+            client.destroy();
+          });
+          response.on('error', () => undefined);
+        }
+      );
+      client.on('error', error => {
+        if ((error as NodeJS.ErrnoException).code !== 'ECONNRESET')
+          reject(error);
+      });
+      client.end(body);
+    });
+    await waitFor(
+      () => pending.size,
+      size => size === 1
+    );
+    await finishPending();
+    const stored = await waitFor(
+      () => getStoredRun(runId),
+      run => run.persistence_status === 'saved'
+    );
+    expect(stored).toMatchObject({
+      execution_status: 'success',
+      result: { agui: { status: 'succeeded' } },
+    });
+    expect(stored.result.messages).toHaveLength(1);
+    expect(modelCalls()).toHaveLength(1);
+  });
 });

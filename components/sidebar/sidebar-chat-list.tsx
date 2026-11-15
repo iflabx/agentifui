@@ -214,10 +214,8 @@ export function SidebarChatList({
 
     setIsOperating(true);
     try {
-      if (
-        selectedConversation.metadata?.backend_type === 'langchain' &&
-        selectedConversation.app_id
-      ) {
+      const agentPath = langchainConversationPath(selectedConversation);
+      if (agentPath && selectedConversation.app_id) {
         await agentRequest(
           selectedConversation.app_id,
           `/conversations/${encodeURIComponent(dbPK)}`,
@@ -232,7 +230,7 @@ export function SidebarChatList({
             dbPK
           )
         )
-          router.push(`/apps/langchain/${selectedConversation.app_id}`);
+          router.push(agentPath.split('?')[0]);
         setShowDeleteDialog(false);
         return;
       }
@@ -275,9 +273,11 @@ export function SidebarChatList({
       }
 
       const agentPath = langchainConversationPath(chat);
-      if (agentPath)
-        return (
-          `${window.location.pathname}${window.location.search}` === agentPath
+      if (agentPath && chat.app_id)
+        return isCurrentLangchainConversation(
+          window.location.href,
+          chat.app_id,
+          chat.db_pk || chat.id
         );
       if (!selectedId) {
         return false;

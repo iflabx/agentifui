@@ -54,7 +54,7 @@ function AgentChatSession({
   authLoading,
 }: AgentChatProps & { actorId: string; authLoading: boolean }) {
   const t = useTranslations('langchain');
-  const chat = useAgentChat(appId, conversationId);
+  const chat = useAgentChat(appId, conversationId, actorId);
   const moderationT = useTranslations('errors.system.moderation');
   const uiError = chat.error?.detail
     ? toUiError(chat.error, t('requestFailed'), 'agent-generic')
@@ -100,6 +100,7 @@ function AgentChatSession({
     authLoading ||
     !scope ||
     !chat.ready ||
+    (chat.newConversationsEnabled === false && !chat.view.conversationId) ||
     chat.busy ||
     chat.historyLoading ||
     chat.historyFailed ||
@@ -114,13 +115,15 @@ function AgentChatSession({
       ? 'saved'
       : run.executionStatus === 'success'
         ? 'saveIncomplete'
-        : ['failed', 'error', 'timeout', 'interrupted', 'cancelled'].includes(
-              run.executionStatus
-            )
-          ? 'failed'
-          : run.executionStatus === 'unknown'
-            ? 'unknown'
-            : 'running';
+        : run.executionStatus === 'interrupted'
+          ? 'interrupted'
+          : run.executionStatus === 'cancelled'
+            ? 'cancelled'
+            : ['failed', 'error', 'timeout'].includes(run.executionStatus)
+              ? 'failed'
+              : run.executionStatus === 'unknown'
+                ? 'unknown'
+                : 'running';
 
   useLayoutEffect(() => {
     if (actorEpoch === null || authLoading) return;
@@ -157,7 +160,7 @@ function AgentChatSession({
   const submit = async () => {
     if (disabled || !content.trim() || !draft) return;
     const snapshot = draft;
-    const accepted = await chat.send(content);
+    const accepted = await chat.send(content, snapshot);
     if (accepted) useLangchainDraftStore.getState().consumeSnapshot(snapshot);
   };
 
@@ -197,6 +200,25 @@ function AgentChatSession({
       >
         <div className={cn('mx-auto w-full pt-4', widthClass, paddingClass)}>
           {chat.historyLoading && <p role="status">{t('loading')}</p>}
+          {chat.textOnly && (
+            <p role="note" className="mb-3 text-sm text-stone-500">
+              {t('textOnlyNote')}
+            </p>
+          )}
+          {chat.newConversationsEnabled === false &&
+            !chat.view.conversationId && (
+              <p role="status">{t('unavailable')}</p>
+            )}
+          {chat.nextCursor && (
+            <button
+              type="button"
+              disabled={chat.loadingMore || chat.busy}
+              onClick={() => void chat.loadMore()}
+              className="my-2 text-sm underline"
+            >
+              {t(chat.loadingMore ? 'loading' : 'loadMore')}
+            </button>
+          )}
           {errorMessage && (
             <p
               role="alert"

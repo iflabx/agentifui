@@ -91,6 +91,11 @@ describe('Agent chat draft', () => {
       view: { messages: [], tools: [] },
       draftScope: 'new:0',
       appName: 'Agent',
+      textOnly: false,
+      newConversationsEnabled: true,
+      nextCursor: null,
+      loadingMore: false,
+      loadMore: jest.fn(),
       ready: true,
       busy: false,
       error: null,
@@ -269,7 +274,15 @@ describe('Agent chat draft', () => {
     const input = screen.getByRole('textbox');
     fireEvent.change(input, { target: { value: 'Keep this draft' } });
     fireEvent.click(screen.getByRole('button', { name: 'send' }));
-    await waitFor(() => expect(send).toHaveBeenCalledWith('Keep this draft'));
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        'Keep this draft',
+        expect.objectContaining({
+          text: 'Keep this draft',
+          revision: expect.any(Number),
+        })
+      )
+    );
     expect(input).toHaveValue('Keep this draft');
     expect(send).toHaveBeenCalledTimes(1);
   });

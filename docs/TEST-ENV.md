@@ -117,6 +117,7 @@ mc mb --ignore-existing local/agentifui-test
 Examples:
 
 ```bash
+pnpm build:shared
 AGENTIF_ENV_FILE=.env.test bash scripts/with-env-local.sh pnpm test
 AGENTIF_ENV_FILE=.env.test bash scripts/with-env-local.sh pnpm build:all
 ```
@@ -135,6 +136,15 @@ link verification is a separate controlled acceptance step, not part of ordinary
 test runs. See [email configuration](CONFIGURATION.md#better-auth-and-sso).
 
 ## CI Parity
+
+`__tests__/db/dify-agui-integration.test.ts` uses the isolated migrated database,
+a non-superuser RLS role, two API instances and a synthetic HTTP/SSE Dify service.
+It covers negotiated chatbot identity, single-writer history, quota/idempotency,
+replacements, unknown outcomes, failed persistence and client disconnects. It does
+not read real backend credentials or establish real-model or deployment acceptance.
+Apply all migrations, including the trusted Dify binding constraint increment,
+before running it. The existing LangChain and legacy Dify suites remain required
+for affected-path compatibility.
 
 GitHub Actions uses the same variable model and applies the same SQL migrations, but it starts temporary PostgreSQL, Redis, and MinIO services on the GitHub runner itself.
 

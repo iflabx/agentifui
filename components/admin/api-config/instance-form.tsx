@@ -13,6 +13,10 @@ import { cn } from '@lib/utils';
 import { useTranslations } from 'next-intl';
 
 import type { InstanceFormProps } from './instance-form-types';
+import {
+  changeInstanceAppType,
+  changeInstanceDifyAppType,
+} from './instance-form-utils';
 import { useInstanceFormState } from './use-instance-form-state';
 
 export function InstanceForm(props: InstanceFormProps) {
@@ -39,8 +43,6 @@ export function InstanceForm(props: InstanceFormProps) {
     handleSubmit,
     handleDifyParametersSave,
     handleSyncFromDify,
-    updateAppType,
-    updateDifyAppType,
     updateTags,
     hasUnsavedChanges,
     isCurrentDefault,
@@ -252,7 +254,11 @@ export function InstanceForm(props: InstanceFormProps) {
                     <button
                       key={appType}
                       type="button"
-                      onClick={() => updateAppType(appType)}
+                      onClick={() =>
+                        setFormData(previous =>
+                          changeInstanceAppType(previous, appType)
+                        )
+                      }
                       className={cn(
                         'flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-colors',
                         selected
@@ -313,9 +319,47 @@ export function InstanceForm(props: InstanceFormProps) {
           {!isLangChain && (
             <DifyAppTypeSelector
               value={formData.config.app_metadata.dify_apptype || 'chatbot'}
-              onChange={updateDifyAppType}
+              onChange={type =>
+                setFormData(previous =>
+                  changeInstanceDifyAppType(previous, type)
+                )
+              }
             />
           )}
+
+          {!isLangChain &&
+            formData.config.app_metadata.app_type === 'marketplace' &&
+            formData.config.app_metadata.dify_apptype === 'chatbot' && (
+              <div>
+                <label className="flex items-center gap-2 font-serif text-sm text-stone-700 dark:text-stone-300">
+                  <input
+                    type="checkbox"
+                    name="interaction_protocol"
+                    checked={
+                      formData.config.interaction_protocol === 'ag-ui/1.0'
+                    }
+                    disabled={isSyncing || isProcessing}
+                    aria-describedby="interaction-protocol-note"
+                    onChange={event => {
+                      const enabled = event.target.checked;
+                      setFormData(previous => {
+                        const config = { ...previous.config };
+                        if (enabled) config.interaction_protocol = 'ag-ui/1.0';
+                        else delete config.interaction_protocol;
+                        return { ...previous, config };
+                      });
+                    }}
+                  />
+                  {t('backend.aguiLabel')}
+                </label>
+                <p
+                  id="interaction-protocol-note"
+                  className="mt-2 font-serif text-xs text-stone-500 dark:text-stone-400"
+                >
+                  {t('backend.aguiNote')}
+                </p>
+              </div>
+            )}
 
           <TagsSelector
             tags={formData.config.app_metadata.tags}

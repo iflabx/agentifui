@@ -221,6 +221,7 @@ export async function admitSubmission(
        SELECT user_id, service_instance_id FROM backend_runs WHERE execution_status IN ('reserved','submitting','running','unknown')
        UNION ALL SELECT user_id, service_instance_id FROM agent_submissions WHERE backend_type = 'dify'
          AND state IN ('admitted','submitting','accepted','unknown')
+         AND NOT EXISTS (SELECT 1 FROM backend_runs linked WHERE linked.id = agent_submissions.run_id)
      ) active WHERE user_id = $1::uuid OR service_instance_id = $2::uuid`,
     [userId, appId]
   );

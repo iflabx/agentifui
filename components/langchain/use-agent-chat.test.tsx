@@ -1,9 +1,12 @@
 import { conversationEvents } from '@lib/hooks/use-combined-conversations';
+import { consumeAguiStream } from '@lib/services/client/agui-stream';
 import {
   AgentRequestError,
   agentRequest,
+  agentSubmissionRequest,
   consumeAgentStream,
 } from '@lib/services/client/langchain-api';
+import { useLangchainDraftStore } from '@lib/stores/langchain-draft-store';
 import { act, renderHook, waitFor } from '@testing-library/react';
 
 import { useAgentChat } from './use-agent-chat';
@@ -16,12 +19,18 @@ jest.mock('@lib/services/client/langchain-api', () => ({
   ...jest.requireActual('@lib/services/client/langchain-api'),
   agentRequest: jest.fn(),
   consumeAgentStream: jest.fn(),
+  agentSubmissionRequest: jest.fn(),
+}));
+jest.mock('@lib/services/client/agui-stream', () => ({
+  consumeAguiStream: jest.fn(),
 }));
 
 describe('independent agent chat lifecycle', () => {
   const originalFetch = global.fetch;
   beforeEach(() => {
     jest.clearAllMocks();
+    useLangchainDraftStore.getState().setActor(null);
+    useLangchainDraftStore.getState().setActor('test-actor');
     window.history.replaceState({}, '', '/apps/langchain/app-uuid');
     global.fetch = jest.fn().mockResolvedValue({ ok: true });
     jest.mocked(agentRequest).mockImplementation(async (_appId, suffix) => {
@@ -563,6 +572,217 @@ describe('independent agent chat lifecycle', () => {
       await result.current.select(null);
     });
     expect(result.current.draftScope).not.toBe(scope);
+    unmount();
+  });
+
+  it('recovers a lost first frame after leaving and returning without dispatching again', async () => {
+    const original = jest.mocked(agentRequest).getMockImplementation()!;
+    jest
+      .mocked(agentRequest)
+      .mockImplementation(async (appId, suffix, init) => {
+        if (!suffix)
+          return {
+            app: { name: 'Public agent' },
+            protocol: 'ag-ui/1.0',
+          } as never;
+        if (suffix.startsWith('/runs/'))
+          return {
+            id: 'run',
+            conversationId: 'local',
+            executionStatus: 'success',
+            persistenceStatus: 'saved',
+          } as never;
+        return original(appId, suffix, init) as never;
+      });
+    const store = useLangchainDraftStore.getState();
+    const scope = store.selectScope('app-uuid', 'new:0', false)!;
+    store.setText(scope, 'Hello');
+    const snapshot = useLangchainDraftStore.getState().drafts[scope];
+    jest
+      .mocked(consumeAguiStream)
+      .mockRejectedValue(new TypeError('Connection lost'));
+    jest
+      .mocked(agentSubmissionRequest)
+      .mockResolvedValue({ state: 'accepted', runId: 'run' });
+    const first = renderHook(() =>
+      useAgentChat('app-uuid', null, 'test-actor')
+    );
+    await waitFor(() => expect(first.result.current.ready).toBe(true));
+    await act(async () => {
+      await first.result.current.send('Hello', snapshot);
+    });
+    expect(first.result.current.unconfirmed).toBe(true);
+    first.unmount();
+    const second = renderHook(() =>
+      useAgentChat('app-uuid', null, 'test-actor')
+    );
+    await waitFor(() => expect(second.result.current.ready).toBe(true));
+    expect(second.result.current.unconfirmed).toBe(true);
+    jest.useFakeTimers();
+    await act(async () => {
+      await second.result.current.send('Hello');
+      second.result.current.retryStatus();
+    });
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(1600);
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(second.result.current.view.conversationId).toBe('local');
+    expect(useLangchainDraftStore.getState().drafts[scope].text).toBe('');
+    expect(useLangchainDraftStore.getState().pendingSubmissions).toEqual({});
+    second.unmount();
+  });
+
+  it('canonicalizes history entry URLs after deletion and creating a replacement', async () => {
+    window.history.replaceState({}, '', '/chat/local');
+    const { result, unmount } = renderHook(() =>
+      useAgentChat('app-uuid', 'local')
+    );
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    await act(async () => {
+      await result.current.remove();
+    });
+    expect(window.location.pathname).toBe('/apps/agent-chat/app-uuid');
+    expect(window.location.search).toBe('');
+    unmount();
+  });
+
+  it('negotiates AG-UI once and reconciles the saved answer without invoking the legacy consumer', async () => {
+    const original = jest.mocked(agentRequest).getMockImplementation()!;
+    jest
+      .mocked(agentRequest)
+      .mockImplementation(async (appId, suffix, init) => {
+        if (!suffix)
+          return {
+            app: { name: 'Public agent' },
+            protocol: 'ag-ui/1.0',
+          } as never;
+        if (suffix.startsWith('/runs/'))
+          return {
+            id: 'run',
+            conversationId: 'local',
+            executionStatus: 'success',
+            persistenceStatus: 'saved',
+          } as never;
+        return original(appId, suffix, init) as never;
+      });
+    jest
+      .mocked(consumeAguiStream)
+      .mockImplementation(async (_response, input) => {
+        expect(
+          input.history({
+            conversationId: 'local',
+            runId: 'run',
+            userMessageId: 'user',
+          })
+        ).toEqual([{ id: 'user', role: 'user', content: 'Hello' }]);
+        input.accept(
+          {
+            schemaVersion: 2,
+            threadId: 'local',
+            runId: 'run',
+            status: 'succeeded',
+            messages: [
+              { id: 'user', role: 'user', content: 'Hello' },
+              { id: 'assistant', role: 'assistant', content: 'Reply' },
+            ],
+            outputMessageIds: ['assistant'],
+            warnings: [],
+          },
+          { conversationId: 'local', runId: 'run', userMessageId: 'user' }
+        );
+      });
+    const { result, unmount } = renderHook(() =>
+      useAgentChat('app-uuid', null)
+    );
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    await act(async () => {
+      await result.current.send('Hello');
+    });
+    expect(consumeAguiStream).toHaveBeenCalledTimes(1);
+    expect(consumeAgentStream).not.toHaveBeenCalled();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(jest.mocked(global.fetch).mock.calls[0]?.[1]?.headers).toMatchObject(
+      { 'X-AgentifUI-Protocol': 'ag-ui/1.0' }
+    );
+    expect(result.current.view.messages.map(message => message.id)).toEqual([
+      'user',
+      'assistant',
+    ]);
+    expect(result.current.unconfirmed).toBe(false);
+    unmount();
+  });
+
+  it('selects legacy tools before submission, without attempting AG-UI and falling back after execution', async () => {
+    const original = jest.mocked(agentRequest).getMockImplementation()!;
+    jest
+      .mocked(agentRequest)
+      .mockImplementation(async (appId, suffix, init) => {
+        if (!suffix)
+          return {
+            app: { name: 'Public agent' },
+            protocol: 'ag-ui/1.0',
+          } as never;
+        const detail = await original(appId, suffix, init);
+        return { ...(detail as object), protocol: 'agentifui/legacy' } as never;
+      });
+    jest.mocked(consumeAgentStream).mockResolvedValue(undefined);
+    const { result, unmount } = renderHook(() =>
+      useAgentChat('app-uuid', 'local')
+    );
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    await act(async () => {
+      await result.current.send('Continue old tools');
+    });
+    expect(consumeAgentStream).toHaveBeenCalledTimes(1);
+    expect(consumeAguiStream).not.toHaveBeenCalled();
+    expect(
+      jest.mocked(global.fetch).mock.calls[0]?.[1]?.headers
+    ).not.toHaveProperty('X-AgentifUI-Protocol');
+    unmount();
+  });
+
+  it('recovers a response lost before RUN_STARTED by querying the retained submission, never by resubmitting', async () => {
+    const original = jest.mocked(agentRequest).getMockImplementation()!;
+    jest
+      .mocked(agentRequest)
+      .mockImplementation(async (appId, suffix, init) => {
+        if (!suffix)
+          return {
+            app: { name: 'Public agent' },
+            protocol: 'ag-ui/1.0',
+          } as never;
+        if (suffix.startsWith('/runs/'))
+          return {
+            id: 'run',
+            conversationId: 'local',
+            executionStatus: 'success',
+            persistenceStatus: 'saved',
+          } as never;
+        return original(appId, suffix, init) as never;
+      });
+    jest
+      .mocked(consumeAguiStream)
+      .mockRejectedValue(new Error('Connection lost'));
+    jest
+      .mocked(agentSubmissionRequest)
+      .mockResolvedValue({ runId: 'run', state: 'finished' });
+    const { result, unmount } = renderHook(() =>
+      useAgentChat('app-uuid', null)
+    );
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    jest.useFakeTimers();
+    await act(async () => {
+      await result.current.send('Hello');
+    });
+    expect(result.current.unconfirmed).toBe(true);
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(1501);
+    });
+    expect(agentSubmissionRequest).toHaveBeenCalledTimes(1);
+    expect(result.current.view.conversationId).toBe('local');
+    expect(result.current.unconfirmed).toBe(false);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
     unmount();
   });
 });
