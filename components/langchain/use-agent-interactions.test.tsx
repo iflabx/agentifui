@@ -3,6 +3,7 @@ import {
   AgentRequestError,
   agentRequest,
 } from '@lib/services/client/langchain-api';
+import { useLangchainDraftStore } from '@lib/stores/langchain-draft-store';
 import { act, renderHook, waitFor } from '@testing-library/react';
 
 import { useAgentInteractions } from './use-agent-interactions';
@@ -38,6 +39,42 @@ describe('shared agent interactions', () => {
     jest.mocked(agentRequest).mockResolvedValue({ interactions: [pending] });
   });
   afterEach(() => jest.useRealTimers());
+
+  it('discards a previous-login response and allows the new login to load independently', async () => {
+    let complete!: () => void;
+    jest.mocked(agentRequest).mockImplementation(async (_app, _path, init) => {
+      if (init?.method === 'POST')
+        return new Promise(resolve => {
+          complete = () =>
+            resolve({ run: { id: 'old-resume' }, replayed: false });
+        }) as never;
+      return { interactions: [pending] } as never;
+    });
+    const { result } = renderHook(() => useAgentInteractions(options));
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+    const oldScope = result.current.scope;
+    let work!: Promise<unknown>;
+    act(() => {
+      work = result.current.respond(pending.id, 'approve', '');
+    });
+    act(() =>
+      useLangchainDraftStore.getState().setActor(options.actorId, true)
+    );
+    await act(async () => {
+      complete();
+      await work;
+    });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.scope).not.toBe(oldScope);
+    expect(result.current.uncertainId).toBeUndefined();
+    expect(result.current.submittingId).toBeUndefined();
+    expect(updated).not.toHaveBeenCalled();
+    expect(
+      jest
+        .mocked(agentRequest)
+        .mock.calls.some(([, path]) => path === '/runs/old-resume')
+    ).toBe(false);
+  });
 
   it('restores pending forms from the authorized local conversation endpoint', async () => {
     const { result } = renderHook(() => useAgentInteractions(options));

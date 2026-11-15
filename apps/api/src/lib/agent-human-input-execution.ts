@@ -27,6 +27,7 @@ import {
   saveRunResult,
 } from './agent-runs-repository';
 import {
+  type AgentSubmission,
   confirmSubmission,
   markSubmissionSubmitting,
   rejectSubmission,
@@ -53,6 +54,31 @@ function localMessageId(runId: string, index: number) {
   return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
 }
 
+type HumanInputSubmission = Pick<
+  AgentSubmission,
+  'root_task_id' | 'state' | 'quota_state'
+>;
+
+async function loadHumanInputSubmission(run: AgentRunRecord) {
+  const rows = await queryRowsWithPgSystemContext<HumanInputSubmission>(
+    `SELECT root_task_id, state, quota_state FROM agent_submissions WHERE run_id = $1::uuid AND user_id = $2::uuid AND service_instance_id = $3::uuid`,
+    [run.root_run_id ?? run.id, run.user_id, run.service_instance_id]
+  );
+  return rows[0];
+}
+
+function hasAcceptanceEvidence(
+  run: AgentRunRecord,
+  submission?: HumanInputSubmission
+) {
+  return Boolean(
+    run.native_run_id ||
+    submission?.state === 'accepted' ||
+    submission?.state === 'finished' ||
+    submission?.quota_state === 'counted'
+  );
+}
+
 export async function reconcileHumanInputRun(input: {
   app: AgentApp;
   run: AgentRunRecord;
@@ -65,11 +91,8 @@ export async function reconcileHumanInputRun(input: {
   if (run.run_kind === 'resume' && run.execution_status === 'reserved') {
     return run;
   }
-  const roots = await queryRowsWithPgSystemContext<{ root_task_id: string }>(
-    `SELECT root_task_id FROM agent_submissions WHERE run_id = $1::uuid AND user_id = $2::uuid AND service_instance_id = $3::uuid`,
-    [run.root_run_id ?? run.id, run.user_id, input.app.id]
-  );
-  const rootTaskId = input.rootTaskId ?? roots[0]?.root_task_id;
+  const submission = await loadHumanInputSubmission(run);
+  const rootTaskId = input.rootTaskId ?? submission?.root_task_id;
   if (run.result) {
     const saved =
       run.persistence_status === 'saved'
@@ -77,7 +100,11 @@ export async function reconcileHumanInputRun(input: {
         : await saveRunResult(run.id, run.result);
     if (run.run_kind === 'resume' && run.execution_status === 'success')
       await updateInteractionOutcome(run.id, 'accepted');
-    if (run.run_kind !== 'resume' && rootTaskId)
+    if (
+      run.run_kind !== 'resume' &&
+      rootTaskId &&
+      hasAcceptanceEvidence(run, submission)
+    )
       await confirmSubmission(rootTaskId, 'finished');
     return saved;
   }
@@ -246,7 +273,6 @@ export async function executeHumanInputRun(input: {
 }): Promise<void> {
   let run = input.run;
   let dispatched = false;
-  let claimed = false;
   try {
     await requireHumanInputCapabilities(input.app);
     if (run.run_kind === 'resume') {
@@ -300,7 +326,6 @@ export async function executeHumanInputRun(input: {
           });
         else if (input.rootTaskId)
           await markSubmissionSubmitting(input.rootTaskId);
-        claimed = true;
       },
       () => {
         dispatched = true;
@@ -338,29 +363,46 @@ export async function executeHumanInputRun(input: {
           () => undefined
         );
       }
-    } else if (!definitelyRejected) {
-      await markRunUnknown(run.id).catch(() => undefined);
-      if (input.rootTaskId)
-        await confirmSubmission(input.rootTaskId, 'unknown').catch(
-          () => undefined
-        );
     } else {
-      if (input.rootTaskId) {
-        if (claimed)
-          await rejectUnacceptedSubmission(input.rootTaskId).catch(
+      let rejected = false;
+      try {
+        const durable = await getRunForActor(run.id, run.user_id, input.app.id);
+        const submission = await loadHumanInputSubmission(run);
+        if (
+          durable &&
+          !durable.result &&
+          submission &&
+          (!input.rootTaskId || submission.root_task_id === input.rootTaskId) &&
+          !hasAcceptanceEvidence(durable, submission)
+        ) {
+          if (dispatched && definitelyRejected)
+            await rejectUnacceptedSubmission(submission.root_task_id).catch(
+              () => undefined
+            );
+          else if (!dispatched)
+            await rejectSubmission(
+              submission.root_task_id,
+              'AGENT_NOT_DISPATCHED'
+            ).catch(() => undefined);
+          rejected =
+            (await loadHumanInputSubmission(run))?.state === 'rejected';
+        }
+      } catch {
+        rejected = false;
+      }
+      if (rejected) {
+        await saveRunResult(run.id, {
+          executionStatus: 'error',
+          messages: [],
+          errorCode: 'AGENT_RUN_FAILED',
+        }).catch(() => undefined);
+      } else {
+        await markRunUnknown(run.id).catch(() => undefined);
+        if (input.rootTaskId)
+          await confirmSubmission(input.rootTaskId, 'unknown').catch(
             () => undefined
           );
-        else
-          await rejectSubmission(
-            input.rootTaskId,
-            'AGENT_NOT_DISPATCHED'
-          ).catch(() => undefined);
       }
-      await saveRunResult(run.id, {
-        executionStatus: 'error',
-        messages: [],
-        errorCode: 'AGENT_RUN_FAILED',
-      }).catch(() => undefined);
     }
     input.report({ runId: run.id, code: 'AGENT_RESULT_UNKNOWN' });
     if (input.agui)

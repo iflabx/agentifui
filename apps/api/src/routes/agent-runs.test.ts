@@ -4,7 +4,15 @@ import Fastify from 'fastify';
 import type { ApiRuntimeConfig } from '../config';
 import { resolveAgentApp } from '../lib/agent-app';
 import { AgentPolicyError } from '../lib/agent-backends';
+import { executeHumanInputRun } from '../lib/agent-human-input-execution';
 import { moderateInputText } from '../lib/agent-input-moderation';
+import {
+  type AgentInteractionRecord,
+  expireInteraction,
+  getInteractionForActor,
+  getInteractionResponseReplay,
+  reserveInteractionResponse,
+} from '../lib/agent-interactions-repository';
 import { executeAgentRun } from '../lib/agent-run-execution';
 import {
   AgentRunError,
@@ -15,6 +23,7 @@ import {
 } from '../lib/agent-runs-repository';
 import { registerSubmission, rejectSubmission } from '../lib/agent-submissions';
 import { executeDifyAgentRun } from '../lib/agui/dify-execution';
+import { getHumanInputState } from '../lib/langchain/human-input';
 import { resolveIdentityFromSession } from '../lib/session-identity';
 import { agentRunsRoutes } from './agent-runs';
 import { loadTrustedUserProfile } from './dify-proxy-route/trusted-user-context';
@@ -25,6 +34,21 @@ jest.mock('../lib/agent-app', () => ({
 }));
 jest.mock('../lib/agent-input-moderation', () => ({
   moderateInputText: jest.fn(),
+}));
+jest.mock('../lib/agent-human-input-execution', () => ({
+  ...jest.requireActual('../lib/agent-human-input-execution'),
+  executeHumanInputRun: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock('../lib/agent-interactions-repository', () => ({
+  ...jest.requireActual('../lib/agent-interactions-repository'),
+  getInteractionForActor: jest.fn(),
+  getInteractionResponseReplay: jest.fn(),
+  reserveInteractionResponse: jest.fn(),
+  expireInteraction: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock('../lib/langchain/human-input', () => ({
+  ...jest.requireActual('../lib/langchain/human-input'),
+  getHumanInputState: jest.fn(),
 }));
 jest.mock('../lib/agui/dify-execution', () => ({
   executeDifyAgentRun: jest.fn().mockResolvedValue(undefined),
@@ -71,6 +95,159 @@ const run = {
   native_run_id: null,
 } as AgentRunRecord;
 const payload = { submissionId: SUBMISSION, content: 'synthetic input' };
+
+describe('human response moderation during a released claim', () => {
+  const claimed = {
+    id: APP,
+    origin_run_id: RUN,
+    status: 'submitting',
+    expires_at: null,
+    submission_id: '40000000-0000-4000-8000-000000000001',
+    resume_run_id: RUN,
+    prompt: {
+      title: 'Confirmation',
+      description: 'Synthetic operation',
+      actions: ['approve', 'reject'],
+      commentMaxLength: 500,
+      expiresAt: null,
+    },
+  } as AgentInteractionRecord;
+  let durable: AgentInteractionRecord;
+  beforeEach(async () => {
+    const app = await resolveAgentApp(APP, 'actor');
+    jest.mocked(resolveAgentApp).mockResolvedValue({
+      ...app,
+      backendType: 'langchain',
+      humanInput: true,
+    });
+    durable = { ...claimed };
+    jest
+      .mocked(getInteractionForActor)
+      .mockReset()
+      .mockResolvedValue({ ...claimed });
+    jest
+      .mocked(getInteractionResponseReplay)
+      .mockReset()
+      .mockImplementation(async () => {
+        durable = {
+          ...claimed,
+          status: 'pending',
+          submission_id: null,
+          resume_run_id: null,
+        };
+        return null;
+      });
+    jest
+      .mocked(reserveInteractionResponse)
+      .mockReset()
+      .mockImplementation(async () => {
+        expect(durable.status).toBe('pending');
+        expect(durable.submission_id).toBeNull();
+        return { run, replayed: false, interaction: durable };
+      });
+    jest.mocked(executeHumanInputRun).mockClear();
+    jest.mocked(getHumanInputState).mockClear();
+  });
+
+  async function respond(comment?: string) {
+    const server = Fastify({ logger: false });
+    await server.register(agentRunsRoutes, {
+      config: { corsAllowedOrigins: [] } as unknown as ApiRuntimeConfig,
+    });
+    try {
+      return await server.inject({
+        method: 'POST',
+        url: `/api/internal/apps/${APP}/agent/interactions/${APP}/respond`,
+        payload: {
+          submissionId: SUBMISSION,
+          action: 'approve',
+          ...(comment === undefined ? {} : { comment }),
+        },
+      });
+    } finally {
+      await server.close();
+    }
+  }
+
+  it.each([
+    ['block', 400, 'CONTENT_MODERATION_BLOCKED'],
+    ['unavailable', 503, 'CONTENT_MODERATION_UNAVAILABLE'],
+  ] as const)(
+    'does not claim or execute a new comment when moderation is %s',
+    async (outcome, status, code) => {
+      jest
+        .mocked(moderateInputText)
+        .mockResolvedValue(
+          outcome === 'block'
+            ? { outcome, categories: ['synthetic'] }
+            : { outcome, reason: 'Synthetic outage' }
+        );
+      const response = await respond(
+        'New comment after the old preparation failed'
+      );
+      expect(response.statusCode).toBe(status);
+      expect(response.json().app_error.code).toBe(code);
+      expect(moderateInputText).toHaveBeenCalledTimes(1);
+      expect(moderateInputText).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: 'New comment after the old preparation failed',
+        })
+      );
+      expect(reserveInteractionResponse).not.toHaveBeenCalled();
+      expect(executeHumanInputRun).not.toHaveBeenCalled();
+      expect(durable.status).toBe('pending');
+    }
+  );
+
+  it('moderates a new allowed comment before reserving and executing it once', async () => {
+    jest
+      .mocked(moderateInputText)
+      .mockResolvedValue({ outcome: 'allow', categories: [] });
+    const response = await respond('Allowed comment');
+    expect(response.statusCode).toBe(202);
+    expect(response.json().replayed).toBe(false);
+    expect(moderateInputText).toHaveBeenCalledTimes(1);
+    expect(reserveInteractionResponse).toHaveBeenCalledTimes(1);
+    expect(executeHumanInputRun).toHaveBeenCalledTimes(1);
+    expect(
+      jest.mocked(moderateInputText).mock.invocationCallOrder[0]
+    ).toBeLessThan(
+      jest.mocked(reserveInteractionResponse).mock.invocationCallOrder[0]
+    );
+  });
+
+  it.each(['submitting', 'pending'] as const)(
+    'returns a confirmed replay without re-auditing or dispatching (%s)',
+    async status => {
+      jest.mocked(getInteractionForActor).mockResolvedValue({
+        ...claimed,
+        status,
+        submission_id: status === 'pending' ? null : SUBMISSION,
+      });
+      jest.mocked(getInteractionResponseReplay).mockResolvedValue(run);
+      jest
+        .mocked(moderateInputText)
+        .mockResolvedValue({ outcome: 'block', categories: ['synthetic'] });
+      const response = await respond('Previously accepted comment');
+      expect(response.statusCode).toBe(202);
+      expect(response.json()).toMatchObject({
+        replayed: true,
+        run: { id: RUN },
+      });
+      expect(moderateInputText).not.toHaveBeenCalled();
+      expect(reserveInteractionResponse).not.toHaveBeenCalled();
+      expect(getHumanInputState).not.toHaveBeenCalled();
+      expect(executeHumanInputRun).not.toHaveBeenCalled();
+    }
+  );
+
+  it('does not audit an empty new comment', async () => {
+    expect((await respond()).statusCode).toBe(202);
+    expect(moderateInputText).not.toHaveBeenCalled();
+    expect(reserveInteractionResponse).toHaveBeenCalledTimes(1);
+    expect(executeHumanInputRun).toHaveBeenCalledTimes(1);
+  });
+});
 
 beforeEach(() => {
   jest.clearAllMocks();

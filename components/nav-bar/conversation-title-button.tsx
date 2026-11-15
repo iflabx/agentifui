@@ -16,6 +16,7 @@ import {
   renameConversation,
 } from '@lib/services/client/conversations-api';
 import { useAppListStore } from '@lib/stores/app-list-store';
+import { useChatInputStore } from '@lib/stores/chat-input-store';
 import { useChatStore } from '@lib/stores/chat-store';
 import { useFavoriteAppsStore } from '@lib/stores/favorite-apps-store';
 import { useSidebarStore } from '@lib/stores/sidebar-store';
@@ -31,9 +32,30 @@ interface ConversationTitleButtonProps {
   className?: string;
 }
 
-export function ConversationTitleButton({
+export function ConversationTitleButton(props: ConversationTitleButtonProps) {
+  const actorEpoch = useChatInputStore(state => state.actorEpoch);
+  return (
+    <ActorConversationTitleButton
+      key={actorEpoch}
+      {...props}
+      actorEpoch={actorEpoch}
+    />
+  );
+}
+
+function ActorConversationTitleButton({
   className,
-}: ConversationTitleButtonProps) {
+  actorEpoch,
+}: ConversationTitleButtonProps & { actorEpoch: number }) {
+  const mounted = React.useRef(false);
+  React.useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const isCurrentActor = () =>
+    mounted.current && useChatInputStore.getState().actorEpoch === actorEpoch;
   const router = useRouter();
   const pathname = usePathname() ?? '';
   const params = useParams();
@@ -189,6 +211,7 @@ export function ConversationTitleButton({
   };
 
   const handleRenameConfirm = async (newTitle: string) => {
+    if (!isCurrentActor()) return;
     if (!currentConversationId || !finalConversation) {
       alert(t('createInProgress'));
       setShowRenameDialog(false);
@@ -205,6 +228,7 @@ export function ConversationTitleButton({
     setIsOperating(true);
     try {
       const result = await renameConversation(dbPK, newTitle.trim());
+      if (!isCurrentActor()) return;
 
       if (result.success) {
         // After title update, it will be automatically synchronized through refresh() and conversationEvents.emit()
@@ -219,10 +243,11 @@ export function ConversationTitleButton({
         alert(t('renameFailed'));
       }
     } catch (error) {
+      if (!isCurrentActor()) return;
       console.error('Rename conversation operation error:', error);
       alert(t('operationError'));
     } finally {
-      setIsOperating(false);
+      if (isCurrentActor()) setIsOperating(false);
     }
   };
 
@@ -233,6 +258,7 @@ export function ConversationTitleButton({
   };
 
   const handleDeleteConfirm = async () => {
+    if (!isCurrentActor()) return;
     if (!currentConversationId || !finalConversation) {
       alert(t('createInProgress'));
       setShowDeleteDialog(false);
@@ -249,6 +275,7 @@ export function ConversationTitleButton({
     setIsOperating(true);
     try {
       const result = await deleteConversation(dbPK);
+      if (!isCurrentActor()) return;
 
       if (result.success) {
         // After successful deletion, jump to new conversation page - consistent with sidebar logic
@@ -260,11 +287,14 @@ export function ConversationTitleButton({
         alert(t('deleteFailed'));
       }
     } catch (error) {
+      if (!isCurrentActor()) return;
       console.error('Delete conversation operation error:', error);
       alert(t('operationError'));
     } finally {
-      setIsOperating(false);
-      setShowDeleteDialog(false);
+      if (isCurrentActor()) {
+        setIsOperating(false);
+        setShowDeleteDialog(false);
+      }
     }
   };
 

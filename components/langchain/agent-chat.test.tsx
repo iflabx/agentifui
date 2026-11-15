@@ -1,4 +1,5 @@
 import { AgentRequestError } from '@lib/services/client/langchain-api';
+import { syncChatDraftActor } from '@lib/stores/chat-draft-lifecycle';
 import { useLangchainDraftStore } from '@lib/stores/langchain-draft-store';
 import {
   act,
@@ -7,6 +8,8 @@ import {
   screen,
   waitFor,
 } from '@testing-library/react';
+
+import { useEffect } from 'react';
 
 import { AgentChat } from './agent-chat';
 import { useAgentChat } from './use-agent-chat';
@@ -131,6 +134,31 @@ describe('Agent chat draft', () => {
   it('reserves space for fixed desktop and mobile shell navigation', () => {
     render(<AgentChat appId="app" conversationId={null} />);
     expect(screen.getByRole('main')).toHaveClass('pt-16', 'md:pt-12');
+  });
+
+  it('remounts and cleans up the chat session on a new login', () => {
+    const original = jest.mocked(useAgentChat).getMockImplementation()!(
+      'app',
+      null
+    );
+    const cleanup = jest.fn();
+    let mounts = 0;
+    jest.mocked(useAgentChat).mockImplementation(function useSessionChat() {
+      useEffect(() => {
+        mounts += 1;
+        return cleanup;
+      }, []);
+      return original;
+    });
+    syncChatDraftActor('user', 'login-one');
+    render(<AgentChat appId="app" conversationId={null} />);
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: 'Old draft' },
+    });
+    act(() => syncChatDraftActor('user', 'login-two'));
+    expect(mounts).toBe(2);
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('textbox')).toHaveValue('');
   });
 
   it('renders a pending confirmation in the shared chat and blocks ordinary input and deletion', () => {

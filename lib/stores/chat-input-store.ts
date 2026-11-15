@@ -13,6 +13,7 @@ interface ChatInputState {
   currentRoute: string;
   actorId: string | null;
   actorEpoch: number;
+  actorSessionId: string | null;
   message: string;
   getMessage: () => string;
   setMessage: (message: string) => void;
@@ -20,7 +21,7 @@ interface ChatInputState {
   setCurrentRoute: (route: string) => void;
   clearAllMessages: () => void;
   clearRouteMessage: (route: string) => void;
-  setActor: (actorId: string | null) => boolean;
+  setActor: (actorId: string | null, sessionId?: string | null) => boolean;
   snapshot: () => DraftSnapshot;
   consumeSnapshot: (snapshot: DraftSnapshot) => void;
   migrateScope: (source: string, target: string) => boolean;
@@ -50,6 +51,7 @@ export const useChatInputStore = create<ChatInputState>((set, get) => ({
   currentRoute: 'default',
   actorId: null,
   actorEpoch: 0,
+  actorSessionId: null,
   message: '',
   resolveScope: scope => {
     let resolved = scope;
@@ -102,10 +104,20 @@ export const useChatInputStore = create<ChatInputState>((set, get) => ({
       };
     });
   },
-  setActor: actorId => {
-    if (get().actorId === actorId) return false;
+  setActor: (actorId, sessionId) => {
+    const current = get();
+    const sessionChanged =
+      sessionId !== undefined &&
+      current.actorSessionId !== null &&
+      current.actorSessionId !== sessionId;
+    if (current.actorId === actorId && !sessionChanged) {
+      if (sessionId !== undefined && current.actorSessionId !== sessionId)
+        set({ actorSessionId: sessionId });
+      return false;
+    }
     set(state => ({
       actorId,
+      actorSessionId: sessionId ?? null,
       actorEpoch: state.actorEpoch + 1,
       messagesByRoute: {},
       revisionsByRoute: {},

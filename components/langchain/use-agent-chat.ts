@@ -61,6 +61,7 @@ export function useAgentChat(
   initialConversationId: string | null,
   actorId?: string
 ) {
+  const actorEpoch = useLangchainDraftStore(state => state.actorEpoch);
   const [view, setView] = useState<AgentViewState>(emptyView);
   const [draftScope, setDraftScope] = useState(
     initialConversationId || 'new:0'
@@ -140,7 +141,11 @@ export function useAgentChat(
         `/conversations/${encodeURIComponent(conversationId)}`,
         { signal }
       );
-      if (signal?.aborted || version !== navigationVersion.current)
+      if (
+        signal?.aborted ||
+        version !== navigationVersion.current ||
+        useLangchainDraftStore.getState().actorEpoch !== actorEpoch
+      )
         return false;
       protocol.current = detail.protocol ?? defaultProtocol.current;
       setNextCursor(detail.nextCursor ?? null);
@@ -169,7 +174,7 @@ export function useAgentChat(
       setUnconfirmed(Boolean(run && !agentRunSettled(run)));
       return true;
     },
-    [appId]
+    [appId, actorEpoch]
   );
 
   useEffect(() => {
@@ -431,6 +436,7 @@ export function useAgentChat(
     const timeout = setTimeout(() => requestController.abort(), 150000);
     controller.current = requestController;
     const ownsView = () =>
+      useLangchainDraftStore.getState().actorEpoch === actorEpoch &&
       generation.current === currentGeneration &&
       navigationVersion.current === version &&
       controller.current === requestController;
@@ -539,7 +545,7 @@ export function useAgentChat(
       } else {
         if (latest.conversationId)
           await load(latest.conversationId, requestController.signal, version);
-        conversationEvents.emit();
+        if (ownsView()) conversationEvents.emit();
       }
     } catch (failure) {
       if (!ownsView()) return Boolean(latest.runId);
@@ -586,8 +592,11 @@ export function useAgentChat(
         `/conversations/${encodeURIComponent(view.conversationId)}`,
         { method: 'DELETE' }
       );
-      if (version === navigationVersion.current) await select(null);
-      conversationEvents.emit();
+      if (version === navigationVersion.current) {
+        await select(null);
+        if (useLangchainDraftStore.getState().actorEpoch === actorEpoch)
+          conversationEvents.emit();
+      }
     } catch (failure) {
       if (version === navigationVersion.current)
         setError(

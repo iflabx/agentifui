@@ -12,17 +12,24 @@ import {
 } from './agent-interactions-repository';
 import {
   type AgentRunRecord,
+  bindThread,
   getRunForActor,
   markRunUnknown,
   saveRunResult,
 } from './agent-runs-repository';
-import { confirmSubmission } from './agent-submissions';
+import {
+  type AgentSubmission,
+  confirmSubmission,
+  markSubmissionSubmitting,
+  rejectSubmission,
+  rejectUnacceptedSubmission,
+} from './agent-submissions';
 import {
   findHumanInputRun,
   getHumanInputState,
   requireHumanInputCapabilities,
 } from './langchain/human-input';
-import { streamNativeRun } from './langchain/transport';
+import { LangChainUpstreamError, streamNativeRun } from './langchain/transport';
 import { queryRowsWithPgSystemContext } from './pg-context';
 
 jest.mock('./agent-interactions-repository', () => ({
@@ -31,11 +38,17 @@ jest.mock('./agent-interactions-repository', () => ({
   updateInteractionOutcome: jest.fn(),
 }));
 jest.mock('./agent-runs-repository', () => ({
+  bindThread: jest.fn(),
   getRunForActor: jest.fn(),
   markRunUnknown: jest.fn(),
   saveRunResult: jest.fn(),
 }));
-jest.mock('./agent-submissions', () => ({ confirmSubmission: jest.fn() }));
+jest.mock('./agent-submissions', () => ({
+  confirmSubmission: jest.fn(),
+  markSubmissionSubmitting: jest.fn(),
+  rejectSubmission: jest.fn(),
+  rejectUnacceptedSubmission: jest.fn(),
+}));
 jest.mock('./pg-context', () => ({ queryRowsWithPgSystemContext: jest.fn() }));
 jest.mock('./langchain/human-input', () => ({
   findHumanInputRun: jest.fn(),
@@ -82,11 +95,14 @@ const interaction: AgentInteractionRecord = {
 };
 let durable: AgentRunRecord;
 let dispatched: boolean;
+let ledger: Pick<AgentSubmission, 'root_task_id' | 'state' | 'quota_state'>;
 
 beforeEach(() => {
   jest.resetAllMocks();
   durable = { ...initial };
   dispatched = false;
+  ledger = { root_task_id: 'task', state: 'admitted', quota_state: 'reserved' };
+  jest.mocked(confirmSubmission).mockResolvedValue(undefined);
   jest.mocked(getRunForActor).mockImplementation(async () => ({ ...durable }));
   jest.mocked(markRunUnknown).mockImplementation(async () => ({ ...durable }));
   jest.mocked(updateInteractionOutcome).mockResolvedValue(undefined);
@@ -135,7 +151,7 @@ beforeEach(() => {
     );
   jest
     .mocked(queryRowsWithPgSystemContext)
-    .mockResolvedValue([{ root_task_id: 'task' }]);
+    .mockImplementation(async () => [{ ...ledger }] as never);
 });
 
 function execute() {
@@ -238,6 +254,7 @@ it.each(['failed', 'saved'] as const)(
     durable = {
       ...durable,
       run_kind: 'turn',
+      native_run_id: 'accepted-native-run',
       execution_status: 'error',
       persistence_status: persistence,
       result: {
@@ -258,3 +275,184 @@ it.each(['failed', 'saved'] as const)(
     expect(getHumanInputState).not.toHaveBeenCalled();
   }
 );
+
+describe('first human-input turn acceptance evidence', () => {
+  beforeEach(() => {
+    durable = { ...initial, run_kind: 'turn', root_run_id: undefined };
+    jest.mocked(bindThread).mockImplementation(async () => ({ ...durable }));
+    jest.mocked(markRunUnknown).mockImplementation(async () => {
+      durable.execution_status = 'unknown';
+      return { ...durable };
+    });
+    jest.mocked(markSubmissionSubmitting).mockImplementation(async () => {
+      ledger.state = 'submitting';
+    });
+    jest.mocked(rejectSubmission).mockImplementation(async () => {
+      if (['registered', 'admitted'].includes(ledger.state)) {
+        ledger.state = 'rejected';
+        ledger.quota_state = 'released';
+      }
+    });
+    jest.mocked(rejectUnacceptedSubmission).mockImplementation(async () => {
+      if (ledger.state === 'submitting' && ledger.quota_state === 'reserved') {
+        ledger.state = 'rejected';
+        ledger.quota_state = 'released';
+      }
+    });
+    jest.mocked(saveRunResult).mockImplementation(async (_id, result) => {
+      durable = {
+        ...durable,
+        execution_status: result.executionStatus,
+        result,
+        persistence_status: 'saved',
+      };
+      return { ...durable };
+    });
+  });
+
+  function executeTurn() {
+    return executeHumanInputRun({
+      app,
+      run: durable,
+      rootTaskId: 'task',
+      content: 'Synthetic input',
+      emit: jest.fn(),
+      agui: { emit: jest.fn() },
+      report: jest.fn(),
+    });
+  }
+
+  it('keeps a committed submission unknown when its COMMIT acknowledgment is lost', async () => {
+    jest.mocked(markSubmissionSubmitting).mockImplementationOnce(async () => {
+      ledger.state = 'submitting';
+      throw new Error('commit acknowledgment lost');
+    });
+    jest.mocked(findHumanInputRun).mockResolvedValue(undefined);
+    await executeTurn();
+    expect(dispatched).toBe(false);
+    expect(durable.execution_status).toBe('unknown');
+    expect(durable.result).toBeNull();
+    expect(ledger).toMatchObject({
+      state: 'submitting',
+      quota_state: 'reserved',
+    });
+    expect(saveRunResult).not.toHaveBeenCalled();
+    expect(rejectUnacceptedSubmission).not.toHaveBeenCalled();
+    await reconcileHumanInputRun({ app, run: durable });
+    await reconcileHumanInputRun({ app, run: durable });
+    expect(confirmSubmission).not.toHaveBeenCalledWith('task', 'accepted');
+    expect(confirmSubmission).not.toHaveBeenCalledWith('task', 'finished');
+    expect(streamNativeRun).toHaveBeenCalledTimes(1);
+  });
+
+  it('saves a preparation error only after durable rejection is confirmed', async () => {
+    jest
+      .mocked(requireHumanInputCapabilities)
+      .mockRejectedValueOnce(new Error('preparation failed'));
+    await executeTurn();
+    expect(dispatched).toBe(false);
+    expect(ledger).toMatchObject({
+      state: 'rejected',
+      quota_state: 'released',
+    });
+    expect(durable.result?.executionStatus).toBe('error');
+    await reconcileHumanInputRun({ app, run: durable });
+    expect(confirmSubmission).not.toHaveBeenCalledWith('task', 'finished');
+  });
+
+  it('accepts durable rejection after its acknowledgment is lost', async () => {
+    jest
+      .mocked(requireHumanInputCapabilities)
+      .mockRejectedValueOnce(new Error('preparation failed'));
+    jest.mocked(rejectSubmission).mockImplementationOnce(async () => {
+      ledger.state = 'rejected';
+      ledger.quota_state = 'released';
+      throw new Error('rejection acknowledgment lost');
+    });
+    await executeTurn();
+    expect(durable.result?.executionStatus).toBe('error');
+    expect(markRunUnknown).not.toHaveBeenCalled();
+  });
+
+  it.each(['read', 'reject'])(
+    'does not finalize a preparation error when %s cannot be confirmed',
+    async failure => {
+      jest
+        .mocked(requireHumanInputCapabilities)
+        .mockRejectedValueOnce(new Error('preparation failed'));
+      if (failure === 'read')
+        jest
+          .mocked(queryRowsWithPgSystemContext)
+          .mockRejectedValueOnce(new Error('read failed'));
+      else
+        jest
+          .mocked(rejectSubmission)
+          .mockRejectedValueOnce(new Error('rejection failed'));
+      await executeTurn();
+      expect(durable.execution_status).toBe('unknown');
+      expect(saveRunResult).not.toHaveBeenCalled();
+      expect(ledger.quota_state).toBe('reserved');
+    }
+  );
+
+  it('releases a dispatched explicit native refusal without counting it', async () => {
+    jest
+      .mocked(streamNativeRun)
+      .mockImplementationOnce(
+        async (_app, _thread, _body, _onRun, beforeDispatch, onDispatch) => {
+          await beforeDispatch();
+          onDispatch();
+          dispatched = true;
+          throw new LangChainUpstreamError('UPSTREAM_HTTP_ERROR', 400);
+        }
+      );
+    await executeTurn();
+    expect(dispatched).toBe(true);
+    expect(ledger).toMatchObject({
+      state: 'rejected',
+      quota_state: 'released',
+    });
+    expect(durable.result?.executionStatus).toBe('error');
+    expect(confirmSubmission).not.toHaveBeenCalled();
+  });
+
+  it('does not release a dispatched transport failure without acceptance evidence', async () => {
+    await executeTurn();
+    expect(dispatched).toBe(true);
+    expect(durable.execution_status).toBe('unknown');
+    expect(saveRunResult).not.toHaveBeenCalled();
+    expect(ledger.quota_state).toBe('reserved');
+  });
+
+  it.each(['reserved', 'exempt'] as const)(
+    'does not confirm a local error with only %s quota evidence',
+    async quota => {
+      ledger = { root_task_id: 'task', state: 'unknown', quota_state: quota };
+      durable = {
+        ...durable,
+        execution_status: 'error',
+        persistence_status: 'saved',
+        result: { executionStatus: 'error', messages: [] },
+      };
+      await reconcileHumanInputRun({ app, run: durable });
+      expect(confirmSubmission).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(['accepted', 'counted', 'native'] as const)(
+    'finishes a saved error only with %s acceptance evidence',
+    async evidence => {
+      if (evidence === 'accepted') ledger.state = 'accepted';
+      if (evidence === 'counted') ledger.quota_state = 'counted';
+      durable = {
+        ...durable,
+        native_run_id: evidence === 'native' ? 'native' : null,
+        execution_status: 'error',
+        persistence_status: 'saved',
+        result: { executionStatus: 'error', messages: [] },
+      };
+      await reconcileHumanInputRun({ app, run: durable });
+      expect(confirmSubmission).toHaveBeenCalledWith('task', 'finished');
+    }
+  );
+});

@@ -2,6 +2,10 @@ import {
   type BetterAuthSession,
   getCurrentSession,
 } from '@lib/auth/better-auth/http-client';
+import { syncChatDraftActor } from '@lib/stores/chat-draft-lifecycle';
+import { useChatInputStore } from '@lib/stores/chat-input-store';
+import { useLangchainDraftStore } from '@lib/stores/langchain-draft-store';
+import { usePendingConversationStore } from '@lib/stores/pending-conversation-store';
 
 describe('better-auth http-client getCurrentSession', () => {
   const mockedFetch = fetch as jest.MockedFunction<typeof fetch>;
@@ -16,6 +20,37 @@ describe('better-auth http-client getCurrentSession', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    syncChatDraftActor(null);
+  });
+
+  it('isolates a new login of the same user without resetting a same-session refresh', async () => {
+    const user = { id: '00000000-0000-4000-8000-000000000100' };
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse({ user, session: { id: 'first-login' } })
+    );
+    await getCurrentSession({ forceRefresh: true });
+    const epoch = useChatInputStore.getState().actorEpoch;
+    const langchainEpoch = useLangchainDraftStore.getState().actorEpoch;
+    useChatInputStore.getState().setMessage('private draft');
+    usePendingConversationStore.getState().addPending('private-pending');
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse({ user, session: { id: 'first-login' } })
+    );
+    await getCurrentSession({ forceRefresh: true });
+    expect(useChatInputStore.getState().actorEpoch).toBe(epoch);
+    expect(useChatInputStore.getState().message).toBe('private draft');
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse({ user, session: { id: 'second-login' } })
+    );
+    await getCurrentSession({ forceRefresh: true });
+    expect(useChatInputStore.getState().actorEpoch).toBe(epoch + 1);
+    expect(useLangchainDraftStore.getState().actorEpoch).toBe(
+      langchainEpoch + 1
+    );
+    expect(useChatInputStore.getState().message).toBe('');
+    expect(
+      usePendingConversationStore.getState().pendingConversations.size
+    ).toBe(0);
   });
 
   it('returns null when auth endpoint returns 401', async () => {

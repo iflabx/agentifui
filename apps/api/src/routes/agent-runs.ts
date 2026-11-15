@@ -264,24 +264,26 @@ export const agentRunsRoutes: FastifyPluginAsync<{
           await expireInteraction(interaction.id);
           throw new AgentAppError(409, 'AGENT_INTERACTION_EXPIRED');
         }
-        if (response.comment) {
-          const moderation = await moderateInputText({
-            request,
-            config: options.config,
-            userId: actor.userId,
-            text: response.comment,
-          });
-          if (
-            moderation.outcome === 'block' ||
-            moderation.outcome === 'unavailable'
-          )
-            throw new AgentPolicyError(
-              moderation.outcome === 'block' ? 400 : 503,
-              moderation.outcome === 'block'
-                ? 'CONTENT_MODERATION_BLOCKED'
-                : 'CONTENT_MODERATION_UNAVAILABLE'
-            );
-        }
+      }
+      if (response.comment) {
+        const moderation = await moderateInputText({
+          request,
+          config: options.config,
+          userId: actor.userId,
+          text: response.comment,
+        });
+        if (
+          moderation.outcome === 'block' ||
+          moderation.outcome === 'unavailable'
+        )
+          throw new AgentPolicyError(
+            moderation.outcome === 'block' ? 400 : 503,
+            moderation.outcome === 'block'
+              ? 'CONTENT_MODERATION_BLOCKED'
+              : 'CONTENT_MODERATION_UNAVAILABLE'
+          );
+      }
+      if (!interaction.submission_id) {
         const origin = await getRunForActor(
           interaction.origin_run_id,
           actor.userId,
