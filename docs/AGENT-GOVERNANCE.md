@@ -4,8 +4,11 @@ The Fastify API shares backend selection, input moderation, quota reservation
 and submission identity across Dify and LangChain. Only a missing backend type
 defaults to Dify; explicitly unsupported types are rejected. Public capabilities
 come from the implemented backend registry, not arbitrary configuration claims.
-This boundary does not implement AG-UI resume, human input, token billing or a
-general policy platform.
+Explicitly opted-in LangChain applications also support the controlled native
+human-input profile described in
+[AG-UI Integration](AGUI-INTEGRATION.md#human-input-product-boundary).
+It reuses this governance boundary; it does not enable arbitrary AG-UI resume,
+Dify human input, token billing or a general policy platform.
 
 ## Deployment And Request Contract
 
@@ -20,6 +23,15 @@ Deploy API and browser changes together; already cached pages must refresh.
 Missing governance storage fails closed with 503 rather than invoking upstream.
 Do not apply migrations without an isolated PostgreSQL upgrade/RLS/concurrency
 check and the deployment's database approval.
+
+For negotiated Dify conversations, also apply
+`20261114180000_allow_trusted_dify_conversations.sql`. Before deploying the
+human-input implementation, apply `20261115090000_add_agent_human_input.sql`
+followed by `20261115100000_add_agent_resume_dispatch_fence.sql`. Existing turn
+rows retain their messages and become their own run roots. Retain the additive
+schema on code rollback, and resolve pending interactions before reverting to
+an implementation unable to display or resume them. See
+[AG-UI Integration](AGUI-INTEGRATION.md) for migration coverage and limitations.
 
 - Dify generation requires `x-agentifui-submission-id: <UUID>`. The five browser
   chat/workflow/completion helpers supply it without changing request payloads.
@@ -38,9 +50,11 @@ check and the deployment's database approval.
   `GET /api/internal/apps/:appId/submissions/:submissionId` using the canonical
   local application UUID and the same signed-in actor. It returns task/quota
   state, local run ID and a safe error code, never the submitted text or keys.
-- Dify native `user` remains bound to the session actor. Its local conversation
-  and messages are still saved by the browser after streaming. LangChain keeps
-  its existing server-side history and save-only retry path.
+- Dify native `user` remains bound to the session actor. Unmigrated Dify
+  conversations retain browser-managed saving; trusted negotiated AG-UI
+  conversations use the server as their only writer. LangChain retains
+  server-side history and save-only retry. The selected path must never enable
+  both browser and server writers for the same conversation.
 
 ## Existing Policy, Now Enforced Before Dispatch
 
@@ -105,11 +119,24 @@ Rejected records remain queryable and the same ID remains non-executable.
 
 ## Storage And Extension Boundary
 
-`agent_submissions.root_task_id` is the single P2 quota/idempotency identity;
-nullable `run_id` links LangChain execution. Dify does not need local messages
-or `backend_runs` before invoking the native service. P2 does not add
-`root_run_id`, `run_kind` or interaction tables: a future common-run migration
-must preserve/backfill this task identity rather than introduce another ledger.
+`agent_submissions.root_task_id` remains the task's quota/idempotency identity;
+nullable `run_id` links a trusted execution where the selected path uses one.
+Unmigrated Dify proxy requests do not require local messages or `backend_runs`
+before native dispatch; negotiated Dify and LangChain use trusted local runs.
+The human-input migration adds `root_run_id`, `run_kind` and
+`backend_run_interactions` without introducing another quota ledger. A response
+creates a distinct resume run under the original root, without a new ordinary
+user message or a second question charge.
+
+Resume still requires current ownership, active identity, application access,
+applicable moderation, expiry checks and execution capacity. Preparation reserves
+a slot; a final transactional authorization check and CAS permit native dispatch.
+Only preparation proven not to have crossed that dispatch fence can reopen the
+interaction for a new explicit response. Submitting or unknown outcomes are
+queried, never blindly released or resent. A process crash leaving a reserved
+attempt requires diagnosis; there is no generic automatic recovery worker. See
+the [human-input boundary](AGUI-INTEGRATION.md#human-input-product-boundary)
+for response replay and failure states.
 
 Deleting a resolved quota permission nulls its historical task association;
 completed counted history does not permanently block group deletion.
@@ -169,8 +196,9 @@ or adding another authentication or quota system:
 4. Feed the shared `ChatInputView`, `UserMessage` and `AssistantMessage` through
    a thin controller. Keep global history as the entry point, designate exactly
    one history writer, and show only actions the integration actually supports.
-   The current private stream events are not a replacement for the planned
-   common AG-UI interaction contract.
+   Use the implemented [common AG-UI contract](AGUI-INTEGRATION.md) for migrated
+   paths; legacy private stream events remain compatibility paths, not a second
+   public interaction contract.
 5. Add transport/contract tests, strict-role PostgreSQL ownership, quota and
    cross-instance replay tests, then real two-turn streaming, refresh/history,
    navigation and failure acceptance. An existing integration's success does
