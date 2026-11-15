@@ -1,7 +1,14 @@
+---
+layout: default
+title: Development
+nav_order: 7
+has_children: true
+---
+
 # Developer Guide
 
 This guide explains how to run, change, test and debug the current source. For
-submitting work, start with [Contributing](../CONTRIBUTING.md). For operating an
+submitting work, start with [Contributing](https://github.com/iflabx/agentifui/blob/main/CONTRIBUTING.md). For operating an
 installed instance, use [Docker](DOCKER.md), [host/PM2](QUICK-DEPLOYMENT.md) and
 [operations](OPERATIONS.md) instead. A development command is not a production
 deployment procedure.
@@ -310,7 +317,7 @@ session cookie, database dump or real conversation to make a report reproducible
 
 ## 7. Hand Off The Change
 
-Review the diff and follow [Contributing](../CONTRIBUTING.md) for branch/PR,
+Review the diff and follow [Contributing](https://github.com/iflabx/agentifui/blob/main/CONTRIBUTING.md) for branch/PR,
 checks, hooks and publication review. Include new migration/configuration and
 capability limits in the appropriate docs in the same change. Public examples
 must work without private scripts, operational notes or a maintainer's credentials.

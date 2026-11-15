@@ -1,3 +1,10 @@
+---
+layout: default
+title: Configuration
+parent: Installation and Operations
+nav_order: 3
+---
+
 # Runtime Configuration Guide
 
 ## Scope

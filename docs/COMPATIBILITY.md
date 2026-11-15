@@ -1,3 +1,10 @@
+---
+layout: default
+title: Compatibility and Capabilities
+parent: Getting Started
+nav_order: 1
+---
+
 # Compatibility And Capability Reference
 
 This is a summary of the **current source**, not a promise that every feature is

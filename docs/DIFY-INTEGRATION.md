@@ -1,3 +1,10 @@
+---
+layout: default
+title: Dify
+parent: Agent Integrations
+nav_order: 1
+---
+
 # Dify Service API Compatibility
 
 For provider/application setup through the website, start with the

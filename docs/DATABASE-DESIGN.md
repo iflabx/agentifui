@@ -1,3 +1,10 @@
+---
+layout: default
+title: Database Design
+parent: Development
+nav_order: 2
+---
+
 # AgentifUI Database Design
 
 ## Scope

@@ -1,3 +1,10 @@
+---
+layout: default
+title: Host and PM2
+parent: Installation and Operations
+nav_order: 2
+---
+
 # AgentifUI Production Deployment
 
 ## 1. Scope

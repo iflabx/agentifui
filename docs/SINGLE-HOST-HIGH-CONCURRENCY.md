@@ -1,3 +1,10 @@
+---
+layout: default
+title: PM2 Capacity Reference
+parent: Installation and Operations
+nav_order: 6
+---
+
 # AgentifUI Single-Host High-Concurrency Deployment
 
 ## 1. Scope

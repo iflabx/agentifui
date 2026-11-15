@@ -1,3 +1,10 @@
+---
+layout: default
+title: Font Configuration
+parent: Development
+nav_order: 5
+---
+
 # Font Configuration Guide
 
 ## Scope

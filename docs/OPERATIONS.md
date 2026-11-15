@@ -1,3 +1,10 @@
+---
+layout: default
+title: Operations and Troubleshooting
+parent: Installation and Operations
+nav_order: 4
+---
+
 # Operations And Troubleshooting
 
 This guide is for the operator of a self-hosted AgentifUI instance. Use the
@@ -14,7 +21,7 @@ Use the documentation and scripts from the installed/target version, not a movin
 in deployment-owned private storage, outside public source.
 See [deployment security and data handling](SECURITY-PRIVACY.md) for external
 transfers and retention boundaries; report vulnerabilities through
-[the security policy](../SECURITY.md).
+[the security policy](https://github.com/iflabx/agentifui/blob/main/SECURITY.md).
 
 ## 1. Record The Installation Once
 

@@ -1,3 +1,10 @@
+---
+layout: default
+title: Docker Compose
+parent: Installation and Operations
+nav_order: 1
+---
+
 # Docker Compose Installation
 
 ## Scope

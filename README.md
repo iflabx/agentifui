@@ -25,6 +25,9 @@ AgentifUI is an enterprise-oriented Agent UI for existing Dify applications and 
 Start with the [documentation index](docs/README.md) for installation, operation,
 administration and end-user guides. Use docs from the tag/commit you install;
 `main` can describe functionality newer than the latest released version.
+The documentation website is configured at [docs.agentifui.com](https://docs.agentifui.com)
+and publishes from `main` through GitHub Pages; repository Markdown remains
+available independently of website availability.
 For working on the source, read the [developer guide](docs/DEVELOPMENT.md) and
 [contribution workflow](CONTRIBUTING.md).
 

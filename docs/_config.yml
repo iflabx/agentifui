@@ -1,0 +1,44 @@
+title: AgentifUI Documentation
+description: Install, operate, administer, use, and extend AgentifUI.
+url: 'https://docs.agentifui.com'
+baseurl: ''
+repository: iflabx/agentifui
+
+remote_theme: just-the-docs/just-the-docs@v0.11.1
+plugins:
+  - jekyll-remote-theme
+  - jekyll-include-cache
+  - jekyll-relative-links
+  - jekyll-seo-tag
+
+markdown: kramdown
+kramdown:
+  input: GFM
+  hard_wrap: false
+
+relative_links:
+  enabled: true
+
+search_enabled: true
+heading_anchors: true
+back_to_top: true
+back_to_top_text: Back to top
+
+aux_links:
+  GitHub:
+    - https://github.com/iflabx/agentifui
+
+gh_edit_link: true
+gh_edit_link_text: Edit this page on GitHub
+gh_edit_repository: https://github.com/iflabx/agentifui
+gh_edit_branch: main
+gh_edit_source: docs
+gh_edit_view_mode: edit
+
+footer_content: Main-branch documentation may describe features newer than the latest release. Use the documentation from your installed tag when checking version support.
+
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - vendor
+  - node_modules

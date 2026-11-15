@@ -1,3 +1,10 @@
+---
+layout: default
+title: Getting Started
+nav_order: 2
+has_children: true
+---
+
 # From Installation To Your First Conversation
 
 This guide connects the installation, administrator and user instructions into

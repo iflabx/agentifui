@@ -1,3 +1,10 @@
+---
+layout: default
+title: LangChain
+parent: Agent Integrations
+nav_order: 2
+---
+
 # LangChain Agent Integration
 
 For website configuration, follow the [administrator guide](ADMIN-GUIDE.md#langchain).
