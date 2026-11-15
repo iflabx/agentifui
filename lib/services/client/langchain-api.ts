@@ -24,8 +24,23 @@ export interface AgentRun {
   executionStatus: string;
   persistenceStatus: string;
   errorCode?: string;
+  runKind?: 'turn' | 'resume';
+  rootRunId?: string;
   recoveryMessages?: AgentMessage[];
   agui?: import('../../../packages/shared/src/agui').AgentProjectionSnapshot;
+}
+
+export interface AgentInteraction {
+  id: string;
+  originRunId: string;
+  status: 'pending' | 'submitting' | 'accepted' | 'expired' | 'unknown';
+  title: string;
+  description: string;
+  actions: ('approve' | 'reject')[];
+  commentMaxLength: number;
+  expiresAt: string | null;
+  decision?: { action: 'approve' | 'reject'; comment: string };
+  resumeRunId?: string;
 }
 
 export type AgentEvent =
@@ -190,6 +205,7 @@ export function agentRunSettled(run: AgentRun): boolean {
       'error',
       'timeout',
       'interrupted',
+      'waiting',
       'cancelled',
     ].includes(run.executionStatus) && run.persistenceStatus === 'saved'
   );

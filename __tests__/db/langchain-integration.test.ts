@@ -433,6 +433,10 @@ afterEach(async () => {
   await database.query(`DROP TRIGGER IF EXISTS ${triggerName} ON messages`);
   await database.query(`DROP FUNCTION IF EXISTS ${triggerName}()`);
   await database.query(
+    "UPDATE backend_runs SET execution_status='error',persistence_status='saved' WHERE user_id=ANY($1::uuid[]) AND (execution_status='unknown' OR persistence_status<>'saved')",
+    [actors]
+  );
+  await database.query(
     'DELETE FROM agent_submissions WHERE user_id = ANY($1::uuid[])',
     [actors]
   );

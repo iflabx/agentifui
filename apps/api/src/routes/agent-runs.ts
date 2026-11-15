@@ -8,7 +8,20 @@ import {
 } from '../lib/agent-app';
 import { AgentPolicyError } from '../lib/agent-backends';
 import { toUserFacingAgentError } from '../lib/agent-error';
+import {
+  executeHumanInputRun,
+  reconcileHumanInputRun,
+} from '../lib/agent-human-input-execution';
 import { moderateInputText } from '../lib/agent-input-moderation';
+import {
+  expireInteraction,
+  getInteractionForActor,
+  getInteractionResponseReplay,
+  listInteractions,
+  publicAgentInteraction,
+  reserveInteractionResponse,
+  validateInteractionDecision,
+} from '../lib/agent-interactions-repository';
 import {
   executeAgentRun,
   publicAgentRun,
@@ -32,6 +45,7 @@ import {
   executeNegotiatedAgentRun,
 } from '../lib/agui/runtime';
 import { trackApiBackgroundTask } from '../lib/capacity-control';
+import { getHumanInputState } from '../lib/langchain/human-input';
 import { getRun } from '../lib/langchain/transport';
 import { queryRowsWithPgSystemContext } from '../lib/pg-context';
 import { buildRouteErrorPayload } from '../lib/route-error';
@@ -165,6 +179,161 @@ export const agentRunsRoutes: FastifyPluginAsync<{
       ...describeNegotiatedRuntime(app),
     };
   });
+
+  server.get(
+    '/api/internal/apps/:appId/agent/conversations/:conversationId/interactions',
+    async request => {
+      const { app, actor } = await context(request, options.config);
+      const conversationId = uuid(routeParams(request).conversationId);
+      let interactions = await listInteractions(
+        app,
+        actor.userId,
+        conversationId
+      );
+      if (app.humanInput) {
+        const unresolved = await queryRowsWithPgSystemContext<{ id: string }>(
+          `SELECT id FROM backend_runs WHERE conversation_id = $1::uuid AND user_id = $2::uuid
+          AND service_instance_id = $3::uuid AND (execution_status IN ('submitting','running','unknown') OR persistence_status <> 'saved'
+            OR EXISTS (SELECT 1 FROM backend_run_interactions interaction WHERE interaction.resume_run_id = backend_runs.id
+              AND interaction.status IN ('submitting','unknown')))`,
+          [conversationId, actor.userId, app.id]
+        );
+        for (const entry of unresolved) {
+          const run = await getRunForActor(entry.id, actor.userId, app.id);
+          if (!run) continue;
+          try {
+            await reconcileHumanInputRun({
+              app,
+              run,
+              interaction: interactions.find(
+                interaction => interaction.resume_run_id === run.id
+              ),
+            });
+          } catch {
+            request.log.warn(
+              { runId: run.id, code: 'AGENT_RECONCILIATION_UNAVAILABLE' },
+              '[Agent] status verification unavailable'
+            );
+          }
+        }
+        for (const interaction of interactions)
+          await expireInteraction(interaction.id);
+        interactions = await listInteractions(
+          app,
+          actor.userId,
+          conversationId
+        );
+      }
+      return { interactions: interactions.map(publicAgentInteraction) };
+    }
+  );
+
+  server.post(
+    '/api/internal/apps/:appId/agent/interactions/:interactionId/respond',
+    { bodyLimit: 8192 },
+    async (request, reply) => {
+      requireSameOrigin(request, options.config);
+      const { app, actor } = await context(request, options.config);
+      if (!app.humanInput || app.backendType === 'dify')
+        throw new AgentAppError(409, 'AGENT_INTERACTION_NOT_ENABLED');
+      const interaction = await getInteractionForActor(
+        app,
+        actor.userId,
+        uuid(routeParams(request).interactionId)
+      );
+      const response = validateInteractionDecision(
+        request.body,
+        interaction.prompt
+      );
+      const replay = await getInteractionResponseReplay({
+        app,
+        userId: actor.userId,
+        interactionId: interaction.id,
+        response,
+      });
+      if (replay)
+        return reply
+          .status(202)
+          .send({ run: publicAgentRun(replay), replayed: true });
+      if (!interaction.submission_id) {
+        if (
+          interaction.status !== 'pending' ||
+          (interaction.expires_at &&
+            new Date(interaction.expires_at).getTime() <= Date.now())
+        ) {
+          await expireInteraction(interaction.id);
+          throw new AgentAppError(409, 'AGENT_INTERACTION_EXPIRED');
+        }
+        if (response.comment) {
+          const moderation = await moderateInputText({
+            request,
+            config: options.config,
+            userId: actor.userId,
+            text: response.comment,
+          });
+          if (
+            moderation.outcome === 'block' ||
+            moderation.outcome === 'unavailable'
+          )
+            throw new AgentPolicyError(
+              moderation.outcome === 'block' ? 400 : 503,
+              moderation.outcome === 'block'
+                ? 'CONTENT_MODERATION_BLOCKED'
+                : 'CONTENT_MODERATION_UNAVAILABLE'
+            );
+        }
+        const origin = await getRunForActor(
+          interaction.origin_run_id,
+          actor.userId,
+          app.id
+        );
+        if (!origin?.thread_id)
+          throw new AgentAppError(409, 'AGENT_INTERACTION_NOT_READY');
+        const state = await getHumanInputState(app, origin.thread_id);
+        if (
+          !state.interrupt ||
+          state.interrupt.id !== interaction.native_interrupt_id ||
+          state.interrupt.checkpoint.checkpoint_id !==
+            interaction.checkpoint.checkpoint_id
+        ) {
+          const latest = await getInteractionForActor(
+            app,
+            actor.userId,
+            interaction.id
+          );
+          if (latest.submission_id !== response.submissionId)
+            throw new AgentAppError(409, 'AGENT_INTERRUPT_CHANGED');
+        }
+      }
+      const reservation = await reserveInteractionResponse({
+        app,
+        userId: actor.userId,
+        interactionId: interaction.id,
+        response,
+        ...readAgentAdmissionLimits(),
+      });
+      if (!reservation.replayed) {
+        const task = executeHumanInputRun({
+          app,
+          run: reservation.run,
+          content: '',
+          interaction: reservation.interaction,
+          emit: () => undefined,
+          agui: { emit: () => undefined },
+          report: value =>
+            request.log.warn(value, '[Agent] resume requires attention'),
+        })
+          .catch(() => undefined)
+          .finally(() => active.delete(task));
+        active.add(task);
+        trackApiBackgroundTask(task);
+      }
+      return reply.status(202).send({
+        run: publicAgentRun(reservation.run),
+        replayed: reservation.replayed,
+      });
+    }
+  );
 
   server.post(
     '/api/internal/apps/:appId/agent/runs',
@@ -425,10 +594,10 @@ export const agentRunsRoutes: FastifyPluginAsync<{
         return typeof id === 'string' ? [id] : [];
       });
       const runs = await queryRowsWithPgSystemContext<AgentRunRecord>(
-        `SELECT id, conversation_id, execution_status, persistence_status, error_code, created_at, updated_at,
+        `SELECT id, conversation_id, run_kind, root_run_id, execution_status, persistence_status, error_code, created_at, updated_at,
           CASE WHEN persistence_status <> 'saved' OR result ? 'agui' THEN result ELSE NULL END AS result
        FROM backend_runs WHERE conversation_id = $1::uuid
-         AND (user_message_id = ANY($2::uuid[]) OR id::text = ANY($3::text[]))
+         AND (user_message_id = ANY($2::uuid[]) OR id::text = ANY($3::text[]) OR run_kind = 'resume')
        ORDER BY created_at DESC, id DESC LIMIT 100`,
         [conversationId, messageIds, runIds]
       );
@@ -452,6 +621,15 @@ export const agentRunsRoutes: FastifyPluginAsync<{
     async (request, reply) => {
       requireSameOrigin(request, options.config);
       const { app, actor } = await context(request, options.config);
+      const pending = await queryRowsWithPgSystemContext(
+        `SELECT run.id FROM backend_runs run JOIN conversations conversation ON conversation.id = run.conversation_id
+          WHERE run.conversation_id = $1::uuid AND conversation.user_id = $2::uuid AND run.service_instance_id = $3::uuid
+          AND (run.execution_status IN ('reserved','submitting','running','unknown') OR run.persistence_status <> 'saved'
+            OR EXISTS (SELECT 1 FROM backend_run_interactions interaction WHERE interaction.origin_run_id = run.id
+              AND interaction.status IN ('pending','submitting','unknown','expired'))) LIMIT 1`,
+        [uuid(routeParams(request).conversationId), actor.userId, app.id]
+      );
+      if (pending[0]) throw new AgentAppError(409, 'AGENT_CONVERSATION_BUSY');
       const rows = await queryRowsWithPgSystemContext(
         `UPDATE conversations c SET status = 'deleted', updated_at = NOW()
        FROM backend_conversations b WHERE b.conversation_id = c.id
@@ -482,7 +660,28 @@ export const agentRunsRoutes: FastifyPluginAsync<{
     if (!run) throw new AgentAppError(404, 'AGENT_RUN_NOT_FOUND');
     if (run.config_fingerprint !== app.fingerprint)
       throw new AgentAppError(409, 'AGENT_CONFIG_CHANGED');
-    if (run.result && run.persistence_status !== 'saved') {
+    if (app.humanInput) {
+      try {
+        const interactions = await listInteractions(
+          app,
+          actor.userId,
+          run.conversation_id
+        );
+        run = await reconcileHumanInputRun({
+          app,
+          run,
+          interaction: interactions.find(
+            interaction => interaction.resume_run_id === run!.id
+          ),
+        });
+      } catch {
+        request.log.warn(
+          { runId: run.id, code: 'AGENT_RECONCILIATION_UNAVAILABLE' },
+          '[Agent] status verification unavailable'
+        );
+      }
+    }
+    if (!app.humanInput && run.result && run.persistence_status !== 'saved') {
       try {
         run = await saveRunResult(run.id, run.result);
       } catch (error) {
@@ -502,6 +701,7 @@ export const agentRunsRoutes: FastifyPluginAsync<{
     const stale = Date.now() - new Date(run.updated_at).getTime() > 180000;
     if (
       app.backendType !== 'dify' &&
+      !app.humanInput &&
       (run.execution_status === 'unknown' || stale) &&
       run.thread_id &&
       run.native_run_id &&

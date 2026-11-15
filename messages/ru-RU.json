@@ -2770,6 +2770,17 @@
     "placeholder": "Send a text message to this Agent…",
     "confirmDelete": "Delete this local conversation? This does not delete the upstream Agent memory.",
     "deleteConversation": "Delete conversation",
-    "send": "Send"
+    "send": "Send",
+    "confirmationTitle": "Требуется подтверждение",
+    "confirmationComment": "Комментарий (необязательно)",
+    "confirmationApprove": "Одобрить",
+    "confirmationReject": "Отклонить",
+    "confirmationWaiting": "Ожидается ваше решение. Действие ещё не одобрено.",
+    "confirmationSubmitting": "Решение отправляется. Не отправляйте повторно.",
+    "confirmationAnswered": "Решение сохранено.",
+    "confirmationExpired": "Срок подтверждения истёк.",
+    "confirmationUnknown": "Результат не подтверждён. Проверьте статус без повторной отправки.",
+    "confirmationSingleTask": "Агент обрабатывает одну задачу в беседе. Для другой задачи начните новую беседу.",
+    "confirmationNotDispatched": "Решение не отправлено. Проверьте его и повторите попытку."
   }
 }

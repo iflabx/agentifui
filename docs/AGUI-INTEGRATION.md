@@ -237,6 +237,64 @@ This remains a partial runtime migration, not a claim of support for every Dify
 mode or native capability. Do not enable human response, stream replay, or crash
 recovery merely because the schemas can represent them.
 
+### Human Input Product Boundary
+
+Human input is enabled only for explicitly configured LangChain applications
+using the native profile in [LangChain Integration](LANGCHAIN-INTEGRATION.md#optional-native-human-input).
+Dify human input and arbitrary AG-UI resume requests remain unsupported. The
+trusted product API maps native interrupts into a standard `RUN_FINISHED`
+interrupt outcome with a **local** interaction ID and controlled response schema.
+The execution segment closes while the task remains waiting.
+
+`GET /api/internal/apps/:appId/agent/conversations/:conversationId/interactions`
+returns `{ interactions }`. Each item includes `id`, `originRunId`, `status`,
+`title`, `description`, `actions`, `commentMaxLength`, `expiresAt`, and, when
+available, `decision` and `resumeRunId`. All exposed identifiers are local.
+Native interrupt/thread/checkpoint identifiers and credentials remain private.
+Statuses are `pending`, `submitting`, `accepted`, `expired` and `unknown`;
+accepted means the decision is recorded, not that the resumed execution succeeded.
+
+The explicit response endpoint is
+`POST /api/internal/apps/:appId/agent/interactions/:interactionId/respond` with
+`{ submissionId, action: "approve" | "reject", comment? }`. It returns HTTP 202
+with `{ run, replayed }`. Repeating the same submission and normalized content
+returns the same resume run without another dispatch; competing or changed
+responses conflict. A resume run has `runKind: "resume"` and `rootRunId`, and no
+new ordinary user message. This endpoint is a product authorization boundary,
+not a public native command proxy or general `RunAgentInput` endpoint.
+
+Read the returned run and conversation to confirm execution and saving.
+`executionStatus: "waiting"` with `persistenceStatus: "saved"` means the pending
+interaction was saved; it does not mean the task completed. A pending interaction
+blocks new questions and deletion on that conversation. Completed decisions and
+results remain visible after refresh and through the common history entry.
+
+If a response is lost, query the interaction and run with bounded backoff. Do not
+resend a decision merely because its acceptance is unknown or the native run
+reports success. Query paths reconcile known native state but never dispatch a
+replacement task. The initial task is charged once under the existing submission
+ledger, while resume competes for execution capacity again. Application access,
+current ownership, moderation, expiry and the saved allowed actions are checked
+on the server. A null expiry is not an invented automatic timeout; expired or
+unresolved tasks are not silently approved, abandoned or rerun.
+
+Resume preparation reserves capacity before native preflight. A final database
+CAS checks current authorization and expiry before permitting dispatch. A
+preparation attempt proven not to have crossed that persistent fence can be
+saved as `error` with `AGENT_RESUME_NOT_DISPATCHED`, returning its interaction
+to pending (or expired). The failed run remains in history. The same submission
+still returns that failed attempt; a new explicit user response uses a new
+submission ID. Once the persistent fence has been crossed, missing responses
+or a failed lookup are not proof of non-dispatch and never reopen the form.
+This boundary does not claim an atomic transaction spanning SQL and HTTP.
+
+This slice adds a small RLS-protected interaction table and run-kind/root fields.
+Existing turn rows retain their user message and become their own root; resume
+rows cannot masquerade as ordinary turns. Additive schema is retained on rollback.
+Resolve outstanding human-input tasks before reverting to an implementation that
+cannot display or resume them. Do not assume an old client understands waiting
+tasks, or use a destructive down migration to clear them.
+
 ## Shared Product Chat
 
 `/apps/agent-chat/:appId` uses the database application UUID. The existing

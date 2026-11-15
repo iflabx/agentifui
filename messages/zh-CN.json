@@ -2770,6 +2770,17 @@
     "placeholder": "向此 Agent 发送文本消息…",
     "confirmDelete": "删除此本地会话？这不会删除上游 Agent 的执行记忆。",
     "deleteConversation": "删除会话",
-    "send": "发送"
+    "send": "发送",
+    "confirmationTitle": "需要确认",
+    "confirmationComment": "说明（可选）",
+    "confirmationApprove": "同意",
+    "confirmationReject": "拒绝",
+    "confirmationWaiting": "等待你的决定，尚未批准执行。",
+    "confirmationSubmitting": "正在提交决定，请勿重复提交。",
+    "confirmationAnswered": "决定已记录。",
+    "confirmationExpired": "此确认已过期。",
+    "confirmationUnknown": "结果尚未确认。请查询状态，不要重复提交。",
+    "confirmationSingleTask": "此 Agent 每个会话只处理一个任务。其他任务请新建会话。",
+    "confirmationNotDispatched": "本次决定尚未发送。请核对后手动重试。"
   }
 }

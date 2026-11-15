@@ -2770,6 +2770,17 @@
     "placeholder": "Send a text message to this Agent…",
     "confirmDelete": "Delete this local conversation? This does not delete the upstream Agent memory.",
     "deleteConversation": "Delete conversation",
-    "send": "Send"
+    "send": "Send",
+    "confirmationTitle": "Confirmation required",
+    "confirmationComment": "Comment (optional)",
+    "confirmationApprove": "Approve",
+    "confirmationReject": "Reject",
+    "confirmationWaiting": "Waiting for your decision. No action has been approved yet.",
+    "confirmationSubmitting": "Submitting your decision. Do not submit again.",
+    "confirmationAnswered": "Decision recorded.",
+    "confirmationExpired": "This confirmation has expired.",
+    "confirmationUnknown": "The result is not yet confirmed. Check the status; do not submit again.",
+    "confirmationSingleTask": "This agent accepts one task per conversation. Start a new conversation for another task.",
+    "confirmationNotDispatched": "Your decision was not sent. You can review it and try again."
   }
 }

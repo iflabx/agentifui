@@ -148,6 +148,31 @@ describe('instance form utils', () => {
     expect(dify.config.dify_parameters).toEqual({});
   });
 
+  it('preserves an explicitly configured human-input profile while editing its display settings', () => {
+    const original = {
+      instance_id: 'confirmation',
+      config: {
+        backend_type: 'langchain' as const,
+        langchain: {
+          assistant_id: 'configured-confirmation',
+          human_input: true,
+        },
+      },
+    };
+    const data = createInstanceFormDataFromInstance(original, []);
+    data.display_name = 'Updated display name';
+    const saved = prepareInstanceFormForSave(data);
+    expect(saved.config.langchain).toEqual(original.config.langchain);
+    expect(
+      changeInstanceBackend(data, 'dify').config.langchain
+    ).toBeUndefined();
+    expect(
+      prepareInstanceFormForSave(
+        changeInstanceBackend(createEmptyInstanceFormData(), 'langchain')
+      ).config.langchain
+    ).not.toHaveProperty('human_input');
+  });
+
   it('does not replace an empty assistant ID with the default during save', () => {
     const data = changeInstanceBackend(
       createEmptyInstanceFormData(),

@@ -10,6 +10,7 @@ export function describeNegotiatedRuntime(app: AgentApp) {
   return {
     protocol: 'ag-ui/1.0',
     persistence: 'server',
+    ...(app.humanInput ? { singleTask: true } : {}),
     newConversationsEnabled:
       app.backendType !== 'dify' || app.interactionProtocol === 'ag-ui/1.0',
     ...(app.backendType === 'dify' ? { interactionMode: 'text-only' } : {}),
@@ -19,7 +20,7 @@ export function describeNegotiatedRuntime(app: AgentApp) {
     capabilities:
       app.backendType === 'dify'
         ? { ...LANGCHAIN_CAPABILITIES, tools: false, runQuery: false }
-        : LANGCHAIN_CAPABILITIES,
+        : { ...LANGCHAIN_CAPABILITIES, humanInput: app.humanInput === true },
   };
 }
 
