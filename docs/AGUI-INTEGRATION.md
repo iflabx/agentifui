@@ -377,6 +377,41 @@ Before enabling a path, integrate it through the existing trusted API layer:
 5. Require a genuine upstream interrupt and supported response/resume operation
    before exposing human-input actions. Synthetic fixtures alone are insufficient.
 
+### Adding A Production Backend
+
+Implementing `AgentExecutionPrototype` or adding a capability flag does not
+register a production backend. Use Dify and LangChain as concrete examples and
+update these existing integration points together:
+
+1. Add the verified type and capabilities in
+   `apps/api/src/lib/agent-backends.ts`, with the corresponding application
+   configuration validation and administration controls. Preserve rejection of
+   unsupported types; do not let a new backend fall through to LangChain.
+2. Extend trusted configuration resolution in `apps/api/src/lib/agent-app.ts`.
+   Resolve credentials, native targets and ownership on the server, and include
+   the target identity in the existing submission and binding checks.
+3. Implement the native adapter and explicitly select its description and
+   execution in `apps/api/src/lib/agui/runtime.ts`. Connect required query and
+   save coordination through the trusted run API; keep one history writer and
+   never query by issuing another generation. Optional actions require their
+   own verified implementation, not only a descriptor flag.
+4. Review persisted backend-type constraints and shared/API types. For example,
+   `database/migrations/20261114180000_allow_trusted_dify_conversations.sql`
+   permits only the existing two binding types. Add a new forward migration
+   where required; never edit an already applied migration. Test old bindings,
+   strict RLS and concurrent admission before applying it to an installation.
+5. Feed the existing shared chat controller and canonical history projection.
+   Extend a renderer only for a genuinely new interaction, rather than copying
+   the backend's own chat page. Declare unsupported operations explicitly.
+
+Use `__tests__/agui` and `apps/api/src/lib/agui/adapter-prototype.test.ts` for
+the common contract, and `__tests__/db/dify-agui-integration.test.ts` and
+`__tests__/db/human-input-integration.test.ts` as database integration examples.
+Add the new backend's transport, authorization, replay and sole-writer tests,
+then verify real streaming, refresh/history and the actions actually exposed.
+Existing backend acceptance is a regression baseline, not proof that the new
+backend supports the same capabilities.
+
 For focused verification, build the shared package before API tests:
 
 ```sh
