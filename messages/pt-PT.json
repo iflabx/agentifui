@@ -1458,6 +1458,8 @@
           "backend": {
             "label": "Backend",
             "assistantId": "Assistant ID",
+            "aguiLabel": "Usar o chat AG-UI comum em novas conversas das aplicações",
+            "aguiNote": "Apenas novas conversas de texto em aplicações chatbot do mercado. Ficheiros, citações, voz e variáveis personalizadas não são suportados. O modelo predefinido e o seletor não mudam. As conversas antigas mantêm o percurso compatível; as conversas públicas associadas não regressam ao percurso anterior.",
             "langchainNote": "Use the assistant exposed by this service. Text and read-only tools only; service credentials stay on the server.",
             "validation": {
               "instanceIdRequired": "Enter an application identifier.",
@@ -2737,6 +2739,10 @@
     "closeButton": "Fechar pré-visualização"
   },
   "langchain": {
+    "textOnlyNote": "Esta conversa aceita apenas texto, sem ficheiros, citações, voz ou variáveis personalizadas. As conversas antigas mantêm as funcionalidades compatíveis.",
+    "cancelled": "Cancelado",
+    "interrupted": "Interrompido",
+    "loadMore": "Carregar mensagens anteriores",
     "title": "LangChain Agent",
     "capabilities": "Text chat, conversation memory and read-only tool summaries. Files and execution cancellation are not supported.",
     "newConversation": "New conversation",
@@ -2764,6 +2770,17 @@
     "placeholder": "Send a text message to this Agent…",
     "confirmDelete": "Delete this local conversation? This does not delete the upstream Agent memory.",
     "deleteConversation": "Delete conversation",
-    "send": "Send"
+    "send": "Send",
+    "confirmationTitle": "Confirmação necessária",
+    "confirmationComment": "Comentário (opcional)",
+    "confirmationApprove": "Aprovar",
+    "confirmationReject": "Rejeitar",
+    "confirmationWaiting": "A aguardar a sua decisão. Nenhuma ação foi aprovada.",
+    "confirmationSubmitting": "A enviar a decisão. Não volte a enviar.",
+    "confirmationAnswered": "Decisão registada.",
+    "confirmationExpired": "Esta confirmação expirou.",
+    "confirmationUnknown": "Resultado por confirmar. Consulte o estado sem voltar a enviar.",
+    "confirmationSingleTask": "Este agente aceita uma tarefa por conversa. Inicie uma nova conversa para outra tarefa.",
+    "confirmationNotDispatched": "A sua decisão não foi enviada. Reveja-a e tente novamente."
   }
 }

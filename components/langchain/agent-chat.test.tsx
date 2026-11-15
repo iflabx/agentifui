@@ -10,6 +10,7 @@ import {
 
 import { AgentChat } from './agent-chat';
 import { useAgentChat } from './use-agent-chat';
+import { useAgentInteractions } from './use-agent-interactions';
 
 let mockActorId: string | null = 'user';
 let mockAuthLoading = false;
@@ -23,6 +24,9 @@ jest.mock('next-intl', () => ({ useTranslations: () => (key: string) => key }));
 jest.mock('react-markdown', () => ({ __esModule: true, default: () => null }));
 jest.mock('remark-gfm', () => ({ __esModule: true, default: () => undefined }));
 jest.mock('./use-agent-chat', () => ({ useAgentChat: jest.fn() }));
+jest.mock('./use-agent-interactions', () => ({
+  useAgentInteractions: jest.fn(),
+}));
 jest.mock('@lib/hooks/use-combined-conversations', () => ({
   conversationEvents: { emit: jest.fn() },
 }));
@@ -87,10 +91,28 @@ describe('Agent chat draft', () => {
     useLangchainDraftStore.getState().setActor(null);
     mockActorId = 'user';
     mockAuthLoading = false;
+    jest.mocked(useAgentInteractions).mockReturnValue({
+      scope: 'test',
+      items: [],
+      loading: false,
+      error: false,
+      exhausted: false,
+      blocked: false,
+      respond: jest.fn().mockResolvedValue(undefined),
+      check: jest.fn(),
+    });
     jest.mocked(useAgentChat).mockReturnValue({
       view: { messages: [], tools: [] },
       draftScope: 'new:0',
       appName: 'Agent',
+      textOnly: false,
+      humanInput: false,
+      singleTask: false,
+      refresh: jest.fn(),
+      newConversationsEnabled: true,
+      nextCursor: null,
+      loadingMore: false,
+      loadMore: jest.fn(),
       ready: true,
       busy: false,
       error: null,
@@ -109,6 +131,141 @@ describe('Agent chat draft', () => {
   it('reserves space for fixed desktop and mobile shell navigation', () => {
     render(<AgentChat appId="app" conversationId={null} />);
     expect(screen.getByRole('main')).toHaveClass('pt-16', 'md:pt-12');
+  });
+
+  it('renders a pending confirmation in the shared chat and blocks ordinary input and deletion', () => {
+    const original = jest.mocked(useAgentChat).getMockImplementation()!(
+      'app',
+      null
+    );
+    jest.mocked(useAgentChat).mockReturnValue({
+      ...original,
+      humanInput: true,
+      view: { messages: [], tools: [], conversationId: 'conversation' },
+    });
+    const interactions = jest
+      .mocked(useAgentInteractions)
+      .getMockImplementation()!({} as never);
+    jest.mocked(useAgentInteractions).mockReturnValue({
+      ...interactions,
+      blocked: true,
+      items: [
+        {
+          id: 'confirmation',
+          originRunId: 'run',
+          status: 'pending',
+          title: 'Synthetic confirmation',
+          description: 'Review before continuing',
+          actions: ['approve', 'reject'],
+          commentMaxLength: 500,
+          expiresAt: null,
+        },
+      ],
+    });
+    render(<AgentChat appId="app" conversationId="conversation" />);
+    expect(screen.getByRole('button', { name: 'send' })).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'deleteConversation' })
+    ).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'confirmationApprove' })
+    ).toBeEnabled();
+    fireEvent.change(
+      screen.getByRole('textbox', { name: 'confirmationComment' }),
+      {
+        target: { value: 'Reviewed' },
+      }
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'confirmationApprove' })
+    );
+    expect(interactions.respond).toHaveBeenCalledWith(
+      'confirmation',
+      'approve',
+      'Reviewed'
+    );
+    expect(send).not.toHaveBeenCalled();
+    expect(useAgentInteractions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'user',
+        appId: 'app',
+        conversationId: 'conversation',
+        enabled: true,
+      })
+    );
+  });
+
+  it('exposes only a state check after an uncertain confirmation', () => {
+    const original = jest.mocked(useAgentChat).getMockImplementation()!(
+      'app',
+      null
+    );
+    jest
+      .mocked(useAgentChat)
+      .mockReturnValue({ ...original, humanInput: true });
+    const interactions = jest
+      .mocked(useAgentInteractions)
+      .getMockImplementation()!({} as never);
+    jest.mocked(useAgentInteractions).mockReturnValue({
+      ...interactions,
+      uncertainId: 'confirmation',
+      blocked: true,
+    });
+    render(<AgentChat appId="app" conversationId={null} />);
+    fireEvent.click(screen.getByRole('button', { name: 'retryStatus' }));
+    expect(interactions.check).toHaveBeenCalledTimes(1);
+    expect(interactions.respond).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'send' })).toBeDisabled();
+  });
+
+  it('shows the confirmation policy rejection through the existing error presentation', () => {
+    const original = jest.mocked(useAgentInteractions).getMockImplementation()!(
+      {} as never
+    );
+    jest.mocked(useAgentInteractions).mockReturnValue({
+      ...original,
+      responseError: new AgentRequestError(429, {
+        code: 'AGENT_CONCURRENCY_LIMIT',
+        retryable: true,
+        source: 'fastify-api',
+        severity: 'warn',
+        userMessage: 'Another task is active',
+        requestId: 'synthetic',
+        occurredAt: '2026-01-01T00:00:00Z',
+      }),
+    });
+    render(<AgentChat appId="app" conversationId={null} />);
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Another task is active'
+    );
+  });
+
+  it('keeps completed single-task conversations readable and deletable without another question', () => {
+    const original = jest.mocked(useAgentChat).getMockImplementation()!(
+      'app',
+      null
+    );
+    jest.mocked(useAgentChat).mockReturnValue({
+      ...original,
+      humanInput: true,
+      singleTask: true,
+      view: {
+        conversationId: 'conversation',
+        messages: [
+          { id: 'answer', role: 'assistant', content: 'Task complete' },
+        ],
+        tools: [],
+      },
+    });
+    render(<AgentChat appId="app" conversationId="conversation" />);
+    expect(screen.getByTestId('shared-assistant')).toHaveTextContent(
+      'Task complete'
+    );
+    expect(screen.getByRole('button', { name: 'send' })).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'deleteConversation' })
+    ).toBeEnabled();
+    expect(screen.getByText('confirmationSingleTask')).toBeVisible();
   });
 
   it.each([
@@ -269,7 +426,15 @@ describe('Agent chat draft', () => {
     const input = screen.getByRole('textbox');
     fireEvent.change(input, { target: { value: 'Keep this draft' } });
     fireEvent.click(screen.getByRole('button', { name: 'send' }));
-    await waitFor(() => expect(send).toHaveBeenCalledWith('Keep this draft'));
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        'Keep this draft',
+        expect.objectContaining({
+          text: 'Keep this draft',
+          revision: expect.any(Number),
+        })
+      )
+    );
     expect(input).toHaveValue('Keep this draft');
     expect(send).toHaveBeenCalledTimes(1);
   });

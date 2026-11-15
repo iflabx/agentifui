@@ -1458,6 +1458,8 @@
           "backend": {
             "label": "Backend",
             "assistantId": "Assistant ID",
+            "aguiLabel": "Utiliser le chat AG-UI commun pour les nouvelles conversations d’application",
+            "aguiNote": "Uniquement les nouvelles conversations textuelles des applications chatbot du marché. Les fichiers, citations, fonctions vocales et variables personnalisées ne sont pas pris en charge. Le modèle par défaut et le sélecteur restent inchangés. Les anciennes conversations gardent le parcours compatible ; les conversations publiques liées ne reviennent pas en arrière.",
             "langchainNote": "Use the assistant exposed by this service. Text and read-only tools only; service credentials stay on the server.",
             "validation": {
               "instanceIdRequired": "Enter an application identifier.",
@@ -2737,6 +2739,10 @@
     "closeButton": "Fermer l'aperçu"
   },
   "langchain": {
+    "textOnlyNote": "Cette conversation est limitée au texte, sans fichiers, citations, fonctions vocales ni variables personnalisées. Les anciennes conversations conservent leurs fonctions compatibles.",
+    "cancelled": "Annulé",
+    "interrupted": "Interrompu",
+    "loadMore": "Charger les messages précédents",
     "title": "LangChain Agent",
     "capabilities": "Text chat, conversation memory and read-only tool summaries. Files and execution cancellation are not supported.",
     "newConversation": "New conversation",
@@ -2764,6 +2770,17 @@
     "placeholder": "Send a text message to this Agent…",
     "confirmDelete": "Delete this local conversation? This does not delete the upstream Agent memory.",
     "deleteConversation": "Delete conversation",
-    "send": "Send"
+    "send": "Send",
+    "confirmationTitle": "Confirmation requise",
+    "confirmationComment": "Commentaire (facultatif)",
+    "confirmationApprove": "Approuver",
+    "confirmationReject": "Refuser",
+    "confirmationWaiting": "En attente de votre décision. Aucune action approuvée.",
+    "confirmationSubmitting": "Envoi en cours. Ne renvoyez pas votre décision.",
+    "confirmationAnswered": "Décision enregistrée.",
+    "confirmationExpired": "Cette confirmation a expiré.",
+    "confirmationUnknown": "Résultat non confirmé. Vérifiez le statut sans renvoyer la décision.",
+    "confirmationSingleTask": "Cet agent traite une tâche par conversation. Créez une nouvelle conversation pour une autre tâche.",
+    "confirmationNotDispatched": "Votre décision n'a pas été envoyée. Vérifiez-la puis réessayez."
   }
 }

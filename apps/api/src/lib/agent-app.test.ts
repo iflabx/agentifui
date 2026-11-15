@@ -21,6 +21,22 @@ beforeEach(() => {
 });
 
 describe('trusted agent app configuration', () => {
+  it('allows Dify only through the explicit runtime resolver option and keeps native profile selection server-side', async () => {
+    const dify = {
+      ...row,
+      config: { app_metadata: { dify_apptype: 'workflow' } },
+    };
+    jest.mocked(queryRowsWithPgSystemContext).mockResolvedValue([dify]);
+    await expect(resolveAgentApp(row.id, 'actor')).rejects.toMatchObject({
+      code: 'AGENT_BACKEND_MISMATCH',
+    });
+    const app = await resolveAgentApp(row.id, 'actor', { allowDify: true });
+    expect(app).toMatchObject({
+      backendType: 'dify',
+      assistantId: row.instance_id,
+    });
+    expect(app).not.toHaveProperty('profile');
+  });
   it('enforces actual actor status and app visibility independently of RLS settings', async () => {
     const app = await resolveAgentApp(row.id, 'actor');
     expect(app.id).toBe(row.id);

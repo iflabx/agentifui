@@ -1458,6 +1458,8 @@
           "backend": {
             "label": "后端类型",
             "assistantId": "Assistant ID",
+            "aguiLabel": "新建应用对话使用公共 AG-UI 聊天",
+            "aguiNote": "仅限应用市场中的 chatbot 应用新建纯文本应用对话，不支持文件、引用、语音及自定义变量；不影响默认模型和模型选择器。原有旧会话继续使用兼容路径，已绑定公共会话不会回退。",
             "langchainNote": "填写服务暴露的 Assistant 标识。首批仅支持文本及只读工具，服务凭证仅由服务端使用。",
             "validation": {
               "instanceIdRequired": "请填写应用标识。",
@@ -2737,6 +2739,10 @@
     }
   },
   "langchain": {
+    "textOnlyNote": "此会话仅支持纯文本，不支持文件、引用、语音及自定义变量。原有旧会话保留兼容功能。",
+    "cancelled": "已取消",
+    "interrupted": "已中断",
+    "loadMore": "加载更早消息",
     "title": "LangChain Agent",
     "capabilities": "支持文本对话、会话记忆和只读工具摘要。暂不支持文件和执行取消。",
     "newConversation": "新建会话",
@@ -2764,6 +2770,17 @@
     "placeholder": "向此 Agent 发送文本消息…",
     "confirmDelete": "删除此本地会话？这不会删除上游 Agent 的执行记忆。",
     "deleteConversation": "删除会话",
-    "send": "发送"
+    "send": "发送",
+    "confirmationTitle": "需要确认",
+    "confirmationComment": "说明（可选）",
+    "confirmationApprove": "同意",
+    "confirmationReject": "拒绝",
+    "confirmationWaiting": "等待你的决定，尚未批准执行。",
+    "confirmationSubmitting": "正在提交决定，请勿重复提交。",
+    "confirmationAnswered": "决定已记录。",
+    "confirmationExpired": "此确认已过期。",
+    "confirmationUnknown": "结果尚未确认。请查询状态，不要重复提交。",
+    "confirmationSingleTask": "此 Agent 每个会话只处理一个任务。其他任务请新建会话。",
+    "confirmationNotDispatched": "本次决定尚未发送。请核对后手动重试。"
   }
 }

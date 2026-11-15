@@ -1,5 +1,6 @@
 import type { DifyAppParametersResponse } from '@lib/services/dify/types';
 import type { Provider, ServiceInstance } from '@lib/stores/api-config-store';
+import type { DifyAppType } from '@lib/types/dify-app-types';
 import type { DifyParametersSimplifiedConfig } from '@lib/types/dify-parameters';
 
 import type {
@@ -40,10 +41,19 @@ export function createInstanceFormDataFromInstance(
     apiKey: '',
     config: {
       backend_type: isLangChain ? 'langchain' : 'dify',
+      ...(!isLangChain &&
+      instance.config?.interaction_protocol === 'ag-ui/1.0' &&
+      instance.config?.app_metadata?.app_type === 'marketplace' &&
+      instance.config?.app_metadata?.dify_apptype === 'chatbot'
+        ? { interaction_protocol: 'ag-ui/1.0' as const }
+        : {}),
       ...(isLangChain
         ? {
             langchain: {
               assistant_id: instance.config?.langchain?.assistant_id || '',
+              ...(instance.config?.langchain?.human_input === true
+                ? { human_input: true }
+                : {}),
             },
           }
         : {}),
@@ -96,6 +106,9 @@ export function changeInstanceBackend(
         api_url: data.config.api_url,
         langchain: {
           assistant_id: data.config.langchain?.assistant_id || 'agent',
+          ...(data.config.langchain?.human_input === true
+            ? { human_input: true }
+            : {}),
         },
         app_metadata: {
           app_type: 'marketplace',
@@ -108,6 +121,12 @@ export function changeInstanceBackend(
 
   const config = { ...data.config };
   delete config.langchain;
+  if (
+    data.config.backend_type === 'langchain' ||
+    config.app_metadata.app_type !== 'marketplace' ||
+    config.app_metadata.dify_apptype !== 'chatbot'
+  )
+    delete config.interaction_protocol;
   return {
     ...data,
     config: {
@@ -120,6 +139,32 @@ export function changeInstanceBackend(
       dify_parameters: config.dify_parameters || {},
     },
   };
+}
+
+export function changeInstanceDifyAppType(
+  data: InstanceFormData,
+  type: DifyAppType
+): InstanceFormData {
+  const config = {
+    ...data.config,
+    app_metadata: { ...data.config.app_metadata, dify_apptype: type },
+  };
+  if (type !== 'chatbot' || config.app_metadata.app_type !== 'marketplace')
+    delete config.interaction_protocol;
+  return { ...data, config };
+}
+
+export function changeInstanceAppType(
+  data: InstanceFormData,
+  type: 'model' | 'marketplace'
+): InstanceFormData {
+  const config = {
+    ...data.config,
+    app_metadata: { ...data.config.app_metadata, app_type: type },
+  };
+  if (type !== 'marketplace' || config.app_metadata.dify_apptype !== 'chatbot')
+    delete config.interaction_protocol;
+  return { ...data, config };
 }
 
 export function prepareInstanceFormForSave(

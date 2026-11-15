@@ -2,6 +2,7 @@
 
 import { AppFilters, AppHeader, AppList, AppLoading } from '@components/apps';
 import type { AppInstance } from '@components/apps/types';
+import { agentAppPath } from '@components/langchain/routing';
 import { useAppListStore } from '@lib/stores/app-list-store';
 import { useFavoriteAppsStore } from '@lib/stores/favorite-apps-store';
 import { useSidebarStore } from '@lib/stores/sidebar-store';
@@ -203,8 +204,16 @@ export default function AppsPage() {
 
   const handleOpenApp = async (app: AppInstance) => {
     try {
-      if (app.config?.backend_type === 'langchain') {
-        router.push(`/apps/langchain/${encodeURIComponent(app.instanceId)}`);
+      const source = rawApps.find(
+        item =>
+          item.config === app.config &&
+          (item.config?.backend_type === 'langchain'
+            ? item.id
+            : item.instance_id) === app.instanceId
+      );
+      const publicPath = source && agentAppPath(source.id, source.config);
+      if (publicPath) {
+        router.push(publicPath);
         return;
       }
       const difyAppType = app.config?.app_metadata?.dify_apptype;

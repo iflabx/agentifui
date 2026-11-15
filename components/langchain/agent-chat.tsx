@@ -16,8 +16,10 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 
+import { AgentInteractionCard } from './agent-interaction-card';
 import { agentTimeline } from './state';
 import { useAgentChat } from './use-agent-chat';
+import { useAgentInteractions } from './use-agent-interactions';
 
 interface AgentChatProps {
   appId: string;
@@ -54,16 +56,30 @@ function AgentChatSession({
   authLoading,
 }: AgentChatProps & { actorId: string; authLoading: boolean }) {
   const t = useTranslations('langchain');
-  const chat = useAgentChat(appId, conversationId);
+  const chat = useAgentChat(appId, conversationId, actorId);
+  const interactions = useAgentInteractions({
+    appId,
+    conversationId: chat.view.conversationId,
+    actorId,
+    enabled: chat.humanInput,
+    revision: JSON.stringify([
+      chat.busy,
+      chat.view.runId,
+      chat.view.run?.executionStatus,
+      chat.view.run?.persistenceStatus,
+    ]),
+    onUpdated: chat.refresh,
+  });
   const moderationT = useTranslations('errors.system.moderation');
-  const uiError = chat.error?.detail
-    ? toUiError(chat.error, t('requestFailed'), 'agent-generic')
+  const activeError = chat.error || interactions.responseError;
+  const uiError = activeError?.detail
+    ? toUiError(activeError, t('requestFailed'), 'agent-generic')
     : null;
-  const errorMessage = !chat.error
+  const errorMessage = !activeError
     ? null
-    : chat.error.status === 401
+    : activeError.status === 401
       ? t('loginRequired')
-      : [403, 404].includes(chat.error.status)
+      : [403, 404].includes(activeError.status)
         ? t('unavailable')
         : uiError
           ? localizeChatModerationMessage(uiError, moderationT) ||
@@ -100,27 +116,34 @@ function AgentChatSession({
     authLoading ||
     !scope ||
     !chat.ready ||
+    (chat.newConversationsEnabled === false && !chat.view.conversationId) ||
     chat.busy ||
     chat.historyLoading ||
     chat.historyFailed ||
-    chat.unconfirmed;
+    chat.unconfirmed ||
+    (chat.humanInput && interactions.blocked) ||
+    (chat.singleTask && Boolean(chat.view.conversationId));
   const run = chat.view.run;
   const lastUserIndex = chat.view.messages.findLastIndex(
     message => message.role === 'user'
   );
   const runLabel = !run
     ? null
-    : agentRunSaved(run)
-      ? 'saved'
-      : run.executionStatus === 'success'
-        ? 'saveIncomplete'
-        : ['failed', 'error', 'timeout', 'interrupted', 'cancelled'].includes(
-              run.executionStatus
-            )
-          ? 'failed'
-          : run.executionStatus === 'unknown'
-            ? 'unknown'
-            : 'running';
+    : run.executionStatus === 'waiting'
+      ? 'confirmationWaiting'
+      : agentRunSaved(run)
+        ? 'saved'
+        : run.executionStatus === 'success'
+          ? 'saveIncomplete'
+          : run.executionStatus === 'interrupted'
+            ? 'interrupted'
+            : run.executionStatus === 'cancelled'
+              ? 'cancelled'
+              : ['failed', 'error', 'timeout'].includes(run.executionStatus)
+                ? 'failed'
+                : run.executionStatus === 'unknown'
+                  ? 'unknown'
+                  : 'running';
 
   useLayoutEffect(() => {
     if (actorEpoch === null || authLoading) return;
@@ -157,7 +180,7 @@ function AgentChatSession({
   const submit = async () => {
     if (disabled || !content.trim() || !draft) return;
     const snapshot = draft;
-    const accepted = await chat.send(content);
+    const accepted = await chat.send(content, snapshot);
     if (accepted) useLangchainDraftStore.getState().consumeSnapshot(snapshot);
   };
 
@@ -174,7 +197,14 @@ function AgentChatSession({
         <button
           type="button"
           className="text-xs text-stone-500 disabled:opacity-50"
-          disabled={disabled || !chat.view.conversationId}
+          disabled={
+            authLoading ||
+            chat.busy ||
+            chat.historyLoading ||
+            chat.unconfirmed ||
+            (chat.humanInput && interactions.blocked) ||
+            !chat.view.conversationId
+          }
           onClick={() => {
             if (window.confirm(t('confirmDelete'))) void chat.remove();
           }}
@@ -197,6 +227,25 @@ function AgentChatSession({
       >
         <div className={cn('mx-auto w-full pt-4', widthClass, paddingClass)}>
           {chat.historyLoading && <p role="status">{t('loading')}</p>}
+          {chat.textOnly && (
+            <p role="note" className="mb-3 text-sm text-stone-500">
+              {t('textOnlyNote')}
+            </p>
+          )}
+          {chat.newConversationsEnabled === false &&
+            !chat.view.conversationId && (
+              <p role="status">{t('unavailable')}</p>
+            )}
+          {chat.nextCursor && (
+            <button
+              type="button"
+              disabled={chat.loadingMore || chat.busy}
+              onClick={() => void chat.loadMore()}
+              className="my-2 text-sm underline"
+            >
+              {t(chat.loadingMore ? 'loading' : 'loadMore')}
+            </button>
+          )}
           {errorMessage && (
             <p
               role="alert"
@@ -252,6 +301,57 @@ function AgentChatSession({
           {runLabel && (
             <p role="status" className="text-sm text-stone-500">
               {t(runLabel)}
+            </p>
+          )}
+          {interactions.items.map(interaction => (
+            <AgentInteractionCard
+              key={JSON.stringify([actorId, appId, interaction.id])}
+              interaction={interaction}
+              disabled={
+                authLoading ||
+                chat.busy ||
+                chat.historyLoading ||
+                interactions.loading ||
+                interactions.error ||
+                Boolean(interactions.submittingId || interactions.uncertainId)
+              }
+              uncertain={interactions.uncertainId === interaction.id}
+              onRespond={interactions.respond}
+            />
+          ))}
+          {interactions.notDispatched && (
+            <p
+              role="status"
+              className="my-3 text-sm text-amber-700 dark:text-amber-300"
+            >
+              {t('confirmationNotDispatched')}
+            </p>
+          )}
+          {chat.humanInput &&
+            (interactions.error ||
+              interactions.exhausted ||
+              interactions.uncertainId ||
+              interactions.processing ||
+              interactions.items.some(
+                item =>
+                  ['submitting', 'unknown', 'expired'].includes(item.status) ||
+                  (item.status === 'pending' && item.expiresAt !== null)
+              )) && (
+              <div className="my-3 text-sm">
+                <p role="status">{t('confirmationUnknown')}</p>
+                <button
+                  type="button"
+                  onClick={interactions.check}
+                  disabled={interactions.loading}
+                  className="mt-2 underline disabled:opacity-50"
+                >
+                  {t('retryStatus')}
+                </button>
+              </div>
+            )}
+          {chat.singleTask && chat.view.conversationId && (
+            <p className="mt-3 text-sm text-stone-500">
+              {t('confirmationSingleTask')}
             </p>
           )}
           {chat.unconfirmed && (

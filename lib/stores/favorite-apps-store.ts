@@ -1,3 +1,4 @@
+import { agentAppPath } from '@components/langchain/routing';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
@@ -30,6 +31,7 @@ interface SyncAppInfo {
   description?: string | null;
   config?: {
     backend_type?: 'dify' | 'langchain';
+    interaction_protocol?: 'ag-ui/1.0';
     app_metadata?: AppMetadata;
   };
 }
@@ -159,12 +161,11 @@ export const useFavoriteAppsStore = create<FavoriteAppsState>()(
         let hasRemovedApps = false;
 
         state.favoriteApps.forEach(favoriteApp => {
-          // Fix: use instance_id for matching, since favoriteApp.instanceId stores instance_id
           const matchedApp = apps.find(app =>
-            app.config?.backend_type === 'langchain'
-              ? app.id ===
-                (favoriteApp.serviceInstanceId || favoriteApp.instanceId)
-              : app.instance_id === favoriteApp.instanceId
+            favoriteApp.serviceInstanceId
+              ? app.id === favoriteApp.serviceInstanceId
+              : app.id === favoriteApp.instanceId ||
+                app.instance_id === favoriteApp.instanceId
           );
 
           if (matchedApp) {
@@ -206,7 +207,8 @@ export const useFavoriteAppsStore = create<FavoriteAppsState>()(
               updated.description !== original.description ||
               updated.iconUrl !== original.iconUrl ||
               updated.backendType !== original.backendType ||
-              updated.serviceInstanceId !== original.serviceInstanceId
+              updated.serviceInstanceId !== original.serviceInstanceId ||
+              updated.dify_apptype !== original.dify_apptype
             );
           });
 
@@ -236,6 +238,37 @@ export const useFavoriteAppsStore = create<FavoriteAppsState>()(
     }
   )
 );
+
+export async function resolveFavoriteAppRoute(
+  favorite: Pick<FavoriteApp, 'instanceId' | 'serviceInstanceId'>
+): Promise<string> {
+  const response = await fetch('/api/internal/apps', {
+    credentials: 'same-origin',
+    cache: 'no-store',
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok) throw new Error('App lookup failed');
+  const payload = (await response.json()) as {
+    success?: boolean;
+    apps?: SyncAppInfo[];
+  };
+  if (!payload.success || !Array.isArray(payload.apps))
+    throw new Error('App lookup failed');
+  const app = payload.apps.find(item =>
+    favorite.serviceInstanceId
+      ? item.id === favorite.serviceInstanceId
+      : item.id === favorite.instanceId ||
+        item.instance_id === favorite.instanceId
+  );
+  if (!app?.id) throw new Error('App unavailable');
+  useFavoriteAppsStore.getState().syncWithAppList(payload.apps);
+  const publicPath = agentAppPath(app.id, app.config);
+  if (publicPath) return publicPath;
+  if (app.config?.backend_type && app.config.backend_type !== 'dify')
+    throw new Error('App backend unavailable');
+  const type = app.config?.app_metadata?.dify_apptype || 'chatflow';
+  return `/apps/${type}/${encodeURIComponent(app.instance_id)}`;
+}
 
 // Export a convenient hook to automatically add to favorites after app usage
 export function useAutoAddFavoriteApp() {

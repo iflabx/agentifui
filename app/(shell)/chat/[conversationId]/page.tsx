@@ -13,6 +13,7 @@ import { DynamicSuggestedQuestions } from '@components/chat/dynamic-suggested-qu
 import { ChatflowFloatingController } from '@components/chatflow/chatflow-floating-controller';
 import { ChatflowNodeTracker } from '@components/chatflow/chatflow-node-tracker';
 import { FilePreviewCanvas } from '@components/file-preview/file-preview-canvas';
+import { AgentChat } from '@components/langchain/agent-chat';
 import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
 import { resolveHistoryAttachmentPreviewUserId } from '@lib/hooks/history-attachment-preview';
 import { useChatInterface } from '@lib/hooks/use-chat-interface';
@@ -24,6 +25,7 @@ import { useChatflowState } from '@lib/hooks/use-chatflow-state';
 import { useConversationMessages } from '@lib/hooks/use-conversation-messages';
 import { useHistoryAttachmentPreviewSync } from '@lib/hooks/use-history-attachment-preview-sync';
 import { useProfile } from '@lib/hooks/use-profile';
+import { getConversationByExternalId } from '@lib/services/client/conversations-api';
 import { useChatLayoutStore } from '@lib/stores/chat-layout-store';
 import { useChatStore } from '@lib/stores/chat-store';
 import { useChatflowExecutionStore } from '@lib/stores/chatflow-execution-store';
@@ -31,12 +33,66 @@ import { useFilePreviewStore } from '@lib/stores/ui/file-preview-store';
 import { cn } from '@lib/utils';
 
 import React from 'react';
-import { useLayoutEffect } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname } from 'next/navigation';
 
 export default function ChatPage() {
+  const params = useParams<{ conversationId: string }>();
+  const id = params?.conversationId ?? '';
+  const { session, loading } = useAuthSession();
+  const actorId = session?.user.id;
+  const t = useTranslations('langchain');
+  const [routing, setRouting] = useState<{
+    key: string;
+    appId?: string;
+    conversationId?: string;
+    failed?: boolean;
+  } | null>(null);
+  const key = JSON.stringify([actorId, id]);
+  const legacyNew = !id || id === 'new' || id.startsWith('temp-');
+  useEffect(() => {
+    if (legacyNew || loading || !actorId) return;
+    let active = true;
+    void getConversationByExternalId(id)
+      .then(result => {
+        if (!active) return;
+        if (!result.success) {
+          setRouting({ key, failed: true });
+          return;
+        }
+        const conversation = result.data;
+        setRouting({
+          key,
+          ...(conversation?.interaction_protocol === 'ag-ui/1.0' &&
+          conversation.app_id
+            ? { appId: conversation.app_id, conversationId: conversation.id }
+            : {}),
+        });
+      })
+      .catch(() => {
+        if (active) setRouting({ key, failed: true });
+      });
+    return () => {
+      active = false;
+    };
+  }, [actorId, id, key, legacyNew, loading]);
+  if (legacyNew || (!loading && !actorId)) return <LegacyChatPage />;
+  if (routing?.key !== key) return <p role="status">{t('loading')}</p>;
+  if (routing.failed) return <p role="alert">{t('requestFailed')}</p>;
+  return routing.appId ? (
+    <AgentChat
+      key={routing.appId}
+      appId={routing.appId}
+      conversationId={routing.conversationId ?? null}
+    />
+  ) : (
+    <LegacyChatPage />
+  );
+}
+
+function LegacyChatPage() {
   const params = useParams<{ conversationId: string }>();
   const conversationIdFromUrl =
     typeof params?.conversationId === 'string' ? params.conversationId : '';

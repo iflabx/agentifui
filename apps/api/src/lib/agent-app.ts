@@ -1,11 +1,17 @@
 import { createDecipheriv, createHash } from 'node:crypto';
 
-import { LANGCHAIN_CAPABILITIES, resolveBackendType } from './agent-backends';
+import {
+  type AgentBackendType,
+  LANGCHAIN_CAPABILITIES,
+  resolveBackendType,
+} from './agent-backends';
 import { queryRowsWithPgSystemContext } from './pg-context';
 
 export const AGENT_CAPABILITIES = LANGCHAIN_CAPABILITIES;
 
 export interface AgentApp {
+  backendType?: AgentBackendType;
+  interactionProtocol?: 'ag-ui/1.0';
   id: string;
   instanceId: string;
   name: string;
@@ -14,6 +20,7 @@ export interface AgentApp {
   credentialVersion?: string;
   assistantId: string;
   fingerprint: string;
+  humanInput?: boolean;
 }
 
 export function agentConfigFingerprint(
@@ -44,6 +51,17 @@ interface AgentAppRow {
   config: Record<string, unknown> | null;
   key_value: string | null;
   credential_version?: string;
+}
+
+export function isDifyAguiSelected(
+  config: Record<string, unknown> | null
+): boolean {
+  const metadata = config?.app_metadata as Record<string, unknown> | undefined;
+  return (
+    config?.interaction_protocol === 'ag-ui/1.0' &&
+    metadata?.app_type === 'marketplace' &&
+    metadata?.dify_apptype === 'chatbot'
+  );
 }
 
 export const AGENT_APP_VISIBILITY_SQL = `
@@ -90,7 +108,8 @@ function decryptCredential(value: string): string {
 
 export async function resolveAgentApp(
   serviceInstanceId: string,
-  userId: string
+  userId: string,
+  options: { allowDify?: boolean } = {}
 ): Promise<AgentApp> {
   const rows = await queryRowsWithPgSystemContext<AgentAppRow>(
     `SELECT si.id::text, si.instance_id, si.display_name, si.config,
@@ -113,15 +132,19 @@ export async function resolveAgentApp(
   if (!row) {
     throw new AgentAppError(404, 'AGENT_APP_NOT_FOUND');
   }
-  if (resolveBackendType(row.config) !== 'langchain') {
+  const backendType = resolveBackendType(row.config);
+  if (backendType === 'dify' && !options.allowDify) {
     throw new AgentAppError(409, 'AGENT_BACKEND_MISMATCH');
   }
   const langchain = row.config?.langchain as
     Record<string, unknown> | undefined;
-  const assistantId = langchain?.assistant_id;
+  const assistantId =
+    backendType === 'dify' ? row.instance_id : langchain?.assistant_id;
   if (
     typeof assistantId !== 'string' ||
-    !/^[A-Za-z0-9_-]{1,128}$/.test(assistantId) ||
+    !(backendType === 'dify'
+      ? assistantId.length > 0 && assistantId.length <= 255
+      : /^[A-Za-z0-9_-]{1,128}$/.test(assistantId)) ||
     !row.key_value
   ) {
     throw new AgentAppError(503, 'AGENT_NOT_CONFIGURED');
@@ -147,6 +170,10 @@ export async function resolveAgentApp(
     throw new AgentAppError(503, 'AGENT_NOT_CONFIGURED');
   }
   return {
+    backendType,
+    ...(isDifyAguiSelected(row.config)
+      ? { interactionProtocol: 'ag-ui/1.0' as const }
+      : {}),
     id: row.id,
     instanceId: row.instance_id,
     name: row.display_name || row.instance_id,
@@ -154,6 +181,7 @@ export async function resolveAgentApp(
     apiKey,
     credentialVersion: row.credential_version,
     assistantId,
+    humanInput: backendType === 'langchain' && langchain?.human_input === true,
     fingerprint: agentConfigFingerprint(row.id, baseUrl, assistantId),
   };
 }

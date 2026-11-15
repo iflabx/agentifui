@@ -15,7 +15,8 @@ export interface InstanceFormData {
   apiKey: string;
   config: {
     backend_type?: 'dify' | 'langchain';
-    langchain?: { assistant_id: string };
+    interaction_protocol?: 'ag-ui/1.0';
+    langchain?: { assistant_id: string; human_input?: boolean };
     api_url: string;
     app_metadata: {
       app_type: 'model' | 'marketplace';

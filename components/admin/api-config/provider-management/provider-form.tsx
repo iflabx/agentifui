@@ -22,15 +22,7 @@ import { useTranslations } from 'next-intl';
 
 import { getAuthTypeLabel, getProviderTypeLabel } from './provider-labels';
 
-const PROVIDER_TYPES = [
-  'llm',
-  'platform',
-  'embedding',
-  'tts',
-  'stt',
-  'vision',
-  'multimodal',
-] as const;
+const PROVIDER_TYPES = ['dify', 'langchain'] as const;
 
 const AUTH_TYPES = [
   'api_key',
@@ -82,7 +74,7 @@ export function ProviderForm({
 
   const [formData, setFormData] = React.useState<ProviderFormData>(() => ({
     name: provider?.name || '',
-    type: provider?.type || 'llm',
+    type: provider?.type || 'dify',
     base_url: provider?.base_url || '',
     auth_type: provider?.auth_type || 'api_key',
     is_active: provider?.is_active ?? true,
@@ -156,6 +148,7 @@ export function ProviderForm({
               disabled={loading}
             >
               <SelectTrigger
+                id="type"
                 className={cn(
                   'font-serif',
                   errors.type && 'border-red-500 focus:border-red-500'

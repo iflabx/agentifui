@@ -42,7 +42,22 @@ jest.mock('@components/admin/api-config/instance-provider-card', () => ({
   InstanceProviderCard: () => null,
 }));
 jest.mock('@components/admin/api-config/dify-app-type-selector', () => ({
-  DifyAppTypeSelector: () => <div data-testid="dify-subtype" />,
+  DifyAppTypeSelector: ({
+    value,
+    onChange,
+  }: {
+    value: string;
+    onChange: (value: string) => void;
+  }) => (
+    <select
+      data-testid="dify-subtype"
+      value={value}
+      onChange={event => onChange(event.target.value)}
+    >
+      <option value="chatbot">chatbot</option>
+      <option value="agent">agent</option>
+    </select>
+  ),
 }));
 
 const langchainInstance = {
@@ -71,6 +86,7 @@ function renderForm(instance = langchainInstance) {
 }
 
 beforeEach(() => {
+  jest.clearAllMocks();
   mockStore.apiKeys = [{ service_instance_id: 'instance' }];
 });
 
@@ -202,5 +218,81 @@ describe('LangChain admin instance form', () => {
     fireEvent.submit(container.querySelector('form')!);
     expect(validateDifyFormData).toHaveBeenCalled();
     expect(onSave.mock.calls[0][0].config).not.toHaveProperty('langchain');
+  });
+
+  it('defaults the public chatbot opt-in off and explains the text-only capability checks', () => {
+    const { container, onSave } = renderForm();
+    fireEvent.change(screen.getByLabelText('backend.label'), {
+      target: { value: 'dify' },
+    });
+    const checkbox = screen.getByRole('checkbox', {
+      name: 'backend.aguiLabel',
+    });
+    expect(checkbox).not.toBeChecked();
+    expect(checkbox).toHaveAttribute(
+      'aria-describedby',
+      'interaction-protocol-note'
+    );
+    expect(screen.getByText('backend.aguiNote')).toBeInTheDocument();
+    fireEvent.click(checkbox);
+    fireEvent.submit(container.querySelector('form')!);
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({ interaction_protocol: 'ag-ui/1.0' }),
+      })
+    );
+    fireEvent.click(checkbox);
+    fireEvent.submit(container.querySelector('form')!);
+    expect(
+      onSave.mock.calls[onSave.mock.calls.length - 1][0].config
+    ).not.toHaveProperty('interaction_protocol');
+  });
+
+  it('clears the checkbox when leaving chatbot and does not opt in again on return', () => {
+    renderForm();
+    expect(screen.queryByText('backend.aguiLabel')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('backend.label'), {
+      target: { value: 'dify' },
+    });
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: 'backend.aguiLabel' })
+    );
+    fireEvent.change(screen.getByTestId('dify-subtype'), {
+      target: { value: 'agent' },
+    });
+    expect(screen.queryByText('backend.aguiLabel')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByTestId('dify-subtype'), {
+      target: { value: 'chatbot' },
+    });
+    expect(
+      screen.getByRole('checkbox', { name: 'backend.aguiLabel' })
+    ).not.toBeChecked();
+  });
+
+  it('only offers marketplace chatbot opt-in and clears it when changing to a model', () => {
+    render(
+      <InstanceForm
+        instance={null}
+        isEditing={false}
+        onSave={jest.fn()}
+        onCancel={jest.fn()}
+        isProcessing={false}
+      />
+    );
+    expect(
+      screen.queryByRole('checkbox', { name: 'backend.aguiLabel' })
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('appType.marketplace.title'));
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: 'backend.aguiLabel' })
+    );
+    fireEvent.click(screen.getByText('appType.model.title'));
+    expect(
+      screen.queryByRole('checkbox', { name: 'backend.aguiLabel' })
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('appType.marketplace.title'));
+    expect(
+      screen.getByRole('checkbox', { name: 'backend.aguiLabel' })
+    ).not.toBeChecked();
   });
 });

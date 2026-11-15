@@ -6,6 +6,8 @@ type TranslationFn = {
 };
 
 const PROVIDER_TYPE_FALLBACK_LABELS: Record<string, string> = {
+  dify: 'Dify',
+  langchain: 'LangChain',
   llm: 'LLM',
   platform: 'Platform',
   embedding: 'Embedding',

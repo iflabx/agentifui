@@ -1,9 +1,12 @@
 /** @jest-environment node */
+import { parseAgentEvent } from '@agentifui/shared';
+
 import type { AgentApp } from './agent-app';
 import { executeAgentRun, publicAgentRun } from './agent-run-execution';
 import {
   type AgentRunRecord,
   bindThread,
+  loadRunDisplayHistory,
   markRunUnknown,
   recordNativeRun,
   recordRunPersistenceFailure,
@@ -23,7 +26,9 @@ import {
 } from './langchain/transport';
 
 jest.mock('./agent-runs-repository', () => ({
+  ...jest.requireActual('./agent-runs-repository'),
   bindThread: jest.fn(),
+  loadRunDisplayHistory: jest.fn(),
   markRunUnknown: jest.fn(),
   recordNativeRun: jest.fn(),
   recordRunPersistenceFailure: jest.fn().mockResolvedValue(undefined),
@@ -114,6 +119,209 @@ beforeEach(() => {
     ...textEvents,
     { type: 'RUN_FINISHED', threadId: 'native-thread', runId: initial.id },
   ]);
+  jest
+    .mocked(loadRunDisplayHistory)
+    .mockResolvedValue([
+      { id: initial.user_message_id, role: 'user', content: 'one new input' },
+    ]);
+});
+
+async function runAgui() {
+  const events: unknown[] = [];
+  const legacy = jest.fn();
+  await executeAgentRun({
+    rootTaskId: 'root-task',
+    app,
+    run: { ...initial, submission_id: 'submission' },
+    content: 'one new input',
+    emit: legacy,
+    agui: { emit: event => events.push(event) },
+    report: jest.fn(),
+  });
+  return {
+    events,
+    legacy,
+    result: jest.mocked(saveRunResult).mock.calls[0][1],
+  };
+}
+
+describe('negotiated AG-UI runtime', () => {
+  it('uses the existing governed dispatch and persists a scoped public projection', async () => {
+    jest.mocked(loadRunDisplayHistory).mockResolvedValue([
+      { id: 'prior-user', role: 'user', content: 'earlier question' },
+      { id: 'prior-answer', role: 'assistant', content: 'earlier answer' },
+      { id: initial.user_message_id, role: 'user', content: 'one new input' },
+    ]);
+    const { events, legacy, result } = await runAgui();
+    expect(events[0]).toMatchObject({
+      type: 'RUN_STARTED',
+      protocolVersion: '1.0',
+      threadId: initial.conversation_id,
+      runId: initial.id,
+      metadata: { 'agentifui.acceptance.v1': { submissionId: 'submission' } },
+    });
+    expect(events.at(-1)).toMatchObject({
+      type: 'RUN_FINISHED',
+      outcome: { type: 'success' },
+    });
+    for (const event of events) expect(parseAgentEvent(event)).toBeDefined();
+    expect(legacy).not.toHaveBeenCalled();
+    expect(streamTurn).toHaveBeenCalledTimes(1);
+    expect(jest.mocked(streamTurn).mock.calls[0][1]).toMatchObject({
+      content: 'one new input',
+    });
+    expect(jest.mocked(streamTurn).mock.calls[0][1]).not.toHaveProperty(
+      'history'
+    );
+    expect(result.agui).toMatchObject({
+      schemaVersion: 2,
+      status: 'succeeded',
+      outputMessageIds: [result.messages[0].id],
+    });
+    expect(result.agui?.messages.map(message => message.id)).toEqual([
+      'prior-user',
+      'prior-answer',
+      initial.user_message_id,
+      result.messages[0].id,
+    ]);
+    expect(JSON.stringify(events)).not.toMatch(
+      /native-thread|native-run|private-fingerprint|synthetic-token/
+    );
+    expect(confirmSubmission).toHaveBeenCalledWith('root-task', 'finished');
+  });
+
+  it('does not emit persistence status or a second terminal after saving fails', async () => {
+    jest
+      .mocked(saveRunResult)
+      .mockRejectedValue(new Error('synthetic storage outage'));
+    const { events, result } = await runAgui();
+    expect(events.at(-1)).toMatchObject({
+      type: 'RUN_FINISHED',
+      outcome: { type: 'success' },
+    });
+    expect(result.executionStatus).toBe('success');
+    expect(recordRunPersistenceFailure).toHaveBeenCalledWith(
+      initial.id,
+      result
+    );
+    expect(saveRunResult).toHaveBeenCalledTimes(2);
+    expect(jest.mocked(saveRunResult).mock.calls[1][1]).toEqual(result);
+    expect(
+      events.filter(
+        event => (event as { type: string }).type === 'RUN_FINISHED'
+      )
+    ).toHaveLength(1);
+    expect(streamTurn).toHaveBeenCalledTimes(1);
+    expect(markRunUnknown).not.toHaveBeenCalled();
+  });
+
+  it('retains unknown and partial output on native truncation without rerunning', async () => {
+    stream(textEvents, new LangChainUpstreamError('UPSTREAM_INCOMPLETE'));
+    const { events, result } = await runAgui();
+    expect(events.at(-1)).toMatchObject({
+      type: 'RUN_ERROR',
+      code: 'AGENT_STREAM_INCOMPLETE',
+    });
+    expect(result).toMatchObject({
+      executionStatus: 'unknown',
+      agui: { status: 'unknown' },
+      messages: [{ content: 'Example response' }],
+    });
+    expect(streamTurn).toHaveBeenCalledTimes(1);
+    expect(confirmSubmission).toHaveBeenCalledWith('root-task', 'unknown');
+  });
+
+  it('refuses to execute without a complete trusted history and releases admission', async () => {
+    jest
+      .mocked(loadRunDisplayHistory)
+      .mockRejectedValue(new Error('synthetic missing history'));
+    const { events, result } = await runAgui();
+    expect(events).toEqual([
+      {
+        type: 'RUN_ERROR',
+        code: 'AGENT_RUN_FAILED',
+        message: 'Agent execution failed.',
+      },
+    ]);
+    expect(createThread).not.toHaveBeenCalled();
+    expect(streamTurn).not.toHaveBeenCalled();
+    expect(rejectSubmission).toHaveBeenCalledWith(
+      'root-task',
+      'AGENT_NOT_DISPATCHED'
+    );
+    expect(result.executionStatus).toBe('error');
+  });
+
+  it('persists tool-only activity without fabricating an assistant message', async () => {
+    stream([
+      { type: 'CUSTOM', name: 'native_run', value: { run_id: 'native-run' } },
+      {
+        type: 'TOOL_CALL_START',
+        toolCallId: 'private-tool',
+        toolCallName: 'search',
+      },
+      {
+        type: 'TOOL_CALL_RESULT',
+        toolCallId: 'private-tool',
+        messageId: 'private-result',
+        role: 'tool',
+        content: 'private-debug-result',
+      },
+      { type: 'RUN_FINISHED', threadId: 'native-thread', runId: initial.id },
+    ]);
+    const { events, result } = await runAgui();
+    expect(result.messages).toEqual([]);
+    expect(result.agui?.messages).toHaveLength(2);
+    expect(result.agui?.messages[1]).toMatchObject({
+      role: 'activity',
+      content: { name: 'search', status: 'completed' },
+    });
+    expect(result.agui?.outputMessageIds).toEqual([
+      result.agui?.messages[1].id,
+    ]);
+    expect(JSON.stringify(events)).not.toMatch(
+      /private-tool|private-result|private-debug-result/
+    );
+  });
+
+  it('materializes only projected partial text when a delta exceeds the complete-view budget', async () => {
+    jest.mocked(loadRunDisplayHistory).mockResolvedValue([
+      {
+        id: 'large-prior-answer',
+        role: 'assistant',
+        content: 'x'.repeat(500000),
+      },
+      { id: initial.user_message_id, role: 'user', content: 'one new input' },
+    ]);
+    stream([
+      ...textEvents,
+      { type: 'TEXT_MESSAGE_START', messageId: 'too-large', role: 'assistant' },
+      {
+        type: 'TEXT_MESSAGE_CONTENT',
+        messageId: 'too-large',
+        delta: 'x'.repeat(30000),
+      },
+    ]);
+    const { result, events } = await runAgui();
+    expect(result.executionStatus).toBe('unknown');
+    const snapshotMessages = result.agui!.messages.filter(
+      message =>
+        result.agui!.outputMessageIds.includes(message.id) &&
+        message.role === 'assistant'
+    );
+    expect(
+      result.messages.map(message => [message.id, message.content])
+    ).toEqual(snapshotMessages.map(message => [message.id, message.content]));
+    expect(result.messages.map(message => message.content)).toEqual([
+      'Example response',
+      '',
+    ]);
+    expect(events.at(-1)).toMatchObject({
+      type: 'RUN_ERROR',
+      code: 'AGENT_STREAM_INCOMPLETE',
+    });
+    expect(streamTurn).toHaveBeenCalledTimes(1);
+  });
 });
 
 async function run(

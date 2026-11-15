@@ -1,7 +1,9 @@
 /** @jest-environment node */
 import {
   buildSimplifiedDifyParameters,
+  changeInstanceAppType,
   changeInstanceBackend,
+  changeInstanceDifyAppType,
   createEmptyInstanceFormData,
   createInstanceFormDataFromInstance,
   getInitialProviderId,
@@ -146,6 +148,31 @@ describe('instance form utils', () => {
     expect(dify.config.dify_parameters).toEqual({});
   });
 
+  it('preserves an explicitly configured human-input profile while editing its display settings', () => {
+    const original = {
+      instance_id: 'confirmation',
+      config: {
+        backend_type: 'langchain' as const,
+        langchain: {
+          assistant_id: 'configured-confirmation',
+          human_input: true,
+        },
+      },
+    };
+    const data = createInstanceFormDataFromInstance(original, []);
+    data.display_name = 'Updated display name';
+    const saved = prepareInstanceFormForSave(data);
+    expect(saved.config.langchain).toEqual(original.config.langchain);
+    expect(
+      changeInstanceBackend(data, 'dify').config.langchain
+    ).toBeUndefined();
+    expect(
+      prepareInstanceFormForSave(
+        changeInstanceBackend(createEmptyInstanceFormData(), 'langchain')
+      ).config.langchain
+    ).not.toHaveProperty('human_input');
+  });
+
   it('does not replace an empty assistant ID with the default during save', () => {
     const data = changeInstanceBackend(
       createEmptyInstanceFormData(),
@@ -155,5 +182,64 @@ describe('instance form utils', () => {
     expect(prepareInstanceFormForSave(data).config.langchain).toEqual({
       assistant_id: '',
     });
+  });
+
+  it('roundtrips an explicit chatbot opt-in without selecting legacy apps by default', () => {
+    const data = createEmptyInstanceFormData();
+    expect(data.config).not.toHaveProperty('interaction_protocol');
+    data.config.app_metadata.app_type = 'marketplace';
+    data.config.interaction_protocol = 'ag-ui/1.0';
+    const saved = prepareInstanceFormForSave(data);
+    expect(saved.config.interaction_protocol).toBe('ag-ui/1.0');
+    expect(
+      createInstanceFormDataFromInstance(saved, []).config.interaction_protocol
+    ).toBe('ag-ui/1.0');
+  });
+
+  it('clears the opt-in when changing backend or leaving chatbot, without restoring it later', () => {
+    const data = createEmptyInstanceFormData();
+    data.config.app_metadata.app_type = 'marketplace';
+    data.config.interaction_protocol = 'ag-ui/1.0';
+    const langchain = changeInstanceBackend(data, 'langchain');
+    expect(langchain.config).not.toHaveProperty('interaction_protocol');
+    expect(changeInstanceBackend(langchain, 'dify').config).not.toHaveProperty(
+      'interaction_protocol'
+    );
+    const agent = changeInstanceDifyAppType(data, 'agent');
+    expect(agent.config).not.toHaveProperty('interaction_protocol');
+    expect(
+      changeInstanceDifyAppType(agent, 'chatbot').config
+    ).not.toHaveProperty('interaction_protocol');
+    expect(data.config.interaction_protocol).toBe('ag-ui/1.0');
+  });
+
+  it('clears a model opt-in on save/readback and does not restore it after switching back to marketplace', () => {
+    const data = createEmptyInstanceFormData();
+    data.config.interaction_protocol = 'ag-ui/1.0';
+    expect(prepareInstanceFormForSave(data).config).not.toHaveProperty(
+      'interaction_protocol'
+    );
+    expect(
+      createInstanceFormDataFromInstance(data, []).config
+    ).not.toHaveProperty('interaction_protocol');
+    data.config.app_metadata.app_type = 'marketplace';
+    const model = changeInstanceAppType(data, 'model');
+    expect(model.config).not.toHaveProperty('interaction_protocol');
+    expect(
+      changeInstanceAppType(model, 'marketplace').config
+    ).not.toHaveProperty('interaction_protocol');
+    expect(data.config.interaction_protocol).toBe('ag-ui/1.0');
+  });
+
+  it('does not roundtrip an incompatible stored opt-in or save a stale mode combination', () => {
+    const data = createEmptyInstanceFormData();
+    data.config.interaction_protocol = 'ag-ui/1.0';
+    data.config.app_metadata.dify_apptype = 'workflow';
+    expect(prepareInstanceFormForSave(data).config).not.toHaveProperty(
+      'interaction_protocol'
+    );
+    expect(
+      createInstanceFormDataFromInstance(data, []).config
+    ).not.toHaveProperty('interaction_protocol');
   });
 });

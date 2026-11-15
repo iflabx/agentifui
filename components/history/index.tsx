@@ -1,11 +1,15 @@
 'use client';
 
-import { historyConversationPath } from '@components/langchain/routing';
+import {
+  agentConversationPath,
+  historyConversationPath,
+} from '@components/langchain/routing';
 import { ConfirmDialog, SearchInput } from '@components/ui';
 import { useAllConversations } from '@lib/hooks/use-all-conversations';
 import { useChatInterface } from '@lib/hooks/use-chat-interface';
 import { useChatWidth } from '@lib/hooks/use-chat-width';
 import { conversationEvents } from '@lib/hooks/use-combined-conversations';
+import { agentRequest } from '@lib/services/client/langchain-api';
 import { useChatInputStore } from '@lib/stores/chat-input-store';
 import { useChatStore } from '@lib/stores/chat-store';
 import { useChatTransitionStore } from '@lib/stores/chat-transition-store';
@@ -47,9 +51,27 @@ export function History() {
     isLoading,
     total,
     refresh,
-    deleteConversation,
+    deleteConversation: deleteLegacyConversation,
     renameConversation,
   } = useAllConversations();
+
+  const deleteConversation = async (id: string): Promise<boolean> => {
+    const conversation = conversations.find(item => item.id === id);
+    if (!conversation?.app_id || !agentConversationPath(conversation))
+      return deleteLegacyConversation(id);
+    try {
+      await agentRequest(
+        conversation.app_id,
+        `/conversations/${encodeURIComponent(conversation.id)}`,
+        { method: 'DELETE' }
+      );
+      conversationEvents.emit();
+      return true;
+    } catch (error) {
+      console.error('Delete agent conversation failed:', error);
+      return false;
+    }
+  };
 
   // Listen to global conversation data update events
   React.useEffect(() => {

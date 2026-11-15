@@ -8,6 +8,10 @@
     "build": "tsc -p tsconfig.json",
     "type-check": "tsc -p tsconfig.json --noEmit"
   },
+  "dependencies": {
+    "@ag-ui/core": "1.0.4",
+    "zod": "4.6.7"
+  },
   "devDependencies": {
     "typescript": "6.0.3"
   }

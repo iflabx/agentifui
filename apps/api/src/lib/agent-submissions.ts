@@ -221,6 +221,7 @@ export async function admitSubmission(
        SELECT user_id, service_instance_id FROM backend_runs WHERE execution_status IN ('reserved','submitting','running','unknown')
        UNION ALL SELECT user_id, service_instance_id FROM agent_submissions WHERE backend_type = 'dify'
          AND state IN ('admitted','submitting','accepted','unknown')
+         AND NOT EXISTS (SELECT 1 FROM backend_runs linked WHERE linked.id = agent_submissions.run_id)
      ) active WHERE user_id = $1::uuid OR service_instance_id = $2::uuid`,
     [userId, appId]
   );
@@ -262,6 +263,65 @@ export async function admitSubmission(
     quota_state = $3, run_id = $4::uuid, updated_at = NOW() WHERE root_task_id = $1::uuid`,
     [taskId, permissionId, permissionId ? 'reserved' : 'exempt', runId ?? null]
   );
+}
+
+export async function requireResumeAuthorization(
+  client: PoolClient,
+  rootRunId: string,
+  userId: string,
+  appId: string
+): Promise<void> {
+  const root = await client.query<AgentSubmission>(
+    `SELECT * FROM agent_submissions WHERE run_id = $1::uuid
+      AND user_id = $2::uuid AND service_instance_id = $3::uuid FOR UPDATE`,
+    [rootRunId, userId, appId]
+  );
+  const task = root.rows[0];
+  if (!task || !['counted', 'exempt'].includes(task.quota_state))
+    throw new AgentPolicyError(409, 'AGENT_ROOT_NOT_ACCEPTED');
+  const app = await requireSubmissionTarget(client, task, userId, appId);
+  if (
+    (app.config?.langchain as Record<string, unknown> | undefined)
+      ?.human_input !== true
+  )
+    throw new AgentPolicyError(409, 'AGENT_INTERACTION_NOT_ENABLED');
+  if (task.quota_permission_id) {
+    const permission = await client.query(
+      `SELECT gap.id FROM group_app_permissions gap JOIN group_members gm ON gm.group_id = gap.group_id
+       WHERE gap.id = $1::uuid AND gap.service_instance_id = $2::uuid AND gap.is_enabled = TRUE
+         AND gm.user_id = $3::uuid FOR SHARE OF gap, gm`,
+      [task.quota_permission_id, appId, userId]
+    );
+    if (!permission.rows[0])
+      throw new AgentPolicyError(403, 'AGENT_APP_FORBIDDEN');
+  } else if (app.visibility === 'group_only') {
+    throw new AgentPolicyError(409, 'AGENT_CONFIG_CHANGED');
+  }
+}
+
+export async function admitResume(
+  client: PoolClient,
+  rootRunId: string,
+  userId: string,
+  appId: string,
+  limits: { userLimit?: number; appLimit?: number }
+): Promise<void> {
+  await requireResumeAuthorization(client, rootRunId, userId, appId);
+  const counts = await client.query<{ user_count: string; app_count: string }>(
+    `SELECT count(*) FILTER (WHERE user_id = $1::uuid)::text AS user_count,
+      count(*) FILTER (WHERE service_instance_id = $2::uuid)::text AS app_count FROM (
+        SELECT user_id, service_instance_id FROM backend_runs WHERE execution_status IN ('reserved','submitting','running','unknown')
+        UNION ALL SELECT user_id, service_instance_id FROM agent_submissions WHERE backend_type = 'dify'
+          AND state IN ('admitted','submitting','accepted','unknown')
+          AND NOT EXISTS (SELECT 1 FROM backend_runs linked WHERE linked.id = agent_submissions.run_id)
+      ) active WHERE user_id = $1::uuid OR service_instance_id = $2::uuid`,
+    [userId, appId]
+  );
+  if (
+    Number(counts.rows[0]?.user_count ?? 0) >= (limits.userLimit ?? 1) ||
+    Number(counts.rows[0]?.app_count ?? 0) >= (limits.appLimit ?? 2)
+  )
+    throw new AgentPolicyError(429, 'AGENT_CONCURRENCY_LIMIT');
 }
 
 export async function rejectSubmission(

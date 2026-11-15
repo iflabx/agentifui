@@ -1458,6 +1458,8 @@
           "backend": {
             "label": "Backend",
             "assistantId": "Assistant ID",
+            "aguiLabel": "新しいアプリ会話で共通 AG-UI チャットを使用",
+            "aguiNote": "マーケットプレイスの chatbot アプリで新しいテキスト専用会話のみ有効にします。ファイル、引用、音声、カスタム変数には対応しません。既定モデルとモデル選択は変更しません。既存の旧会話は互換経路を維持し、紐付け済みの共通会話は旧経路に戻りません。",
             "langchainNote": "Use the assistant exposed by this service. Text and read-only tools only; service credentials stay on the server.",
             "validation": {
               "instanceIdRequired": "Enter an application identifier.",
@@ -2737,6 +2739,10 @@
     "closeButton": "プレビューを閉じる"
   },
   "langchain": {
+    "textOnlyNote": "この会話はテキスト専用です。ファイル、引用、音声、カスタム変数には対応しません。既存の旧会話では従来の機能を引き続き利用できます。",
+    "cancelled": "キャンセル済み",
+    "interrupted": "中断",
+    "loadMore": "以前のメッセージを読み込む",
     "title": "LangChain Agent",
     "capabilities": "Text chat, conversation memory and read-only tool summaries. Files and execution cancellation are not supported.",
     "newConversation": "New conversation",
@@ -2764,6 +2770,17 @@
     "placeholder": "Send a text message to this Agent…",
     "confirmDelete": "Delete this local conversation? This does not delete the upstream Agent memory.",
     "deleteConversation": "Delete conversation",
-    "send": "Send"
+    "send": "Send",
+    "confirmationTitle": "確認が必要です",
+    "confirmationComment": "コメント（任意）",
+    "confirmationApprove": "承認",
+    "confirmationReject": "拒否",
+    "confirmationWaiting": "判断を待っています。まだ実行は承認されていません。",
+    "confirmationSubmitting": "送信中です。再送信しないでください。",
+    "confirmationAnswered": "判断を記録しました。",
+    "confirmationExpired": "この確認は期限切れです。",
+    "confirmationUnknown": "結果は未確認です。再送信せず、状態を確認してください。",
+    "confirmationSingleTask": "このエージェントは会話ごとに1件のタスクを処理します。別のタスクは新しい会話で開始してください。",
+    "confirmationNotDispatched": "回答は送信されませんでした。内容を確認して再試行できます。"
   }
 }

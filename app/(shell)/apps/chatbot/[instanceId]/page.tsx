@@ -8,6 +8,7 @@ import {
 } from '@components/chat';
 import { ChatInput } from '@components/chat-input';
 import { DynamicSuggestedQuestions } from '@components/chat/dynamic-suggested-questions';
+import { AgentAppEntry } from '@components/langchain/agent-app-entry';
 import {
   useChatInterface,
   useChatScroll,
@@ -30,6 +31,16 @@ import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 
 export default function AppDetailPage() {
+  const params = useParams<{ instanceId: string }>();
+  const instanceId = params?.instanceId ?? '';
+  return (
+    <AgentAppEntry instanceId={instanceId}>
+      <LegacyAppDetailPage />
+    </AgentAppEntry>
+  );
+}
+
+function LegacyAppDetailPage() {
   const { widthClass, paddingClass } = useChatWidth();
   const router = useRouter();
   const params = useParams();

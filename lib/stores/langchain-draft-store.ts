@@ -6,12 +6,35 @@ export interface LangchainDraftSnapshot {
   revision: number;
 }
 
+export interface PendingAgentSubmission {
+  appId: string;
+  target: string;
+  submissionId: string;
+  content: string;
+  snapshot?: LangchainDraftSnapshot;
+}
+
 interface LangchainDraftState {
   actorId: string | null;
   actorEpoch: number;
   drafts: Record<string, LangchainDraftSnapshot>;
   activeNewScopes: Record<string, string>;
   conversationScopes: Record<string, string>;
+  pendingSubmissions: Record<string, PendingAgentSubmission>;
+  rememberSubmission: (
+    actorId: string,
+    pending: PendingAgentSubmission
+  ) => void;
+  findSubmission: (
+    actorId: string,
+    appId: string,
+    target: string
+  ) => PendingAgentSubmission | undefined;
+  forgetSubmission: (
+    actorId: string,
+    submissionId: string,
+    accepted?: boolean
+  ) => void;
   setActor: (actorId: string | null) => void;
   selectScope: (appId: string, target: string, fresh: boolean) => string | null;
   bindConversation: (
@@ -39,6 +62,32 @@ export const useLangchainDraftStore = create<LangchainDraftState>(
     drafts: {},
     activeNewScopes: {},
     conversationScopes: {},
+    pendingSubmissions: {},
+    rememberSubmission: (actorId, pending) => {
+      if (get().actorId !== actorId) return;
+      set(state => ({
+        pendingSubmissions: {
+          ...state.pendingSubmissions,
+          [JSON.stringify([pending.appId, pending.target])]: pending,
+        },
+      }));
+    },
+    findSubmission: (actorId, appId, target) =>
+      get().actorId === actorId
+        ? get().pendingSubmissions[JSON.stringify([appId, target])]
+        : undefined,
+    forgetSubmission: (actorId, submissionId, accepted = false) => {
+      const state = get();
+      if (state.actorId !== actorId) return;
+      const pending = Object.values(state.pendingSubmissions).find(
+        item => item.submissionId === submissionId
+      );
+      if (!pending) return;
+      if (accepted && pending.snapshot) state.consumeSnapshot(pending.snapshot);
+      const next = { ...get().pendingSubmissions };
+      delete next[JSON.stringify([pending.appId, pending.target])];
+      set({ pendingSubmissions: next });
+    },
     setActor: actorId => {
       if (get().actorId === actorId) return;
       set(state => ({
@@ -47,6 +96,7 @@ export const useLangchainDraftStore = create<LangchainDraftState>(
         drafts: {},
         activeNewScopes: {},
         conversationScopes: {},
+        pendingSubmissions: {},
       }));
     },
     selectScope: (appId, target, fresh) => {

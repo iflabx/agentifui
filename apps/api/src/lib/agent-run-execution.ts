@@ -1,12 +1,21 @@
+import {
+  AgentProtocolError,
+  type Event,
+  EventType,
+  readAgentHistoryResult,
+} from '@agentifui/shared';
 import { randomUUID } from 'node:crypto';
 
 import type { AgentApp } from './agent-app';
 import { AgentPolicyError } from './agent-backends';
+import { executeHumanInputRun } from './agent-human-input-execution';
 import {
+  AgentRunError,
   type AgentRunRecord,
   type AgentRunResult,
   type AgentSavedMessage,
   bindThread,
+  loadRunDisplayHistory,
   markRunUnknown,
   recordNativeRun,
   recordRunPersistenceFailure,
@@ -18,6 +27,8 @@ import {
   rejectSubmission,
   rejectUnacceptedSubmission,
 } from './agent-submissions';
+import { LangChainRunOutput } from './agui/langchain-output';
+import { projectedAssistantMessages } from './agui/runtime-result';
 import {
   LangChainUpstreamError,
   createThread,
@@ -63,11 +74,21 @@ export function publicAgentRun(run: AgentRunRecord) {
     id: run.id,
     runId: run.id,
     conversationId: run.conversation_id,
+    ...(run.run_kind ? { runKind: run.run_kind } : {}),
+    ...(run.root_run_id ? { rootRunId: run.root_run_id } : {}),
     executionStatus: run.execution_status,
     persistenceStatus: run.persistence_status,
     ...(run.error_code ? { errorCode: run.error_code } : {}),
     createdAt: run.created_at,
     updatedAt: run.updated_at,
+    ...(run.result?.agui
+      ? {
+          agui: readAgentHistoryResult(run.result.agui, {
+            threadId: run.conversation_id,
+            runId: run.id,
+          }).projection,
+        }
+      : {}),
     ...(run.persistence_status !== 'saved' && run.result
       ? {
           recoveryMessages: run.result.messages.map(message => ({
@@ -122,12 +143,14 @@ export async function executeAgentRun(input: {
   run: AgentRunRecord;
   content: string;
   emit: (event: AgentClientEvent) => void;
+  agui?: { emit: (event: Event) => void };
   report: (context: {
     runId: string;
     code: string;
     orphanThreadId?: string;
   }) => void;
 }): Promise<void> {
+  if (input.app.humanInput) return executeHumanInputRun(input);
   let run = input.run;
   const messages = new Map<string, AgentSavedMessage>();
   const tools = new Map<string, AgentToolSummary>();
@@ -140,7 +163,16 @@ export async function executeAgentRun(input: {
   let accepted = false;
   let rejectedBeforeExecution = false;
   let projectionOrder = 0;
+  let output: LangChainRunOutput | undefined;
+  const emit = (event: AgentClientEvent) => {
+    if (input.agui) output?.accept(event);
+    else input.emit(event);
+  };
   try {
+    if (input.agui) {
+      const history = await loadRunDisplayHistory(run);
+      output = new LangChainRunOutput(run, history, input.agui.emit);
+    }
     knownThreadId = run.thread_id || (await createThread(input.app)).threadId;
     try {
       run = await bindThread(run.id, knownThreadId);
@@ -178,7 +210,7 @@ export async function executeAgentRun(input: {
             order: projectionOrder++,
           };
           messages.set(event.messageId, message);
-          input.emit({
+          emit({
             type: 'text',
             messageId: message.id,
             delta: '',
@@ -195,7 +227,7 @@ export async function executeAgentRun(input: {
           if (visibleBytes > 64 * 1024)
             throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
           message.content += event.delta;
-          input.emit({
+          emit({
             type: 'text',
             messageId: message.id,
             delta: event.delta,
@@ -218,7 +250,7 @@ export async function executeAgentRun(input: {
               : {}),
           };
           tools.set(event.toolCallId, tool);
-          input.emit({ type: 'tool', ...tool });
+          emit({ type: 'tool', ...tool });
           break;
         }
         case 'TOOL_CALL_RESULT': {
@@ -226,7 +258,7 @@ export async function executeAgentRun(input: {
           if (!tool)
             throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
           tool.status = 'completed';
-          input.emit({ type: 'tool', ...tool });
+          emit({ type: 'tool', ...tool });
           break;
         }
         case 'RUN_FINISHED':
@@ -254,7 +286,9 @@ export async function executeAgentRun(input: {
       !submitting || rejectedBeforeExecution ? 'error' : 'unknown';
     errorCode =
       error instanceof LangChainUpstreamError ||
-      error instanceof AgentPolicyError
+      error instanceof AgentPolicyError ||
+      error instanceof AgentRunError ||
+      error instanceof AgentProtocolError
         ? error.code
         : 'AGENT_RESULT_UNKNOWN';
     input.report({
@@ -288,8 +322,11 @@ export async function executeAgentRun(input: {
       );
     }
   }
-  const savedMessages = [...messages.values()];
-  if (tools.size) {
+  const projected = output?.snapshot();
+  const savedMessages: AgentSavedMessage[] = projected
+    ? projectedAssistantMessages(projected)
+    : [...messages.values()];
+  if (tools.size && !input.agui) {
     let runSummary: AgentSavedMessage | undefined = savedMessages.at(-1);
     for (const tool of tools.values()) {
       let owner = tool.messageId
@@ -309,10 +346,26 @@ export async function executeAgentRun(input: {
       owner.tools = [...(Array.isArray(owner.tools) ? owner.tools : []), tool];
     }
   }
+  if (output) {
+    output.accept({
+      type: 'status',
+      runId: run.id,
+      conversationId: run.conversation_id,
+      executionStatus,
+      persistenceStatus: 'pending',
+    });
+  } else if (input.agui) {
+    input.agui.emit({
+      type: EventType.RUN_ERROR,
+      code: 'AGENT_RUN_FAILED',
+      message: 'Agent execution failed.',
+    });
+  }
   const result: AgentRunResult = {
     executionStatus,
     messages: savedMessages,
     ...(errorCode ? { errorCode } : {}),
+    ...(output ? { agui: output.snapshot() } : {}),
   };
   try {
     try {
@@ -320,20 +373,21 @@ export async function executeAgentRun(input: {
     } catch {
       run = await saveRunResult(run.id, result);
     }
-    input.emit(runStatusEvent(run));
+    if (!input.agui) input.emit(runStatusEvent(run));
   } catch {
     if (input.rootTaskId || !submitting)
       await recordRunPersistenceFailure(run.id, result).catch(() => undefined);
     else
       await markRunUnknown(run.id, 'AGENT_SAVE_FAILED').catch(() => undefined);
     input.report({ runId: run.id, code: 'AGENT_SAVE_FAILED' });
-    input.emit({
-      type: 'status',
-      runId: run.id,
-      conversationId: run.conversation_id,
-      executionStatus,
-      persistenceStatus: 'failed',
-      errorCode: 'AGENT_SAVE_FAILED',
-    });
+    if (!input.agui)
+      input.emit({
+        type: 'status',
+        runId: run.id,
+        conversationId: run.conversation_id,
+        executionStatus,
+        persistenceStatus: 'failed',
+        errorCode: 'AGENT_SAVE_FAILED',
+      });
   }
 }

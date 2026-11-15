@@ -129,7 +129,8 @@ export function boundConversationAccessSql(
         AND conversations.status = 'active'
         AND actor.status = 'active'
         AND provider.is_active = TRUE
-        AND instance.config ->> 'backend_type' = 'langchain'
+        AND COALESCE(instance.config ->> 'backend_type', 'dify') = binding.backend_type
+        AND binding.backend_type IN ('langchain', 'dify')
         AND (
           instance.visibility = 'public'
           OR actor.role = 'admin'

@@ -83,6 +83,7 @@ export interface GroupAppPermission {
 // Conversation and message types
 export interface Conversation {
   id: string;
+  interaction_protocol?: 'ag-ui/1.0' | null;
   user_id: string;
   ai_config_id: string | null;
   title: string;
@@ -142,8 +143,10 @@ export interface Provider {
 // Used to standardize the structure of ServiceInstance.config
 export interface ServiceInstanceConfig {
   backend_type?: 'dify' | 'langchain';
+  interaction_protocol?: 'ag-ui/1.0';
   langchain?: {
     assistant_id: string;
+    human_input?: boolean;
   };
 
   // Dify API base URL

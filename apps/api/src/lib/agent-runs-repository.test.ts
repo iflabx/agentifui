@@ -7,8 +7,10 @@ import {
   type AgentRunRecord,
   bindThread,
   getRunForActor,
+  loadRunDisplayHistory,
   markRunUnknown,
   recordNativeRun,
+  recordRunPersistenceFailure,
   reserveRun,
   saveRunResult,
 } from './agent-runs-repository';
@@ -196,7 +198,7 @@ describe('trusted agent run repository', () => {
       expect(lockedRun).toBeLessThan(binding);
       expect(query).toHaveBeenCalledWith(
         expect.stringContaining("state IN ('registered','unknown')"),
-        [ROOT, RUN, 'unknown', USER, APP]
+        [ROOT, RUN, 'unknown', USER, APP, 'langchain']
       );
       expect(
         query.mock.calls.some(([sql]) =>
@@ -220,12 +222,12 @@ describe('trusted agent run repository', () => {
         String(sql).includes('UPDATE agent_submissions')
       );
       expect(updates.map(([, params]) => params)).toEqual([
-        [ROOT, RUN, 'unknown', USER, APP],
-        [ROOT, RUN, 'finished', USER, APP],
+        [ROOT, RUN, 'unknown', USER, APP, 'langchain'],
+        [ROOT, RUN, 'finished', USER, APP, 'langchain'],
       ]);
       const statement = String(updates[1][0]);
       for (const guard of [
-        "backend_type = 'langchain'",
+        'backend_type = $6',
         "quota_state = 'none'",
         'user_id = $4::uuid',
         'service_instance_id = $5::uuid',
@@ -513,4 +515,230 @@ describe('trusted agent run repository', () => {
       message: 'AGENT_STORAGE_UNAVAILABLE',
     });
   });
+
+  it('records execution and failed storage without normalizing an already rejected oversized snapshot again', async () => {
+    await recordRunPersistenceFailure(RUN, {
+      executionStatus: 'success',
+      messages: [{ id: ASSISTANT_MESSAGE, content: 'x'.repeat(512001) }],
+    });
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining("error_code = 'AGENT_RESULT_UNAVAILABLE'"),
+      [RUN, 'success']
+    );
+    expect(query.mock.calls[0][0]).toContain('result IS NULL');
+    expect(query.mock.calls[0][0]).toContain("persistence_status <> 'saved'");
+  });
+
+  it.each(['metadata', 'legacy result'])(
+    'explicitly rejects legacy tool history in %s before a lossy protocol switch',
+    async location => {
+      query.mockResolvedValueOnce({
+        rows: [
+          {
+            id: USER_MESSAGE,
+            role: 'user',
+            content: 'hello',
+            ...(location === 'metadata'
+              ? {
+                  metadata: {
+                    tools: [{ name: 'search', status: 'completed' }],
+                  },
+                }
+              : {}),
+          },
+        ],
+      });
+      if (location === 'legacy result')
+        query.mockResolvedValueOnce({
+          rows: [
+            {
+              id: SUBMISSION,
+              result: {
+                messages: [
+                  {
+                    id: ASSISTANT_MESSAGE,
+                    content: 'answer',
+                    tools: [{ name: 'search', status: 'completed' }],
+                  },
+                ],
+              },
+            },
+          ],
+        });
+      await expect(loadRunDisplayHistory(run)).rejects.toMatchObject({
+        code: 'AGENT_HISTORY_LEGACY_TOOLS_UNSUPPORTED',
+      });
+    }
+  );
+
+  it('loads complete bounded display history using only the reserved run ownership', async () => {
+    const history = [
+      { id: ASSISTANT_MESSAGE, role: 'assistant', content: 'prior answer' },
+      { id: USER_MESSAGE, role: 'user', content: 'hello' },
+    ];
+    query
+      .mockResolvedValueOnce({ rows: history })
+      .mockResolvedValueOnce({ rows: [] });
+    expect(await loadRunDisplayHistory(run)).toEqual(history);
+    expect(query.mock.calls[0][1]).toEqual([
+      CONVERSATION,
+      USER,
+      APP,
+      FINGERPRINT,
+      0,
+      257,
+    ]);
+    expect(query.mock.calls[0][0]).toContain("c.status = 'active'");
+    expect(query.mock.calls[0][0]).toContain(
+      'b.service_instance_id = $3::uuid'
+    );
+    expect(query.mock.calls[0][0]).toContain('b.config_fingerprint = $4');
+    expect(query.mock.calls[1][0]).toContain("r.persistence_status = 'saved'");
+  });
+
+  it.each(['missing', 'different user message', 'wrong role', 'truncated'])(
+    'does not treat %s history as a complete execution input',
+    async condition => {
+      const rows =
+        condition === 'missing'
+          ? []
+          : condition === 'truncated'
+            ? Array.from({ length: 257 }, (_, index) => ({
+                id: `message-${index}`,
+                role: 'user',
+                content: '',
+              }))
+            : [
+                {
+                  id:
+                    condition === 'different user message'
+                      ? ASSISTANT_MESSAGE
+                      : USER_MESSAGE,
+                  role: condition === 'wrong role' ? 'assistant' : 'user',
+                  content: 'hello',
+                },
+              ];
+      query.mockResolvedValueOnce({ rows });
+      await expect(loadRunDisplayHistory(run)).rejects.toMatchObject({
+        code:
+          condition === 'truncated'
+            ? 'AGENT_HISTORY_LIMIT'
+            : 'AGENT_HISTORY_UNAVAILABLE',
+      });
+      expect(query).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it('restores only prior scoped activities and keeps materialized text authoritative', async () => {
+    const previousRun = '50000000-0000-4000-8000-000000000002';
+    const activity = {
+      id: 'previous-activity',
+      role: 'activity',
+      activityType: 'agentifui.tool-summary.v1',
+      content: { name: 'search', status: 'completed' },
+    };
+    query
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: ASSISTANT_MESSAGE,
+            role: 'assistant',
+            content: 'materialized answer',
+          },
+          { id: USER_MESSAGE, role: 'user', content: 'hello' },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: previousRun,
+            result: {
+              agui: {
+                schemaVersion: 2,
+                threadId: CONVERSATION,
+                runId: previousRun,
+                status: 'succeeded',
+                warnings: [],
+                outputMessageIds: [ASSISTANT_MESSAGE, activity.id],
+                messages: [
+                  {
+                    id: ASSISTANT_MESSAGE,
+                    role: 'assistant',
+                    content: 'stale snapshot answer',
+                  },
+                  activity,
+                ],
+              },
+            },
+          },
+        ],
+      });
+    expect(await loadRunDisplayHistory(run)).toEqual([
+      {
+        id: ASSISTANT_MESSAGE,
+        role: 'assistant',
+        content: 'materialized answer',
+      },
+      activity,
+      { id: USER_MESSAGE, role: 'user', content: 'hello' },
+    ]);
+  });
+
+  function scopedResult() {
+    return {
+      executionStatus: 'success' as const,
+      messages: [{ id: ASSISTANT_MESSAGE, content: 'answer', order: 0 }],
+      agui: {
+        schemaVersion: 2 as const,
+        threadId: CONVERSATION,
+        runId: RUN,
+        status: 'succeeded' as const,
+        warnings: [],
+        messages: [
+          { id: USER_MESSAGE, role: 'user' as const, content: 'hello' },
+          {
+            id: ASSISTANT_MESSAGE,
+            role: 'assistant' as const,
+            content: 'answer',
+          },
+        ],
+        outputMessageIds: [ASSISTANT_MESSAGE],
+      },
+    };
+  }
+
+  it('stores the scoped snapshot with the same assistant IDs and idempotently materializes it', async () => {
+    run.thread_id = 'private-thread';
+    run.native_run_id = 'private-native-run';
+    const result = scopedResult();
+    expect((await saveRunResult(RUN, result)).result).toEqual(result);
+    await saveRunResult(RUN, result);
+    expect(
+      query.mock.calls.filter(call => call[0].includes('SET result ='))
+    ).toHaveLength(1);
+    expect(
+      query.mock.calls.filter(call => call[0].includes('INSERT INTO messages'))
+    ).toHaveLength(1);
+  });
+
+  it.each(['identity', 'output scope', 'body', 'status'])(
+    'rejects a conflicting AG-UI %s before writing a result',
+    async condition => {
+      const result = scopedResult();
+      if (condition === 'identity') result.agui.runId = SUBMISSION;
+      if (condition === 'output scope')
+        result.agui.outputMessageIds = [USER_MESSAGE];
+      if (condition === 'body') result.messages[0].content = 'different';
+      if (condition === 'status') result.executionStatus = 'error' as 'success';
+      await expect(saveRunResult(RUN, result)).rejects.toMatchObject({
+        code:
+          condition === 'identity'
+            ? 'AGENT_RESULT_CONFLICT'
+            : 'INVALID_AGENT_RESULT',
+      });
+      expect(
+        query.mock.calls.some(call => call[0].includes('SET result ='))
+      ).toBe(false);
+    }
+  );
 });

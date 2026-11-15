@@ -14,6 +14,7 @@ import {
 } from '../../apps/api/src/lib/agent-submissions';
 import { getPgPool } from '../../apps/api/src/lib/pg-context';
 import { resolveTestDatabaseUrl } from './helpers/test-database-url';
+import { createTestRole, dropTestRole } from './helpers/test-role';
 
 const actors = [randomUUID(), randomUUID()];
 const provider = randomUUID();
@@ -52,14 +53,7 @@ function admit(task: string, actor = 0) {
 
 beforeAll(async () => {
   database = new Pool({ connectionString: resolveTestDatabaseUrl() });
-  await database.query(`CREATE ROLE ${role} NOLOGIN NOSUPERUSER NOBYPASSRLS`);
-  await database.query(`GRANT USAGE ON SCHEMA public TO ${role}`);
-  await database.query(
-    `GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO ${role}`
-  );
-  await database.query(
-    `GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO ${role}`
-  );
+  await createTestRole(database, role);
   for (const id of actors) {
     await database.query(
       'INSERT INTO auth_users(id,name,email) VALUES($1,$2,$3)',
@@ -128,8 +122,7 @@ afterAll(async () => {
     await database.query('DELETE FROM auth_users WHERE id=ANY($1::uuid[])', [
       actors,
     ]);
-    await database.query(`DROP OWNED BY ${role}`);
-    await database.query(`DROP ROLE ${role}`);
+    await dropTestRole(database, role);
     await database.end();
   }
   for (const key of ['DATABASE_URL', 'APP_RLS_STRICT_MODE']) {
