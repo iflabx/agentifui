@@ -1,4 +1,5 @@
 /** @jest-environment node */
+import { projectAgentView } from '../../../components/langchain/agui-state';
 import { consumeAguiStream } from './agui-stream';
 
 const start = {
@@ -100,6 +101,111 @@ it('replaces a full snapshot without duplicating the incremental answer and keep
     state.messages.filter((message: { id: string }) => message.id === 'answer')
   ).toEqual([{ id: 'answer', role: 'assistant', content: 'Replacement' }]);
   expect(state).not.toHaveProperty('persistenceStatus');
+});
+
+it('does not claim unloaded older snapshot messages as outputs of the current paginated turn', async () => {
+  const accept = jest.fn();
+  await consumeAguiStream(
+    response([
+      start,
+      {
+        type: 'MESSAGES_SNAPSHOT',
+        messages: [
+          {
+            id: 'older-user',
+            role: 'user',
+            content: 'Older question outside this page',
+          },
+          {
+            id: 'older-answer',
+            role: 'assistant',
+            content: 'Older answer outside this page',
+          },
+          {
+            id: 'older-activity',
+            role: 'activity',
+            activityType: 'agentifui.tool-summary.v1',
+            content: { name: 'older-tool', status: 'completed' },
+          },
+          ...history(),
+          { id: 'answer', role: 'assistant', content: 'Current replacement' },
+        ],
+      },
+      finish,
+    ]),
+    { submissionId: 'submission', history, accept }
+  );
+  const snapshot = accept.mock.calls.at(-1)?.[0];
+  expect(snapshot.outputMessageIds).toEqual(['answer']);
+  expect(
+    snapshot.messages.map((message: { id: string }) => message.id)
+  ).toEqual(['question', 'answer']);
+  const view = projectAgentView({ messages: [], tools: [] }, snapshot);
+  expect(
+    view.messages.find(message => message.id === 'older-answer')?.metadata
+      ?.backend_run_id
+  ).toBeUndefined();
+  expect(
+    view.messages.find(message => message.id === 'answer')?.metadata
+      ?.backend_run_id
+  ).toBe('run');
+  expect(view.tools).toEqual([]);
+});
+
+it('keeps the loaded page and current incremental output across full replacements', async () => {
+  const accept = jest.fn();
+  const loaded = [
+    { id: 'loaded-user', role: 'user' as const, content: 'Loaded question' },
+    {
+      id: 'loaded-answer',
+      role: 'assistant' as const,
+      content: 'Loaded answer',
+    },
+    ...history(),
+  ];
+  await consumeAguiStream(
+    response([
+      start,
+      { type: 'TEXT_MESSAGE_START', messageId: 'answer' },
+      { type: 'TEXT_MESSAGE_CONTENT', messageId: 'answer', delta: 'Draft' },
+      {
+        type: 'MESSAGES_SNAPSHOT',
+        messages: [
+          { id: 'unloaded-answer', role: 'assistant', content: 'Unloaded' },
+          ...loaded,
+          { id: 'answer', role: 'assistant', content: 'Replacement' },
+        ],
+      },
+      { type: 'TEXT_MESSAGE_CONTENT', messageId: 'answer', delta: ' complete' },
+      { type: 'TEXT_MESSAGE_END', messageId: 'answer' },
+      finish,
+    ]),
+    { submissionId: 'submission', history: () => loaded, accept }
+  );
+  const snapshot = accept.mock.calls.at(-1)?.[0];
+  expect(snapshot.messages).toEqual([
+    ...loaded,
+    { id: 'answer', role: 'assistant', content: 'Replacement complete' },
+  ]);
+  expect(snapshot.outputMessageIds).toEqual(['answer']);
+});
+
+it('does not accept a replacement that loses its trusted current user boundary', async () => {
+  await expect(
+    consumeAguiStream(
+      response([
+        start,
+        {
+          type: 'MESSAGES_SNAPSHOT',
+          messages: [
+            { id: 'answer', role: 'assistant', content: 'Unassociated' },
+          ],
+        },
+        finish,
+      ]),
+      { submissionId: 'submission', history, accept: jest.fn() }
+    )
+  ).rejects.toThrow('AGENT_RUN_INPUT_MISSING');
 });
 
 it('marks EOF without a terminal unknown instead of inventing success', async () => {
