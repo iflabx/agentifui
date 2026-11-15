@@ -1,5 +1,10 @@
 # LangChain Agent Integration
 
+For website configuration, follow the [administrator guide](ADMIN-GUIDE.md#langchain).
+For conversation and confirmation tasks, see the [user guide](USER-GUIDE.md).
+This document defines what the upstream service must implement; configuring a
+provider does not host or build the Agent.
+
 AgentifUI can connect an existing LangChain Agent service alongside Dify. It
 does not build or host agents. This integration targets a service exposing the
 AG-UI subset described here, plus LangGraph-style thread and run queries. A
