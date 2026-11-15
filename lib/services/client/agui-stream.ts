@@ -36,13 +36,34 @@ export async function consumeAguiStream(
   const decoder = new TextDecoder('utf-8', { fatal: true });
   let projection: AgentEventProjection | undefined;
   let acceptance: AgentAcceptance | undefined;
+  const loadedMessageIds = new Set<string>();
+  const historicalMessageIds = new Set<string>();
   let line = '';
   let data: string[] = [];
   let skipLineFeed = false;
   let frameBytes = 0;
   const publish = () => {
-    if (projection && acceptance)
-      input.accept(projection.snapshot(), acceptance);
+    if (!projection || !acceptance) return;
+    const snapshot = projection.snapshot();
+    const { userMessageId } = acceptance;
+    const hasInput = snapshot.messages.some(
+      message => message.id === userMessageId && message.role === 'user'
+    );
+    if (!hasInput) throw new AgentProtocolError('AGENT_RUN_INPUT_MISSING');
+    input.accept(
+      {
+        ...snapshot,
+        messages: snapshot.messages.filter(
+          message =>
+            !historicalMessageIds.has(message.id) ||
+            loadedMessageIds.has(message.id)
+        ),
+        outputMessageIds: snapshot.outputMessageIds.filter(
+          id => !historicalMessageIds.has(id)
+        ),
+      },
+      acceptance
+    );
   };
   const frame = () => {
     const payload = data.join('\n');
@@ -71,11 +92,22 @@ export async function consumeAguiStream(
         runId: event.runId,
         userMessageId: metadata.userMessageId,
       };
+      const history = input.history(acceptance);
+      for (const message of history) loadedMessageIds.add(message.id);
       projection = new AgentEventProjection({
         threadId: event.threadId,
         runId: event.runId,
-        history: input.history(acceptance),
+        history,
       });
+    }
+    if (event?.type === EventType.MESSAGES_SNAPSHOT && acceptance) {
+      const { userMessageId } = acceptance;
+      const boundary = event.messages.findIndex(
+        message => message.id === userMessageId && message.role === 'user'
+      );
+      if (boundary < 0) throw new AgentProtocolError('AGENT_RUN_INPUT_MISSING');
+      for (const message of event.messages.slice(0, boundary))
+        historicalMessageIds.add(message.id);
     }
     projection.accept(raw);
     publish();

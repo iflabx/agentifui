@@ -254,6 +254,15 @@ retries materialization. If the response is lost before acceptance, the client
 queries the retained submission ID and its authorized run instead of submitting
 another generation.
 
+The browser's loaded history can be a page of the producer's complete history.
+When a replacement snapshot introduces older unloaded entries, current output
+ownership stays after the trusted accepted user-message boundary; those historical
+entries are not relabeled as outputs of the current run or appended to the loaded
+page. This boundary is read from the incoming snapshot before reconciliation
+preserves existing display order. A replacement losing
+that boundary is rejected rather than guessing association. Durable output scope
+is still assigned exclusively by the server's complete-history projection.
+
 Authorized conversation lists and lookup responses derive `interaction_protocol`
 from an actual trusted binding, not writable conversation metadata or the current
 application opt-in. Sidebar, history, and direct conversation links select one
