@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { AgentApp } from './agent-app';
 import { AgentPolicyError } from './agent-backends';
+import { executeHumanInputRun } from './agent-human-input-execution';
 import {
   AgentRunError,
   type AgentRunRecord,
@@ -73,6 +74,8 @@ export function publicAgentRun(run: AgentRunRecord) {
     id: run.id,
     runId: run.id,
     conversationId: run.conversation_id,
+    ...(run.run_kind ? { runKind: run.run_kind } : {}),
+    ...(run.root_run_id ? { rootRunId: run.root_run_id } : {}),
     executionStatus: run.execution_status,
     persistenceStatus: run.persistence_status,
     ...(run.error_code ? { errorCode: run.error_code } : {}),
@@ -147,6 +150,7 @@ export async function executeAgentRun(input: {
     orphanThreadId?: string;
   }) => void;
 }): Promise<void> {
+  if (input.app.humanInput) return executeHumanInputRun(input);
   let run = input.run;
   const messages = new Map<string, AgentSavedMessage>();
   const tools = new Map<string, AgentToolSummary>();

@@ -13,8 +13,9 @@ wire proxy.
 ## Configure An Application
 
 Generation uses the common server-side identity, input moderation, quota and
-idempotency gate described in [Agent Governance](AGENT-GOVERNANCE.md). This does
-not implement AG-UI replay, human input or resume.
+idempotency gate described in [Agent Governance](AGENT-GOVERNANCE.md). Ordinary
+applications do not enable human input or resume. A separate, explicitly enabled
+native interrupt profile is described below; stream replay remains unsupported.
 
 1. Apply the database migrations using the deployment's usual migration process.
 2. In API configuration, create a provider whose base URL is reachable from every
@@ -81,9 +82,10 @@ timeout, malformed framing or inconsistent identifiers cannot produce a local
 successful result. The parser bounds frames, stream size and event counts.
 
 Tool parameters and raw tool results are not rendered. The first version shows
-only validated tool names and execution status. Files, human-in-the-loop input,
-frontend tools, arbitrary state synchronization, resumable streams and execution
-cancellation are not supported. Do not enable corresponding UI capabilities
+only validated tool names and execution status. Files, frontend tools, arbitrary
+state synchronization, resumable streams and execution cancellation are not
+supported. Human input requires the separate native profile below, not this
+legacy bridge. Do not enable corresponding UI capabilities
 merely because the upstream schema advertises additional endpoints.
 
 New tool summaries carry a local run identity, an optional mapped local parent
@@ -157,3 +159,44 @@ automatic upstream retries. Its timeout must accommodate the service runtime
 and API stream deadline. Every API replica needs the same database access,
 encryption configuration and upstream reachability. Validate fresh installation,
 incremental migration and multiple replicas with isolated data before rollout.
+
+## Optional Native Human Input
+
+A separate LangChain application may explicitly set
+`config.langchain.human_input: true` together with its configured `assistant_id`.
+Apply `20261115090000_add_agent_human_input.sql` before using this profile.
+Also apply `20261115100000_add_agent_resume_dispatch_fence.sql` in order; it
+permits only proven pre-dispatch claims to be released safely.
+Use a separate application rather than changing an existing conversation's
+execution profile. This opt-in requires an upstream service with the specific
+native interrupt contract; it does not make an arbitrary LangGraph deployment
+compatible.
+
+The service must advertise the configured assistant in `/capabilities` with
+`native_interrupt`, `native_resume`, `one_task_per_thread: true` and the
+`approve` / `reject` actions. The server uses native thread creation,
+`POST /threads/{thread}/runs/stream`, run lookup, run listing and
+`GET /threads/{thread}/state`, not `/ag-ui`. It sends only the new user input or
+the saved interrupt's `command.resume` map. The browser cannot supply native
+identifiers, checkpoints, commands or history.
+
+The supported prompt is version 1 of
+`agentifui.acceptance.confirmation`: one real interrupt, plain-text title and
+description, approve/reject, an optional bounded comment and a nullable
+`expires_at`. Multiple simultaneous interrupts and arbitrary forms are rejected,
+not silently reduced to one item. A native run reporting `success` while a real
+interrupt remains is a **waiting** segment, not a completed task. This profile
+accepts one task per conversation; start a new conversation for another task.
+
+The shared chat restores pending forms from the authorized conversation and
+records a decision in a separate resume run without adding a fake user question.
+The initial task uses the existing question quota once; each resume still needs
+current access, moderation and a free execution slot. Refresh and history are
+read-only and never submit a decision. Unknown acceptance is reconciled through
+bounded queries rather than automatic POST retries. Native service tokens do
+not replace website ownership or application permissions.
+
+See [AG-UI Integration](AGUI-INTEGRATION.md#human-input-product-boundary) for the
+product endpoints, states and compatibility boundary. This is a controlled
+single-interrupt profile, not a general approval engine or an exactly-once
+guarantee for arbitrary upstream side effects.

@@ -58,6 +58,17 @@ export function describeBackend(
   return {
     backendType,
     ...BACKENDS[backendType],
+    ...(backendType === 'langchain' &&
+    (config?.langchain as Record<string, unknown> | undefined)?.human_input ===
+      true
+      ? {
+          capabilities: {
+            ...BACKENDS.langchain.capabilities,
+            humanInput: true,
+          },
+          singleTask: true,
+        }
+      : {}),
     effectiveActions: {
       cancellation:
         BACKENDS[backendType].capabilities.cancellation &&

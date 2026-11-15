@@ -2770,6 +2770,17 @@
     "placeholder": "Send a text message to this Agent…",
     "confirmDelete": "Delete this local conversation? This does not delete the upstream Agent memory.",
     "deleteConversation": "Delete conversation",
-    "send": "Send"
+    "send": "Send",
+    "confirmationTitle": "確認が必要です",
+    "confirmationComment": "コメント（任意）",
+    "confirmationApprove": "承認",
+    "confirmationReject": "拒否",
+    "confirmationWaiting": "判断を待っています。まだ実行は承認されていません。",
+    "confirmationSubmitting": "送信中です。再送信しないでください。",
+    "confirmationAnswered": "判断を記録しました。",
+    "confirmationExpired": "この確認は期限切れです。",
+    "confirmationUnknown": "結果は未確認です。再送信せず、状態を確認してください。",
+    "confirmationSingleTask": "このエージェントは会話ごとに1件のタスクを処理します。別のタスクは新しい会話で開始してください。",
+    "confirmationNotDispatched": "回答は送信されませんでした。内容を確認して再試行できます。"
   }
 }

@@ -128,7 +128,10 @@ export function InstanceForm(props: InstanceFormProps) {
                     ...prev,
                     config: {
                       ...prev.config,
-                      langchain: { assistant_id: event.target.value },
+                      langchain: {
+                        ...prev.config.langchain,
+                        assistant_id: event.target.value,
+                      },
                     },
                   }))
                 }

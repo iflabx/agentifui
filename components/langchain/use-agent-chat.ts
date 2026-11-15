@@ -69,6 +69,8 @@ export function useAgentChat(
   const newDraftVersion = useRef(0);
   const [appName, setAppName] = useState('');
   const [textOnly, setTextOnly] = useState(false);
+  const [humanInput, setHumanInput] = useState(false);
+  const [singleTask, setSingleTask] = useState(false);
   const [newConversationsEnabled, setNewConversationsEnabled] = useState(true);
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -186,11 +188,15 @@ export function useAgentChat(
           app: { name: string };
           protocol?: string;
           interactionMode?: string;
+          capabilities?: { humanInput?: boolean };
+          singleTask?: boolean;
           newConversationsEnabled?: boolean;
         }>(appId, '', { signal: lifetime.signal });
         if (lifetime.signal.aborted) return;
         setAppName(result.app.name);
         setTextOnly(result.interactionMode === 'text-only');
+        setHumanInput(result.capabilities?.humanInput === true);
+        setSingleTask(result.singleTask === true);
         setNewConversationsEnabled(result.newConversationsEnabled !== false);
         defaultProtocol.current =
           result.protocol === 'ag-ui/1.0'
@@ -641,11 +647,17 @@ export function useAgentChat(
       if (version === navigationVersion.current) setLoadingMore(false);
     }
   };
+  const refresh = useCallback(async () => {
+    if (lastRouteConversation.current)
+      await load(lastRouteConversation.current);
+  }, [load]);
   return {
     view,
     draftScope,
     appName,
     textOnly,
+    humanInput,
+    singleTask,
     newConversationsEnabled,
     ready,
     busy,
@@ -658,6 +670,7 @@ export function useAgentChat(
     nextCursor,
     loadingMore,
     loadMore,
+    refresh,
     send,
     select,
     remove,

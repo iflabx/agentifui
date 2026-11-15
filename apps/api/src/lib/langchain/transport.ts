@@ -119,7 +119,11 @@ async function withRequest<T>(
   }
 }
 
-async function readJSON(response: Response, signal: AbortSignal) {
+async function readJSON(
+  response: Response,
+  signal: AbortSignal,
+  allowArray = false
+) {
   if (!response.body) {
     throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
   }
@@ -149,7 +153,11 @@ async function readJSON(response: Response, signal: AbortSignal) {
     const parsed: unknown = JSON.parse(
       new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))
     );
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    if (
+      !parsed ||
+      typeof parsed !== 'object' ||
+      (!allowArray && Array.isArray(parsed))
+    ) {
       throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
     }
     return parsed as Record<string, unknown>;
@@ -161,6 +169,111 @@ async function readJSON(response: Response, signal: AbortSignal) {
     void reader.cancel().catch(() => undefined);
     reader.releaseLock();
   }
+}
+
+export async function nativeJSON(
+  config: LangChainConfig,
+  path: string,
+  body?: Record<string, unknown>
+): Promise<unknown> {
+  return withRequest(
+    config,
+    path,
+    body === undefined
+      ? { method: 'GET' }
+      : { method: 'POST', body: JSON.stringify(body) },
+    undefined,
+    JSON_TIMEOUT_MS,
+    (response, signal) => readJSON(response, signal, true)
+  );
+}
+
+export async function streamNativeRun(
+  config: LangChainConfig,
+  threadId: string,
+  body: Record<string, unknown>,
+  onRun: (nativeRunId: string) => Promise<void>,
+  beforeDispatch: () => Promise<void>,
+  onDispatch: () => void
+): Promise<void> {
+  requireIds(threadId);
+  const serialized = JSON.stringify(body);
+  if (Buffer.byteLength(serialized, 'utf8') > 64 * 1024)
+    throw new LangChainUpstreamError('INVALID_REQUEST');
+  requestConfig(config, '/threads');
+  await beforeDispatch();
+  onDispatch();
+  return withRequest(
+    config,
+    `/threads/${encodeURIComponent(threadId)}/runs/stream`,
+    {
+      method: 'POST',
+      body: serialized,
+      headers: { Accept: 'text/event-stream' },
+    },
+    undefined,
+    STREAM_TIMEOUT_MS,
+    async (response, signal) => {
+      if (
+        !response.body ||
+        !response.headers.get('content-type')?.includes('text/event-stream')
+      )
+        throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8', { fatal: true });
+      let buffer = '';
+      let bytes = 0;
+      const abort = () => {
+        void reader.cancel().catch(() => undefined);
+      };
+      signal.addEventListener('abort', abort, { once: true });
+      try {
+        while (true) {
+          const part = await reader.read();
+          if (signal.aborted)
+            throw new LangChainUpstreamError('UPSTREAM_ABORTED');
+          if (part.done) break;
+          bytes += part.value.byteLength;
+          if (bytes > 4 * 1024 * 1024)
+            throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
+          buffer += decoder.decode(part.value, { stream: true });
+          let boundary: RegExpExecArray | null;
+          while ((boundary = /\r?\n\r?\n/.exec(buffer))) {
+            const frame = buffer.slice(0, boundary.index);
+            buffer = buffer.slice(boundary.index + boundary[0].length);
+            if (Buffer.byteLength(frame) > 256 * 1024)
+              throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
+            const lines = frame.split(/\r?\n/);
+            const event = lines
+              .find(line => line.startsWith('event:'))
+              ?.slice(6)
+              .trim();
+            const data = lines
+              .filter(line => line.startsWith('data:'))
+              .map(line => line.slice(5).trimStart())
+              .join('\n');
+            if (!data) continue;
+            if (event === 'metadata') {
+              const metadata = JSON.parse(data) as Record<string, unknown>;
+              if (!isLangChainId(metadata.run_id))
+                throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
+              await onRun(metadata.run_id);
+            }
+            if (event === 'error')
+              throw new LangChainUpstreamError('UPSTREAM_INCOMPLETE');
+          }
+          if (Buffer.byteLength(buffer) > 256 * 1024)
+            throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
+        }
+        if (buffer.trim())
+          throw new LangChainUpstreamError('UPSTREAM_INCOMPLETE');
+      } finally {
+        signal.removeEventListener('abort', abort);
+        void reader.cancel().catch(() => undefined);
+        reader.releaseLock();
+      }
+    }
+  );
 }
 
 export async function createThread(

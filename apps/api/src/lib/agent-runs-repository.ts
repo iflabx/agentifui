@@ -30,6 +30,7 @@ export type AgentExecutionStatus =
   | 'success'
   | 'error'
   | 'interrupted'
+  | 'waiting'
   | 'unknown';
 
 export interface AgentSavedMessage {
@@ -40,7 +41,7 @@ export interface AgentSavedMessage {
 }
 
 export interface AgentRunResult {
-  executionStatus: 'success' | 'error' | 'interrupted' | 'unknown';
+  executionStatus: 'success' | 'error' | 'interrupted' | 'unknown' | 'waiting';
   messages: AgentSavedMessage[];
   errorCode?: string;
   agui?: AgentProjectionSnapshot;
@@ -54,6 +55,8 @@ export interface AgentRunRecord extends QueryResultRow {
   submission_id: string;
   request_hash: string;
   user_message_id: string;
+  run_kind?: 'turn' | 'resume';
+  root_run_id?: string;
   native_run_id: string | null;
   execution_status: AgentExecutionStatus;
   persistence_status: 'pending' | 'saved' | 'failed';
@@ -94,13 +97,13 @@ export class AgentRunError extends Error {
 const ACTIVE_STATUSES = ['reserved', 'submitting', 'running', 'unknown'];
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const RUN_SELECT = `
+export const RUN_SELECT = `
   SELECT r.*, b.thread_id, b.backend_type, b.config_fingerprint,
-    m.sequence_index AS user_sequence_index
+    COALESCE(r.sequence_anchor, m.sequence_index) AS user_sequence_index
   FROM backend_runs r
   JOIN backend_conversations b ON b.conversation_id = r.conversation_id
   JOIN conversations c ON c.id = r.conversation_id
-  JOIN messages m ON m.id = r.user_message_id
+  LEFT JOIN messages m ON m.id = r.user_message_id
 `;
 
 function uuid(value: string): string {
@@ -130,7 +133,7 @@ async function storage<T>(operation: () => Promise<T>): Promise<T> {
   }
 }
 
-async function loadRun(
+export async function loadRun(
   client: PoolClient,
   runId: string,
   lock = false
@@ -199,6 +202,7 @@ async function requireLiveApplication(
   if (fingerprint !== input.configFingerprint) {
     throw new AgentRunError(409, 'AGENT_CONFIG_CHANGED');
   }
+  return app;
 }
 
 async function validateBinding(
@@ -263,7 +267,7 @@ export async function reserveRun(
         [`agent-app:${serviceId}`]
       );
       await requireActiveProfile(client, userId);
-      await requireLiveApplication(client, normalized);
+      const liveApp = await requireLiveApplication(client, normalized);
       const replay = await client.query<AgentRunRecord>(
         `${RUN_SELECT} WHERE r.user_id = $1::uuid AND r.service_instance_id = $2::uuid
         AND r.submission_id = $3::uuid FOR UPDATE OF r`,
@@ -300,9 +304,15 @@ export async function reserveRun(
       }
       if (conversationId) {
         await validateBinding(client, conversationId, normalized);
+        const singleTask = await client.query(
+          `SELECT conversation_id FROM backend_conversations WHERE conversation_id = $1::uuid AND human_input = TRUE`,
+          [conversationId]
+        );
+        if (singleTask.rows[0])
+          throw new AgentRunError(409, 'AGENT_SINGLE_TASK_CONVERSATION');
         const pending = await client.query(
           `SELECT id FROM backend_runs WHERE conversation_id = $1::uuid
-          AND (execution_status = ANY($2::text[]) OR persistence_status <> 'saved') LIMIT 1`,
+          AND (execution_status = ANY($2::text[]) OR execution_status = 'waiting' OR persistence_status <> 'saved') LIMIT 1`,
           [conversationId, ACTIVE_STATUSES]
         );
         if (pending.rows[0])
@@ -338,9 +348,17 @@ export async function reserveRun(
           ]
         );
         await client.query(
-          `INSERT INTO backend_conversations (conversation_id, service_instance_id, config_fingerprint, backend_type)
-         VALUES ($1::uuid, $2::uuid, $3, $4)`,
-          [allocatedId, serviceId, input.configFingerprint, backendType]
+          `INSERT INTO backend_conversations (conversation_id, service_instance_id, config_fingerprint, backend_type, human_input)
+         VALUES ($1::uuid, $2::uuid, $3, $4, $5)`,
+          [
+            allocatedId,
+            serviceId,
+            input.configFingerprint,
+            backendType,
+            backendType === 'langchain' &&
+              (liveApp.config?.langchain as Record<string, unknown> | undefined)
+                ?.human_input === true,
+          ]
         );
       }
       const messageId = randomUUID();
@@ -437,7 +455,7 @@ export async function recordNativeRun(
       const run = await loadRun(client, id, true);
       if (
         !run.thread_id ||
-        !['submitting', 'running'].includes(run.execution_status) ||
+        !['submitting', 'running', 'unknown'].includes(run.execution_status) ||
         (run.native_run_id !== null && run.native_run_id !== nativeRunId)
       ) {
         throw new AgentRunError(409, 'AGENT_RUN_STATE_CONFLICT');
@@ -484,14 +502,17 @@ export async function loadRunDisplayHistory(
         visible.rows.map(({ id, role, content }) => ({ id, role, content }))
       );
       const current = history.at(-1);
-      if (current?.id !== run.user_message_id || current.role !== 'user')
+      if (
+        run.run_kind !== 'resume' &&
+        (current?.id !== run.user_message_id || current.role !== 'user')
+      )
         throw new AgentRunError(409, 'AGENT_HISTORY_UNAVAILABLE');
       const prior = await client.query<{ id: string; result: AgentRunResult }>(
         `SELECT r.id::text, r.result FROM backend_runs r
-         JOIN messages m ON m.id = r.user_message_id
+         LEFT JOIN messages m ON m.id = r.user_message_id
          WHERE r.conversation_id = $1::uuid AND r.id <> $2::uuid
-           AND m.sequence_index < $3 AND r.persistence_status = 'saved'
-         ORDER BY m.sequence_index LIMIT $4`,
+           AND COALESCE(r.sequence_anchor, m.sequence_index) <= $3 AND r.persistence_status = 'saved'
+         ORDER BY COALESCE(r.sequence_anchor, m.sequence_index), r.created_at LIMIT $4`,
         [
           run.conversation_id,
           run.id,
@@ -525,7 +546,7 @@ export async function loadRunDisplayHistory(
 
 function normalizeResult(result: AgentRunResult): AgentRunResult {
   if (
-    !['success', 'error', 'interrupted', 'unknown'].includes(
+    !['success', 'error', 'interrupted', 'unknown', 'waiting'].includes(
       result.executionStatus
     ) ||
     !Array.isArray(result.messages) ||
@@ -562,6 +583,7 @@ function normalizeResult(result: AgentRunResult): AgentRunResult {
         error: 'failed',
         unknown: 'unknown',
         interrupted: 'interrupted',
+        waiting: 'interrupted',
       }[result.executionStatus];
       const outputs = new Set(agui.outputMessageIds);
       const projected = agui.messages.filter(
@@ -646,6 +668,10 @@ export async function saveRunResult(
         const run = await loadRun(client, id, true);
         if (run.persistence_status === 'saved') return run;
         if (!run.result) throw new AgentRunError(409, 'AGENT_RESULT_MISSING');
+        await client.query(
+          'SELECT id FROM conversations WHERE id = $1::uuid FOR UPDATE',
+          [run.conversation_id]
+        );
         for (const [index, message] of run.result.messages.entries()) {
           if (message.id === run.user_message_id)
             throw new AgentRunError(409, 'AGENT_MESSAGE_CONFLICT');

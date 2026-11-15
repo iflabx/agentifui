@@ -146,6 +146,7 @@ export interface ServiceInstanceConfig {
   interaction_protocol?: 'ag-ui/1.0';
   langchain?: {
     assistant_id: string;
+    human_input?: boolean;
   };
 
   // Dify API base URL

@@ -51,6 +51,9 @@ export function createInstanceFormDataFromInstance(
         ? {
             langchain: {
               assistant_id: instance.config?.langchain?.assistant_id || '',
+              ...(instance.config?.langchain?.human_input === true
+                ? { human_input: true }
+                : {}),
             },
           }
         : {}),
@@ -103,6 +106,9 @@ export function changeInstanceBackend(
         api_url: data.config.api_url,
         langchain: {
           assistant_id: data.config.langchain?.assistant_id || 'agent',
+          ...(data.config.langchain?.human_input === true
+            ? { human_input: true }
+            : {}),
         },
         app_metadata: {
           app_type: 'marketplace',

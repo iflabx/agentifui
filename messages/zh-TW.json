@@ -2770,6 +2770,17 @@
     "placeholder": "向此 Agent 傳送文字訊息…",
     "confirmDelete": "刪除此本機會話？這不會刪除上游 Agent 的執行記憶。",
     "deleteConversation": "刪除會話",
-    "send": "傳送"
+    "send": "傳送",
+    "confirmationTitle": "需要確認",
+    "confirmationComment": "說明（選填）",
+    "confirmationApprove": "同意",
+    "confirmationReject": "拒絕",
+    "confirmationWaiting": "等待你的決定，尚未批准執行。",
+    "confirmationSubmitting": "正在提交決定，請勿重複提交。",
+    "confirmationAnswered": "決定已記錄。",
+    "confirmationExpired": "此確認已過期。",
+    "confirmationUnknown": "結果尚未確認。請查詢狀態，不要重複提交。",
+    "confirmationSingleTask": "此 Agent 每個對話只處理一個任務。其他任務請建立新對話。",
+    "confirmationNotDispatched": "本次決定尚未傳送。請核對後手動重試。"
   }
 }
