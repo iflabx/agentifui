@@ -53,6 +53,92 @@ describe('independent agent chat lifecycle', () => {
     jest.useRealTimers();
   });
 
+  it.each(['legacy', 'ag-ui', 'failure'])(
+    'discards an old %s stream when the same account has a new login epoch',
+    async mode => {
+      let complete!: () => void;
+      if (mode === 'ag-ui') {
+        jest.mocked(agentRequest).mockResolvedValue({
+          app: { name: 'Test agent' },
+          protocol: 'ag-ui/1.0',
+        });
+        jest.mocked(consumeAguiStream).mockImplementationOnce(
+          async (_response, input) =>
+            new Promise<void>(resolve => {
+              complete = () => {
+                input.accept(
+                  {
+                    schemaVersion: 2,
+                    threadId: 'old-conversation',
+                    runId: 'old-run',
+                    status: 'succeeded',
+                    messages: [
+                      {
+                        id: 'old-answer',
+                        role: 'assistant',
+                        content: 'Old response',
+                      },
+                    ],
+                    outputMessageIds: ['old-answer'],
+                    warnings: [],
+                  },
+                  {
+                    conversationId: 'old-conversation',
+                    runId: 'old-run',
+                    userMessageId: 'old-question',
+                  }
+                );
+                resolve();
+              };
+            })
+        );
+      }
+      jest.mocked(consumeAgentStream).mockImplementation(
+        async (_response, emit) =>
+          new Promise<void>((resolve, reject) => {
+            complete = () => {
+              if (mode === 'failure') {
+                reject(new Error('Old stream failed'));
+                return;
+              }
+              emit({
+                type: 'accepted',
+                conversationId: 'old-conversation',
+                runId: 'old-run',
+                userMessageId: 'old-question',
+              });
+              emit({
+                type: 'text',
+                messageId: 'old-answer',
+                delta: 'Old response',
+              });
+              resolve();
+            };
+          })
+      );
+      const { result } = renderHook(() =>
+        useAgentChat('app-uuid', null, 'test-actor')
+      );
+      await waitFor(() => expect(result.current.ready).toBe(true));
+      let work!: Promise<unknown>;
+      act(() => {
+        work = result.current.send('Old question');
+      });
+      await waitFor(() => expect(complete).toBeDefined());
+      const signal = jest.mocked(global.fetch).mock.calls[0][1]?.signal;
+      act(() => useLangchainDraftStore.getState().setActor('test-actor', true));
+      await act(async () => {
+        complete();
+        await work;
+      });
+      expect(signal?.aborted).toBe(true);
+      expect(window.location.search).toBe('');
+      expect(result.current.view.messages).toEqual([]);
+      expect(result.current.error).toBeNull();
+      expect(conversationEvents.emit).not.toHaveBeenCalled();
+    }
+  );
+
   it('retains a streamed answer during failed persistence, bounds polling and recovers only the same saved run', async () => {
     let saved = false;
     let checks = 0;

@@ -7,6 +7,7 @@ import {
   DateFormatPresets,
   useDateFormatter,
 } from '@lib/hooks/use-date-formatter';
+import { useChatInputStore } from '@lib/stores/chat-input-store';
 import { useDropdownStore } from '@lib/stores/ui/dropdown-store';
 import { Conversation } from '@lib/types/database';
 import { cn } from '@lib/utils';
@@ -75,6 +76,18 @@ export function HistoryList({
   selectedConversations = new Set(),
   onSelectConversation,
 }: HistoryListProps): React.ReactElement {
+  const actorEpoch = React.useRef(
+    useChatInputStore.getState().actorEpoch
+  ).current;
+  const mounted = React.useRef(false);
+  React.useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const isCurrentActor = () =>
+    mounted.current && useChatInputStore.getState().actorEpoch === actorEpoch;
   const t = useTranslations('history');
   const { formatDate } = useDateFormatter();
 
@@ -94,11 +107,12 @@ export function HistoryList({
   };
 
   const handleRenameConfirm = async (newTitle: string) => {
-    if (!selectedConversation?.id) return;
+    if (!isCurrentActor() || !selectedConversation?.id) return;
 
     setIsOperating(true);
     try {
       const success = await onRename(selectedConversation.id, newTitle.trim());
+      if (!isCurrentActor()) return;
 
       if (success) {
         // Refresh list to display new title
@@ -112,9 +126,10 @@ export function HistoryList({
         alert(t('operations.renameFailed'));
       }
     } catch {
+      if (!isCurrentActor()) return;
       alert(t('operations.error'));
     } finally {
-      setIsOperating(false);
+      if (isCurrentActor()) setIsOperating(false);
     }
   };
 
@@ -127,11 +142,12 @@ export function HistoryList({
   };
 
   const handleDeleteConfirm = async () => {
-    if (!selectedConversation?.id) return;
+    if (!isCurrentActor() || !selectedConversation?.id) return;
 
     setIsOperating(true);
     try {
       const success = await onDelete(selectedConversation.id);
+      if (!isCurrentActor()) return;
 
       if (success) {
         // Refresh list to update display
@@ -144,9 +160,10 @@ export function HistoryList({
         alert(t('operations.deleteFailed'));
       }
     } catch {
+      if (!isCurrentActor()) return;
       alert(t('operations.error'));
     } finally {
-      setIsOperating(false);
+      if (isCurrentActor()) setIsOperating(false);
     }
   };
 

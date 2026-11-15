@@ -29,6 +29,97 @@ const snapshot: AgentProjectionSnapshot = {
   outputMessageIds: ['tool', 'answer'],
 };
 
+it.each(['pending', 'failed', 'saved'])(
+  'keeps an earlier tool-only turn before the next user message in live and %s history',
+  persistenceStatus => {
+    const first: AgentProjectionSnapshot = {
+      ...snapshot,
+      messages: snapshot.messages.slice(0, 2),
+      outputMessageIds: ['tool'],
+    };
+    const second: AgentProjectionSnapshot = {
+      ...snapshot,
+      runId: 'second-run',
+      messages: [
+        ...first.messages,
+        { id: 'second-user', role: 'user', content: 'Next question' },
+        { id: 'second-answer', role: 'assistant', content: 'Next answer' },
+      ],
+      outputMessageIds: ['second-answer'],
+    };
+    const initial = projectAgentView({ messages: [], tools: [] }, first);
+    const live = projectAgentView(initial, second);
+    const displayIds = (view: ReturnType<typeof projectAgentView>) =>
+      agentTimeline(view).map(item =>
+        item.type === 'message' ? item.message.id : item.tool.toolCallId
+      );
+    expect(initial.messages.map(message => message.role)).toEqual(['user']);
+    expect(displayIds(live)).toEqual([
+      'user',
+      'tool',
+      'second-user',
+      'second-answer',
+    ]);
+    const restored = restoreAgentView({
+      conversationId: 'thread',
+      messages: live.messages,
+      runs: [
+        {
+          id: 'second-run',
+          executionStatus: 'success',
+          persistenceStatus: 'saved',
+          agui: second,
+        },
+        {
+          id: 'run',
+          executionStatus: 'success',
+          persistenceStatus,
+          agui: first,
+        },
+      ],
+    });
+    expect(displayIds(restored)).toEqual(displayIds(live));
+    expect(restored.messages).toHaveLength(3);
+  }
+);
+
+it('preserves multiple tool-only turns and repeated snapshots without inventing assistant placeholders', () => {
+  const first = {
+    ...snapshot,
+    messages: snapshot.messages.slice(0, 2),
+    outputMessageIds: ['tool'],
+  };
+  const second: AgentProjectionSnapshot = {
+    ...snapshot,
+    runId: 'second-run',
+    messages: [
+      ...first.messages,
+      { id: 'second-user', role: 'user', content: 'Next' },
+      {
+        id: 'second-tool',
+        role: 'activity',
+        activityType: AGUI_TOOL_SUMMARY,
+        content: { name: 'search', status: 'completed' },
+      },
+    ],
+    outputMessageIds: ['second-tool'],
+  };
+  const live = projectAgentView(
+    projectAgentView({ messages: [], tools: [] }, first),
+    second
+  );
+  const repeated = projectAgentView(live, second);
+  expect(
+    agentTimeline(repeated).map(item =>
+      item.type === 'message' ? item.message.id : item.tool.toolCallId
+    )
+  ).toEqual(['user', 'tool', 'second-user', 'second-tool']);
+  expect(repeated.messages.every(message => message.role === 'user')).toBe(
+    true
+  );
+  expect(repeated.tools).toHaveLength(2);
+});
+
 it('uses canonical content and inert tool summaries while leaving persistence pending', () => {
   const view = projectAgentView({ messages: [], tools: [] }, snapshot);
   expect(view.messages.map(message => message.content)).toEqual([
@@ -42,6 +133,7 @@ it('uses canonical content and inert tool summaries while leaving persistence pe
       status: 'completed',
       runId: 'run',
       order: 1,
+      afterMessageId: 'user',
     },
   ]);
   expect(view.run).toMatchObject({

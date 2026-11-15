@@ -6,7 +6,6 @@ import {
 } from '@components/langchain/routing';
 import {
   type SidebarRecentItem,
-  getDisplayConversations,
   getMoreActionsOpacityClass,
   getPendingChats,
   getSavedRecentItems,
@@ -21,7 +20,6 @@ import { InputDialog } from '@components/ui/input-dialog';
 import { MoreButtonV2 } from '@components/ui/more-button-v2';
 import {
   type CombinedConversation,
-  conversationEvents,
   useCombinedConversations,
 } from '@lib/hooks/use-combined-conversations';
 import {
@@ -33,6 +31,7 @@ import {
   renameConversation,
 } from '@lib/services/client/conversations-api';
 import { agentRequest } from '@lib/services/client/langchain-api';
+import { useChatInputStore } from '@lib/stores/chat-input-store';
 import { usePendingConversationStore } from '@lib/stores/pending-conversation-store';
 import { cn } from '@lib/utils';
 import { FileText, MessageSquare, Pen, Trash, Workflow } from 'lucide-react';
@@ -61,12 +60,43 @@ function getRecentItemIcon(item: SidebarRecentItem) {
   return FileText;
 }
 
-export function SidebarChatList({
+function removeSelectedPending(conversation: CombinedConversation) {
+  const pending = usePendingConversationStore.getState();
+  for (const item of pending.pendingConversations.values())
+    if (
+      item.tempId === conversation.tempId ||
+      item.realId === conversation.id ||
+      item.db_pk === conversation.db_pk
+    )
+      pending.removePending(item.tempId);
+}
+
+export function SidebarChatList(props: SidebarChatListProps) {
+  const actorEpoch = useChatInputStore(state => state.actorEpoch);
+  return (
+    <ActorSidebarChatList key={actorEpoch} {...props} actorEpoch={actorEpoch} />
+  );
+}
+
+function ActorSidebarChatList({
   contentVisible,
   selectedId,
   onSelectChat,
   onSelectTaskExecution,
-}: SidebarChatListProps) {
+  actorEpoch,
+}: SidebarChatListProps & { actorEpoch: number }) {
+  const mounted = React.useRef(false);
+  React.useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const isCurrentActor = React.useCallback(
+    () =>
+      mounted.current && useChatInputStore.getState().actorEpoch === actorEpoch,
+    [actorEpoch]
+  );
   const router = useRouter();
   const t = useTranslations('sidebar');
   const {
@@ -91,40 +121,7 @@ export function SidebarChatList({
   const [openDropdownId, setOpenDropdownId] = React.useState<string | null>(
     null
   );
-  const [prevLoadedConversations, setPrevLoadedConversations] = React.useState<
-    CombinedConversation[]
-  >([]);
-
-  React.useEffect(() => {
-    if (!isLoadingConversations && conversations.length > 0) {
-      setPrevLoadedConversations(conversations);
-    }
-  }, [isLoadingConversations, conversations]);
-
-  React.useEffect(() => {
-    const prevIds = new Set(prevLoadedConversations.map(conv => conv.id));
-    const currentIds = new Set(conversations.map(conv => conv.id));
-    const disappearedIds = Array.from(prevIds).filter(
-      id => !currentIds.has(id)
-    );
-
-    if (disappearedIds.length > 0) {
-      console.log(
-        `[SidebarChatList] Detected ${disappearedIds.length} conversations pushed out:`,
-        disappearedIds
-      );
-    }
-  }, [conversations, prevLoadedConversations]);
-
-  const displayConversations = React.useMemo(
-    () =>
-      getDisplayConversations(
-        isLoadingConversations,
-        conversations,
-        prevLoadedConversations
-      ),
-    [isLoadingConversations, conversations, prevLoadedConversations]
-  );
+  const displayConversations = conversations;
 
   const pendingChats = React.useMemo(
     () => getPendingChats(displayConversations),
@@ -141,6 +138,7 @@ export function SidebarChatList({
 
   const handleRename = React.useCallback(
     async (chatId: string) => {
+      if (!isCurrentActor()) return;
       const conversation = conversations.find(c => c.id === chatId);
       if (!conversation) {
         return;
@@ -149,12 +147,12 @@ export function SidebarChatList({
       setSelectedConversation(conversation);
       setShowRenameDialog(true);
     },
-    [conversations]
+    [conversations, isCurrentActor]
   );
 
   const handleRenameConfirm = React.useCallback(
     async (newTitle: string) => {
-      if (!selectedConversation) {
+      if (!selectedConversation || !isCurrentActor()) {
         return;
       }
 
@@ -168,27 +166,29 @@ export function SidebarChatList({
       setIsOperating(true);
       try {
         const result = await renameConversation(dbPK, newTitle.trim());
+        if (!isCurrentActor()) return;
 
         if (result.success) {
           refresh();
-          conversationEvents.emit();
           setShowRenameDialog(false);
         } else {
           console.error('Rename conversation failed:', result.error);
           alert(t('operationFailed'));
         }
       } catch (error) {
+        if (!isCurrentActor()) return;
         console.error('Rename conversation operation failed:', error);
         alert(t('operationFailed'));
       } finally {
-        setIsOperating(false);
+        if (isCurrentActor()) setIsOperating(false);
       }
     },
-    [refresh, selectedConversation, t]
+    [refresh, selectedConversation, t, isCurrentActor]
   );
 
   const handleDelete = React.useCallback(
     async (chatId: string) => {
+      if (!isCurrentActor()) return;
       const conversation = conversations.find(c => c.id === chatId);
       if (!conversation) {
         return;
@@ -197,11 +197,11 @@ export function SidebarChatList({
       setSelectedConversation(conversation);
       setShowDeleteDialog(true);
     },
-    [conversations]
+    [conversations, isCurrentActor]
   );
 
   const handleDeleteConfirm = React.useCallback(async () => {
-    if (!selectedConversation) {
+    if (!selectedConversation || !isCurrentActor()) {
       return;
     }
 
@@ -221,8 +221,9 @@ export function SidebarChatList({
           `/conversations/${encodeURIComponent(dbPK)}`,
           { method: 'DELETE' }
         );
+        if (!isCurrentActor()) return;
+        removeSelectedPending(selectedConversation);
         refresh();
-        conversationEvents.emit();
         if (
           isCurrentLangchainConversation(
             window.location.href,
@@ -235,10 +236,11 @@ export function SidebarChatList({
         return;
       }
       const result = await deleteConversation(dbPK);
+      if (!isCurrentActor()) return;
 
       if (result.success) {
+        removeSelectedPending(selectedConversation);
         refresh();
-        conversationEvents.emit();
         if (selectedId === selectedConversation.id) {
           window.location.href = '/chat/new';
         }
@@ -248,12 +250,13 @@ export function SidebarChatList({
         alert(t('operationFailed'));
       }
     } catch (error) {
+      if (!isCurrentActor()) return;
       console.error('Delete conversation operation failed:', error);
       alert(t('operationFailed'));
     } finally {
-      setIsOperating(false);
+      if (isCurrentActor()) setIsOperating(false);
     }
-  }, [refresh, selectedConversation, selectedId, t, router]);
+  }, [refresh, selectedConversation, selectedId, t, router, isCurrentActor]);
 
   const isRecentItemActive = React.useCallback(
     (chat: SidebarRecentItem) => {

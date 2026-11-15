@@ -27,6 +27,7 @@ interface AgentChatProps {
 }
 
 export function AgentChat(props: AgentChatProps) {
+  const actorEpoch = useLangchainDraftStore(state => state.actorEpoch);
   const { session, loading } = useAuthSession();
   const t = useTranslations('langchain');
   const actorId = session?.user.id ?? null;
@@ -41,7 +42,7 @@ export function AgentChat(props: AgentChatProps) {
     );
   return (
     <AgentChatSession
-      key={JSON.stringify([session.user.id, props.appId])}
+      key={JSON.stringify([session.user.id, props.appId, actorEpoch])}
       {...props}
       actorId={session.user.id}
       authLoading={loading}

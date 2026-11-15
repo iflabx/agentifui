@@ -37,6 +37,24 @@ export function projectAgentView(
   const ordinals = new Map(
     ordering.map((message, index) => [message.id, index])
   );
+  const anchors = new Map<
+    string,
+    { afterMessageId?: string; beforeMessageId?: string }
+  >();
+  let previousMessageId: string | undefined;
+  for (const message of ordering) {
+    if (message.role === 'user' || message.role === 'assistant')
+      previousMessageId = message.id;
+    else if (previousMessageId)
+      anchors.set(message.id, { afterMessageId: previousMessageId });
+  }
+  let nextMessageId: string | undefined;
+  for (const message of [...ordering].reverse()) {
+    if (message.role === 'user' || message.role === 'assistant')
+      nextMessageId = message.id;
+    else if (!anchors.has(message.id) && nextMessageId)
+      anchors.set(message.id, { beforeMessageId: nextMessageId });
+  }
   for (const message of snapshot.messages) {
     const order = ordinals.get(message.id);
     if (
@@ -50,6 +68,7 @@ export function projectAgentView(
           status: String(message.content.status),
           runId: snapshot.runId,
           order,
+          ...anchors.get(message.id),
           ...(typeof message.content.parentMessageId === 'string'
             ? { messageId: message.content.parentMessageId }
             : {}),

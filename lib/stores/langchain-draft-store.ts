@@ -35,7 +35,7 @@ interface LangchainDraftState {
     submissionId: string,
     accepted?: boolean
   ) => void;
-  setActor: (actorId: string | null) => void;
+  setActor: (actorId: string | null, reset?: boolean) => void;
   selectScope: (appId: string, target: string, fresh: boolean) => string | null;
   bindConversation: (
     scope: string,
@@ -88,8 +88,8 @@ export const useLangchainDraftStore = create<LangchainDraftState>(
       delete next[JSON.stringify([pending.appId, pending.target])];
       set({ pendingSubmissions: next });
     },
-    setActor: actorId => {
-      if (get().actorId === actorId) return;
+    setActor: (actorId, reset = false) => {
+      if (get().actorId === actorId && !reset) return;
       set(state => ({
         actorId,
         actorEpoch: state.actorEpoch + 1,

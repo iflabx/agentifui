@@ -194,7 +194,7 @@ export const usePendingConversationStore = create<PendingConversationState>(
         if (!newMap.has(id)) {
           // If id is not a tempId, try to find by realId
           for (const [key, value] of newMap.entries()) {
-            if (value.realId === id) {
+            if (value.realId === id || value.db_pk === id) {
               keyToDelete = key; // Found the corresponding tempId
               break;
             }

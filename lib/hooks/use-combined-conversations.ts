@@ -6,14 +6,13 @@
  * 2. Temporary conversations from the frontend store (via usePendingConversationStore)
  *
  */
-import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
 import {
   PendingConversation,
   usePendingConversationStore,
 } from '@lib/stores/pending-conversation-store';
 import { Conversation } from '@lib/types/database';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 
 import { useSidebarConversations } from './use-sidebar-conversations';
 
@@ -51,45 +50,23 @@ export function useCombinedConversations() {
     isLoading: isDbLoading,
     error: dbError,
     refresh: refreshDbConversations,
+    userId: currentUserId,
   } = useSidebarConversations(20);
-
-  // Get the current logged-in user ID
-  const { session } = useAuthSession();
-  const currentUserId = session?.user?.id;
 
   // Get the temporary conversation list
   // Use useEffect to listen for changes in the pendingConversationStore
   const pendingConversations = usePendingConversationStore(
     state => state.pendingConversations
   );
-  const [pendingArray, setPendingArray] = useState<PendingConversation[]>([]);
-
-  // Listen for changes in pendingConversations and update pendingArray accordingly
-  useEffect(() => {
-    setPendingArray(Array.from(pendingConversations.values()));
-  }, [pendingConversations]);
-
-  // Store the previous combined conversation list to avoid flicker when switching routes
-  const [prevCombinedConversations, setPrevCombinedConversations] = useState<
-    CombinedConversation[]
-  >([]);
+  const pendingArray = useMemo(
+    () => (currentUserId ? Array.from(pendingConversations.values()) : []),
+    [pendingConversations, currentUserId]
+  );
 
   // Combine database and temporary conversations
   const combinedConversations = useMemo(() => {
     const finalConversations: CombinedConversation[] = [];
     const dbConvsRealIds = new Set<string>();
-
-    // If both database and temporary conversations are empty, but there is a previous combined list, return the previous list to avoid sidebar flicker
-    if (
-      dbConversations.length === 0 &&
-      pendingArray.length === 0 &&
-      prevCombinedConversations.length > 0
-    ) {
-      console.log(
-        '[useCombinedConversations] Both database and temporary conversations are empty, using previous combined conversation list'
-      );
-      return prevCombinedConversations;
-    }
 
     // 1. Process database conversations
     dbConversations.forEach(dbConv => {
@@ -209,9 +186,6 @@ export function useCombinedConversations() {
 
   // Refresh function
   const refresh = () => {
-    refreshDbConversations();
-    // Force refresh pendingArray
-    setPendingArray(Array.from(pendingConversations.values()));
     // Emit global refresh event to notify other components that data has been updated
     conversationEvents.emit();
   };
@@ -220,7 +194,6 @@ export function useCombinedConversations() {
   useEffect(() => {
     const unsubscribe = conversationEvents.subscribe(() => {
       refreshDbConversations();
-      setPendingArray(Array.from(pendingConversations.values()));
     });
 
     return () => {
@@ -307,13 +280,6 @@ export function useCombinedConversations() {
       clearInterval(intervalId);
     };
   }, [dbConversations, pendingArray]);
-
-  // When the combined conversation list updates, save the current state for sidebar stability during route changes
-  useEffect(() => {
-    if (combinedConversations.length > 0) {
-      setPrevCombinedConversations(combinedConversations);
-    }
-  }, [combinedConversations]);
 
   return {
     conversations: combinedConversations,

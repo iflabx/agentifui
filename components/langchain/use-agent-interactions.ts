@@ -7,6 +7,7 @@ import {
   agentRequest,
   agentRunSettled,
 } from '@lib/services/client/langchain-api';
+import { useLangchainDraftStore } from '@lib/stores/langchain-draft-store';
 
 import { useEffect, useRef, useState } from 'react';
 
@@ -31,8 +32,10 @@ export function useAgentInteractions(input: {
   revision: string;
   onUpdated: () => Promise<unknown>;
 }) {
+  const actorEpoch = useLangchainDraftStore(state => state.actorEpoch);
   const scope = JSON.stringify([
     input.actorId,
+    actorEpoch,
     input.appId,
     input.conversationId,
     input.enabled,
@@ -90,7 +93,9 @@ export function useAgentInteractions(input: {
     let timer: ReturnType<typeof setTimeout>;
     let attempts = 0;
     const current = () =>
-      !abort.signal.aborted && generation.current === version;
+      !abort.signal.aborted &&
+      generation.current === version &&
+      useLangchainDraftStore.getState().actorEpoch === actorEpoch;
     const check = async () => {
       try {
         const result = await agentRequest<{
@@ -205,6 +210,7 @@ export function useAgentInteractions(input: {
     };
   }, [
     scope,
+    actorEpoch,
     input.appId,
     input.conversationId,
     input.enabled,
@@ -229,6 +235,7 @@ export function useAgentInteractions(input: {
   ) => {
     if (
       !input.enabled ||
+      useLangchainDraftStore.getState().actorEpoch !== actorEpoch ||
       !input.conversationId ||
       activeScope.current !== scope ||
       submitting.current ||
@@ -271,7 +278,11 @@ export function useAgentInteractions(input: {
           }),
         }
       );
-      if (generation.current !== version) return;
+      if (
+        generation.current !== version ||
+        useLangchainDraftStore.getState().actorEpoch !== actorEpoch
+      )
+        return;
       uncertain.current = {
         scope,
         id,
@@ -279,7 +290,11 @@ export function useAgentInteractions(input: {
       };
       setState(previous => ({ ...previous, uncertainId: id }));
     } catch (failure) {
-      if (generation.current !== version) return;
+      if (
+        generation.current !== version ||
+        useLangchainDraftStore.getState().actorEpoch !== actorEpoch
+      )
+        return;
       const rejected =
         failure instanceof AgentRequestError &&
         ([400, 401, 403, 404, 422, 429].includes(failure.status) ||
@@ -296,7 +311,10 @@ export function useAgentInteractions(input: {
         ...(rejected ? {} : { uncertainId: id }),
       }));
     } finally {
-      if (generation.current === version) {
+      if (
+        generation.current === version &&
+        useLangchainDraftStore.getState().actorEpoch === actorEpoch
+      ) {
         submitting.current = false;
         setState(previous => ({ ...previous, submittingId: undefined }));
         setCheckVersion(previous => previous + 1);

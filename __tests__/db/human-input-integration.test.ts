@@ -9,10 +9,12 @@ import { resolveAgentApp } from '../../apps/api/src/lib/agent-app';
 import { moderateInputText } from '../../apps/api/src/lib/agent-input-moderation';
 import {
   getInteractionForActor,
+  getInteractionResponseReplay,
   markResumeSubmitting,
   releaseUndispatchedResume,
   reserveInteractionResponse,
 } from '../../apps/api/src/lib/agent-interactions-repository';
+import { markSubmissionSubmitting } from '../../apps/api/src/lib/agent-submissions';
 import { getPgPool } from '../../apps/api/src/lib/pg-context';
 import { createApiServer } from '../../apps/api/src/server';
 import { resolveTestDatabaseUrl } from './helpers/test-database-url';
@@ -24,6 +26,22 @@ jest.mock('../../apps/api/src/lib/error-events', () => ({
 jest.mock('../../apps/api/src/lib/agent-input-moderation', () => ({
   moderateInputText: jest.fn(),
 }));
+jest.mock('../../apps/api/src/lib/agent-interactions-repository', () => {
+  const actual = jest.requireActual(
+    '../../apps/api/src/lib/agent-interactions-repository'
+  );
+  return {
+    ...actual,
+    getInteractionResponseReplay: jest.fn(actual.getInteractionResponseReplay),
+  };
+});
+jest.mock('../../apps/api/src/lib/agent-submissions', () => {
+  const actual = jest.requireActual('../../apps/api/src/lib/agent-submissions');
+  return {
+    ...actual,
+    markSubmissionSubmitting: jest.fn(actual.markSubmissionSubmitting),
+  };
+});
 jest.setTimeout(30000);
 
 const environment = { ...process.env };
@@ -451,6 +469,20 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  jest
+    .mocked(markSubmissionSubmitting)
+    .mockReset()
+    .mockImplementation(
+      jest.requireActual('../../apps/api/src/lib/agent-submissions')
+        .markSubmissionSubmitting
+    );
+  jest
+    .mocked(getInteractionResponseReplay)
+    .mockReset()
+    .mockImplementation(
+      jest.requireActual('../../apps/api/src/lib/agent-interactions-repository')
+        .getInteractionResponseReplay
+    );
   calls.length = 0;
   loseResumeResponse = false;
   holdResume = false;
@@ -472,6 +504,77 @@ beforeEach(async () => {
     'INSERT INTO group_members(group_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
     [group, actors[0]]
   );
+});
+
+it('keeps first-turn quota and concurrency reserved after a persisted dispatch claim loses its acknowledgment', async () => {
+  const actual = jest.requireActual<
+    typeof import('../../apps/api/src/lib/agent-submissions')
+  >('../../apps/api/src/lib/agent-submissions');
+  jest.mocked(markSubmissionSubmitting).mockImplementationOnce(async taskId => {
+    await actual.markSubmissionSubmitting(taskId);
+    throw new Error('synthetic lost COMMIT acknowledgment');
+  });
+  const response = await servers[0].inject({
+    method: 'POST',
+    url: endpoint('/runs'),
+    headers: {
+      cookie: `session_token=${tokens[0]}`,
+      'x-agentifui-protocol': 'ag-ui/1.0',
+    },
+    payload: {
+      submissionId: randomUUID(),
+      content: 'Synthetic first-turn claim.',
+    },
+  });
+  expect(response.statusCode).toBe(200);
+  const rows = await database.query(
+    'SELECT * FROM backend_runs WHERE user_id=$1',
+    [actors[0]]
+  );
+  expect(rows.rows).toHaveLength(1);
+  const run = rows.rows[0];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    expect((await request(`/runs/${run.id}`)).statusCode).toBe(200);
+    expect(await stored(run.id)).toMatchObject({
+      execution_status: 'unknown',
+      persistence_status: 'pending',
+      result: null,
+    });
+    expect(
+      (
+        await database.query(
+          'SELECT state,quota_state FROM agent_submissions WHERE run_id=$1',
+          [run.id]
+        )
+      ).rows[0]
+    ).toMatchObject({ state: 'unknown', quota_state: 'reserved' });
+    expect(
+      (
+        await database.query(
+          'SELECT used_count FROM group_app_permissions WHERE id=$1',
+          [permission]
+        )
+      ).rows[0].used_count
+    ).toBe(0);
+  }
+  const next = await servers[0].inject({
+    method: 'POST',
+    url: endpoint('/runs'),
+    headers: {
+      cookie: `session_token=${tokens[0]}`,
+      'x-agentifui-protocol': 'ag-ui/1.0',
+    },
+    payload: {
+      submissionId: randomUUID(),
+      content: 'Must not bypass unknown occupancy.',
+    },
+  });
+  expect(next.statusCode).toBe(429);
+  expect(
+    calls.filter(
+      call => call.method === 'POST' && call.path.endsWith('/runs/stream')
+    )
+  ).toHaveLength(0);
 });
 
 afterEach(async () => {
@@ -754,6 +857,88 @@ it('keeps unknown capacity and never retries an unresolved answer, even with an 
     (await stored(response.json().run.id)).execution_status
   );
 });
+
+it.each([
+  ['block', 400, 'CONTENT_MODERATION_BLOCKED'],
+  ['unavailable', 503, 'CONTENT_MODERATION_UNAVAILABLE'],
+] as const)(
+  'audits a new answer after a stale claimed read and a real release (%s)',
+  async (outcome, status, code) => {
+    const task = await start();
+    const prepared = await reservePrepared(task);
+    const newSubmission = randomUUID();
+    const quotaBefore = (
+      await database.query(
+        'SELECT used_count FROM group_app_permissions WHERE id=$1',
+        [permission]
+      )
+    ).rows[0].used_count;
+    const originalReplay = jest.requireActual(
+      '../../apps/api/src/lib/agent-interactions-repository'
+    ).getInteractionResponseReplay as typeof getInteractionResponseReplay;
+    jest
+      .mocked(getInteractionResponseReplay)
+      .mockImplementationOnce(async input => {
+        expect(input.response.submissionId).toBe(newSubmission);
+        expect(await originalReplay(input)).toBeNull();
+        expect(await releaseUndispatchedResume(prepared.run.id)).toBe(true);
+        return null;
+      });
+    jest
+      .mocked(moderateInputText)
+      .mockClear()
+      .mockResolvedValue({ outcome } as Awaited<
+        ReturnType<typeof moderateInputText>
+      >);
+    const response = await respond(
+      task.interaction.id,
+      {
+        submissionId: newSubmission,
+        action: 'approve',
+        comment: 'New comment from the competing response',
+      },
+      0,
+      1
+    );
+    expect(response.statusCode).toBe(status);
+    expect(response.json().app_error.code).toBe(code);
+    expect(moderateInputText).toHaveBeenCalledTimes(1);
+    expect(moderateInputText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: 'New comment from the competing response',
+      })
+    );
+    expect(resumePosts()).toHaveLength(0);
+    expect(
+      (
+        await database.query(
+          'SELECT id FROM backend_runs WHERE submission_id=$1',
+          [newSubmission]
+        )
+      ).rows
+    ).toHaveLength(0);
+    const interaction = await getInteractionForActor(
+      prepared.app,
+      actors[0],
+      task.interaction.id
+    );
+    expect(interaction).toMatchObject({
+      status: 'pending',
+      submission_id: null,
+      request_hash: null,
+      decision: null,
+      resume_run_id: null,
+    });
+    expect(
+      (
+        await database.query(
+          'SELECT used_count FROM group_app_permissions WHERE id=$1',
+          [permission]
+        )
+      ).rows[0].used_count
+    ).toBe(quotaBefore);
+  }
+);
 
 it('rejects other users, invalid schemas and blocked comments before consuming the pending item', async () => {
   const task = await start();

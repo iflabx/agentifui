@@ -96,7 +96,7 @@ export function getSessionCacheSnapshot(): {
 
 export function setSessionCacheResolved(value: BetterAuthSession | null): void {
   if (typeof window !== 'undefined')
-    syncChatDraftActor(value?.user?.id || null);
+    syncChatDraftActor(value?.user?.id || null, value?.session?.id);
   sessionCacheValue = value;
   sessionCacheAt = Date.now();
   sessionBackoffUntil = 0;

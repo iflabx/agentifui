@@ -4,13 +4,14 @@ import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
 import { conversationEvents } from '@lib/hooks/use-combined-conversations';
 import { getUserExecutions } from '@lib/services/client/app-executions-api';
 import { useAppListStore } from '@lib/stores/app-list-store';
+import { useChatInputStore } from '@lib/stores/chat-input-store';
 import type {
   AppExecution,
   ExecutionStatus,
   ExecutionType,
 } from '@lib/types/database';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 type RecentTaskAppType = Extract<ExecutionType, 'workflow' | 'text-generation'>;
 
@@ -93,13 +94,36 @@ function extractFirstMeaningfulString(
 }
 
 export function useRecentTaskExecutions(limit: number = 20) {
-  const { session } = useAuthSession();
-  const userId = session?.user?.id ?? null;
+  const { loading: authLoading } = useAuthSession();
+  const userId = useChatInputStore(state => state.actorId);
+  const actorEpoch = useChatInputStore(state => state.actorEpoch);
+  const [loadedEpoch, setLoadedEpoch] = useState(actorEpoch);
+  const mounted = useRef(false);
+  const requestVersion = useRef(0);
   const [executions, setExecutions] = useState<RecentTaskExecution[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      requestVersion.current += 1;
+    };
+  }, []);
+
   const loadExecutions = useCallback(async () => {
+    const version = ++requestVersion.current;
+    const isCurrent = () => {
+      const actor = useChatInputStore.getState();
+      return (
+        mounted.current &&
+        actor.actorId === userId &&
+        actor.actorEpoch === actorEpoch &&
+        version === requestVersion.current
+      );
+    };
+    if (!isCurrent()) return;
     if (!userId) {
       setExecutions([]);
       setError(null);
@@ -115,9 +139,11 @@ export function useRecentTaskExecutions(limit: number = 20) {
       if (appListState.apps.length === 0) {
         await appListState.fetchApps();
       }
+      if (!isCurrent()) return;
 
       const apps = useAppListStore.getState().apps;
       const result = await getUserExecutions(limit);
+      if (!isCurrent()) return;
 
       if (!result.success) {
         throw result.error;
@@ -156,22 +182,28 @@ export function useRecentTaskExecutions(limit: number = 20) {
         });
 
       setExecutions(mappedExecutions);
+      setLoadedEpoch(actorEpoch);
     } catch (loadError) {
+      if (!isCurrent()) return;
       console.error(
         '[useRecentTaskExecutions] Failed to load executions:',
         loadError
       );
       setExecutions([]);
+      setLoadedEpoch(actorEpoch);
       setError(
         loadError instanceof Error ? loadError : new Error(String(loadError))
       );
     } finally {
-      setIsLoading(false);
+      if (isCurrent()) setIsLoading(false);
     }
-  }, [limit, userId]);
+  }, [limit, userId, actorEpoch]);
 
   useEffect(() => {
     void loadExecutions();
+    return () => {
+      requestVersion.current += 1;
+    };
   }, [loadExecutions]);
 
   useEffect(() => {
@@ -185,9 +217,9 @@ export function useRecentTaskExecutions(limit: number = 20) {
   }, [loadExecutions]);
 
   return {
-    executions,
-    isLoading,
-    error,
+    executions: userId && loadedEpoch === actorEpoch ? executions : [],
+    isLoading: userId ? loadedEpoch !== actorEpoch || isLoading : authLoading,
+    error: userId && loadedEpoch === actorEpoch ? error : null,
     refresh: loadExecutions,
   };
 }

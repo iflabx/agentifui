@@ -28,6 +28,20 @@ import { HistorySelectionBar } from './history-selection-bar';
 // History conversation page component
 // Display all history conversations, support search function and multi-select delete function
 export function History() {
+  const actorEpoch = useChatInputStore(state => state.actorEpoch);
+  return <ActorHistory key={actorEpoch} actorEpoch={actorEpoch} />;
+}
+
+function ActorHistory({ actorEpoch }: { actorEpoch: number }) {
+  const mounted = React.useRef(false);
+  React.useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const isCurrentActor = () =>
+    mounted.current && useChatInputStore.getState().actorEpoch === actorEpoch;
   const t = useTranslations('history');
   const [searchQuery, setSearchQuery] = React.useState('');
   const router = useRouter();
@@ -56,6 +70,7 @@ export function History() {
   } = useAllConversations();
 
   const deleteConversation = async (id: string): Promise<boolean> => {
+    if (!isCurrentActor()) return false;
     const conversation = conversations.find(item => item.id === id);
     if (!conversation?.app_id || !agentConversationPath(conversation))
       return deleteLegacyConversation(id);
@@ -65,9 +80,11 @@ export function History() {
         `/conversations/${encodeURIComponent(conversation.id)}`,
         { method: 'DELETE' }
       );
+      if (!isCurrentActor()) return false;
       conversationEvents.emit();
       return true;
     } catch (error) {
+      if (!isCurrentActor()) return false;
       console.error('Delete agent conversation failed:', error);
       return false;
     }
@@ -170,6 +187,7 @@ export function History() {
   };
 
   const handleBatchDeleteConfirm = async () => {
+    if (!isCurrentActor()) return;
     setIsBatchDeleting(true);
     try {
       const deletePromises = Array.from(selectedConversations).map(id =>
@@ -177,6 +195,7 @@ export function History() {
       );
 
       const results = await Promise.all(deletePromises);
+      if (!isCurrentActor()) return;
       const successCount = results.filter(Boolean).length;
 
       if (successCount > 0) {
@@ -201,11 +220,14 @@ export function History() {
         alert(t('operations.batchDeleteFailed'));
       }
     } catch (error) {
+      if (!isCurrentActor()) return;
       console.error('Batch deletion failed:', error);
       alert(t('operations.operationError'));
     } finally {
-      setIsBatchDeleting(false);
-      setShowBatchDeleteDialog(false);
+      if (isCurrentActor()) {
+        setIsBatchDeleting(false);
+        setShowBatchDeleteDialog(false);
+      }
     }
   };
 
@@ -213,11 +235,13 @@ export function History() {
   const { clearConversationState } = useChatInterface();
 
   const handleNewChat = () => {
+    if (!isCurrentActor()) return;
     // Jump to new conversation page
     router.push('/chat/new');
 
     // Reset state
     setTimeout(() => {
+      if (!isCurrentActor()) return;
       // Clear messages and reset state
       useChatStore.getState().clearMessages();
       useChatStore.getState().setCurrentConversationId(null);

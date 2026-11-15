@@ -6,9 +6,17 @@ import {
   useCombinedConversations,
 } from '@lib/hooks/use-combined-conversations';
 import { type AppInfo, useAppListStore } from '@lib/stores/app-list-store';
+import { useChatInputStore } from '@lib/stores/chat-input-store';
 import { useChatStore } from '@lib/stores/chat-store';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import { useTranslations } from 'next-intl';
 import { usePathname } from 'next/navigation';
@@ -24,6 +32,11 @@ import { usePathname } from 'next/navigation';
  * 4. Separation of Concerns: Separate the title calculation logic from the state listening
  */
 export function DynamicTitle() {
+  const actorEpoch = useChatInputStore(state => state.actorEpoch);
+  return <ActorDynamicTitle key={actorEpoch} actorEpoch={actorEpoch} />;
+}
+
+function ActorDynamicTitle({ actorEpoch }: { actorEpoch: number }) {
   // --- Internationalization Translation ---
   const t = useTranslations('dynamicTitle');
   const baseTitle = getDisplayBrandName(t('base'));
@@ -56,6 +69,12 @@ export function DynamicTitle() {
 
   // --- Debounce Timer ---
   const updateTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
+  useLayoutEffect(() => {
+    document.title = baseTitle;
+    return () => {
+      if (updateTimeoutRef.current) clearTimeout(updateTimeoutRef.current);
+    };
+  }, [baseTitle]);
 
   // --- Helper Function: Get Settings Page Title ---
   const getSettingsTitle = useCallback(
@@ -425,6 +444,7 @@ export function DynamicTitle() {
   // --- Debounce Update Title ---
   const debouncedUpdateTitle = useCallback(
     (newTitle: string, priority: number, isStable: boolean) => {
+      if (useChatInputStore.getState().actorEpoch !== actorEpoch) return;
       if (updateTimeoutRef.current) {
         clearTimeout(updateTimeoutRef.current);
       }
@@ -440,6 +460,7 @@ export function DynamicTitle() {
       // for other cases, use debounce
       updateTimeoutRef.current = setTimeout(
         () => {
+          if (useChatInputStore.getState().actorEpoch !== actorEpoch) return;
           setCurrentTitle(newTitle);
           document.title = newTitle;
           stableStateRef.current.titleUpdateCount++;
@@ -447,7 +468,7 @@ export function DynamicTitle() {
         isStable ? 50 : 200
       ); // stable title delay shorter
     },
-    []
+    [actorEpoch]
   );
 
   // --- Intelligent Title Update Logic ---

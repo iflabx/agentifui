@@ -12,6 +12,8 @@ export interface AgentToolSummary {
   runId?: string;
   messageId?: string;
   order?: number;
+  afterMessageId?: string;
+  beforeMessageId?: string;
 }
 
 export interface AgentViewState {
@@ -138,6 +140,14 @@ export type AgentTimelineItem =
 export function agentTimeline(state: AgentViewState): AgentTimelineItem[] {
   const result: AgentTimelineItem[] = [];
   const rendered = new Set<AgentToolSummary>();
+  const messageIds = new Set(state.messages.map(message => message.id));
+  const anchored = new Set(
+    state.tools.filter(
+      tool =>
+        (tool.afterMessageId && messageIds.has(tool.afterMessageId)) ||
+        (tool.beforeMessageId && messageIds.has(tool.beforeMessageId))
+    )
+  );
   for (let index = 0; index < state.messages.length; index += 1) {
     const message = state.messages[index];
     const runId = message.metadata?.backend_run_id;
@@ -153,7 +163,8 @@ export function agentTimeline(state: AgentViewState): AgentTimelineItem[] {
       group.push({ type: 'message', message: state.messages[++index] });
     }
     for (const tool of state.tools) {
-      if (tool.runId !== runId || rendered.has(tool)) continue;
+      if (tool.runId !== runId || rendered.has(tool) || anchored.has(tool))
+        continue;
       group.push({ type: 'tool', tool });
       rendered.add(tool);
     }
@@ -172,9 +183,25 @@ export function agentTimeline(state: AgentViewState): AgentTimelineItem[] {
     result.push(...group);
   }
   for (const tool of state.tools) {
-    if (!rendered.has(tool)) result.push({ type: 'tool', tool });
+    if (!rendered.has(tool) && !anchored.has(tool))
+      result.push({ type: 'tool', tool });
   }
-  return result;
+  const activities = [...anchored].sort(
+    (left, right) => (left.order ?? Infinity) - (right.order ?? Infinity)
+  );
+  return result.flatMap(item =>
+    item.type === 'message'
+      ? [
+          ...activities
+            .filter(tool => tool.beforeMessageId === item.message.id)
+            .map(tool => ({ type: 'tool' as const, tool })),
+          item,
+          ...activities
+            .filter(tool => tool.afterMessageId === item.message.id)
+            .map(tool => ({ type: 'tool' as const, tool })),
+        ]
+      : [item]
+  );
 }
 
 export function markAgentStreamInterrupted(
