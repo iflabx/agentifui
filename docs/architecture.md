@@ -1,3 +1,10 @@
+---
+layout: default
+title: Architecture
+parent: Development
+nav_order: 1
+---
+
 # AgentifUI Architecture
 
 ## Scope
@@ -5,7 +12,7 @@
 This document describes the current repository architecture, updated November 15, 2026. It is intentionally narrower than a long-term vision document: the goal is
 to explain how the codebase works today. For local setup, source navigation and
 change examples, use the [developer guide](DEVELOPMENT.md); for submission rules,
-use [Contributing](../CONTRIBUTING.md).
+use [Contributing](https://github.com/iflabx/agentifui/blob/main/CONTRIBUTING.md).
 
 ## Repository Shape
 

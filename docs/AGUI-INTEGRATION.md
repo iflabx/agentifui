@@ -1,3 +1,10 @@
+---
+layout: default
+title: AG-UI
+parent: Agent Integrations
+nav_order: 3
+---
+
 # AG-UI Integration
 
 ## Implementation Status

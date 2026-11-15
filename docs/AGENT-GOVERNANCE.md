@@ -1,3 +1,10 @@
+---
+layout: default
+title: Generation Governance
+parent: Agent Integrations
+nav_order: 4
+---
+
 # Generation Governance
 
 The Fastify API shares backend selection, input moderation, quota reservation

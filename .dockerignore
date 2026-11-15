@@ -2,6 +2,10 @@
 **/node_modules
 **/.next*
 **/dist
+**/_site
+**/.jekyll-cache
+**/.jekyll-metadata
+**/.sass-cache
 build
 out
 output

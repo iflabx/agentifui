@@ -1,10 +1,16 @@
+---
+layout: default
+title: Security and Privacy
+nav_order: 8
+---
+
 # Deployment Security And Data Handling
 
 This describes current boundaries for self-hosted operators and administrators.
 It is not a legal privacy policy, compliance certification, complete threat
 model or guarantee that no vulnerabilities exist. The operator must decide what
 data may be processed and explain their own deployment's providers and retention
-to users. For reporting a project vulnerability, use [SECURITY.md](../SECURITY.md),
+to users. For reporting a project vulnerability, use [SECURITY.md](https://github.com/iflabx/agentifui/blob/main/SECURITY.md),
 not a public bug report containing exploit details or private data.
 
 ## 1. Where Data Goes
@@ -152,6 +158,6 @@ cookies, auth headers, action links, service keys, personal conversation text,
 real identity exports and private configuration from screenshots and logs.
 
 For a suspected vulnerability, use the private reporting instructions in
-[SECURITY.md](../SECURITY.md). For secret publication, also follow
+[SECURITY.md](https://github.com/iflabx/agentifui/blob/main/SECURITY.md). For secret publication, also follow
 [publishing code safely](PUBLICATION.md); deleting a later source line does not
 erase the earlier Git object or revoke the leaked credential.

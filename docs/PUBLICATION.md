@@ -1,3 +1,10 @@
+---
+layout: default
+title: Publication Rules
+parent: Development
+nav_order: 4
+---
+
 # Publishing Code Safely
 
 GitHub contains public code, migrations, configuration templates, default pages and default translations. Real credentials, environment files, model-configuration exports, backups, user uploads and internal notes stay outside Git. Public assets and copy still require a manual diff review: a scanner cannot determine whether every image or paragraph is private.

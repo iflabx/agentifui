@@ -60,6 +60,10 @@ next-env.d.ts
 
 # docs
 docs/security
+/docs/_site/
+/docs/.jekyll-cache/
+/docs/.jekyll-metadata
+/docs/.sass-cache/
 
 # pm2
 pm2-logs/

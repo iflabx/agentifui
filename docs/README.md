@@ -1,3 +1,10 @@
+---
+layout: default
+title: Documentation
+nav_order: 1
+permalink: /
+---
+
 # Documentation
 
 AgentifUI is an enterprise-oriented Agent UI, not an agent-building or model-hosting
@@ -38,7 +45,7 @@ Neither is an automatic scaling system or a required first-install step.
   navigation. A backend's native feature is not automatically a product feature.
 - [Deployment security and data handling](SECURITY-PRIVACY.md): local/external
   data flow, secrets, public exposure, retention/deletion and current limits.
-- [Security policy](../SECURITY.md): privately reporting a vulnerability and
+- [Security policy](https://github.com/iflabx/agentifui/blob/main/SECURITY.md): privately reporting a vulnerability and
   remediation/version-support boundaries.
 - [GitHub Releases](https://github.com/iflabx/agentifui/releases): published change
   notes. Use the selected tag's docs rather than assuming `main` is a release.
@@ -79,7 +86,7 @@ recovery, A2UI/MCP Apps and new Agent backends are not implied by this table.
 
 - [Developer guide](DEVELOPMENT.md): local setup, source map, daily editing,
   debugging, validation and backend/AG-UI extension boundaries.
-- [Contributing](../CONTRIBUTING.md): forks/branches, PRs, checks, hooks and safe publication.
+- [Contributing](https://github.com/iflabx/agentifui/blob/main/CONTRIBUTING.md): forks/branches, PRs, checks, hooks and safe publication.
 - [Dify integration](DIFY-INTEGRATION.md): supported Service API modes and limits.
 - [LangChain integration](LANGCHAIN-INTEGRATION.md): required service contract and
   optional native human-input profile; an arbitrary LangChain endpoint is not enough.
@@ -92,6 +99,8 @@ recovery, A2UI/MCP Apps and new Agent backends are not implied by this table.
   coverage and CI parity.
 - [Publishing safely](PUBLICATION.md): public code versus private configuration.
 - [Fonts](FONTS.md): frontend font configuration.
+- [Documentation site](DOCUMENTATION-SITE.md): Jekyll content, navigation,
+  GitHub Pages publishing and the custom domain.
 
 ## Documentation Boundaries
 

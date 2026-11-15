@@ -1,3 +1,10 @@
+---
+layout: default
+title: Manual Docker Capacity
+parent: Installation and Operations
+nav_order: 5
+---
+
 # Manual Docker Capacity
 
 ## Scope

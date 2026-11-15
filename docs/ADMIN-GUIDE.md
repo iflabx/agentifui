@@ -1,3 +1,9 @@
+---
+layout: default
+title: Administrator Guide
+nav_order: 5
+---
+
 # Administrator Guide
 
 This guide covers website administration after installation. Server installation,
