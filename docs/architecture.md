@@ -206,7 +206,8 @@ The pipeline does the following:
 - run root and workspace type checks
 - start isolated PostgreSQL, Redis, and MinIO services on the GitHub runner
 - apply SQL migrations
-- run tests, then build shared, API, and web packages in the same job
+- build the shared package before type checks and tests that import it, then
+  build the API and web packages (or validate the full application in Docker)
 
 Dependency auditing runs separately on a weekly schedule or manual request. It does not duplicate installation on every push or pull request. Build outputs are not uploaded because deployment builds from the selected source version with its own environment configuration.
 

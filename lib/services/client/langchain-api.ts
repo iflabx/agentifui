@@ -25,6 +25,7 @@ export interface AgentRun {
   persistenceStatus: string;
   errorCode?: string;
   recoveryMessages?: AgentMessage[];
+  agui?: import('../../../packages/shared/src/agui').AgentProjectionSnapshot;
 }
 
 export type AgentEvent =
@@ -64,7 +65,7 @@ export class AgentRequestError extends AppRequestError {
   }
 }
 
-async function readAgentRequestError(
+export async function readAgentRequestError(
   response: Response
 ): Promise<AgentRequestError> {
   const detail = extractAppErrorDetail(await response.json().catch(() => null));
@@ -104,6 +105,25 @@ export async function agentRequest<T>(
   if (!response.ok) throw await readAgentRequestError(response);
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
+}
+
+export async function agentSubmissionRequest(
+  appId: string,
+  submissionId: string,
+  signal?: AbortSignal
+): Promise<{ runId: string | null; state: string }> {
+  const response = await fetch(
+    `/api/internal/apps/${encodeURIComponent(appId)}/submissions/${encodeURIComponent(submissionId)}`,
+    {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(15000)])
+        : AbortSignal.timeout(15000),
+    }
+  );
+  if (!response.ok) throw await readAgentRequestError(response);
+  return response.json();
 }
 
 function parseEvent(frame: string): AgentEvent | null {

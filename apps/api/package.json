@@ -9,6 +9,7 @@
     "type-check": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@agentifui/shared": "workspace:*",
     "@fastify/cors": "11.4.1",
     "@fastify/reply-from": "12.8.1",
     "fastify": "5.12.8",

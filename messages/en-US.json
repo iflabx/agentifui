@@ -1458,6 +1458,8 @@
           "backend": {
             "label": "Backend",
             "assistantId": "Assistant ID",
+            "aguiLabel": "Use public AG-UI chat for new app conversations",
+            "aguiNote": "Only new text-only app conversations in marketplace chatbot apps are enabled. Files, citations, speech and custom variables are not supported. The default model and model selector are unchanged. Existing legacy conversations keep their compatibility path; bound public conversations never fall back.",
             "langchainNote": "Use the assistant exposed by this service. Text and read-only tools only; service credentials stay on the server.",
             "validation": {
               "instanceIdRequired": "Enter an application identifier.",
@@ -2737,6 +2739,10 @@
     }
   },
   "langchain": {
+    "textOnlyNote": "This conversation is text-only. Files, citations, speech and custom variables are not supported. Existing legacy conversations retain their compatible features.",
+    "cancelled": "Cancelled",
+    "interrupted": "Interrupted",
+    "loadMore": "Load earlier messages",
     "title": "LangChain Agent",
     "capabilities": "Text chat, conversation memory and read-only tool summaries. Files and execution cancellation are not supported.",
     "newConversation": "New conversation",

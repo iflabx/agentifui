@@ -1458,6 +1458,8 @@
           "backend": {
             "label": "Backend",
             "assistantId": "Assistant ID",
+            "aguiLabel": "Neue App-Gespräche im gemeinsamen AG-UI-Chat öffnen",
+            "aguiNote": "Nur neue reine Textgespräche in Chatbot-Apps des Marktplatzes. Dateien, Quellenangaben, Sprache und eigene Variablen werden nicht unterstützt. Standardmodell und Modellauswahl bleiben unverändert. Alte Gespräche behalten den Kompatibilitätspfad; gebundene öffentliche Gespräche wechseln nicht zurück.",
             "langchainNote": "Use the assistant exposed by this service. Text and read-only tools only; service credentials stay on the server.",
             "validation": {
               "instanceIdRequired": "Enter an application identifier.",
@@ -2737,6 +2739,10 @@
     "closeButton": "Vorschau schließen"
   },
   "langchain": {
+    "textOnlyNote": "Dieses Gespräch unterstützt nur Text, keine Dateien, Quellenangaben, Sprache oder eigenen Variablen. Alte Gespräche behalten ihre kompatiblen Funktionen.",
+    "cancelled": "Abgebrochen",
+    "interrupted": "Unterbrochen",
+    "loadMore": "Ältere Nachrichten laden",
     "title": "LangChain Agent",
     "capabilities": "Text chat, conversation memory and read-only tool summaries. Files and execution cancellation are not supported.",
     "newConversation": "New conversation",

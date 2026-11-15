@@ -27,6 +27,7 @@ export type ApiActionResponse = {
 };
 
 export interface ConversationRow {
+  interaction_protocol?: 'ag-ui/1.0' | null;
   id: string;
   user_id: string;
   ai_config_id: string | null;

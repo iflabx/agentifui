@@ -98,6 +98,7 @@ Use the public runbooks:
 ## Common Commands
 
 ```bash
+pnpm build:shared
 pnpm dev:all
 pnpm type-check
 pnpm lint
@@ -106,6 +107,13 @@ pnpm build:all
 pnpm gate:quality:verify
 pnpm smoke:prod
 ```
+
+Build the shared package after installation or shared-source changes, before
+development, type checks, or tests that import it through the workspace package.
+The shared AG-UI chat, negotiated product API and compatibility boundaries are
+documented in [AG-UI Integration](docs/AGUI-INTEGRATION.md). LangChain uses the
+shared chat; Dify chatbot applications can opt into its text-only mode. Other
+Dify modes and existing conversations retain their compatible paths.
 
 ## Repository Layout
 

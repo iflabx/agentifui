@@ -1,9 +1,26 @@
+import {
+  type AgentProjectionSnapshot,
+  MAX_PROJECTION_MESSAGES,
+  type Message,
+  mergeAgentHistoryResult,
+  readAgentHistoryMessages,
+  readAgentHistoryResult,
+} from '@agentifui/shared';
 import { createHash, randomUUID } from 'node:crypto';
 import type { PoolClient, QueryResultRow } from 'pg';
 
-import { AGENT_APP_VISIBILITY_SQL, agentConfigFingerprint } from './agent-app';
-import { AgentPolicyError } from './agent-backends';
+import {
+  AGENT_APP_VISIBILITY_SQL,
+  agentConfigFingerprint,
+  isDifyAguiSelected,
+} from './agent-app';
+import {
+  type AgentBackendType,
+  AgentPolicyError,
+  resolveBackendType,
+} from './agent-backends';
 import { admitSubmission } from './agent-submissions';
+import { MAX_AGENT_RESULT_BYTES } from './agui/runtime-result';
 import { runWithPgSystemContext } from './pg-context';
 
 export type AgentExecutionStatus =
@@ -26,6 +43,7 @@ export interface AgentRunResult {
   executionStatus: 'success' | 'error' | 'interrupted' | 'unknown';
   messages: AgentSavedMessage[];
   errorCode?: string;
+  agui?: AgentProjectionSnapshot;
 }
 
 export interface AgentRunRecord extends QueryResultRow {
@@ -44,12 +62,13 @@ export interface AgentRunRecord extends QueryResultRow {
   created_at: Date | string;
   updated_at: Date | string;
   thread_id: string | null;
-  backend_type: 'langchain';
+  backend_type: AgentBackendType;
   config_fingerprint: string;
   user_sequence_index: number;
 }
 
 export interface ReserveAgentRunInput {
+  backendType?: AgentBackendType;
   governanceTaskId?: string;
   userId: string;
   serviceInstanceId: string;
@@ -150,11 +169,18 @@ async function requireLiveApplication(
   );
   const app = rows[0];
   if (!app) throw new AgentRunError(404, 'AGENT_APP_NOT_FOUND');
+  if (
+    input.backendType === 'dify' &&
+    !input.conversationId &&
+    !isDifyAguiSelected(app.config)
+  )
+    throw new AgentRunError(409, 'AGENT_INTERACTION_NOT_ENABLED');
   const langchain = app.config?.langchain as
     Record<string, unknown> | undefined;
   if (
-    app.config?.backend_type !== 'langchain' ||
-    typeof langchain?.assistant_id !== 'string'
+    resolveBackendType(app.config) !== (input.backendType ?? 'langchain') ||
+    ((input.backendType ?? 'langchain') === 'langchain' &&
+      typeof langchain?.assistant_id !== 'string')
   ) {
     throw new AgentRunError(409, 'AGENT_CONFIG_CHANGED');
   }
@@ -163,7 +189,9 @@ async function requireLiveApplication(
     fingerprint = agentConfigFingerprint(
       input.serviceInstanceId,
       app.base_url,
-      langchain.assistant_id
+      input.backendType === 'dify'
+        ? input.appInstanceId
+        : (langchain!.assistant_id as string)
     );
   } catch {
     throw new AgentRunError(409, 'AGENT_CONFIG_CHANGED');
@@ -183,13 +211,14 @@ async function validateBinding(
      JOIN conversations c ON c.id = b.conversation_id
      WHERE b.conversation_id = $1::uuid AND c.user_id = $2::uuid
        AND c.status = 'active' AND b.service_instance_id = $3::uuid
-       AND b.config_fingerprint = $4 AND b.backend_type = 'langchain'
+       AND b.config_fingerprint = $4 AND b.backend_type = $5
      FOR UPDATE OF c, b`,
     [
       conversationId,
       input.userId,
       input.serviceInstanceId,
       input.configFingerprint,
+      input.backendType ?? 'langchain',
     ]
   );
   if (!rows[0]) throw new AgentRunError(409, 'AGENT_CONVERSATION_UNAVAILABLE');
@@ -206,7 +235,9 @@ export async function reserveRun(
     : undefined;
   const userLimit = input.userLimit ?? 1;
   const appLimit = input.appLimit ?? 2;
+  const backendType = input.backendType ?? 'langchain';
   if (
+    !['langchain', 'dify'].includes(backendType) ||
     typeof input.content !== 'string' ||
     input.content.trim().length === 0 ||
     input.content.length > 16000 ||
@@ -250,7 +281,7 @@ export async function reserveRun(
         if (input.governanceTaskId) {
           await client.query(
             `UPDATE agent_submissions SET run_id = $2::uuid, state = $3, updated_at = NOW()
-            WHERE root_task_id = $1::uuid AND backend_type = 'langchain' AND quota_state = 'none'
+            WHERE root_task_id = $1::uuid AND backend_type = $6 AND quota_state = 'none'
               AND user_id = $4::uuid AND service_instance_id = $5::uuid
               AND (run_id IS NULL OR run_id = $2::uuid) AND state IN ('registered','unknown')`,
             [
@@ -261,6 +292,7 @@ export async function reserveRun(
                 : 'finished',
               userId,
               serviceId,
+              backendType,
             ]
           );
         }
@@ -296,13 +328,19 @@ export async function reserveRun(
       if (!conversationId) {
         await client.query(
           `INSERT INTO conversations (id, user_id, title, app_id, metadata)
-         VALUES ($1::uuid, $2::uuid, $3, $4, '{"backend_type":"langchain"}'::jsonb)`,
-          [allocatedId, userId, input.content.slice(0, 80), serviceId]
+         VALUES ($1::uuid, $2::uuid, $3, $4, jsonb_build_object('backend_type', $5::text))`,
+          [
+            allocatedId,
+            userId,
+            input.content.slice(0, 80),
+            serviceId,
+            backendType,
+          ]
         );
         await client.query(
-          `INSERT INTO backend_conversations (conversation_id, service_instance_id, config_fingerprint)
-         VALUES ($1::uuid, $2::uuid, $3)`,
-          [allocatedId, serviceId, input.configFingerprint]
+          `INSERT INTO backend_conversations (conversation_id, service_instance_id, config_fingerprint, backend_type)
+         VALUES ($1::uuid, $2::uuid, $3, $4)`,
+          [allocatedId, serviceId, input.configFingerprint, backendType]
         );
       }
       const messageId = randomUUID();
@@ -319,9 +357,9 @@ export async function reserveRun(
       await client.query(
         `INSERT INTO messages (id, conversation_id, user_id, role, content, metadata, sequence_index)
        SELECT $1::uuid, $2::uuid, $3::uuid, 'user', $4,
-         jsonb_build_object('backend_type', 'langchain', 'backend_run_id', $5::text),
+         jsonb_build_object('backend_type', $6::text, 'backend_run_id', $5::text),
          COALESCE(MAX(sequence_index), -1) + 1 FROM messages WHERE conversation_id = $2::uuid`,
-        [messageId, allocatedId, userId, input.content, runId]
+        [messageId, allocatedId, userId, input.content, runId, backendType]
       );
       await client.query(
         `INSERT INTO backend_runs (id, conversation_id, user_id, service_instance_id,
@@ -414,6 +452,77 @@ export async function recordNativeRun(
   );
 }
 
+export async function loadRunDisplayHistory(
+  run: AgentRunRecord
+): Promise<Message[]> {
+  return storage(() =>
+    runWithPgSystemContext(async client => {
+      const visible = await client.query(
+        `SELECT m.id::text, m.role::text, m.content, m.metadata
+         FROM messages m JOIN conversations c ON c.id = m.conversation_id
+         JOIN backend_conversations b ON b.conversation_id = c.id
+         WHERE c.id = $1::uuid AND c.user_id = $2::uuid AND c.status = 'active'
+           AND b.service_instance_id = $3::uuid AND b.config_fingerprint = $4
+           AND m.sequence_index <= $5
+         ORDER BY m.sequence_index, m.created_at, m.id LIMIT $6`,
+        [
+          run.conversation_id,
+          run.user_id,
+          run.service_instance_id,
+          run.config_fingerprint,
+          run.user_sequence_index,
+          MAX_PROJECTION_MESSAGES + 1,
+        ]
+      );
+      if (visible.rows.length > MAX_PROJECTION_MESSAGES)
+        throw new AgentRunError(409, 'AGENT_HISTORY_LIMIT');
+      const hasTools = (value: unknown) =>
+        value !== undefined && (!Array.isArray(value) || value.length > 0);
+      if (visible.rows.some(message => hasTools(message.metadata?.tools)))
+        throw new AgentRunError(409, 'AGENT_HISTORY_LEGACY_TOOLS_UNSUPPORTED');
+      let history = readAgentHistoryMessages(
+        visible.rows.map(({ id, role, content }) => ({ id, role, content }))
+      );
+      const current = history.at(-1);
+      if (current?.id !== run.user_message_id || current.role !== 'user')
+        throw new AgentRunError(409, 'AGENT_HISTORY_UNAVAILABLE');
+      const prior = await client.query<{ id: string; result: AgentRunResult }>(
+        `SELECT r.id::text, r.result FROM backend_runs r
+         JOIN messages m ON m.id = r.user_message_id
+         WHERE r.conversation_id = $1::uuid AND r.id <> $2::uuid
+           AND m.sequence_index < $3 AND r.persistence_status = 'saved'
+         ORDER BY m.sequence_index LIMIT $4`,
+        [
+          run.conversation_id,
+          run.id,
+          run.user_sequence_index,
+          MAX_PROJECTION_MESSAGES + 1,
+        ]
+      );
+      if (prior.rows.length > MAX_PROJECTION_MESSAGES)
+        throw new AgentRunError(409, 'AGENT_HISTORY_LIMIT');
+      for (const previous of prior.rows) {
+        if (!previous.result?.agui) {
+          if (
+            previous.result?.messages?.some(message => hasTools(message.tools))
+          )
+            throw new AgentRunError(
+              409,
+              'AGENT_HISTORY_LEGACY_TOOLS_UNSUPPORTED'
+            );
+          continue;
+        }
+        const result = readAgentHistoryResult(previous.result.agui, {
+          threadId: run.conversation_id,
+          runId: previous.id,
+        });
+        history = mergeAgentHistoryResult(history, result, 'saved').messages;
+      }
+      return history;
+    })
+  );
+}
+
 function normalizeResult(result: AgentRunResult): AgentRunResult {
   if (
     !['success', 'error', 'interrupted', 'unknown'].includes(
@@ -441,14 +550,47 @@ function normalizeResult(result: AgentRunResult): AgentRunResult {
     };
   });
   const errorCode = safeCode(result.errorCode);
+  let agui: AgentProjectionSnapshot | undefined;
+  if (result.agui !== undefined) {
+    try {
+      agui = readAgentHistoryResult(result.agui, {
+        threadId: result.agui.threadId,
+        runId: result.agui.runId,
+      }).projection;
+      const expected = {
+        success: 'succeeded',
+        error: 'failed',
+        unknown: 'unknown',
+        interrupted: 'interrupted',
+      }[result.executionStatus];
+      const outputs = new Set(agui.outputMessageIds);
+      const projected = agui.messages.filter(
+        message => outputs.has(message.id) && message.role === 'assistant'
+      );
+      if (
+        agui.status !== expected ||
+        projected.length !== messages.length ||
+        projected.some(
+          (message, index) =>
+            message.id !== messages[index].id ||
+            message.content !== messages[index].content
+        )
+      )
+        throw new Error();
+    } catch {
+      throw new AgentRunError(400, 'INVALID_AGENT_RESULT');
+    }
+  }
   const normalized = {
     executionStatus: result.executionStatus,
     messages,
     ...(errorCode ? { errorCode } : {}),
+    ...(agui ? { agui } : {}),
   };
   try {
     const serialized = JSON.stringify(normalized);
-    if (Buffer.byteLength(serialized, 'utf8') > 512000) throw new Error();
+    if (Buffer.byteLength(serialized, 'utf8') > MAX_AGENT_RESULT_BYTES)
+      throw new Error();
     return JSON.parse(serialized) as AgentRunResult;
   } catch {
     throw new AgentRunError(400, 'INVALID_AGENT_RESULT');
@@ -464,6 +606,12 @@ export async function saveRunResult(
   await storage(() =>
     runWithPgSystemContext(async client => {
       const run = await loadRun(client, id, true);
+      if (
+        snapshot.agui &&
+        (snapshot.agui.runId !== run.id ||
+          snapshot.agui.threadId !== run.conversation_id)
+      )
+        throw new AgentRunError(409, 'AGENT_RESULT_CONFLICT');
       if (run.result !== null) {
         const comparison = await client.query<{ matches: boolean }>(
           `SELECT result = $2::jsonb AS matches FROM backend_runs WHERE id = $1::uuid`,
@@ -502,7 +650,7 @@ export async function saveRunResult(
           if (message.id === run.user_message_id)
             throw new AgentRunError(409, 'AGENT_MESSAGE_CONFLICT');
           const metadata = {
-            backend_type: 'langchain',
+            backend_type: run.backend_type,
             backend_run_id: id,
             ...(message.order === undefined
               ? {}
@@ -591,7 +739,31 @@ export async function recordRunPersistenceFailure(
   runId: string,
   result: AgentRunResult
 ): Promise<void> {
-  const snapshot = normalizeResult(result);
+  let snapshot: AgentRunResult;
+  try {
+    snapshot = normalizeResult(result);
+  } catch (error) {
+    if (
+      !(error instanceof AgentRunError) ||
+      error.code !== 'INVALID_AGENT_RESULT' ||
+      !['success', 'error', 'interrupted', 'unknown'].includes(
+        result.executionStatus
+      )
+    )
+      throw error;
+    await storage(() =>
+      runWithPgSystemContext(async client => {
+        await client.query(
+          `UPDATE backend_runs SET execution_status = $2, persistence_status = 'failed',
+         error_code = 'AGENT_RESULT_UNAVAILABLE', updated_at = NOW()
+         WHERE id = $1::uuid AND result IS NULL AND persistence_status <> 'saved'
+           AND (execution_status IN ('reserved','submitting','running','unknown') OR execution_status = $2)`,
+          [uuid(runId), result.executionStatus]
+        );
+      })
+    );
+    return;
+  }
   await storage(() =>
     runWithPgSystemContext(async client => {
       await client.query(

@@ -17,6 +17,19 @@ import {
   type ServiceInstanceRow,
 } from './types';
 
+function validateInteractionProtocol(config: Record<string, unknown>) {
+  if (config.interaction_protocol === undefined) return null;
+  if (config.interaction_protocol !== 'ag-ui/1.0')
+    return toErrorResponse('INVALID_INTERACTION_PROTOCOL', 400);
+  if (
+    (config.backend_type !== undefined && config.backend_type !== 'dify') ||
+    readObject(config.app_metadata).app_type !== 'marketplace' ||
+    readObject(config.app_metadata).dify_apptype !== 'chatbot'
+  )
+    return toErrorResponse('AGUI_DIFY_MARKETPLACE_CHATBOT_REQUIRED', 400);
+  return null;
+}
+
 export async function handleServiceInstanceAction(
   action: string,
   payload: Record<string, unknown> | undefined
@@ -91,6 +104,9 @@ export async function handleServiceInstanceAction(
     if (!providerId || !instanceId) {
       return toErrorResponse('Missing required fields', 400);
     }
+    const config = readObject(serviceInstance.config);
+    const protocolError = validateInteractionProtocol(config);
+    if (protocolError) return protocolError;
 
     const isDefault = readBoolean(serviceInstance.is_default, false);
     if (isDefault) {
@@ -154,7 +170,7 @@ export async function handleServiceInstanceAction(
         readString(serviceInstance.description) || null,
         isDefault,
         visibility,
-        JSON.stringify(readObject(serviceInstance.config)),
+        JSON.stringify(config),
       ]
     );
 
@@ -199,6 +215,13 @@ export async function handleServiceInstanceAction(
     const updates = readObject(payload?.updates);
     if (!id) {
       return toErrorResponse('Missing id', 400);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(updates, 'config')) {
+      const protocolError = validateInteractionProtocol(
+        readObject(updates.config)
+      );
+      if (protocolError) return protocolError;
     }
 
     const currentRows = await queryRowsWithPgSystemContext<{

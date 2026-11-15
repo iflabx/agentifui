@@ -14,8 +14,10 @@ import {
   saveRunResult,
 } from '../lib/agent-runs-repository';
 import { registerSubmission, rejectSubmission } from '../lib/agent-submissions';
+import { executeDifyAgentRun } from '../lib/agui/dify-execution';
 import { resolveIdentityFromSession } from '../lib/session-identity';
 import { agentRunsRoutes } from './agent-runs';
+import { loadTrustedUserProfile } from './dify-proxy-route/trusted-user-context';
 
 jest.mock('../lib/agent-app', () => ({
   ...jest.requireActual('../lib/agent-app'),
@@ -23,6 +25,13 @@ jest.mock('../lib/agent-app', () => ({
 }));
 jest.mock('../lib/agent-input-moderation', () => ({
   moderateInputText: jest.fn(),
+}));
+jest.mock('../lib/agui/dify-execution', () => ({
+  executeDifyAgentRun: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock('./dify-proxy-route/trusted-user-context', () => ({
+  ...jest.requireActual('./dify-proxy-route/trusted-user-context'),
+  loadTrustedUserProfile: jest.fn().mockResolvedValue(null),
 }));
 jest.mock('../lib/agent-run-execution', () => ({
   ...jest.requireActual('../lib/agent-run-execution'),
@@ -83,7 +92,12 @@ beforeEach(() => {
   jest.mocked(reserveRun).mockResolvedValue({ run, replayed: false });
 });
 
-async function request(method: 'POST' | 'GET' = 'POST', language?: string) {
+async function request(
+  method: 'POST' | 'GET' = 'POST',
+  language?: string,
+  protocol?: string,
+  extra?: Record<string, unknown>
+) {
   const server = Fastify({ logger: false });
   await server.register(agentRunsRoutes, {
     config: { corsAllowedOrigins: [] } as unknown as ApiRuntimeConfig,
@@ -91,14 +105,107 @@ async function request(method: 'POST' | 'GET' = 'POST', language?: string) {
   try {
     return await server.inject({
       method,
-      ...(language ? { headers: { 'accept-language': language } } : {}),
+      headers: {
+        ...(language ? { 'accept-language': language } : {}),
+        ...(protocol ? { 'x-agentifui-protocol': protocol } : {}),
+      },
       url: `/api/internal/apps/${APP}/agent/runs${method === 'GET' ? `/${RUN}` : ''}`,
-      ...(method === 'POST' ? { payload } : {}),
+      ...(method === 'POST' ? { payload: { ...payload, ...extra } } : {}),
     });
   } finally {
     await server.close();
   }
 }
+
+it('negotiates standard output explicitly without a legacy accepted prelude', async () => {
+  const response = await request('POST', undefined, 'ag-ui/1.0');
+  expect(response.statusCode).toBe(200);
+  expect(response.headers['x-agentifui-protocol']).toBe('ag-ui/1.0');
+  expect(response.body).not.toContain('accepted');
+  expect(executeAgentRun).toHaveBeenCalledWith(
+    expect.objectContaining({ agui: { emit: expect.any(Function) } })
+  );
+});
+
+it('selects Dify from trusted config and moderates the actual server-owned query and profile inputs', async () => {
+  const app = {
+    ...(await resolveAgentApp(APP, 'actor')),
+    backendType: 'dify' as const,
+    interactionProtocol: 'ag-ui/1.0' as const,
+  };
+  jest.mocked(resolveAgentApp).mockResolvedValue(app);
+  const response = await request('POST', undefined, 'ag-ui/1.0');
+  expect(response.statusCode).toBe(200);
+  expect(registerSubmission).toHaveBeenCalledWith(
+    expect.objectContaining({ backendType: 'dify' })
+  );
+  expect(reserveRun).toHaveBeenCalledWith(
+    expect.objectContaining({ backendType: 'dify' })
+  );
+  expect(moderateInputText).toHaveBeenCalledWith(
+    expect.objectContaining({
+      userId: 'actor',
+      text: 'synthetic input\nactor\nuser',
+    })
+  );
+  expect(loadTrustedUserProfile).toHaveBeenCalledWith('actor');
+  expect(executeDifyAgentRun).toHaveBeenCalledWith(
+    expect.objectContaining({
+      app,
+      inputs: { agentifui_user_id: 'actor', agentifui_user_role: 'user' },
+    })
+  );
+  expect(executeAgentRun).not.toHaveBeenCalled();
+});
+
+it('rejects Dify protocol omission and moderation blocks without a native dispatch', async () => {
+  jest.mocked(resolveAgentApp).mockResolvedValue({
+    ...(await resolveAgentApp(APP, 'actor')),
+    backendType: 'dify',
+    interactionProtocol: 'ag-ui/1.0',
+  });
+  expect((await request()).statusCode).toBe(409);
+  expect(registerSubmission).not.toHaveBeenCalled();
+  jest
+    .mocked(moderateInputText)
+    .mockResolvedValue({ outcome: 'block', categories: ['synthetic'] });
+  expect((await request('POST', undefined, 'ag-ui/1.0')).statusCode).toBe(400);
+  expect(rejectSubmission).toHaveBeenCalled();
+  expect(reserveRun).not.toHaveBeenCalled();
+  expect(executeDifyAgentRun).not.toHaveBeenCalled();
+});
+
+it('returns an authorized stored replay instead of emitting a new AG-UI run', async () => {
+  jest.mocked(registerSubmission).mockResolvedValue({
+    task: { root_task_id: 'root-task', run_id: RUN } as never,
+    replayed: true,
+  });
+  jest.mocked(reserveRun).mockResolvedValue({ run, replayed: true });
+  const response = await request('POST', undefined, 'ag-ui/1.0');
+  expect(response.statusCode).toBe(409);
+  expect(response.json()).toMatchObject({
+    code: 'AGENT_SUBMISSION_REPLAY',
+    run: { runId: RUN },
+  });
+  expect(moderateInputText).not.toHaveBeenCalled();
+  expect(executeAgentRun).not.toHaveBeenCalled();
+});
+
+it.each([
+  ['ag-ui/2.0', {}],
+  ['ag-ui/1.0', { history: [] }],
+  ['ag-ui/1.0', { outputMessageIds: [] }],
+  ['ag-ui/1.0', { threadId: 'native-thread' }],
+])(
+  'rejects unsupported protocol or client-owned execution state (%s)',
+  async (protocol, extra) => {
+    expect((await request('POST', undefined, protocol, extra)).statusCode).toBe(
+      400
+    );
+    expect(registerSubmission).not.toHaveBeenCalled();
+    expect(executeAgentRun).not.toHaveBeenCalled();
+  }
+);
 
 it('requires server session identity before registering, auditing or executing', async () => {
   jest

@@ -2,7 +2,10 @@
 
 import { DropdownMenuV2 } from '@components/ui/dropdown-menu-v2';
 import { MoreButtonV2 } from '@components/ui/more-button-v2';
-import { useFavoriteAppsStore } from '@lib/stores/favorite-apps-store';
+import {
+  resolveFavoriteAppRoute,
+  useFavoriteAppsStore,
+} from '@lib/stores/favorite-apps-store';
 import { useSidebarStore } from '@lib/stores/sidebar-store';
 import { cn } from '@lib/utils';
 import { ChevronRight, Edit, HeartOff } from 'lucide-react';
@@ -80,6 +83,14 @@ export function SidebarFavoriteApps({
     const routeAppType = pathParts[0]; // Application type
     const routeInstanceId = pathParts[1]; // Instance ID
 
+    if (routeAppType === 'agent-chat') {
+      return (
+        decodeURIComponent(routeInstanceId) ===
+        (app.serviceInstanceId ||
+          (app.backendType === 'langchain' ? app.instanceId : null))
+      );
+    }
+
     // Basic instanceId matching
     if (app.backendType === 'langchain') {
       return (
@@ -109,14 +120,9 @@ export function SidebarFavoriteApps({
       // 🎯 Immediately set the sidebar selected state, provide immediate feedback
       selectItem('app', app.instanceId);
 
-      // 🎯 Immediately jump to the route, let the page-level spinner handle the loading state
-      const difyAppType = app.dify_apptype || 'chatflow';
-      const targetPath =
-        app.backendType === 'langchain' && app.serviceInstanceId
-          ? `/apps/langchain/${app.serviceInstanceId}`
-          : `/apps/${difyAppType}/${app.instanceId}`;
+      const targetPath = await resolveFavoriteAppRoute(app);
 
-      console.log('[FavoriteApps] Immediately jump to the route:', targetPath);
+      console.log('[FavoriteApps] Open resolved app route:', targetPath);
 
       // 🎯 Fix race condition: only jump to the route, let the target page handle the application switching
       // Avoid localStorage state flickering caused by simultaneous call to switchToSpecificApp
@@ -144,12 +150,7 @@ export function SidebarFavoriteApps({
       // Immediately set the sidebar selected state
       selectItem('app', app.instanceId);
 
-      // Immediately jump, let the page handle the subsequent logic
-      const difyAppType = app.dify_apptype || 'chatflow';
-      const targetPath =
-        app.backendType === 'langchain' && app.serviceInstanceId
-          ? `/apps/langchain/${app.serviceInstanceId}`
-          : `/apps/${difyAppType}/${app.instanceId}`;
+      const targetPath = await resolveFavoriteAppRoute(app);
 
       console.log('[FavoriteApps] Start new chat, jump to:', targetPath);
       router.push(targetPath);

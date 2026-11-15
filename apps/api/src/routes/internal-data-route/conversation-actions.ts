@@ -58,6 +58,8 @@ export async function handleConversationAction(
           last_message_preview,
           created_at::text,
           updated_at::text
+          , CASE WHEN EXISTS (SELECT 1 FROM backend_conversations binding WHERE binding.conversation_id = conversations.id)
+            THEN 'ag-ui/1.0' END AS interaction_protocol
         FROM conversations
         WHERE user_id = $1::uuid
           AND status = 'active'
@@ -116,8 +118,10 @@ export async function handleConversationAction(
           last_message_preview,
           created_at::text,
           updated_at::text
+          , CASE WHEN EXISTS (SELECT 1 FROM backend_conversations binding WHERE binding.conversation_id = conversations.id)
+            THEN 'ag-ui/1.0' END AS interaction_protocol
         FROM conversations
-        WHERE external_id = $1
+        WHERE (external_id = $1 OR (external_id IS NULL AND id::text = $1))
           AND user_id = $2::uuid
           AND status = 'active'
           AND ${boundConversationAccessSql('$2')}

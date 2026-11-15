@@ -11,7 +11,14 @@ export function publicAppConfig(
 ): Record<string, unknown> {
   const descriptor = describeBackend(config);
   if (resolveBackendType(config) !== 'langchain') {
-    return config || {};
+    const publicConfig = { ...config };
+    if (
+      publicConfig.interaction_protocol !== 'ag-ui/1.0' ||
+      record(config?.app_metadata).app_type !== 'marketplace' ||
+      record(config?.app_metadata).dify_apptype !== 'chatbot'
+    )
+      delete publicConfig.interaction_protocol;
+    return publicConfig;
   }
 
   const metadata = record(config?.app_metadata);

@@ -171,6 +171,12 @@ test('CI preloads both source storage images with shared caching before smoke', 
 });
 
 test('verify always runs the full suite but defers builds to Docker when required', () => {
+  expect(
+    job('verify').indexOf('- name: Build shared package for tests')
+  ).toBeLessThan(job('verify').indexOf('- name: Run tests'));
+  expect(job('verify')).toMatch(
+    /- name: Build shared package for tests\n\s+run: pnpm run build:shared/
+  );
   expect(job('verify')).toMatch(
     /- name: Run tests\n\s+run: pnpm test --maxWorkers=2/
   );
