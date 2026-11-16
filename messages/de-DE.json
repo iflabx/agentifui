@@ -1,4 +1,27 @@
 {
+  "executionProcess": {
+    "title": "Ausführungsverlauf",
+    "close": "Ausführungsverlauf schließen",
+    "view": "Ausführungsverlauf anzeigen",
+    "hide": "Ausführungsverlauf ausblenden",
+    "completedCount": "{count} Aktivitäten abgeschlossen",
+    "waiting": "Warten auf Aktivitätsaktualisierungen.",
+    "empty": "Kein Verlauf verfügbar.",
+    "historical": "Gespeicherte Aktivitätsübersicht, keine vollständige Ereigniswiedergabe.",
+    "unordered": "Aktivitätsübersicht; genaue Reihenfolge nicht erfasst.",
+    "failedNotice": "Bei der Ausführung ist ein Fehler aufgetreten. Aktivitätszustände werden separat angezeigt.",
+    "step": "Schritt",
+    "tool": "Werkzeug",
+    "duration": "{seconds}s",
+    "status": {
+      "pending": "Ausstehend",
+      "running": "Läuft",
+      "completed": "Abgeschlossen",
+      "failed": "Fehlgeschlagen",
+      "stopped": "Gestoppt",
+      "unknown": "Unbekannt"
+    }
+  },
   "common": {
     "ui": {
       "cancel": "Abbrechen",

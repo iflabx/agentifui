@@ -1,4 +1,27 @@
 {
+  "executionProcess": {
+    "title": "Proceso de ejecución",
+    "close": "Cerrar proceso de ejecución",
+    "view": "Ver proceso de ejecución",
+    "hide": "Ocultar proceso de ejecución",
+    "completedCount": "{count} actividades completadas",
+    "waiting": "Esperando actualizaciones de actividad.",
+    "empty": "No hay registro del proceso.",
+    "historical": "Resumen de actividades guardado, no una reproducción completa de eventos.",
+    "unordered": "Resumen de actividades; no se registró el orden exacto.",
+    "failedNotice": "La ejecución encontró un error. Los estados de actividad se muestran por separado.",
+    "step": "Paso",
+    "tool": "Herramienta",
+    "duration": "{seconds}s",
+    "status": {
+      "pending": "Pendiente",
+      "running": "En curso",
+      "completed": "Completado",
+      "failed": "Fallido",
+      "stopped": "Detenido",
+      "unknown": "Desconocido"
+    }
+  },
   "common": {
     "ui": {
       "cancel": "Cancelar",

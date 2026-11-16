@@ -1,4 +1,27 @@
 {
+  "executionProcess": {
+    "title": "执行过程",
+    "close": "关闭执行过程",
+    "view": "查看执行过程",
+    "hide": "收起执行过程",
+    "completedCount": "已完成 {count} 项活动",
+    "waiting": "等待活动更新。",
+    "empty": "无可用过程记录。",
+    "historical": "已保存的活动摘要，并非完整事件回放。",
+    "unordered": "活动摘要；未记录精确顺序。",
+    "failedNotice": "本次运行遇到错误，各项活动状态单独展示。",
+    "step": "步骤",
+    "tool": "工具",
+    "duration": "{seconds}秒",
+    "status": {
+      "pending": "等待中",
+      "running": "执行中",
+      "completed": "已完成",
+      "failed": "失败",
+      "stopped": "已停止",
+      "unknown": "未知"
+    }
+  },
   "common": {
     "ui": {
       "cancel": "取消",

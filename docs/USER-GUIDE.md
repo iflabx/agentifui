@@ -266,6 +266,44 @@ the current Dify proxy may intentionally restrict that operation to administrato
 Do not interpret every disabled follow-up action as a failed task submission.
 The node tracker is a display of supported events, not a workflow editor.
 
+### Execution Process
+
+Dify Workflow steps, Chatflow steps and LangChain tool activities use a shared
+execution-process display. It shows the reported activity names, states and
+known durations. The completed-activity count is not a percentage of the whole
+task: an Agent may discover more work while it runs. A returned tool result does
+not by itself mean that the whole task succeeded. Task outcome, saving status,
+human-input requests and result files remain separate.
+For Dify, expanding or collapsing nested details does not change the completed
+count; iteration and branch summaries are not counted again as extra steps.
+
+- In a LangChain conversation, use **View execution process** beside the first
+  tool activity of a run to expand that run's activities inline. Other tool hints
+  keep their original positions among messages. Close the list with its close
+  button, the entry button or Escape inside the list; closing restores focus to
+  the entry. This inline area is separate from file-preview drawers and does not
+  start or resume a task. Unfinished tools in saved or ended runs show an unknown
+  state rather than continuing to animate; confirmed final tool states remain
+  unchanged.
+- In Chatflow, use the process toggle to open or hide the floating list. Its close
+  button returns focus to the toggle. The list is scrollable on narrow screens.
+  Supported live iteration, loop and parallel details can be expanded with their
+  step buttons. Chatflow process data is transient: reloading a saved conversation
+  does not recreate a missing process record.
+- In Workflow, the execution area shows live steps and supported nested details.
+  Selecting a saved execution displays only that execution's saved step summary,
+  never another live task's nodes. Close the result viewer to see the summary;
+  close the process summary to leave the selected historical execution. Missing
+  or incomplete snapshots show an empty/unknown state, not a simulated running
+  task. Saved summaries do not reconstruct every loop iteration or a full event
+  replay. Live error banners and their retry/dismiss actions are hidden while
+  viewing history and return when you leave it.
+
+Older tool records without reliable ordering are labelled as summaries rather
+than an exact event timeline. Process views do not expose raw tool arguments,
+node inputs/outputs or upstream error payloads. These presentation controls do
+not add backend execution capabilities or change conversation persistence.
+
 ## 7. Personal Settings And Sign-Out
 
 Use `/settings` and its navigation to open the relevant page:

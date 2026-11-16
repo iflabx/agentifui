@@ -8,10 +8,13 @@ import {
   screen,
   waitFor,
 } from '@testing-library/react';
+import { TextEncoder } from 'node:util';
 
 import { useEffect } from 'react';
 
+import { AGUI_TOOL_SUMMARY } from '../../packages/shared/src/agui';
 import { AgentChat } from './agent-chat';
+import { restoreAgentView } from './agui-state';
 import { useAgentChat } from './use-agent-chat';
 import { useAgentInteractions } from './use-agent-interactions';
 
@@ -84,6 +87,15 @@ jest.mock(
 describe('Agent chat draft', () => {
   const send = jest.fn();
   const originalFetch = global.fetch;
+  const originalTextEncoder = globalThis.TextEncoder;
+
+  beforeAll(() => {
+    globalThis.TextEncoder = TextEncoder;
+  });
+
+  afterAll(() => {
+    globalThis.TextEncoder = originalTextEncoder;
+  });
 
   afterEach(() => {
     global.fetch = originalFetch;
@@ -135,6 +147,167 @@ describe('Agent chat draft', () => {
   it('reserves space for fixed desktop and mobile shell navigation', () => {
     render(<AgentChat appId="app" conversationId={null} />);
     expect(screen.getByRole('main')).toHaveClass('pt-16', 'md:pt-12');
+  });
+
+  it.each(['failed', 'unknown', 'cancelled', 'interrupted'] as const)(
+    'does not animate unfinished tools restored from a %s run',
+    status => {
+      const base = useAgentChat('app', null, 'user');
+      const restored = restoreAgentView({
+        conversationId: 'thread',
+        messages: [],
+        runs: [
+          {
+            id: 'run-one',
+            executionStatus: status,
+            persistenceStatus: 'saved',
+            agui: {
+              schemaVersion: 2,
+              threadId: 'thread',
+              runId: 'run-one',
+              status,
+              messages: [
+                {
+                  id: 'tool-call',
+                  role: 'activity',
+                  activityType: AGUI_TOOL_SUMMARY,
+                  content: { name: 'Search', status: 'running' },
+                },
+              ],
+              outputMessageIds: ['tool-call'],
+              warnings: [],
+            },
+          },
+        ],
+      });
+      expect(restored.tools[0].status).toBe('running');
+      jest.mocked(useAgentChat).mockReturnValue({ ...base, view: restored });
+      const { container } = render(
+        <AgentChat appId="app" conversationId="thread" />
+      );
+      expect(container.querySelector('.animate-spin')).toBeNull();
+      expect(screen.getByText('status.unknown')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'view' }));
+      expect(screen.getByRole('region', { name: 'title' })).toHaveTextContent(
+        'status.unknown'
+      );
+      expect(container.querySelector('.animate-spin')).toBeNull();
+      expect(restored.tools[0].status).toBe('running');
+    }
+  );
+
+  it('shows live tools as running and stops their animation when the run ends', () => {
+    const base = useAgentChat('app', null, 'user');
+    const live = {
+      ...base,
+      busy: true,
+      view: {
+        messages: [],
+        runId: 'live-run',
+        tools: [
+          {
+            runId: 'live-run',
+            toolCallId: 'tool-call',
+            name: 'Search',
+            status: 'running',
+          },
+          {
+            runId: 'live-run',
+            toolCallId: 'finished-tool',
+            name: 'Finished search',
+            status: 'completed',
+          },
+        ],
+      },
+    };
+    jest.mocked(useAgentChat).mockReturnValue(live);
+    const { container, rerender } = render(
+      <AgentChat appId="app" conversationId={null} />
+    );
+    expect(container.querySelector('.animate-spin')).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'view' }));
+    expect(screen.queryByText('historical')).not.toBeInTheDocument();
+    jest.mocked(useAgentChat).mockReturnValue({ ...live, busy: false });
+    rerender(<AgentChat appId="app" conversationId={null} />);
+    expect(container.querySelector('.animate-spin')).toBeNull();
+    expect(screen.getByText('historical')).toBeInTheDocument();
+    expect(screen.getAllByText('status.unknown')).toHaveLength(2);
+    expect(screen.getAllByText('status.completed')).toHaveLength(2);
+  });
+
+  it('groups process details by run without changing tool timeline order or exposing raw summaries', () => {
+    const base = useAgentChat('app', null, 'user');
+    jest.mocked(useAgentChat).mockReturnValue({
+      ...base,
+      view: {
+        messages: [],
+        tools: [
+          {
+            runId: 'run-one',
+            toolCallId: 'same',
+            name: 'Search one',
+            status: 'completed',
+            order: 1,
+            summary: 'PRIVATE_RESULT',
+          },
+          {
+            runId: 'run-one',
+            toolCallId: 'next',
+            name: 'Write one',
+            status: 'running',
+            order: 2,
+          },
+          {
+            runId: 'run-two',
+            toolCallId: 'same',
+            name: 'Search two',
+            status: 'completed',
+          },
+        ],
+      },
+    });
+    const { container, rerender } = render(
+      <AgentChat appId="app" conversationId={null} />
+    );
+    expect(screen.getAllByRole('button', { name: 'view' })).toHaveLength(2);
+    fireEvent.click(screen.getAllByRole('button', { name: 'view' })[0]);
+    const process = screen.getByRole('region', { name: 'title' });
+    expect(process.textContent).toContain('Search one');
+    expect(process.textContent).toContain('Write one');
+    expect(process.textContent).not.toContain('Search two');
+    expect(process.textContent).not.toContain('unordered');
+    expect(container.textContent).not.toContain('PRIVATE_RESULT');
+    fireEvent.click(screen.getByRole('button', { name: 'close' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'view' })[1]);
+    expect(screen.getByRole('region', { name: 'title' }).textContent).toContain(
+      'unordered'
+    );
+    jest.mocked(useAgentChat).mockReturnValue({
+      ...base,
+      draftScope: 'other-conversation',
+      view: {
+        messages: [],
+        tools: [
+          {
+            runId: 'run-two',
+            toolCallId: 'same',
+            name: 'Search two',
+            status: 'completed',
+          },
+        ],
+      },
+    });
+    rerender(<AgentChat appId="app" conversationId="other-conversation" />);
+    expect(screen.queryByRole('region')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'view' }));
+    mockActorId = 'other-user';
+    rerender(<AgentChat appId="app" conversationId="other-conversation" />);
+    expect(screen.queryByRole('region')).not.toBeInTheDocument();
+    jest.mocked(useAgentChat).mockReturnValue(base);
+    rerender(<AgentChat appId="app" conversationId="other-conversation" />);
+    expect(
+      screen.queryByRole('button', { name: 'view' })
+    ).not.toBeInTheDocument();
   });
 
   it.each([true, false])(

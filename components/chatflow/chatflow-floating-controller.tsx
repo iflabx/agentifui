@@ -4,7 +4,7 @@ import { useChatflowExecutionStore } from '@lib/stores/chatflow-execution-store'
 import { cn } from '@lib/utils';
 import { Workflow } from 'lucide-react';
 
-import React from 'react';
+import React, { type RefObject } from 'react';
 
 import { useTranslations } from 'next-intl';
 
@@ -13,6 +13,7 @@ interface ChatflowFloatingControllerProps {
   isTrackerVisible: boolean;
   onToggleTracker: () => void;
   className?: string;
+  buttonRef?: RefObject<HTMLButtonElement | null>;
 }
 
 /**
@@ -28,6 +29,7 @@ export function ChatflowFloatingController({
   isTrackerVisible,
   onToggleTracker,
   className,
+  buttonRef,
 }: ChatflowFloatingControllerProps) {
   const t = useTranslations('pages.chatflow.floatingController');
 
@@ -54,6 +56,10 @@ export function ChatflowFloatingController({
     <div className={cn('fixed right-4 bottom-24 z-20', className)}>
       {/* Floating ball - click to directly switch the node tracker */}
       <button
+        ref={buttonRef}
+        type="button"
+        aria-expanded={isTrackerVisible}
+        aria-label={isTrackerVisible ? t('hideTracker') : t('showTracker')}
         onClick={handleToggleTracker}
         className={cn(
           'h-12 w-12 rounded-full shadow-lg transition-all duration-200',

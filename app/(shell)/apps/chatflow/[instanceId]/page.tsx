@@ -9,6 +9,7 @@ import { ChatInput } from '@components/chat-input';
 import { ChatflowFloatingController } from '@components/chatflow/chatflow-floating-controller';
 import { ChatflowInputArea } from '@components/chatflow/chatflow-input-area';
 import { ChatflowNodeTracker } from '@components/chatflow/chatflow-node-tracker';
+import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
 import { useChatScroll, useWelcomeScreen } from '@lib/hooks';
 import { useChatflowInterface } from '@lib/hooks/use-chatflow-interface';
 import { useChatflowState } from '@lib/hooks/use-chatflow-state';
@@ -22,12 +23,20 @@ import { useSidebarStore } from '@lib/stores/sidebar-store';
 import { cn } from '@lib/utils';
 import { Blocks, Loader2 } from 'lucide-react';
 
-import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 
 export default function AppDetailPage() {
+  const { session } = useAuthSession();
+  const trackerButtonRef = useRef<HTMLButtonElement>(null);
   const router = useRouter();
   const params = useParams();
   const pathname = usePathname() ?? '';
@@ -48,6 +57,7 @@ export default function AppDetailPage() {
     setShowNodeTracker,
     showFloatingController,
   } = useChatflowState({
+    scope: JSON.stringify([session?.user.id, instanceId]),
     isChatflowApp: true,
     chatflowInterface,
     regularInterface: chatflowInterface,
@@ -431,6 +441,11 @@ export default function AppDetailPage() {
 
               <ChatflowNodeTracker
                 isVisible={showNodeTracker}
+                scope={JSON.stringify([instanceId, formIdentity])}
+                onClose={() => {
+                  setShowNodeTracker(false);
+                  trackerButtonRef.current?.focus();
+                }}
                 className={cn(
                   'fixed right-4 bottom-40 z-30 max-w-sm',
                   'transition-all duration-300'
@@ -443,6 +458,7 @@ export default function AppDetailPage() {
         <ScrollToBottomButton />
 
         <ChatflowFloatingController
+          buttonRef={trackerButtonRef}
           isVisible={showFloatingController}
           isTrackerVisible={showNodeTracker}
           onToggleTracker={() => setShowNodeTracker(!showNodeTracker)}

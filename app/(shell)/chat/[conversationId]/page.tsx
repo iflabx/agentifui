@@ -114,6 +114,7 @@ function LegacyChatPage() {
 
   const { inputHeight } = useChatLayoutStore();
   const isPreviewOpen = useFilePreviewStore(state => state.isPreviewOpen);
+  const trackerButtonRef = React.useRef<HTMLButtonElement>(null);
   const chatflowInterface = useChatflowInterface();
   const regularInterface = useChatInterface();
   const { conversationAppId } = regularInterface;
@@ -132,6 +133,7 @@ function LegacyChatPage() {
     setShowNodeTracker,
     showFloatingController,
   } = useChatflowState({
+    scope: JSON.stringify([session?.user.id, conversationIdFromUrl]),
     isChatflowApp,
     chatflowInterface,
     regularInterface,
@@ -270,7 +272,15 @@ function LegacyChatPage() {
                    Popup controlled by user clicking floating ball, or auto-popup when sending messages */}
               {isChatflowApp && showNodeTracker && (
                 <ChatflowNodeTracker
-                  isVisible={showNodeTracker}
+                  isVisible={showNodeTracker && !isPreviewOpen}
+                  scope={JSON.stringify([
+                    conversationAppId,
+                    conversationIdFromUrl,
+                  ])}
+                  onClose={() => {
+                    setShowNodeTracker(false);
+                    trackerButtonRef.current?.focus();
+                  }}
                   className={cn(
                     'fixed right-4 bottom-40 z-30 max-w-sm',
                     'transition-all duration-300'
@@ -286,6 +296,7 @@ function LegacyChatPage() {
         {/* New: Chatflow floating controller - only show for chatflow apps */}
         {isChatflowApp && (
           <ChatflowFloatingController
+            buttonRef={trackerButtonRef}
             isVisible={showFloatingController}
             isTrackerVisible={showNodeTracker}
             onToggleTracker={() => setShowNodeTracker(!showNodeTracker)}

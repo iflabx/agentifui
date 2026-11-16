@@ -2,6 +2,7 @@
 
 import { ResizableSplitPane } from '@components/ui/resizable-split-pane';
 import { MobileTabSwitcher } from '@components/workflow/mobile-tab-switcher';
+import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
 import { useMobile } from '@lib/hooks/use-mobile';
 import { useWorkflowExecution } from '@lib/hooks/use-workflow-execution';
 import { getExecutionById } from '@lib/services/client/app-executions-api';
@@ -58,6 +59,16 @@ function buildExecutionViewerResult(
  * - Unified status management and data flow
  */
 export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
+  const { session } = useAuthSession();
+  return (
+    <WorkflowLayoutSession
+      key={JSON.stringify([session?.user.id, instanceId])}
+      instanceId={instanceId}
+    />
+  );
+}
+
+function WorkflowLayoutSession({ instanceId }: WorkflowLayoutProps) {
   const isMobile = useMobile();
   const t = useTranslations('pages.workflow.buttons');
   const router = useRouter();
@@ -235,7 +246,7 @@ export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
     [closeHistoricalExecution, requestedExecutionId, restoredExecution?.id]
   );
 
-  const isShowingRestoredExecution = !!restoredExecution && !isExecuting;
+  const isShowingRestoredExecution = !!restoredExecution;
   const activeExecution = isShowingRestoredExecution
     ? restoredExecution
     : currentExecution;
@@ -370,7 +381,7 @@ export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
     return (
       <div className="flex h-full flex-col overflow-hidden">
         {/* Global error banner */}
-        {error && (
+        {error && !isShowingRestoredExecution && (
           <ErrorBanner
             error={error}
             canRetry={canRetry}
@@ -404,15 +415,13 @@ export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
                 isExecuting={isExecuting}
                 executionResult={activeExecutionResult}
                 currentExecution={activeExecution}
+                historical={isShowingRestoredExecution}
                 autoOpenResult={true}
                 openResultSignal={resultOpenSignal}
-                forceShowResult={
-                  isShowingRestoredExecution && !!activeExecutionResult
-                }
                 onStop={canStop ? handleStopExecution : undefined}
                 onRetry={handleRetryExecution}
                 onReset={handleCompleteReset}
-                onCloseResult={
+                onCloseHistory={
                   isShowingRestoredExecution
                     ? closeHistoricalExecution
                     : undefined
@@ -441,7 +450,7 @@ export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
   return (
     <div className="relative flex h-full flex-col overflow-hidden">
       {/* Global error banner */}
-      {error && (
+      {error && !isShowingRestoredExecution && (
         <ErrorBanner
           error={error}
           canRetry={canRetry}
@@ -482,15 +491,13 @@ export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
                     isExecuting={isExecuting}
                     executionResult={activeExecutionResult}
                     currentExecution={activeExecution}
+                    historical={isShowingRestoredExecution}
                     autoOpenResult={true}
                     openResultSignal={resultOpenSignal}
-                    forceShowResult={
-                      isShowingRestoredExecution && !!activeExecutionResult
-                    }
                     onStop={canStop ? handleStopExecution : undefined}
                     onRetry={handleRetryExecution}
                     onReset={handleCompleteReset}
-                    onCloseResult={
+                    onCloseHistory={
                       isShowingRestoredExecution
                         ? closeHistoricalExecution
                         : undefined

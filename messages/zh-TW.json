@@ -1,4 +1,27 @@
 {
+  "executionProcess": {
+    "title": "執行過程",
+    "close": "關閉執行過程",
+    "view": "查看執行過程",
+    "hide": "收起執行過程",
+    "completedCount": "已完成 {count} 項活動",
+    "waiting": "等待活動更新。",
+    "empty": "無可用過程記錄。",
+    "historical": "已儲存的活動摘要，並非完整事件重播。",
+    "unordered": "活動摘要；未記錄精確順序。",
+    "failedNotice": "本次執行遇到錯誤，各項活動狀態分別顯示。",
+    "step": "步驟",
+    "tool": "工具",
+    "duration": "{seconds}秒",
+    "status": {
+      "pending": "等待中",
+      "running": "執行中",
+      "completed": "已完成",
+      "failed": "失敗",
+      "stopped": "已停止",
+      "unknown": "未知"
+    }
+  },
   "common": {
     "ui": {
       "cancel": "取消",
