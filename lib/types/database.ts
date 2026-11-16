@@ -147,6 +147,7 @@ export interface ServiceInstanceConfig {
   langchain?: {
     assistant_id: string;
     human_input?: boolean;
+    result_profile_enabled?: boolean;
   };
 
   // Dify API base URL

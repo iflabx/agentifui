@@ -16,7 +16,11 @@ export interface InstanceFormData {
   config: {
     backend_type?: 'dify' | 'langchain';
     interaction_protocol?: 'ag-ui/1.0';
-    langchain?: { assistant_id: string; human_input?: boolean };
+    langchain?: {
+      assistant_id: string;
+      human_input?: boolean;
+      result_profile_enabled?: boolean;
+    };
     api_url: string;
     app_metadata: {
       app_type: 'model' | 'marketplace';

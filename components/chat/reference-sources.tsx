@@ -11,6 +11,8 @@ import {
   DocumentTextIcon,
 } from '@heroicons/react/24/outline';
 
+import { SourceListItem } from './source-list';
+
 interface RetrieverResource {
   dataset_name: string;
   document_name: string;
@@ -128,150 +130,151 @@ export function ReferenceSources({
         >
           <div className="divide-y divide-stone-200/30 dark:divide-stone-700/30">
             {retrieverResources.map((resource, index) => (
-              <div
+              <SourceListItem
                 key={`${resource.dataset_id}-${resource.segment_id}-${index}`}
+                title={resource.document_name}
+                titleAs="h4"
+                titleClassName={cn(
+                  'truncate font-serif text-sm font-semibold',
+                  'text-stone-900 dark:text-stone-100'
+                )}
+                excerpt={
+                  expandedIndex === index
+                    ? resource.content
+                    : getContentPreview(resource.content)
+                }
+                excerptClassName={
+                  expandedIndex === index ? 'whitespace-pre-wrap' : undefined
+                }
+                onCopy={() => void handleCopy(resource.content, index)}
+                copyLabel={copiedIndex === index ? t('copied') : t('copy')}
+                copyIcon={<ClipboardDocumentIcon className="h-3 w-3" />}
+                copyClassName={cn(
+                  'flex items-center space-x-1 rounded px-2 py-1 font-serif text-xs font-medium transition-colors',
+                  'text-stone-500 hover:bg-stone-100 hover:text-stone-700',
+                  'dark:text-stone-400 dark:hover:bg-stone-700 dark:hover:text-stone-200'
+                )}
                 className={cn(
                   'p-4 transition-all duration-200',
                   'hover:bg-stone-200/70 dark:hover:bg-stone-800/60'
                 )}
-              >
-                {/* Header row */}
-                <div className="mb-3 flex items-start justify-between">
-                  <div className="flex min-w-0 flex-1 items-center space-x-3">
-                    {/* Index circle */}
+                renderHeader={title => (
+                  <div className="mb-3 flex items-start justify-between">
+                    <div className="flex min-w-0 flex-1 items-center space-x-3">
+                      {/* Index circle */}
+                      <div
+                        className={cn(
+                          'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-xs font-medium',
+                          'bg-stone-300 text-stone-700 dark:bg-stone-600 dark:text-stone-200'
+                        )}
+                      >
+                        {index + 1}
+                      </div>
+
+                      {/* Document title */}
+                      <div className="min-w-0 flex-1">
+                        {title}
+                        <div className="mt-0.5 flex items-center space-x-2">
+                          <span
+                            className={cn(
+                              'rounded px-1.5 py-0.5 font-serif text-xs',
+                              'bg-stone-300/70 text-stone-600 dark:bg-stone-600/50 dark:text-stone-300'
+                            )}
+                          >
+                            {resource.dataset_name}
+                          </span>
+                          {resource.word_count && (
+                            <span
+                              className={cn(
+                                'font-serif text-xs',
+                                'text-stone-600 dark:text-stone-400'
+                              )}
+                            >
+                              {t('wordCount', {
+                                count: resource.word_count.toLocaleString(),
+                              })}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Relevance score */}
                     <div
                       className={cn(
-                        'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-xs font-medium',
+                        'flex-shrink-0 rounded-full px-2 py-1 font-serif text-xs font-bold',
                         'bg-stone-300 text-stone-700 dark:bg-stone-600 dark:text-stone-200'
                       )}
                     >
-                      {index + 1}
+                      {formatScore(resource.score)}
                     </div>
-
-                    {/* Document title */}
-                    <div className="min-w-0 flex-1">
-                      <h4
-                        className={cn(
-                          'truncate font-serif text-sm font-semibold',
-                          'text-stone-900 dark:text-stone-100'
-                        )}
-                      >
-                        {resource.document_name}
-                      </h4>
-                      <div className="mt-0.5 flex items-center space-x-2">
-                        <span
+                  </div>
+                )}
+                renderExcerpt={excerpt => (
+                  <div
+                    className={cn(
+                      'mb-3 rounded-lg p-3',
+                      'border border-stone-300/60 bg-white/80',
+                      'dark:border-stone-700/30 dark:bg-stone-900/50'
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        'font-serif text-sm leading-relaxed',
+                        'text-stone-700 dark:text-stone-300'
+                      )}
+                    >
+                      {expandedIndex === index ? (
+                        <div className="max-h-40 scrollbar-thin scrollbar-thumb-stone-400 scrollbar-track-transparent overflow-y-auto">
+                          {excerpt}
+                        </div>
+                      ) : (
+                        excerpt
+                      )}
+                    </div>
+                  </div>
+                )}
+                renderActions={copyButton => (
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      {/* Expand/Collapse button */}
+                      {resource.content.length > 100 && (
+                        <button
+                          onClick={() => toggleItemExpanded(index)}
                           className={cn(
-                            'rounded px-1.5 py-0.5 font-serif text-xs',
-                            'bg-stone-300/70 text-stone-600 dark:bg-stone-600/50 dark:text-stone-300'
+                            'inline-flex items-center space-x-1 rounded px-2 py-1 font-serif text-xs font-medium',
+                            'transition-colors duration-150 focus:outline-none',
+                            'text-stone-600 hover:bg-stone-200/50 hover:text-stone-800',
+                            'dark:text-stone-400 dark:hover:bg-stone-700/50 dark:hover:text-stone-200'
                           )}
                         >
-                          {resource.dataset_name}
-                        </span>
-                        {resource.word_count && (
-                          <span
-                            className={cn(
-                              'font-serif text-xs',
-                              'text-stone-600 dark:text-stone-400'
-                            )}
-                          >
-                            {t('wordCount', {
-                              count: resource.word_count.toLocaleString(),
-                            })}
+                          <DocumentTextIcon className="h-3 w-3" />
+                          <span>
+                            {expandedIndex === index
+                              ? t('collapse')
+                              : t('expand')}
                           </span>
-                        )}
-                      </div>
+                        </button>
+                      )}
+
+                      {/* Copy button */}
+                      {copyButton}
                     </div>
-                  </div>
 
-                  {/* Relevance score */}
-                  <div
-                    className={cn(
-                      'flex-shrink-0 rounded-full px-2 py-1 font-serif text-xs font-bold',
-                      'bg-stone-300 text-stone-700 dark:bg-stone-600 dark:text-stone-200'
-                    )}
-                  >
-                    {formatScore(resource.score)}
-                  </div>
-                </div>
-
-                {/* Content area */}
-                <div
-                  className={cn(
-                    'mb-3 rounded-lg p-3',
-                    'border border-stone-300/60 bg-white/80',
-                    'dark:border-stone-700/30 dark:bg-stone-900/50'
-                  )}
-                >
-                  <div
-                    className={cn(
-                      'font-serif text-sm leading-relaxed',
-                      'text-stone-700 dark:text-stone-300'
-                    )}
-                  >
-                    {expandedIndex === index ? (
-                      <div className="scrollbar-thin scrollbar-thumb-stone-400 scrollbar-track-transparent max-h-40 overflow-y-auto">
-                        <p className="whitespace-pre-wrap">
-                          {resource.content}
-                        </p>
-                      </div>
-                    ) : (
-                      <p>{getContentPreview(resource.content)}</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Action buttons area */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    {/* Expand/Collapse button */}
-                    {resource.content.length > 100 && (
-                      <button
-                        onClick={() => toggleItemExpanded(index)}
+                    {/* Page info (if available) */}
+                    {resource.page && (
+                      <span
                         className={cn(
-                          'inline-flex items-center space-x-1 rounded px-2 py-1 font-serif text-xs font-medium',
-                          'transition-colors duration-150 focus:outline-none',
-                          'text-stone-600 hover:bg-stone-200/50 hover:text-stone-800',
-                          'dark:text-stone-400 dark:hover:bg-stone-700/50 dark:hover:text-stone-200'
+                          'font-serif text-xs',
+                          'text-stone-400 dark:text-stone-500'
                         )}
                       >
-                        <DocumentTextIcon className="h-3 w-3" />
-                        <span>
-                          {expandedIndex === index
-                            ? t('collapse')
-                            : t('expand')}
-                        </span>
-                      </button>
-                    )}
-
-                    {/* Copy button */}
-                    <button
-                      onClick={() => handleCopy(resource.content, index)}
-                      className={cn(
-                        'flex items-center space-x-1 rounded px-2 py-1 font-serif text-xs font-medium transition-colors',
-                        'text-stone-500 hover:bg-stone-100 hover:text-stone-700',
-                        'dark:text-stone-400 dark:hover:bg-stone-700 dark:hover:text-stone-200'
-                      )}
-                    >
-                      <ClipboardDocumentIcon className="h-3 w-3" />
-                      <span>
-                        {copiedIndex === index ? t('copied') : t('copy')}
+                        {t('page', { page: resource.page })}
                       </span>
-                    </button>
+                    )}
                   </div>
-
-                  {/* Page info (if available) */}
-                  {resource.page && (
-                    <span
-                      className={cn(
-                        'font-serif text-xs',
-                        'text-stone-400 dark:text-stone-500'
-                      )}
-                    >
-                      {t('page', { page: resource.page })}
-                    </span>
-                  )}
-                </div>
-              </div>
+                )}
+              />
             ))}
           </div>
         </div>

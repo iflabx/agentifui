@@ -240,6 +240,9 @@ upload. Shared text-only Dify/LangChain chat does not currently expose general
 file handling. An export of displayed text/code is not a durable Agent-generated
 file artifact with a managed lifecycle.
 
+The separately enabled frozen-result profile provides bounded report/CSV delivery,
+not general file input. See [reports, data and sources](#9-reports-data-and-sources).
+
 ### Run A Workflow Or Text-Generation Application
 
 1. Open the application from `/apps`, not the model selector. Review its input
@@ -309,3 +312,34 @@ When reporting a problem, include the application name, time, browser, short
 reproduction steps and any visible error/request identifier. Redact personal
 content and credentials from screenshots. Administrators can use the
 [administrator guide](ADMIN-GUIDE.md) and [operations guide](OPERATIONS.md).
+
+## 9. Reports, Data And Sources
+
+An explicitly enabled result application can publish a report and CSV dataset
+inside the existing conversation. Result cards show the filename, media type and
+size. Select a file to preview it, or use its download button. Results are not
+automatically opened when a task finishes. Close the preview or press Escape to
+return to the card; the same content is available in the mobile preview panel.
+
+Markdown is displayed without executable HTML or external images. CSV is a
+read-only table, not a spreadsheet: formulas are displayed as text. Preview is
+limited to 200 rows, 20 columns and 2,000 characters per cell; a truncation notice
+means the original download contains more data. Downloaded CSV may be interpreted
+as formulas by spreadsheet software. Inspect Agent-generated files before using
+them in another program. A source title and excerpt are supplied by the backend,
+not a guarantee that a conclusion is correct; use the source copy action as needed.
+
+Saved results remain associated with their original task after refresh, history
+pagination and sign-in again. If a known task has no registered result, use
+**Query result**; this reads existing work rather than running the Agent again.
+Pending results are checked at most once every three seconds for up to one minute
+while visible, then leave a manual query action. Changing conversations, leaving
+the page or hiding the tab stops those checks.
+
+Execution, message saving, result registration and file loading are separate.
+A result can be ready while the task status remains unknown, or a preview can
+fail even though the result is saved. Do not resend to repair a saving failure.
+Use the read-only query and contact an administrator for unresolved run status.
+Upstream outages or removal can prevent downloads without removing the stored
+card. Deleting the conversation removes platform access, not downloaded copies
+or all upstream/backup data. See [data handling](SECURITY-PRIVACY.md#8-result-artifact-data).

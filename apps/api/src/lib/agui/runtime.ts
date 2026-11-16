@@ -2,6 +2,7 @@ import type { Event } from '@agentifui/shared';
 
 import type { AgentApp } from '../agent-app';
 import { LANGCHAIN_CAPABILITIES } from '../agent-backends';
+import { PHASE4_RESULT_PROFILE } from '../agent-result';
 import { executeAgentRun } from '../agent-run-execution';
 import type { AgentRunRecord } from '../agent-runs-repository';
 import { executeDifyAgentRun } from './dify-execution';
@@ -20,7 +21,19 @@ export function describeNegotiatedRuntime(app: AgentApp) {
     capabilities:
       app.backendType === 'dify'
         ? { ...LANGCHAIN_CAPABILITIES, tools: false, runQuery: false }
-        : { ...LANGCHAIN_CAPABILITIES, humanInput: app.humanInput === true },
+        : {
+            ...LANGCHAIN_CAPABILITIES,
+            humanInput: app.humanInput === true,
+            ...(app.resultProfileEnabled === true
+              ? {
+                  resultArtifacts: {
+                    profile: PHASE4_RESULT_PROFILE,
+                    formats: ['text/markdown', 'text/csv'],
+                    batchesPerThread: 1,
+                  },
+                }
+              : {}),
+          },
   };
 }
 

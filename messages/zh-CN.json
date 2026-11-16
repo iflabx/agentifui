@@ -1458,6 +1458,8 @@
           "backend": {
             "label": "后端类型",
             "assistantId": "Assistant ID",
+            "resultProfileLabel": "启用 Deep Agent 结果产物",
+            "resultProfileNote": "仅对已验证支持 phase4.result.v1 的助手启用，不限制助手名称。关闭后暂停新的结果任务，已有结果仍可读取。",
             "aguiLabel": "新建应用对话使用公共 AG-UI 聊天",
             "aguiNote": "仅限应用市场中的 chatbot 应用新建纯文本应用对话，不支持文件、引用、语音及自定义变量；不影响默认模型和模型选择器。原有旧会话继续使用兼容路径，已绑定公共会话不会回退。",
             "langchainNote": "填写服务暴露的 Assistant 标识。首批仅支持文本及只读工具，服务凭证仅由服务端使用。",
@@ -2725,7 +2727,8 @@
       "renderedMode": "渲染模式",
       "rawMode": "原始模式",
       "downloadButton": "下载",
-      "charactersCount": "{count} 个字符"
+      "charactersCount": "{count} 个字符",
+      "loadFailed": "无法加载 Markdown 预览，仍可尝试下载原文件。"
     },
     "errors": {
       "noAppId": "文件预览缺少应用程序 ID",
@@ -2739,6 +2742,32 @@
     }
   },
   "langchain": {
+    "resultSingleBatch": "此应用每个会话仅发布一批结果。如需再次生成，请新建会话。",
+    "resultProfilePaused": "此应用当前暂停新任务，已有记录仍可查看。",
+    "results": {
+      "title": "Agent 结果",
+      "saved": "结果已登记",
+      "sources": "来源",
+      "loading": "正在加载结果…",
+      "unavailable": "此结果暂时不可用，请稍后重试。",
+      "download": "下载 {filename}",
+      "find": "查询结果",
+      "pending": "结果仍在准备中。",
+      "preview": "预览 {filename}",
+      "returnToResult": "返回结果卡片",
+      "saveFailed": "已找到结果，但结果记录未保存。可重新查询以重试保存，不会重新运行任务。",
+      "notPublished": "此任务没有已发布的可交付结果。",
+      "notFound": "来源结果或文件已不可用。",
+      "integrity": "结果校验失败，已禁止预览和下载。",
+      "foundUnknown": "结果已找回，但原任务状态尚未完成核对。这不代表会话已恢复或可以继续发起任务。",
+      "formulaWarning": "CSV 由 Agent 生成：电子表格应用可能将单元格解释为公式。预览仅显示文本，下载文件保持原样。",
+      "truncated": "预览不完整（最多 128 KiB、200 行、20 列或单格 2,000 字符）。请下载原文件查看全部内容。",
+      "csvTable": "CSV 结果预览",
+      "copy": "复制",
+      "copySource": "复制来源：{title}",
+      "copied": "已复制来源。",
+      "copyFailed": "无法复制来源，请选中文字手动复制。"
+    },
     "textOnlyNote": "此会话仅支持纯文本，不支持文件、引用、语音及自定义变量。原有旧会话保留兼容功能。",
     "cancelled": "已取消",
     "interrupted": "已中断",

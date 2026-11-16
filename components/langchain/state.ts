@@ -22,6 +22,7 @@ export interface AgentViewState {
   messages: AgentMessage[];
   tools: AgentToolSummary[];
   run?: AgentRun;
+  resultRuns?: AgentRun[];
 }
 
 export function agentToolsFromMessages(
@@ -136,6 +137,19 @@ export function reduceAgentEvent(
 export type AgentTimelineItem =
   | { type: 'message'; message: AgentMessage }
   | { type: 'tool'; tool: AgentToolSummary };
+
+export function mergeResultRuns(
+  current: AgentRun[] = [],
+  additions: AgentRun[] = []
+): AgentRun[] {
+  const merged = new Map<string, AgentRun>();
+  for (const run of [...current, ...additions]) {
+    const id = run.id || run.runId;
+    if (!id || (!run.deliverables && !run.deliverablesQueryAvailable)) continue;
+    merged.set(id, { ...merged.get(id), ...run });
+  }
+  return [...merged.values()];
+}
 
 export function agentTimeline(state: AgentViewState): AgentTimelineItem[] {
   const result: AgentTimelineItem[] = [];

@@ -28,6 +28,7 @@ of the other two by itself.
 | Opted-in Dify marketplace chatbot                  | `/apps`, shared chat                       | Negotiated AG-UI, text-only                      | Server-managed conversation/run saving; existing unmigrated conversations retain their compatible path |
 | Ordinary compatible LangChain Agent                | `/apps`, shared chat                       | Text chat with safe supported activity summaries | Server-managed conversation/run saving; legacy product stream and negotiated AG-UI compatibility       |
 | LangChain native human-input profile               | Separate explicitly configured application | One task and one approve/reject interruption     | Server-managed run, pending interaction, decision and result state                                     |
+| LangChain frozen-result profile                    | Separate explicitly configured application | Report/CSV preview, download and source excerpts | Server-managed history/immutable manifest; frozen bytes remain at the upstream                         |
 
 The shared Dify opt-in is for eligible marketplace **chatbots**, not model entries,
 chatflows, workflows or arbitrary required-input/file applications. It is not a
@@ -35,6 +36,12 @@ bulk migration of all Dify history. Each conversation has one persistence owner;
 do not enable both browser and server writers to make an integration work.
 
 ## 2. Capability Matrix
+
+The optional [frozen-result profile](LANGCHAIN-INTEGRATION.md#optional-frozen-result-profile)
+is separate from ordinary LangChain and human input in the table below. It supports
+one published report/CSV batch per thread, not general uploads, arbitrary files,
+an offline file archive or execution recovery. Pausing generation retains authorized
+history reads; preview/download still depend on upstream retention and availability.
 
 **Conditional** means a documented application/mode/permission-dependent path,
 not universal support. **No** means this path does not currently implement the

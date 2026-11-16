@@ -7,6 +7,7 @@ import {
 import {
   createThread,
   getCapabilities,
+  getPhase4Result,
   getRun,
   streamTurn,
 } from '../apps/api/src/lib/langchain/transport';
@@ -326,6 +327,61 @@ describe('LangChain upstream transport', () => {
     jest.useRealTimers();
   });
 
+  const resultManifest = {
+    profile: 'phase4.result.v1',
+    thread_id: 'thread-1',
+    run_id: 'native-1',
+    execution_status: 'success',
+    result_status: 'ready',
+    reason: null,
+    artifacts: [
+      {
+        artifact_id: 'report',
+        filename: 'report.md',
+        media_type: 'text/markdown',
+        size_bytes: 12,
+        sha256: 'a'.repeat(64),
+      },
+    ],
+    sources: [],
+  };
+
+  it('accepts a manifest at the actual 32 KiB response limit', async () => {
+    const manifestJSON = JSON.stringify(resultManifest);
+    const body =
+      manifestJSON + ' '.repeat(32 * 1024 - Buffer.byteLength(manifestJSON));
+    fetchMock.mockResolvedValue(new Response(bytesStream(body, 1024)));
+    await expect(
+      getPhase4Result(config, 'thread-1', 'native-1')
+    ).resolves.toMatchObject({
+      threadId: 'thread-1',
+      runId: 'native-1',
+      resultStatus: 'ready',
+    });
+  });
+
+  it.each([undefined, '1'])(
+    'rejects a response over 32 KiB even if normalization would discard extra fields (Content-Length: %s)',
+    async contentLength => {
+      const body = JSON.stringify({
+        ...resultManifest,
+        ignored: 'x'.repeat(32 * 1024),
+      });
+      fetchMock.mockResolvedValue(
+        new Response(bytesStream(body, 1024), {
+          ...(contentLength
+            ? { headers: { 'content-length': contentLength } }
+            : {}),
+        })
+      );
+      await expect(
+        getPhase4Result(config, 'thread-1', 'native-1')
+      ).rejects.toMatchObject({
+        code: 'UPSTREAM_PROTOCOL_ERROR',
+      });
+    }
+  );
+
   it('creates a server-generated thread with Bearer authentication and no metadata', async () => {
     fetchMock.mockResolvedValue(
       Response.json({
@@ -435,6 +491,117 @@ describe('LangChain upstream transport', () => {
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).not.toHaveProperty(
       'assistant_id'
     );
+  });
+
+  const resultCapabilities = (assistantId: string, patch = {}) => ({
+    assistant_id: 'ordinary-agent',
+    agents: [
+      {
+        assistant_id: assistantId,
+        ag_ui_path: '/ag-ui/deep',
+        result_profile: 'phase4.result.v1',
+        result_formats: ['text/markdown', 'text/csv'],
+        ...patch,
+      },
+    ],
+  });
+
+  it.each(['deep-agent', 'reports-agent'])(
+    'dispatches the verified result profile for %s without a name-based gate',
+    async assistantId => {
+      fetchMock
+        .mockResolvedValueOnce(Response.json(resultCapabilities(assistantId)))
+        .mockResolvedValueOnce(
+          new Response(sse([started, nativeRun, finished]), {
+            headers: { 'Content-Type': 'text/event-stream' },
+          })
+        );
+      const beforeDispatch = jest.fn();
+      expect(
+        await collect(
+          streamTurn(
+            { ...config, assistantId, resultProfileEnabled: true },
+            { ...turn, beforeDispatch }
+          )
+        )
+      ).toEqual([started, nativeRun, finished]);
+      expect(beforeDispatch).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[1][0]).toBe(
+        'https://agent.example.test/root/ag-ui/deep'
+      );
+    }
+  );
+
+  it.each([
+    { ag_ui_path: '/ag-ui' },
+    { ag_ui_path: '/arbitrary' },
+    { ag_ui_path: 'https://other.example/ag-ui/deep' },
+    { result_profile: 'unsupported.v2' },
+    { result_formats: ['text/markdown'] },
+    { result_profile: undefined },
+  ])(
+    'rejects an incompatible result capability before dispatch %#',
+    async patch => {
+      fetchMock.mockResolvedValue(
+        Response.json(resultCapabilities('reports-agent', patch))
+      );
+      const beforeDispatch = jest.fn();
+      await expect(
+        collect(
+          streamTurn(
+            {
+              ...config,
+              assistantId: 'reports-agent',
+              resultProfileEnabled: true,
+            },
+            { ...turn, beforeDispatch }
+          )
+        )
+      ).rejects.toMatchObject({ code: 'UPSTREAM_PROTOCOL_ERROR' });
+      expect(beforeDispatch).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it.each([false, undefined])(
+    'does not dispatch or fall back when a result profile is not enabled (%s)',
+    async resultProfileEnabled => {
+      fetchMock.mockResolvedValue(
+        Response.json(resultCapabilities('reports-agent'))
+      );
+      const beforeDispatch = jest.fn();
+      await expect(
+        collect(
+          streamTurn(
+            { ...config, assistantId: 'reports-agent', resultProfileEnabled },
+            { ...turn, beforeDispatch }
+          )
+        )
+      ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+      expect(beforeDispatch).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it('does not turn an ordinary assistant into a result profile just because the switch is enabled', async () => {
+    fetchMock.mockResolvedValue(
+      Response.json({ assistant_id: 'reports-agent' })
+    );
+    const beforeDispatch = jest.fn();
+    await expect(
+      collect(
+        streamTurn(
+          {
+            ...config,
+            assistantId: 'reports-agent',
+            resultProfileEnabled: true,
+          },
+          { ...turn, beforeDispatch }
+        )
+      )
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    expect(beforeDispatch).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it.each([

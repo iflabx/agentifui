@@ -13,32 +13,44 @@ interface MarkdownPreviewProps {
   content: Blob;
   filename: string;
   onDownload: () => void;
+  allowImages?: boolean;
 }
 
 export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
   content,
   filename,
   onDownload,
+  allowImages = true,
 }) => {
   const t = useTranslations('filePreview.markdownPreview');
   const [markdown, setMarkdown] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
   const [viewMode, setViewMode] = useState<'rendered' | 'raw'>('rendered');
 
   useEffect(() => {
+    let active = true;
+    setIsLoading(true);
+    setFailed(false);
+    setMarkdown('');
     const loadMarkdown = async () => {
       try {
         const textContent = await content.text();
-        setMarkdown(textContent);
+        if (active) setMarkdown(textContent);
       } catch {
-        setMarkdown('Error loading content');
+        if (active) setFailed(true);
       } finally {
-        setIsLoading(false);
+        if (active) setIsLoading(false);
       }
     };
 
     loadMarkdown();
+    return () => {
+      active = false;
+    };
   }, [content]);
+
+  if (failed) return <p role="alert">{t('loadFailed')}</p>;
 
   if (isLoading) {
     return (
@@ -117,8 +129,10 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
         {viewMode === 'rendered' ? (
           <div className={cn('prose prose-sm max-w-none', 'dark:prose-invert')}>
             <ReactMarkdown
+              skipHtml
               remarkPlugins={[remarkGfm]}
               components={{
+                ...(allowImages ? {} : { img: () => null }),
                 code({ className, children, ...props }) {
                   const isBlock = className?.includes('language-');
 

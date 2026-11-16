@@ -2,21 +2,15 @@
 
 import type { MessageAttachment } from '@lib/stores/chat-store';
 import { useFilePreviewStore } from '@lib/stores/ui/file-preview-store';
-import { cn, formatBytes } from '@lib/utils';
-import { AnimatePresence, type Transition, motion } from 'framer-motion';
-import {
-  AlertCircleIcon,
-  DownloadIcon,
-  RefreshCwIcon,
-  XIcon,
-} from 'lucide-react';
+import { formatBytes } from '@lib/utils';
+import { AlertCircleIcon, DownloadIcon, RefreshCwIcon } from 'lucide-react';
 
 import React, { useEffect } from 'react';
 
 import { useTranslations } from 'next-intl';
 import { usePathname } from 'next/navigation';
 
-import { FilePreviewBackdrop } from './file-preview-backdrop';
+import { PreviewShell } from './preview-shell';
 import { AudioPreview } from './previews/audio-preview';
 import { ImagePreview } from './previews/image-preview';
 import { MarkdownPreview } from './previews/markdown-preview';
@@ -268,68 +262,13 @@ export const FilePreviewCanvas = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
-  const panelVariants = {
-    hidden: { x: '100%' },
-    visible: { x: 0 },
-  };
-
-  // Speed up animation: reduce duration
-  const transitionConfig: Transition = {
-    type: 'tween',
-    duration: 0.2, // Reduce from 0.3 to 0.2
-    ease: 'easeInOut',
-  };
-
   return (
-    <>
-      <FilePreviewBackdrop />
-
-      <AnimatePresence>
-        {isPreviewOpen && (
-          <motion.div
-            className={cn(
-              'fixed top-0 right-0 z-50 h-full',
-              'flex flex-col',
-              'w-[85%] md:w-[60%] lg:w-[50%] xl:w-[40%]',
-              'border-l border-stone-200 bg-white text-stone-900',
-              'dark:border-l dark:border-stone-700 dark:bg-stone-800 dark:text-stone-100'
-            )}
-            variants={panelVariants}
-            initial="hidden"
-            animate="visible"
-            exit="hidden"
-            transition={transitionConfig}
-          >
-            <div
-              className={cn(
-                'flex flex-shrink-0 items-center justify-between border-b p-4',
-                'border-stone-200 dark:border-stone-700'
-              )}
-            >
-              <h2
-                className="truncate text-xl font-semibold"
-                title={currentPreviewFile?.name || 'File information'}
-              >
-                {currentPreviewFile?.name || 'File information'}
-              </h2>
-              <button
-                onClick={closePreview}
-                className={cn(
-                  'rounded-full p-1',
-                  'text-stone-600 hover:bg-stone-200 hover:text-stone-800',
-                  'dark:text-stone-300 dark:hover:bg-stone-700 dark:hover:text-stone-200'
-                )}
-                aria-label={t('closeButton')}
-              >
-                <XIcon className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="flex flex-1 flex-col overflow-y-auto p-6">
-              <FileContentViewer file={currentPreviewFile} />
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </>
+    <PreviewShell
+      open={isPreviewOpen}
+      title={currentPreviewFile?.name || t('fileInfo.title')}
+      onClose={closePreview}
+    >
+      <FileContentViewer file={currentPreviewFile} />
+    </PreviewShell>
   );
 };

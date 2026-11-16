@@ -12,6 +12,34 @@ import {
 } from '@components/admin/api-config/instance-form-utils';
 
 describe('instance form utils', () => {
+  it.each([true, false, undefined])(
+    'roundtrips result-profile intent %s without converting ordinary apps to paused profiles',
+    enabled => {
+      const instance = {
+        instance_id: 'reports',
+        config: {
+          backend_type: 'langchain' as const,
+          langchain: {
+            assistant_id: 'reports-agent',
+            ...(enabled !== undefined
+              ? { result_profile_enabled: enabled }
+              : {}),
+          },
+        },
+      };
+      const data = createInstanceFormDataFromInstance(instance, []);
+      const saved = prepareInstanceFormForSave(data);
+      expect(saved.config.langchain?.result_profile_enabled).toBe(enabled);
+      expect(
+        createInstanceFormDataFromInstance(saved, []).config.langchain
+      ).toEqual(saved.config.langchain);
+      if (enabled === undefined)
+        expect(saved.config.langchain).not.toHaveProperty(
+          'result_profile_enabled'
+        );
+    }
+  );
+
   it('returns the first matching active provider for the current filter', () => {
     expect(
       getInitialProviderId(

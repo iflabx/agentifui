@@ -314,6 +314,72 @@ describe('independent agent chat lifecycle', () => {
     unmount();
   });
 
+  it('retains the result entry when post-success history fails and lets status retry recover without regeneration', async () => {
+    let failHistory = true;
+    const run = {
+      id: 'run',
+      conversationId: 'local',
+      executionStatus: 'success',
+      persistenceStatus: 'saved',
+      deliverablesQueryAvailable: true,
+    };
+    jest.mocked(agentRequest).mockImplementation(async (_appId, suffix) => {
+      if (!suffix)
+        return { app: { name: 'Test agent' }, protocol: 'ag-ui/1.0' } as never;
+      if (suffix === '/runs/run') return run as never;
+      if (failHistory) throw new AgentRequestError(503);
+      return {
+        conversation: { id: 'local', title: 'Test' },
+        messages: [{ id: 'assistant', role: 'assistant', content: 'Reply' }],
+        runs: [run],
+      } as never;
+    });
+    jest
+      .mocked(consumeAguiStream)
+      .mockImplementationOnce(async (_response, input) => {
+        input.accept(
+          {
+            schemaVersion: 2,
+            threadId: 'local',
+            runId: 'run',
+            status: 'succeeded',
+            messages: [
+              { id: 'assistant', role: 'assistant', content: 'Reply' },
+            ],
+            outputMessageIds: ['assistant'],
+            warnings: [],
+          },
+          { conversationId: 'local', runId: 'run', userMessageId: 'user' }
+        );
+      });
+    const { result, unmount } = renderHook(() =>
+      useAgentChat('app-uuid', null)
+    );
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    jest.useFakeTimers();
+    await act(async () => {
+      await result.current.send('Hello');
+    });
+    expect(result.current.view.resultRuns).toEqual([run]);
+    expect(result.current.view.run).toMatchObject({
+      executionStatus: 'success',
+      persistenceStatus: 'saved',
+    });
+    expect(result.current.unconfirmed).toBe(true);
+    failHistory = false;
+    await act(async () => {
+      result.current.retryStatus();
+    });
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(1600);
+    });
+    expect(result.current.unconfirmed).toBe(false);
+    expect(result.current.error).toBeNull();
+    expect(result.current.view.resultRuns).toEqual([run]);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
   it('does not abort an active stream when accepted updates the search parameters', async () => {
     let finishStream: () => void = () => undefined;
     jest
@@ -477,6 +543,101 @@ describe('independent agent chat lifecycle', () => {
     });
     expect(result.current.view.messages).toEqual([]);
     expect(global.fetch).toHaveBeenCalledTimes(2);
+    unmount();
+  });
+
+  it.each([null, 'local'])(
+    'treats a paused-profile rejection as not accepted, keeps the draft, and permits an explicit retry for %s',
+    async conversationId => {
+      const original = jest.mocked(agentRequest).getMockImplementation()!;
+      jest.mocked(agentRequest).mockImplementation((appId, suffix, init) => {
+        if (!suffix)
+          return Promise.resolve({
+            app: { name: 'Test agent' },
+            protocol: 'ag-ui/1.0',
+          }) as never;
+        return original(appId, suffix, init);
+      });
+      const failure = new AgentRequestError(409, {
+        code: 'AGENT_RESULT_PROFILE_DISABLED',
+        source: 'fastify-api',
+        severity: 'warn',
+        retryable: false,
+        userMessage: 'New result tasks are paused.',
+        requestId: 'synthetic-request',
+        occurredAt: '2026-01-01T00:00:00.000Z',
+      });
+      jest.mocked(consumeAguiStream).mockRejectedValue(failure);
+      const { result, unmount } = renderHook(() =>
+        useAgentChat('app-uuid', conversationId, 'test-actor')
+      );
+      await waitFor(() => expect(result.current.ready).toBe(true));
+      const previousMessages = result.current.view.messages;
+      const store = useLangchainDraftStore.getState();
+      const scope = store.selectScope(
+        'app-uuid',
+        result.current.draftScope,
+        false
+      )!;
+      act(() => store.setText(scope, 'Report request'));
+      const snapshot = useLangchainDraftStore.getState().drafts[scope];
+      let accepted: unknown;
+      await act(async () => {
+        accepted = await result.current.send(snapshot.text, snapshot);
+      });
+      expect(accepted).toBe(false);
+      expect(result.current.view.messages).toEqual(previousMessages);
+      expect(result.current.error).toBe(failure);
+      expect(result.current.unconfirmed).toBe(false);
+      expect(useLangchainDraftStore.getState().pendingSubmissions).toEqual({});
+      expect(useLangchainDraftStore.getState().drafts[scope]).toEqual(snapshot);
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(agentSubmissionRequest).not.toHaveBeenCalled();
+      await act(async () => {
+        await result.current.send(snapshot.text, snapshot);
+      });
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect(result.current.unconfirmed).toBe(false);
+      unmount();
+    }
+  );
+
+  it('keeps other AG-UI conflicts uncertain rather than treating them as a paused-profile rejection', async () => {
+    const original = jest.mocked(agentRequest).getMockImplementation()!;
+    jest.mocked(agentRequest).mockImplementation((appId, suffix, init) => {
+      if (!suffix)
+        return Promise.resolve({
+          app: { name: 'Test agent' },
+          protocol: 'ag-ui/1.0',
+        }) as never;
+      return original(appId, suffix, init);
+    });
+    jest.mocked(consumeAguiStream).mockRejectedValue(
+      new AgentRequestError(409, {
+        code: 'AGENT_SUBMISSION_CONFLICT',
+        source: 'fastify-api',
+        severity: 'warn',
+        retryable: false,
+        userMessage: 'Submission needs verification.',
+        requestId: 'synthetic-request',
+        occurredAt: '2026-01-01T00:00:00.000Z',
+      })
+    );
+    const { result, unmount } = renderHook(() =>
+      useAgentChat('app-uuid', null, 'test-actor')
+    );
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    await act(async () => {
+      await result.current.send('Report request');
+    });
+    expect(result.current.unconfirmed).toBe(true);
+    expect(
+      Object.values(useLangchainDraftStore.getState().pendingSubmissions)
+    ).toHaveLength(1);
+    await act(async () => {
+      await result.current.send('Do not resend');
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
     unmount();
   });
 

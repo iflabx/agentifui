@@ -10,6 +10,10 @@ import type { AgentApp } from './agent-app';
 import { AgentPolicyError } from './agent-backends';
 import { executeHumanInputRun } from './agent-human-input-execution';
 import {
+  parseStoredAgentDeliverables,
+  publicAgentDeliverables,
+} from './agent-result';
+import {
   AgentRunError,
   type AgentRunRecord,
   type AgentRunResult,
@@ -70,6 +74,16 @@ export type AgentClientEvent =
     };
 
 export function publicAgentRun(run: AgentRunRecord) {
+  let deliverables;
+  if (run.deliverables) {
+    try {
+      deliverables = publicAgentDeliverables(
+        parseStoredAgentDeliverables(run.deliverables)
+      );
+    } catch {
+      deliverables = undefined;
+    }
+  }
   return {
     id: run.id,
     runId: run.id,
@@ -79,6 +93,11 @@ export function publicAgentRun(run: AgentRunRecord) {
     executionStatus: run.execution_status,
     persistenceStatus: run.persistence_status,
     ...(run.error_code ? { errorCode: run.error_code } : {}),
+    ...(deliverables
+      ? {
+          deliverables,
+        }
+      : {}),
     createdAt: run.created_at,
     updatedAt: run.updated_at,
     ...(run.result?.agui

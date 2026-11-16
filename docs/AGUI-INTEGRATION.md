@@ -431,3 +431,30 @@ pnpm --filter @agentifui/api type-check
 Normal application regression and production-build checks still apply before a
 candidate is delivered. No additional service, gateway, or deployment stack is
 required by the pure prototypes.
+
+## Result Delivery Boundary
+
+Frozen result delivery extends the existing shared conversation, run and history
+interface; it does not add file bytes to AG-UI messages, model history or the
+event projection. `phase4.result.v1` is the supported upstream profile. The
+versioned public manifest (`schemaVersion: 1`) and authenticated deliverable and
+artifact GET routes are AgentifUI product APIs, not additional AG-UI event types.
+The shared product DTO lives in `packages/shared/src/agent-results.ts`; the native
+profile is not a field of that DTO. API and Web consume the same definition, and
+only the adapter restricts the initial profile to `report` and `data` IDs.
+See the [service contract](LANGCHAIN-INTEGRATION.md#optional-frozen-result-profile).
+
+The public view uses local app/conversation/run IDs. Native thread/run IDs remain
+server-side. A lightweight history index merges results by local run ID across
+pagination and live updates; file previews use a separate authenticated loader,
+not the legacy Dify byte cache. Existing Dify files/references remain on their
+original path and do not automatically gain the new profile.
+Their source presentation reuses the neutral result-source view while retaining
+Dify dataset and relevance metadata. The shared preview shell preserves a
+non-modal desktop side panel and a modal mobile drawer.
+
+Result discovery only registers immutable metadata. It must not repair execution
+or message-saving state, release occupancy, resume a graph or regenerate output.
+An upstream-ready result with a locally unknown run remains an unknown run with
+readable results. Activity resumption, event replay and execution recovery are not
+promised by this result interface.

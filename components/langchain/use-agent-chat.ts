@@ -28,7 +28,11 @@ import {
   recoverAgentRun,
   restoreAgentView,
 } from './agui-state';
-import { markAgentStreamInterrupted, reduceAgentEvent } from './state';
+import {
+  markAgentStreamInterrupted,
+  mergeResultRuns,
+  reduceAgentEvent,
+} from './state';
 import type { AgentViewState } from './state';
 
 const emptyView = (): AgentViewState => ({ messages: [], tools: [] });
@@ -72,6 +76,7 @@ export function useAgentChat(
   const [textOnly, setTextOnly] = useState(false);
   const [humanInput, setHumanInput] = useState(false);
   const [singleTask, setSingleTask] = useState(false);
+  const [resultSingleBatch, setResultSingleBatch] = useState(false);
   const [newConversationsEnabled, setNewConversationsEnabled] = useState(true);
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -172,6 +177,7 @@ export function useAgentChat(
         });
       });
       setUnconfirmed(Boolean(run && !agentRunSettled(run)));
+      setError(null);
       return true;
     },
     [appId, actorEpoch]
@@ -193,7 +199,10 @@ export function useAgentChat(
           app: { name: string };
           protocol?: string;
           interactionMode?: string;
-          capabilities?: { humanInput?: boolean };
+          capabilities?: {
+            humanInput?: boolean;
+            resultArtifacts?: { batchesPerThread?: number };
+          };
           singleTask?: boolean;
           newConversationsEnabled?: boolean;
         }>(appId, '', { signal: lifetime.signal });
@@ -202,6 +211,9 @@ export function useAgentChat(
         setTextOnly(result.interactionMode === 'text-only');
         setHumanInput(result.capabilities?.humanInput === true);
         setSingleTask(result.singleTask === true);
+        setResultSingleBatch(
+          result.capabilities?.resultArtifacts?.batchesPerThread === 1
+        );
         setNewConversationsEnabled(result.newConversationsEnabled !== false);
         defaultProtocol.current =
           result.protocol === 'ag-ui/1.0'
@@ -305,7 +317,9 @@ export function useAgentChat(
     void Promise.resolve().then(() => select(initialConversationId));
   }, [ready, initialConversationId, select]);
 
-  const needsPolling = Boolean(view.run && !agentRunSettled(view.run));
+  const needsPolling = Boolean(
+    view.run && (!agentRunSettled(view.run) || unconfirmed)
+  );
   useEffect(() => {
     if (busy || (!pendingSubmissionId && (!view.runId || !needsPolling)))
       return;
@@ -364,6 +378,15 @@ export function useAgentChat(
           conversationEvents.emit();
         }
         if (agentRunSettled(run)) {
+          setView(previous =>
+            previous.runId === runId
+              ? {
+                  ...previous,
+                  run,
+                  resultRuns: mergeResultRuns(previous.resultRuns, [run]),
+                }
+              : previous
+          );
           if (conversationId)
             await load(conversationId, polling.signal, version);
           if (polling.signal.aborted || version !== navigationVersion.current)
@@ -521,7 +544,11 @@ export function useAgentChat(
             { signal: requestController.signal }
           );
           if (ownsView()) {
-            latest = { ...latest, run: result };
+            latest = {
+              ...latest,
+              run: result,
+              resultRuns: mergeResultRuns(latest.resultRuns, [result]),
+            };
             setView(latest);
           }
         }
@@ -559,11 +586,13 @@ export function useAgentChat(
           protocol.current !== 'ag-ui/1.0' ||
           (failure.status >= 400 &&
             failure.status < 500 &&
-            failure.status !== 409)
+            (failure.status !== 409 ||
+              failure.detail?.code === 'AGENT_RESULT_PROFILE_DISABLED'))
         ) {
           setView(view);
           setPendingSubmissionId(null);
           forgetPending(payload.submissionId);
+          setUnconfirmed(false);
         } else {
           setUnconfirmed(true);
         }
@@ -642,6 +671,10 @@ export function useAgentChat(
             ),
             ...previous.tools,
           ],
+          resultRuns: mergeResultRuns(
+            previous.resultRuns,
+            older.resultRuns ?? []
+          ),
         };
       });
       setNextCursor(detail.nextCursor ?? null);
@@ -667,6 +700,7 @@ export function useAgentChat(
     textOnly,
     humanInput,
     singleTask,
+    resultSingleBatch,
     newConversationsEnabled,
     ready,
     busy,

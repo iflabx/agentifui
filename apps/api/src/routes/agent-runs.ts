@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
+import { createHash } from 'node:crypto';
 
 import type { ApiRuntimeConfig } from '../config';
 import {
@@ -23,6 +24,11 @@ import {
   validateInteractionDecision,
 } from '../lib/agent-interactions-repository';
 import {
+  type AgentDeliverables,
+  parseStoredAgentDeliverables,
+  publicAgentDeliverables,
+} from '../lib/agent-result';
+import {
   executeAgentRun,
   publicAgentRun,
   runStatusEvent,
@@ -31,6 +37,7 @@ import {
   AgentRunError,
   type AgentRunRecord,
   getRunForActor,
+  recordRunDeliverables,
   reserveRun,
   saveRunResult,
 } from '../lib/agent-runs-repository';
@@ -46,7 +53,14 @@ import {
 } from '../lib/agui/runtime';
 import { trackApiBackgroundTask } from '../lib/capacity-control';
 import { getHumanInputState } from '../lib/langchain/human-input';
-import { getRun } from '../lib/langchain/transport';
+import {
+  LangChainUpstreamError,
+  getCapabilities,
+  getPhase4Artifact,
+  getPhase4Result,
+  getRun,
+  supportsResultArtifacts,
+} from '../lib/langchain/transport';
 import { queryRowsWithPgSystemContext } from '../lib/pg-context';
 import { buildRouteErrorPayload } from '../lib/route-error';
 import { resolveIdentityFromSession } from '../lib/session-identity';
@@ -109,6 +123,108 @@ function requireSameOrigin(request: FastifyRequest, config: ApiRuntimeConfig) {
   ) {
     throw new AgentAppError(403, 'AGENT_ORIGIN_REJECTED');
   }
+}
+
+function publicDeliverables(value: AgentDeliverables) {
+  return publicAgentDeliverables(value);
+}
+
+function publicRunForApp(
+  run: AgentRunRecord,
+  app: Awaited<ReturnType<typeof resolveAgentApp>>
+) {
+  const publicRun = publicAgentRun(run);
+  if (app.backendType !== 'langchain') delete publicRun.deliverables;
+  return {
+    ...publicRun,
+    ...(app.backendType === 'langchain' &&
+    typeof app.resultProfileEnabled === 'boolean' &&
+    Boolean(run.native_run_id) &&
+    !run.deliverables
+      ? { deliverablesQueryAvailable: true }
+      : {}),
+  };
+}
+
+function phase4UpstreamError(error: unknown): AgentAppError {
+  if (error instanceof LangChainUpstreamError) {
+    if (error.status === 404)
+      return new AgentAppError(404, 'AGENT_RESULT_NOT_FOUND');
+    if (error.status === 409)
+      return new AgentAppError(409, 'AGENT_RESULT_PENDING');
+    if (error.status === 422)
+      return new AgentAppError(422, 'AGENT_RESULT_UNAVAILABLE');
+    if (error.status === 401 || error.status === 403)
+      return new AgentAppError(503, 'AGENT_RESULT_AUTH_FAILED');
+  }
+  return new AgentAppError(503, 'AGENT_RESULT_UPSTREAM_UNAVAILABLE');
+}
+
+async function reauthorizeResultRun(
+  app: Awaited<ReturnType<typeof resolveAgentApp>>,
+  userId: string,
+  runId: string
+): Promise<AgentRunRecord> {
+  const current = await getRunForActor(runId, userId, app.id);
+  if (!current) throw new AgentAppError(404, 'AGENT_RUN_NOT_FOUND');
+  if (current.config_fingerprint !== app.fingerprint)
+    throw new AgentAppError(409, 'AGENT_CONFIG_CHANGED');
+  return current;
+}
+
+async function loadPhase4Manifest(
+  app: Awaited<ReturnType<typeof resolveAgentApp>>,
+  run: AgentRunRecord,
+  userId: string
+): Promise<{ run: AgentRunRecord; manifest: AgentDeliverables }> {
+  run = await reauthorizeResultRun(app, userId, run.id);
+  if (app.backendType !== 'langchain' || !run.thread_id || !run.native_run_id)
+    throw new AgentAppError(409, 'AGENT_RESULT_UNAVAILABLE');
+  if (run.deliverables) {
+    try {
+      const manifest = parseStoredAgentDeliverables(run.deliverables);
+      if (
+        manifest.threadId !== run.thread_id ||
+        manifest.runId !== run.native_run_id
+      )
+        throw new Error();
+      return { run, manifest };
+    } catch {
+      throw new AgentAppError(503, 'AGENT_RESULT_INTEGRITY_FAILED');
+    }
+  }
+  const config = {
+    baseUrl: app.baseUrl,
+    apiKey: app.apiKey,
+    assistantId: app.assistantId,
+  };
+  let capabilities;
+  try {
+    capabilities = await getCapabilities(config);
+  } catch (error) {
+    throw phase4UpstreamError(error);
+  }
+  if (
+    capabilities.assistantId !== app.assistantId ||
+    !supportsResultArtifacts(capabilities)
+  )
+    throw new AgentAppError(409, 'AGENT_RESULT_UNSUPPORTED');
+  let manifest: AgentDeliverables;
+  try {
+    manifest = await getPhase4Result(config, run.thread_id, run.native_run_id);
+  } catch (error) {
+    throw phase4UpstreamError(error);
+  }
+  if (manifest.resultStatus === 'ready') {
+    try {
+      run = await recordRunDeliverables(run.id, manifest);
+    } catch (error) {
+      if (error instanceof AgentRunError && error.statusCode < 500) throw error;
+      throw new AgentAppError(503, 'AGENT_RESULT_SAVE_FAILED');
+    }
+  }
+  run = await reauthorizeResultRun(app, userId, run.id);
+  return { run, manifest };
 }
 
 export const agentRunsRoutes: FastifyPluginAsync<{
@@ -349,6 +465,8 @@ export const agentRunsRoutes: FastifyPluginAsync<{
       const agui = protocol === 'ag-ui/1.0';
       if (app.backendType === 'dify' && !agui)
         throw new AgentAppError(409, 'AGENT_PROTOCOL_REQUIRED');
+      if (app.backendType === 'langchain' && app.resultProfileEnabled === false)
+        throw new AgentAppError(409, 'AGENT_RESULT_PROFILE_DISABLED');
       const body = request.body as Record<string, unknown> | null;
       if (
         !body ||
@@ -596,7 +714,8 @@ export const agentRunsRoutes: FastifyPluginAsync<{
         return typeof id === 'string' ? [id] : [];
       });
       const runs = await queryRowsWithPgSystemContext<AgentRunRecord>(
-        `SELECT id, conversation_id, run_kind, root_run_id, execution_status, persistence_status, error_code, created_at, updated_at,
+        `SELECT id, conversation_id, run_kind, root_run_id, native_run_id, execution_status, persistence_status, error_code, created_at, updated_at,
+          deliverables,
           CASE WHEN persistence_status <> 'saved' OR result ? 'agui' THEN result ELSE NULL END AS result
        FROM backend_runs WHERE conversation_id = $1::uuid
          AND (user_message_id = ANY($2::uuid[]) OR id::text = ANY($3::text[]) OR run_kind = 'resume')
@@ -607,7 +726,7 @@ export const agentRunsRoutes: FastifyPluginAsync<{
       return {
         conversation: { ...conversation, interaction_protocol: 'ag-ui/1.0' },
         messages,
-        runs: runs.map(publicAgentRun),
+        runs: runs.map(run => publicRunForApp(run, app)),
         nextCursor:
           page.length > limit ? String(messages[0].sequence_index) : null,
         protocol:
@@ -649,6 +768,93 @@ export const agentRunsRoutes: FastifyPluginAsync<{
       if (!rows[0])
         throw new AgentAppError(404, 'AGENT_CONVERSATION_NOT_FOUND');
       reply.status(204).send();
+    }
+  );
+
+  server.get(
+    '/api/internal/apps/:appId/agent/runs/:runId/deliverables',
+    async request => {
+      const { app, actor } = await context(request, options.config);
+      let run = await getRunForActor(
+        uuid(routeParams(request).runId),
+        actor.userId,
+        app.id
+      );
+      if (!run) throw new AgentAppError(404, 'AGENT_RUN_NOT_FOUND');
+      if (run.config_fingerprint !== app.fingerprint)
+        throw new AgentAppError(409, 'AGENT_CONFIG_CHANGED');
+      const loaded = await loadPhase4Manifest(app, run, actor.userId);
+      run = loaded.run;
+      return {
+        runId: run.id,
+        conversationId: run.conversation_id,
+        deliverables: publicDeliverables(loaded.manifest),
+      };
+    }
+  );
+
+  server.get(
+    '/api/internal/apps/:appId/agent/runs/:runId/artifacts/:artifactId',
+    async (request, reply) => {
+      const { app, actor } = await context(request, options.config);
+      const artifactId = routeParams(request).artifactId;
+      if (artifactId !== 'report' && artifactId !== 'data')
+        throw new AgentAppError(404, 'AGENT_ARTIFACT_NOT_FOUND');
+      let run = await getRunForActor(
+        uuid(routeParams(request).runId),
+        actor.userId,
+        app.id
+      );
+      if (!run) throw new AgentAppError(404, 'AGENT_RUN_NOT_FOUND');
+      if (run.config_fingerprint !== app.fingerprint)
+        throw new AgentAppError(409, 'AGENT_CONFIG_CHANGED');
+      const loaded = await loadPhase4Manifest(app, run, actor.userId);
+      run = loaded.run;
+      const artifact = loaded.manifest.artifacts.find(
+        item => item.artifactId === artifactId
+      );
+      if (!artifact || loaded.manifest.resultStatus !== 'ready')
+        throw new AgentAppError(
+          loaded.manifest.resultStatus === 'pending' ? 409 : 422,
+          loaded.manifest.resultStatus === 'pending'
+            ? 'AGENT_RESULT_PENDING'
+            : 'AGENT_RESULT_UNAVAILABLE'
+        );
+      let downloaded;
+      try {
+        downloaded = await getPhase4Artifact(
+          {
+            baseUrl: app.baseUrl,
+            apiKey: app.apiKey,
+            assistantId: app.assistantId,
+          },
+          run.thread_id!,
+          run.native_run_id!,
+          artifactId
+        );
+      } catch (error) {
+        throw phase4UpstreamError(error);
+      }
+      const digest = createHash('sha256')
+        .update(downloaded.bytes)
+        .digest('hex');
+      if (
+        downloaded.bytes.byteLength !== artifact.sizeBytes ||
+        digest !== artifact.sha256 ||
+        downloaded.contentType !== artifact.mediaType
+      )
+        throw new AgentAppError(503, 'AGENT_RESULT_INTEGRITY_FAILED');
+      await reauthorizeResultRun(app, actor.userId, run.id);
+      reply
+        .header('content-type', artifact.mediaType)
+        .header('content-length', String(downloaded.bytes.byteLength))
+        .header(
+          'content-disposition',
+          `attachment; filename="${artifact.filename}"`
+        )
+        .header('cache-control', 'no-store')
+        .header('x-content-type-options', 'nosniff')
+        .send(Buffer.from(downloaded.bytes));
     }
   );
 
@@ -719,7 +925,7 @@ export const agentRunsRoutes: FastifyPluginAsync<{
       }
     }
     return {
-      ...publicAgentRun(run),
+      ...publicRunForApp(run, app),
       ...(upstreamStatus ? { upstreamStatus } : {}),
     };
   });

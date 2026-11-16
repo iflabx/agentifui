@@ -12,11 +12,12 @@ import { agentRunSaved } from '@lib/services/client/langchain-api';
 import { useLangchainDraftStore } from '@lib/stores/langchain-draft-store';
 import { cn } from '@lib/utils';
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 
 import { AgentInteractionCard } from './agent-interaction-card';
+import { AgentResultCard } from './agent-result-card';
 import { agentTimeline } from './state';
 import { useAgentChat } from './use-agent-chat';
 import { useAgentInteractions } from './use-agent-interactions';
@@ -58,6 +59,11 @@ function AgentChatSession({
 }: AgentChatProps & { actorId: string; authLoading: boolean }) {
   const t = useTranslations('langchain');
   const chat = useAgentChat(appId, conversationId, actorId);
+  const [liveResultRunId, setLiveResultRunId] = useState<string>();
+  useEffect(() => {
+    if (chat.historyLoading || !chat.view.runId) setLiveResultRunId(undefined);
+    else if (chat.busy) setLiveResultRunId(chat.view.runId);
+  }, [chat.busy, chat.historyLoading, chat.view.runId]);
   const interactions = useAgentInteractions({
     appId,
     conversationId: chat.view.conversationId,
@@ -87,9 +93,11 @@ function AgentChatSession({
             formatUiErrorMessage({
               ...uiError,
               message:
-                uiError.message === uiError.code
-                  ? t('requestFailed')
-                  : uiError.message,
+                activeError.detail?.code === 'AGENT_RESULT_PROFILE_DISABLED'
+                  ? t('resultProfilePaused')
+                  : uiError.message === uiError.code
+                    ? t('requestFailed')
+                    : uiError.message,
             })
           : t('requestFailed');
   const { widthClass, paddingClass } = useChatWidth();
@@ -145,6 +153,7 @@ function AgentChatSession({
                 : run.executionStatus === 'unknown'
                   ? 'unknown'
                   : 'running';
+  const renderedResultIds = new Set<string>();
 
   useLayoutEffect(() => {
     if (actorEpoch === null || authLoading) return;
@@ -286,19 +295,62 @@ function AgentChatSession({
                 conversationAppId={appId}
               />
             ) : message.role === 'assistant' && message.content ? (
-              <AssistantMessage
-                key={message.id}
-                id={message.id}
-                content={message.content}
-                isStreaming={
-                  index > lastUserIndex &&
-                  chat.busy &&
-                  (!run || ['pending', 'running'].includes(run.executionStatus))
-                }
-                wasManuallyStopped={false}
-              />
+              <Fragment key={message.id}>
+                <AssistantMessage
+                  id={message.id}
+                  content={message.content}
+                  isStreaming={
+                    index > lastUserIndex &&
+                    chat.busy &&
+                    (!run ||
+                      ['pending', 'running'].includes(run.executionStatus))
+                  }
+                  wasManuallyStopped={false}
+                />
+                {(() => {
+                  const runId = message.metadata?.backend_run_id;
+                  const next = chat.view.messages[index + 1];
+                  if (
+                    typeof runId !== 'string' ||
+                    (next?.metadata?.backend_run_id === runId &&
+                      next.role === 'assistant')
+                  )
+                    return null;
+                  const results = (chat.view.resultRuns ?? []).filter(
+                    resultRun => (resultRun.id || resultRun.runId) === runId
+                  );
+                  results.forEach(resultRun =>
+                    renderedResultIds.add(resultRun.id || resultRun.runId || '')
+                  );
+                  return results.map(resultRun => (
+                    <AgentResultCard
+                      key={`result-${resultRun.id || resultRun.runId}`}
+                      appId={appId}
+                      run={resultRun}
+                      autoQuery={
+                        liveResultRunId === (resultRun.id || resultRun.runId)
+                      }
+                    />
+                  ));
+                })()}
+              </Fragment>
             ) : null;
           })}
+          {(chat.view.resultRuns ?? [])
+            .filter(
+              resultRun =>
+                !renderedResultIds.has(resultRun.id || resultRun.runId || '')
+            )
+            .map(resultRun => (
+              <AgentResultCard
+                key={`result-${resultRun.id || resultRun.runId}`}
+                appId={appId}
+                run={resultRun}
+                autoQuery={
+                  liveResultRunId === (resultRun.id || resultRun.runId)
+                }
+              />
+            ))}
           {runLabel && (
             <p role="status" className="text-sm text-stone-500">
               {t(runLabel)}
@@ -350,6 +402,11 @@ function AgentChatSession({
                 </button>
               </div>
             )}
+          {chat.resultSingleBatch && (
+            <p className="mt-3 text-sm text-stone-500">
+              {t('resultSingleBatch')}
+            </p>
+          )}
           {chat.singleTask && chat.view.conversationId && (
             <p className="mt-3 text-sm text-stone-500">
               {t('confirmationSingleTask')}

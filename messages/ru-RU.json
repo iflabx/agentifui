@@ -1458,6 +1458,8 @@
           "backend": {
             "label": "Backend",
             "assistantId": "Assistant ID",
+            "resultProfileLabel": "Enable Deep Agent result artifacts",
+            "resultProfileNote": "Enable only for an assistant verified to support phase4.result.v1, regardless of its name. Disabling pauses new profile tasks; existing results remain readable.",
             "aguiLabel": "Использовать общий чат AG-UI для новых диалогов приложений",
             "aguiNote": "Только новые текстовые диалоги в приложениях chatbot из каталога. Файлы, цитирование, голос и пользовательские переменные не поддерживаются. Модель по умолчанию и выбор модели не меняются. Старые диалоги сохраняют совместимый маршрут; связанные общие диалоги не возвращаются к прежнему маршруту.",
             "langchainNote": "Use the assistant exposed by this service. Text and read-only tools only; service credentials stay on the server.",
@@ -2724,7 +2726,8 @@
       "renderedMode": "Отображение",
       "rawMode": "Исходный текст",
       "downloadButton": "Скачать",
-      "charactersCount": "{count} символов"
+      "charactersCount": "{count} символов",
+      "loadFailed": "Could not load the Markdown preview. You can still try downloading the original file."
     },
     "errors": {
       "noAppId": "ID приложения недоступен для предварительного просмотра файла",
@@ -2739,6 +2742,32 @@
     "closeButton": "Закрыть предпросмотр"
   },
   "langchain": {
+    "resultSingleBatch": "Приложение публикует один набор результатов на беседу. Чтобы создать ещё один набор, начните новую беседу.",
+    "resultProfilePaused": "Новые задачи в этом приложении временно приостановлены. Существующие записи по-прежнему доступны для просмотра.",
+    "results": {
+      "title": "Agent results",
+      "saved": "Saved result",
+      "sources": "Sources",
+      "loading": "Loading result…",
+      "unavailable": "This result is temporarily unavailable.",
+      "download": "Download {filename}",
+      "find": "Query result",
+      "pending": "The result is still being prepared.",
+      "preview": "Preview {filename}",
+      "returnToResult": "Return to result card",
+      "saveFailed": "The result was found, but its record could not be saved. Query again to retry saving; the task will not rerun.",
+      "notPublished": "This run has no published deliverable result.",
+      "notFound": "The source result or file is no longer available.",
+      "integrity": "Result verification failed. Preview and download are blocked.",
+      "foundUnknown": "Results were recovered, but the original task status is still unconfirmed. This does not restore the conversation or allow another task.",
+      "formulaWarning": "Agent-generated CSV: spreadsheet applications may interpret cells as formulas. Preview displays text only; downloaded files are unchanged.",
+      "truncated": "Preview is incomplete (128 KiB, 200 rows, 20 columns, or 2,000 characters per cell). Download the original file for all content.",
+      "csvTable": "CSV result preview",
+      "copy": "Copy",
+      "copySource": "Copy source: {title}",
+      "copied": "Source copied.",
+      "copyFailed": "Could not copy the source. Please select and copy its text."
+    },
     "textOnlyNote": "Этот диалог поддерживает только текст, без файлов, цитирования, голоса и пользовательских переменных. Старые диалоги сохраняют совместимые функции.",
     "cancelled": "Отменено",
     "interrupted": "Прервано",

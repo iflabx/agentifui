@@ -4,6 +4,16 @@ import {
   extractAppErrorDetail,
 } from '@lib/errors/app-error';
 
+import type { PublicAgentDeliverables } from '../../../packages/shared/src/agent-results';
+
+export type {
+  AgentResultArtifact as AgentDeliverableArtifact,
+  AgentResultSource as AgentDeliverableSource,
+  PublicAgentDeliverables as AgentDeliverables,
+} from '../../../packages/shared/src/agent-results';
+
+type AgentDeliverables = PublicAgentDeliverables;
+
 export interface AgentConversation {
   id: string;
   title: string;
@@ -28,6 +38,14 @@ export interface AgentRun {
   rootRunId?: string;
   recoveryMessages?: AgentMessage[];
   agui?: import('../../../packages/shared/src/agui').AgentProjectionSnapshot;
+  deliverables?: AgentDeliverables;
+  deliverablesQueryAvailable?: boolean;
+}
+
+export interface AgentDeliverablesResponse {
+  runId: string;
+  conversationId: string;
+  deliverables: AgentDeliverables;
 }
 
 export interface AgentInteraction {
@@ -139,6 +157,41 @@ export async function agentSubmissionRequest(
   );
   if (!response.ok) throw await readAgentRequestError(response);
   return response.json();
+}
+
+export async function agentArtifactRequest(
+  appId: string,
+  runId: string,
+  artifactId: string,
+  signal?: AbortSignal
+): Promise<Response> {
+  const response = await fetch(
+    agentPath(
+      appId,
+      `/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(artifactId)}`
+    ),
+    {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(15000)])
+        : AbortSignal.timeout(15000),
+    }
+  );
+  if (!response.ok) throw await readAgentRequestError(response);
+  return response;
+}
+
+export async function agentDeliverablesRequest(
+  appId: string,
+  runId: string,
+  signal?: AbortSignal
+): Promise<AgentDeliverablesResponse> {
+  return agentRequest<AgentDeliverablesResponse>(
+    appId,
+    `/runs/${encodeURIComponent(runId)}/deliverables`,
+    { signal }
+  );
 }
 
 function parseEvent(frame: string): AgentEvent | null {
