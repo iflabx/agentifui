@@ -2,6 +2,7 @@
 import type { PoolClient } from 'pg';
 
 import { agentConfigFingerprint } from './agent-app';
+import { parseAgentDeliverables } from './agent-result';
 import {
   AgentRunError,
   type AgentRunRecord,
@@ -10,6 +11,7 @@ import {
   loadRunDisplayHistory,
   markRunUnknown,
   recordNativeRun,
+  recordRunDeliverables,
   recordRunPersistenceFailure,
   reserveRun,
   saveRunResult,
@@ -115,6 +117,10 @@ describe('trusted agent run repository', () => {
         run.execution_status = params[2] as AgentRunRecord['execution_status'];
       }
       if (sql.includes('SET thread_id =')) run.thread_id = String(params[1]);
+      if (sql.includes('SET deliverables ='))
+        run.deliverables = JSON.parse(String(params[1]));
+      if (sql.includes('SELECT c.id FROM conversations c'))
+        return { rows: validBinding ? [{ id: CONVERSATION }] : [] };
       if (sql.includes("SET execution_status = 'submitting'"))
         run.execution_status = 'submitting';
       if (sql.includes('SET native_run_id =')) {
@@ -166,6 +172,91 @@ describe('trusted agent run repository', () => {
         call[0].includes('INSERT INTO backend_runs')
       )
     ).toHaveLength(1);
+  });
+
+  describe('immutable result registration', () => {
+    const manifest = parseAgentDeliverables({
+      profile: 'phase4.result.v1',
+      thread_id: 'thread-1',
+      run_id: 'native-1',
+      execution_status: 'success',
+      result_status: 'ready',
+      reason: null,
+      artifacts: [
+        {
+          artifact_id: 'report',
+          filename: 'report.md',
+          media_type: 'text/markdown',
+          size_bytes: 12,
+          sha256: 'a'.repeat(64),
+        },
+      ],
+      sources: [],
+    });
+
+    beforeEach(() => {
+      run.thread_id = manifest.threadId;
+      run.native_run_id = manifest.runId;
+      run.execution_status = 'unknown';
+    });
+
+    it('recovers only the ready manifest without reconciling unknown execution or message saving', async () => {
+      const result = await recordRunDeliverables(RUN, manifest);
+      expect(result.deliverables).toEqual(manifest);
+      expect(result.execution_status).toBe('unknown');
+      expect(result.persistence_status).toBe('pending');
+      expect(
+        query.mock.calls.filter(([sql]) => /^\s*(UPDATE|INSERT)/.test(sql))
+      ).toEqual([
+        [
+          expect.stringContaining('SET deliverables ='),
+          [RUN, JSON.stringify(manifest)],
+        ],
+      ]);
+    });
+
+    it('accepts repeated JSONB key ordering but rejects a changed frozen manifest', async () => {
+      run.deliverables = Object.fromEntries(
+        Object.entries(manifest).reverse()
+      ) as typeof manifest;
+      await expect(recordRunDeliverables(RUN, manifest)).resolves.toBe(run);
+      expect(
+        query.mock.calls.some(([sql]) => sql.includes('SET deliverables ='))
+      ).toBe(false);
+      await expect(
+        recordRunDeliverables(RUN, {
+          ...manifest,
+          sources: [
+            { sourceId: 'changed', title: 'Changed', excerpt: 'Changed' },
+          ],
+        })
+      ).rejects.toMatchObject({ code: 'AGENT_RESULT_CONFLICT' });
+    });
+
+    it('does not register metadata after conversation deletion', async () => {
+      validBinding = false;
+      await expect(recordRunDeliverables(RUN, manifest)).rejects.toMatchObject({
+        code: 'AGENT_RUN_NOT_FOUND',
+      });
+      expect(
+        query.mock.calls.some(([sql]) => sql.includes('SET deliverables ='))
+      ).toBe(false);
+    });
+
+    it('rejects a different native identity and unready manifests', async () => {
+      await expect(
+        recordRunDeliverables(RUN, { ...manifest, runId: 'other' })
+      ).rejects.toMatchObject({ code: 'AGENT_RESULT_CONFLICT' });
+      await expect(
+        recordRunDeliverables(RUN, {
+          ...manifest,
+          resultStatus: 'pending',
+          executionStatus: 'running',
+          artifacts: [],
+          reason: 'run_in_progress',
+        })
+      ).rejects.toMatchObject({ code: 'AGENT_RESULT_NOT_READY' });
+    });
   });
 
   it('replays the first submission before allocating another conversation or applying active limits', async () => {

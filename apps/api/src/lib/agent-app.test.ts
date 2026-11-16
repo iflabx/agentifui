@@ -21,6 +21,29 @@ beforeEach(() => {
 });
 
 describe('trusted agent app configuration', () => {
+  it.each([true, false, undefined])(
+    'preserves result-profile intent %s independently of the assistant name',
+    async enabled => {
+      jest.mocked(queryRowsWithPgSystemContext).mockResolvedValueOnce([
+        {
+          ...row,
+          config: {
+            backend_type: 'langchain',
+            langchain: {
+              assistant_id: 'reports-agent',
+              ...(enabled !== undefined
+                ? { result_profile_enabled: enabled }
+                : {}),
+            },
+          },
+        },
+      ]);
+      const app = await resolveAgentApp(row.id, 'actor');
+      expect(app.assistantId).toBe('reports-agent');
+      expect(app.resultProfileEnabled).toBe(enabled);
+    }
+  );
+
   it('allows Dify only through the explicit runtime resolver option and keeps native profile selection server-side', async () => {
     const dify = {
       ...row,

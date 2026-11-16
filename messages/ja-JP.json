@@ -1458,6 +1458,8 @@
           "backend": {
             "label": "Backend",
             "assistantId": "Assistant ID",
+            "resultProfileLabel": "Enable Deep Agent result artifacts",
+            "resultProfileNote": "Enable only for an assistant verified to support phase4.result.v1, regardless of its name. Disabling pauses new profile tasks; existing results remain readable.",
             "aguiLabel": "新しいアプリ会話で共通 AG-UI チャットを使用",
             "aguiNote": "マーケットプレイスの chatbot アプリで新しいテキスト専用会話のみ有効にします。ファイル、引用、音声、カスタム変数には対応しません。既定モデルとモデル選択は変更しません。既存の旧会話は互換経路を維持し、紐付け済みの共通会話は旧経路に戻りません。",
             "langchainNote": "Use the assistant exposed by this service. Text and read-only tools only; service credentials stay on the server.",
@@ -2724,7 +2726,8 @@
       "renderedMode": "レンダリング",
       "rawMode": "生テキスト",
       "downloadButton": "ダウンロード",
-      "charactersCount": "{count} 文字"
+      "charactersCount": "{count} 文字",
+      "loadFailed": "Could not load the Markdown preview. You can still try downloading the original file."
     },
     "errors": {
       "noAppId": "ファイルプレビューに必要なアプリケーションIDがありません",
@@ -2739,6 +2742,32 @@
     "closeButton": "プレビューを閉じる"
   },
   "langchain": {
+    "resultSingleBatch": "このアプリは会話ごとに1組の結果を公開します。別の結果を生成するには、新しい会話を開始してください。",
+    "resultProfilePaused": "このアプリでは現在、新しいタスクを一時停止しています。既存の記録は引き続き閲覧できます。",
+    "results": {
+      "title": "Agent results",
+      "saved": "Saved result",
+      "sources": "Sources",
+      "loading": "Loading result…",
+      "unavailable": "This result is temporarily unavailable.",
+      "download": "Download {filename}",
+      "find": "Query result",
+      "pending": "The result is still being prepared.",
+      "preview": "Preview {filename}",
+      "returnToResult": "Return to result card",
+      "saveFailed": "The result was found, but its record could not be saved. Query again to retry saving; the task will not rerun.",
+      "notPublished": "This run has no published deliverable result.",
+      "notFound": "The source result or file is no longer available.",
+      "integrity": "Result verification failed. Preview and download are blocked.",
+      "foundUnknown": "Results were recovered, but the original task status is still unconfirmed. This does not restore the conversation or allow another task.",
+      "formulaWarning": "Agent-generated CSV: spreadsheet applications may interpret cells as formulas. Preview displays text only; downloaded files are unchanged.",
+      "truncated": "Preview is incomplete (128 KiB, 200 rows, 20 columns, or 2,000 characters per cell). Download the original file for all content.",
+      "csvTable": "CSV result preview",
+      "copy": "Copy",
+      "copySource": "Copy source: {title}",
+      "copied": "Source copied.",
+      "copyFailed": "Could not copy the source. Please select and copy its text."
+    },
     "textOnlyNote": "この会話はテキスト専用です。ファイル、引用、音声、カスタム変数には対応しません。既存の旧会話では従来の機能を引き続き利用できます。",
     "cancelled": "キャンセル済み",
     "interrupted": "中断",

@@ -212,3 +212,57 @@ See [AG-UI Integration](AGUI-INTEGRATION.md#human-input-product-boundary) for th
 product endpoints, states and compatibility boundary. This is a controlled
 single-interrupt profile, not a general approval engine or an exactly-once
 guarantee for arbitrary upstream side effects.
+
+## Optional Frozen Result Profile
+
+The supported result profile is `phase4.result.v1`, not a general LangChain file
+API. Configure a separate marketplace application with the assistant ID advertised
+by your service (`deep-agent` is an example, not a capability discriminator)
+and enable **Result artifacts** in the instance form (`config.langchain.result_profile_enabled:
+true`). Keep the provider URL at the service root. The authenticated capabilities
+response must advertise that assistant, `/ag-ui/deep`, the profile, and both
+`text/markdown` and `text/csv`. The server validates them before generation; it
+does not accept an execution URL from the browser or silently fall back to `/ag-ui`.
+Do not combine this profile with the native human-input setting.
+
+The initial profile provides one frozen batch per thread: `report.md`, `data.csv`
+and backend-provided source excerpts. Start a new conversation for another batch.
+This limitation belongs to the selected result profile, not ordinary chat.
+Disabling the switch pauses new generation and continuation for this application;
+accepted work continues and existing results remain readable under current access
+checks. It does not delete results or revoke previously downloaded copies.
+Keep the optional field absent for ordinary applications. An explicit `false`
+retains the selected profile and pauses its new tasks; both forms preserve that
+value. Enabling the field alone never substitutes for a compatible capability
+response, and unknown profiles or arbitrary execution paths are rejected.
+
+The upstream owns immutable UTF-8 file bytes. The platform stores a validated
+manifest in `backend_runs.deliverables` using the additive migration
+`20261116100000_add_agent_run_deliverables.sql`. Apply it before running this code
+using the normal migration procedure. On application rollback retain the column
+and data; older code can ignore it. Do not run a destructive down migration.
+
+Limits are 32 KiB per manifest, two known artifact IDs (`report`, `data`), 128 KiB
+per artifact, and ten source excerpts of at most 2 KiB of UTF-8 text each. The
+manifest limit applies to actual response bytes and the normalized PostgreSQL
+JSONB text representation, including its separator spaces;
+extra fields and whitespace do not bypass it. Artifact reads check media type,
+length and SHA-256 against the registered manifest. A repeated identical manifest is
+idempotent; a changed frozen manifest is rejected. Hashes establish byte integrity,
+not factual correctness of Agent output.
+
+The browser uses local run IDs and same-origin authenticated endpoints:
+
+```http
+GET /api/internal/apps/:appId/agent/runs/:runId/deliverables
+GET /api/internal/apps/:appId/agent/runs/:runId/artifacts/:artifactId
+```
+
+These are product APIs, not AG-UI standard endpoints. The server derives the native
+thread/run from trusted bindings; no upstream token, native ID or arbitrary URL is
+accepted from the browser. Reading can register an already published manifest,
+but never creates or resumes a task. Stored metadata remains available when the
+upstream is offline; preview and download still require the upstream bytes.
+Finding results for a locally unknown run does not reconcile execution, release
+quota/concurrency reservations or unblock continuation/deletion. See
+[operations](OPERATIONS.md#8-result-artifact-troubleshooting).

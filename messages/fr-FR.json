@@ -1458,6 +1458,8 @@
           "backend": {
             "label": "Backend",
             "assistantId": "Assistant ID",
+            "resultProfileLabel": "Enable Deep Agent result artifacts",
+            "resultProfileNote": "Enable only for an assistant verified to support phase4.result.v1, regardless of its name. Disabling pauses new profile tasks; existing results remain readable.",
             "aguiLabel": "Utiliser le chat AG-UI commun pour les nouvelles conversations d’application",
             "aguiNote": "Uniquement les nouvelles conversations textuelles des applications chatbot du marché. Les fichiers, citations, fonctions vocales et variables personnalisées ne sont pas pris en charge. Le modèle par défaut et le sélecteur restent inchangés. Les anciennes conversations gardent le parcours compatible ; les conversations publiques liées ne reviennent pas en arrière.",
             "langchainNote": "Use the assistant exposed by this service. Text and read-only tools only; service credentials stay on the server.",
@@ -2724,7 +2726,8 @@
       "renderedMode": "Rendu",
       "rawMode": "Brut",
       "downloadButton": "Télécharger",
-      "charactersCount": "{count} caractères"
+      "charactersCount": "{count} caractères",
+      "loadFailed": "Could not load the Markdown preview. You can still try downloading the original file."
     },
     "errors": {
       "noAppId": "ID d'application non disponible pour l'aperçu du fichier",
@@ -2739,6 +2742,32 @@
     "closeButton": "Fermer l'aperçu"
   },
   "langchain": {
+    "resultSingleBatch": "Cette application publie un lot de résultats par conversation. Démarrez une nouvelle conversation pour générer un autre lot.",
+    "resultProfilePaused": "Les nouvelles tâches sont actuellement suspendues pour cette application. Les enregistrements existants restent consultables.",
+    "results": {
+      "title": "Agent results",
+      "saved": "Saved result",
+      "sources": "Sources",
+      "loading": "Loading result…",
+      "unavailable": "This result is temporarily unavailable.",
+      "download": "Download {filename}",
+      "find": "Query result",
+      "pending": "The result is still being prepared.",
+      "preview": "Preview {filename}",
+      "returnToResult": "Return to result card",
+      "saveFailed": "The result was found, but its record could not be saved. Query again to retry saving; the task will not rerun.",
+      "notPublished": "This run has no published deliverable result.",
+      "notFound": "The source result or file is no longer available.",
+      "integrity": "Result verification failed. Preview and download are blocked.",
+      "foundUnknown": "Results were recovered, but the original task status is still unconfirmed. This does not restore the conversation or allow another task.",
+      "formulaWarning": "Agent-generated CSV: spreadsheet applications may interpret cells as formulas. Preview displays text only; downloaded files are unchanged.",
+      "truncated": "Preview is incomplete (128 KiB, 200 rows, 20 columns, or 2,000 characters per cell). Download the original file for all content.",
+      "csvTable": "CSV result preview",
+      "copy": "Copy",
+      "copySource": "Copy source: {title}",
+      "copied": "Source copied.",
+      "copyFailed": "Could not copy the source. Please select and copy its text."
+    },
     "textOnlyNote": "Cette conversation est limitée au texte, sans fichiers, citations, fonctions vocales ni variables personnalisées. Les anciennes conversations conservent leurs fonctions compatibles.",
     "cancelled": "Annulé",
     "interrupted": "Interrompu",

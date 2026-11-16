@@ -19,6 +19,10 @@ import {
   AgentPolicyError,
   resolveBackendType,
 } from './agent-backends';
+import {
+  type AgentDeliverables,
+  parseStoredAgentDeliverables,
+} from './agent-result';
 import { admitSubmission } from './agent-submissions';
 import { MAX_AGENT_RESULT_BYTES } from './agui/runtime-result';
 import { runWithPgSystemContext } from './pg-context';
@@ -61,6 +65,7 @@ export interface AgentRunRecord extends QueryResultRow {
   execution_status: AgentExecutionStatus;
   persistence_status: 'pending' | 'saved' | 'failed';
   result: AgentRunResult | null;
+  deliverables?: AgentDeliverables | null;
   error_code: string | null;
   created_at: Date | string;
   updated_at: Date | string;
@@ -739,6 +744,60 @@ export async function saveRunResult(
     }).catch(() => undefined);
     throw error;
   }
+}
+
+export async function recordRunDeliverables(
+  runId: string,
+  value: unknown
+): Promise<AgentRunRecord> {
+  const id = uuid(runId);
+  let manifest: AgentDeliverables;
+  try {
+    manifest = parseStoredAgentDeliverables(value);
+  } catch {
+    throw new AgentRunError(502, 'AGENT_RESULT_MANIFEST_INVALID');
+  }
+  if (manifest.resultStatus !== 'ready')
+    throw new AgentRunError(409, 'AGENT_RESULT_NOT_READY');
+  return storage(() =>
+    runWithPgSystemContext(async client => {
+      const run = await loadRun(client, id, true);
+      if (
+        !run.thread_id ||
+        !run.native_run_id ||
+        run.thread_id !== manifest.threadId ||
+        run.native_run_id !== manifest.runId
+      )
+        throw new AgentRunError(409, 'AGENT_RESULT_CONFLICT');
+      const visible = await client.query(
+        `SELECT c.id FROM conversations c JOIN backend_conversations b ON b.conversation_id = c.id
+         WHERE c.id = $1::uuid AND c.status = 'active' AND c.user_id = $2::uuid
+           AND b.service_instance_id = $3::uuid AND b.config_fingerprint = $4
+         FOR UPDATE OF c`,
+        [
+          run.conversation_id,
+          run.user_id,
+          run.service_instance_id,
+          run.config_fingerprint,
+        ]
+      );
+      if (!visible.rows[0]) throw new AgentRunError(404, 'AGENT_RUN_NOT_FOUND');
+      if (run.deliverables) {
+        if (
+          JSON.stringify(parseStoredAgentDeliverables(run.deliverables)) !==
+          JSON.stringify(manifest)
+        )
+          throw new AgentRunError(409, 'AGENT_RESULT_CONFLICT');
+        return run;
+      }
+      await client.query(
+        `UPDATE backend_runs SET deliverables = $2::jsonb, updated_at = NOW()
+         WHERE id = $1::uuid AND deliverables IS NULL`,
+        [id, JSON.stringify(manifest)]
+      );
+      return loadRun(client, id);
+    })
+  );
 }
 
 export async function markRunUnknown(

@@ -21,6 +21,7 @@ export interface AgentApp {
   assistantId: string;
   fingerprint: string;
   humanInput?: boolean;
+  resultProfileEnabled?: boolean;
 }
 
 export function agentConfigFingerprint(
@@ -182,6 +183,11 @@ export async function resolveAgentApp(
     credentialVersion: row.credential_version,
     assistantId,
     humanInput: backendType === 'langchain' && langchain?.human_input === true,
+    resultProfileEnabled:
+      backendType === 'langchain' &&
+      typeof langchain?.result_profile_enabled === 'boolean'
+        ? langchain.result_profile_enabled
+        : undefined,
     fingerprint: agentConfigFingerprint(row.id, baseUrl, assistantId),
   };
 }

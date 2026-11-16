@@ -10,7 +10,11 @@ import {
   mergeAgentHistoryResult,
   readAgentHistoryResult,
 } from '../../packages/shared/src/agui';
-import { type AgentViewState, agentToolsFromMessages } from './state';
+import {
+  type AgentViewState,
+  agentToolsFromMessages,
+  mergeResultRuns,
+} from './state';
 
 export function agentDisplayHistory(messages: AgentMessage[]): Message[] {
   return messages
@@ -103,6 +107,7 @@ export function projectAgentView(
       persistenceStatus: 'pending',
       ...(snapshot.errorCode ? { errorCode: snapshot.errorCode } : {}),
     },
+    resultRuns: mergeResultRuns(previous.resultRuns, run ? [run] : []),
   };
 }
 
@@ -115,6 +120,7 @@ export function restoreAgentView(input: {
     conversationId: input.conversationId,
     messages: input.messages,
     tools: agentToolsFromMessages(input.messages),
+    resultRuns: mergeResultRuns([], input.runs),
   };
   for (const run of [...input.runs].reverse()) {
     const runId = run.id || run.runId;
@@ -168,6 +174,7 @@ export function recoverAgentRun(
       run,
       messages,
       tools: [...tools.values()],
+      resultRuns: mergeResultRuns(previous.resultRuns, [run]),
     };
   }
   const restored = restoreAgentView({
@@ -178,6 +185,7 @@ export function recoverAgentRun(
   const runId = run.id || run.runId;
   return {
     ...restored,
+    resultRuns: mergeResultRuns(previous.resultRuns, [run]),
     tools: [
       ...previous.tools.filter(tool => tool.runId !== runId),
       ...restored.tools,

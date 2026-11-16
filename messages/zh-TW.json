@@ -1458,6 +1458,8 @@
           "backend": {
             "label": "后端类型",
             "assistantId": "Assistant ID",
+            "resultProfileLabel": "Enable Deep Agent result artifacts",
+            "resultProfileNote": "Enable only for an assistant verified to support phase4.result.v1, regardless of its name. Disabling pauses new profile tasks; existing results remain readable.",
             "aguiLabel": "新建應用對話使用公共 AG-UI 聊天",
             "aguiNote": "僅限應用市集中的 chatbot 應用新建純文字應用對話，不支援檔案、引用、語音及自訂變數；不影響預設模型及模型選擇器。原有舊會話繼續使用相容路徑，已綁定公共會話不會退回。",
             "langchainNote": "填写服务暴露的 Assistant 标识。首批仅支持文本及只读工具，服务凭证仅由服务端使用。",
@@ -2724,7 +2726,8 @@
       "renderedMode": "渲染模式",
       "rawMode": "原始模式",
       "downloadButton": "下載",
-      "charactersCount": "{count} 個字符"
+      "charactersCount": "{count} 個字符",
+      "loadFailed": "無法載入 Markdown 預覽，仍可嘗試下載原始檔案。"
     },
     "errors": {
       "noAppId": "檔案預覽缺少應用程式 ID",
@@ -2739,6 +2742,32 @@
     "closeButton": "關閉預覽"
   },
   "langchain": {
+    "resultSingleBatch": "此應用程式每個對話僅發佈一批結果。如需再次產生，請建立新對話。",
+    "resultProfilePaused": "此應用程式目前暫停新任務，仍可檢視現有記錄。",
+    "results": {
+      "title": "Agent 結果",
+      "saved": "結果已登記",
+      "sources": "來源",
+      "loading": "正在載入結果…",
+      "unavailable": "此結果暫時無法使用，請稍後重試。",
+      "download": "下載 {filename}",
+      "find": "查詢結果",
+      "pending": "結果仍在準備中。",
+      "preview": "預覽 {filename}",
+      "returnToResult": "返回結果卡片",
+      "saveFailed": "已找到結果，但結果記錄未儲存。可重新查詢以重試儲存，不會重新執行任務。",
+      "notPublished": "此任務沒有已發佈的可交付結果。",
+      "notFound": "來源結果或檔案已無法使用。",
+      "integrity": "結果驗證失敗，已禁止預覽及下載。",
+      "foundUnknown": "結果已找回，但原任務狀態尚未完成核對。這不代表對話已恢復或可以繼續發起任務。",
+      "formulaWarning": "CSV 由 Agent 產生：試算表應用程式可能將儲存格解讀為公式。預覽僅顯示文字，下載檔案保持原樣。",
+      "truncated": "預覽不完整（最多 128 KiB、200 列、20 欄或單格 2,000 字元）。請下載原始檔案查看全部內容。",
+      "csvTable": "CSV 結果預覽",
+      "copy": "複製",
+      "copySource": "複製來源：{title}",
+      "copied": "已複製來源。",
+      "copyFailed": "無法複製來源，請選取文字手動複製。"
+    },
     "textOnlyNote": "此會話僅支援純文字，不支援檔案、引用、語音及自訂變數。原有舊會話保留相容功能。",
     "cancelled": "已取消",
     "interrupted": "已中斷",

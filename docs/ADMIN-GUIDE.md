@@ -353,3 +353,30 @@ Before announcing an application, verify:
 
 Give users the [user guide](USER-GUIDE.md). For unresolved runs, upgrades, backup
 or recovery, involve the operator using [operations](OPERATIONS.md).
+
+## 9. Enable Report And CSV Delivery
+
+Use a separate LangChain marketplace instance for the supported frozen-result
+profile. Select the assistant advertised by your service (`deep-agent` is an
+example, not a required name), keep the provider URL at the service root and
+enable the instance's result-artifact switch. Both the new and edit
+forms preserve this setting. Leave it off for ordinary Agents, Dify and older
+applications; the switch does not implement file uploads or cancellation. Ordinary
+instances leave this optional setting absent. Once selected, disabling it saves
+an explicit `false` to pause profile tasks without removing their result access.
+
+The backend must implement the explicit
+[result contract](LANGCHAIN-INTEGRATION.md#optional-frozen-result-profile).
+The switch is configuration intent, not proof of connectivity: actual capability
+compatibility is checked at dispatch and discovery. Test a real task, report/CSV
+preview and download, refresh/history and a second ordinary user's access boundary
+before offering the application. The result profile supports one batch per
+conversation and is not a human-confirmation profile.
+
+Turning the switch off pauses new tasks and continuation without rerouting to a
+different Agent. Existing accepted work and authorized reads remain supported.
+Changing the provider root or assistant invalidates the old binding; create a
+separate application rather than reusing old conversations with another backend.
+For unresolved execution or missing files, follow
+[result troubleshooting](OPERATIONS.md#8-result-artifact-troubleshooting);
+do not manually mark tasks successful merely because a file was found.

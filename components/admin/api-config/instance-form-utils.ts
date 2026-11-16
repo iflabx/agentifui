@@ -54,6 +54,13 @@ export function createInstanceFormDataFromInstance(
               ...(instance.config?.langchain?.human_input === true
                 ? { human_input: true }
                 : {}),
+              ...(typeof instance.config?.langchain?.result_profile_enabled ===
+              'boolean'
+                ? {
+                    result_profile_enabled:
+                      instance.config.langchain.result_profile_enabled,
+                  }
+                : {}),
             },
           }
         : {}),
@@ -108,6 +115,12 @@ export function changeInstanceBackend(
           assistant_id: data.config.langchain?.assistant_id || 'agent',
           ...(data.config.langchain?.human_input === true
             ? { human_input: true }
+            : {}),
+          ...(typeof data.config.langchain?.result_profile_enabled === 'boolean'
+            ? {
+                result_profile_enabled:
+                  data.config.langchain.result_profile_enabled,
+              }
             : {}),
         },
         app_metadata: {

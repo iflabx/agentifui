@@ -161,3 +161,24 @@ For a suspected vulnerability, use the private reporting instructions in
 [SECURITY.md](https://github.com/iflabx/agentifui/blob/main/SECURITY.md). For secret publication, also follow
 [publishing code safely](PUBLICATION.md); deleting a later source line does not
 erase the earlier Git object or revoke the leaked credential.
+
+## 8. Result Artifact Data
+
+The optional frozen-result profile stores validated metadata/source excerpts in
+PostgreSQL and keeps file bytes at the configured Agent service. Preview/download
+use same-origin session-authenticated APIs; the browser does not receive a service
+token or upstream thread/run identity. Every read checks current account/app
+access and conversation/run ownership. An administrator role is not an exception
+to the ordinary owner-only result API.
+
+The initial renderer accepts Markdown and CSV only, rejects byte-integrity
+mismatches and does not execute HTML, scripts or spreadsheet formulas in the web
+page. External report images are disabled. A matching hash proves consistency
+with a frozen manifest, not correctness or safety of generated conclusions.
+Downloaded CSV may execute spreadsheet formulas in an external spreadsheet;
+inspect generated files before opening or redistributing them.
+
+Deleting a conversation prevents new platform reads. It does not guarantee
+physical removal from upstream storage, backups or recipients' downloads. Operators
+must document retention and backup rules for both PostgreSQL and the Agent service.
+There is no platform-owned S3 replica or offline-download guarantee for this profile.

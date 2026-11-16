@@ -1,4 +1,11 @@
 import {
+  type AgentDeliverables,
+  MAX_RESULT_ARTIFACT_BYTES,
+  MAX_RESULT_MANIFEST_BYTES,
+  PHASE4_RESULT_PROFILE,
+  parseAgentDeliverables,
+} from '../agent-result';
+import {
   type AGUIEvent,
   LangChainUpstreamError,
   isLangChainId,
@@ -12,6 +19,7 @@ export interface LangChainConfig {
   baseUrl: string;
   apiKey: string;
   assistantId?: string;
+  resultProfileEnabled?: boolean;
 }
 
 export interface LangChainTurn {
@@ -31,6 +39,24 @@ export interface LangChainRun {
   threadId: string;
   runId: string;
   status: LangChainRunStatus;
+}
+
+export interface LangChainCapabilities {
+  assistantId: string;
+  aguiPath?: '/ag-ui' | '/ag-ui/deep';
+  resultProfile?: string;
+  resultFormats?: string[];
+}
+
+export function supportsResultArtifacts(
+  capabilities: LangChainCapabilities
+): boolean {
+  return (
+    capabilities.aguiPath === '/ag-ui/deep' &&
+    capabilities.resultProfile === PHASE4_RESULT_PROFILE &&
+    capabilities.resultFormats?.includes('text/markdown') === true &&
+    capabilities.resultFormats?.includes('text/csv') === true
+  );
 }
 
 const JSON_TIMEOUT_MS = 15000;
@@ -122,7 +148,8 @@ async function withRequest<T>(
 async function readJSON(
   response: Response,
   signal: AbortSignal,
-  allowArray = false
+  allowArray = false,
+  maxBytes = MAX_JSON_BYTES
 ) {
   if (!response.body) {
     throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
@@ -145,7 +172,7 @@ async function readJSON(
       }
       if (result.done) break;
       bytes += result.value.byteLength;
-      if (bytes > MAX_JSON_BYTES) {
+      if (bytes > maxBytes) {
         throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
       }
       chunks.push(result.value);
@@ -171,10 +198,49 @@ async function readJSON(
   }
 }
 
+async function readBytes(
+  response: Response,
+  signal: AbortSignal,
+  maxBytes: number
+): Promise<Uint8Array> {
+  if (!response.body)
+    throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
+  const declared = Number(response.headers.get('content-length') ?? '0');
+  if (declared > maxBytes)
+    throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  const abort = () => {
+    void reader.cancel().catch(() => undefined);
+  };
+  signal.addEventListener('abort', abort, { once: true });
+  try {
+    while (true) {
+      if (signal.aborted) throw new LangChainUpstreamError('UPSTREAM_ABORTED');
+      const result = await reader.read();
+      if (result.done) break;
+      bytes += result.value.byteLength;
+      if (bytes > maxBytes)
+        throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
+      chunks.push(result.value);
+    }
+    return Buffer.concat(chunks).subarray(0, bytes);
+  } catch (error) {
+    if (error instanceof LangChainUpstreamError) throw error;
+    throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
+  } finally {
+    signal.removeEventListener('abort', abort);
+    void reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
+}
+
 export async function nativeJSON(
   config: LangChainConfig,
   path: string,
-  body?: Record<string, unknown>
+  body?: Record<string, unknown>,
+  signal?: AbortSignal
 ): Promise<unknown> {
   return withRequest(
     config,
@@ -182,7 +248,7 @@ export async function nativeJSON(
     body === undefined
       ? { method: 'GET' }
       : { method: 'POST', body: JSON.stringify(body) },
-    undefined,
+    signal,
     JSON_TIMEOUT_MS,
     (response, signal) => readJSON(response, signal, true)
   );
@@ -299,7 +365,7 @@ export async function createThread(
 export async function getCapabilities(
   config: LangChainConfig,
   signal?: AbortSignal
-): Promise<{ assistantId: string }> {
+): Promise<LangChainCapabilities> {
   return withRequest(
     config,
     '/capabilities',
@@ -308,10 +374,117 @@ export async function getCapabilities(
     JSON_TIMEOUT_MS,
     async (response, upstreamSignal) => {
       const data = await readJSON(response, upstreamSignal);
-      if (!isLangChainId(data.assistant_id)) {
+      const advertisedId = data.assistant_id;
+      if (!isLangChainId(advertisedId))
         throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
+      const advertisedAssistantId = String(advertisedId);
+      const agents = Array.isArray(data.agents) ? data.agents : [];
+      const selectedId = config.assistantId ?? advertisedId;
+      if (!isLangChainId(selectedId))
+        throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
+      if (
+        agents.length === 0 &&
+        config.assistantId &&
+        advertisedAssistantId !== config.assistantId
+      ) {
+        return {
+          assistantId: advertisedAssistantId,
+        };
       }
-      return { assistantId: data.assistant_id };
+      const selected = agents.find(
+        value =>
+          value &&
+          typeof value === 'object' &&
+          (value as Record<string, unknown>).assistant_id === selectedId
+      ) as Record<string, unknown> | undefined;
+      if (agents.length > 0 && !selected)
+        throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
+      const rawPath = selected?.ag_ui_path ?? '/ag-ui';
+      if (rawPath !== '/ag-ui' && rawPath !== '/ag-ui/deep')
+        throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
+      const resultProfile = selected?.result_profile;
+      if (resultProfile !== undefined && typeof resultProfile !== 'string')
+        throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
+      const resultFormats = selected?.result_formats;
+      if (
+        resultFormats !== undefined &&
+        (!Array.isArray(resultFormats) ||
+          resultFormats.some(value => typeof value !== 'string'))
+      )
+        throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
+      const capabilities: LangChainCapabilities = {
+        assistantId: selectedId,
+        ...(selected ? { aguiPath: rawPath } : {}),
+        ...(resultProfile ? { resultProfile } : {}),
+        ...(Array.isArray(resultFormats)
+          ? { resultFormats: resultFormats as string[] }
+          : {}),
+      };
+      if (
+        (rawPath === '/ag-ui/deep' || resultProfile !== undefined) &&
+        !supportsResultArtifacts(capabilities)
+      )
+        throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
+      return capabilities;
+    }
+  );
+}
+
+export async function getPhase4Result(
+  config: LangChainConfig,
+  threadId: string,
+  nativeRunId: string,
+  signal?: AbortSignal
+): Promise<AgentDeliverables> {
+  requireIds(threadId, nativeRunId);
+  const result = await withRequest(
+    config,
+    `/phase4/threads/${encodeURIComponent(threadId)}/runs/${encodeURIComponent(nativeRunId)}/result`,
+    { method: 'GET' },
+    signal,
+    JSON_TIMEOUT_MS,
+    (response, upstreamSignal) =>
+      readJSON(response, upstreamSignal, false, MAX_RESULT_MANIFEST_BYTES)
+  );
+  try {
+    const manifest = parseAgentDeliverables(result);
+    if (manifest.threadId !== threadId || manifest.runId !== nativeRunId)
+      throw new Error();
+    return manifest;
+  } catch {
+    throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
+  }
+}
+
+export async function getPhase4Artifact(
+  config: LangChainConfig,
+  threadId: string,
+  nativeRunId: string,
+  artifactId: 'report' | 'data',
+  signal?: AbortSignal
+): Promise<{ bytes: Uint8Array; contentType: string }> {
+  requireIds(threadId, nativeRunId);
+  return withRequest(
+    config,
+    `/phase4/threads/${encodeURIComponent(threadId)}/runs/${encodeURIComponent(nativeRunId)}/artifacts/${artifactId}`,
+    { method: 'GET' },
+    signal,
+    JSON_TIMEOUT_MS,
+    async (response, upstreamSignal) => {
+      const contentType = response.headers
+        .get('content-type')
+        ?.split(';')[0]
+        .trim();
+      if (contentType !== 'text/markdown' && contentType !== 'text/csv')
+        throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
+      return {
+        bytes: await readBytes(
+          response,
+          upstreamSignal,
+          MAX_RESULT_ARTIFACT_BYTES
+        ),
+        contentType,
+      };
     }
   );
 }
@@ -380,13 +553,26 @@ export async function* streamTurn(
   if (Buffer.byteLength(body, 'utf8') > 64 * 1024) {
     throw new LangChainUpstreamError('INVALID_REQUEST');
   }
-  if (config.assistantId !== undefined) {
+  let aguiPath: '/ag-ui' | '/ag-ui/deep' = '/ag-ui';
+  if (
+    config.assistantId !== undefined ||
+    config.resultProfileEnabled !== undefined
+  ) {
     const capabilities = await getCapabilities(config, turn.signal);
-    if (capabilities.assistantId !== config.assistantId) {
+    if (
+      config.assistantId !== undefined &&
+      capabilities.assistantId !== config.assistantId
+    )
       throw new LangChainUpstreamError('INVALID_REQUEST');
-    }
+    if (
+      config.resultProfileEnabled === false ||
+      supportsResultArtifacts(capabilities) !==
+        (config.resultProfileEnabled === true)
+    )
+      throw new LangChainUpstreamError('INVALID_REQUEST');
+    aguiPath = capabilities.aguiPath ?? '/ag-ui';
   }
-  const request = requestConfig(config, '/ag-ui');
+  const request = requestConfig(config, aguiPath);
   await turn.beforeDispatch?.();
   const controller = new AbortController();
   let timedOut = false;

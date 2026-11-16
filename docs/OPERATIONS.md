@@ -231,3 +231,34 @@ code/request identifier, impact, action taken and recovery outcome. Review logs
 before sharing: no session tokens, reset links, service keys, raw user content or
 private backups in public reports. Give administrators the
 [management guide](ADMIN-GUIDE.md) and users the [user guide](USER-GUIDE.md).
+
+## 8. Result Artifact Troubleshooting
+
+Before enabling results, apply the additive
+`20261116100000_add_agent_run_deliverables.sql` migration through the normal
+migration workflow and verify upstream capability compatibility. Retain the
+column and manifests if rolling the application back. No new object store,
+worker, container or Redis stream is needed for the initial result profile.
+
+Diagnose the independent states rather than rerunning a task:
+
+| Symptom/code                                                     | Action                                                                                                      |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `AGENT_RESULT_PENDING` or pending manifest                       | Query the same run; bounded visible polling eventually leaves manual retry                                  |
+| `AGENT_RESULT_SAVE_FAILED`                                       | Retry result discovery/registration only; do not regenerate                                                 |
+| `AGENT_RESULT_NOT_FOUND`                                         | Verify the current app/run binding and upstream retention; do not substitute another run                    |
+| `AGENT_RESULT_UNAVAILABLE`                                       | Check the safe reason: the task may not have published a deliverable                                        |
+| `AGENT_RESULT_UPSTREAM_UNAVAILABLE` / `AGENT_RESULT_AUTH_FAILED` | Check service health, backend credential and network privately                                              |
+| `AGENT_RESULT_INTEGRITY_FAILED`                                  | Do not serve partial/modified bytes; investigate media type, size and hash against the frozen manifest      |
+| `AGENT_CONFIG_CHANGED`                                           | Restore the intended binding or use a separate application; do not point historical IDs at new backend data |
+
+An unknown local execution can have readable upstream results. Discovery does
+not confirm complete message saving or release existing concurrency/continuation/
+deletion guards; investigate the run using the existing unknown-run procedure.
+Do not force-unlock or mark success based on artifact readiness alone.
+
+Back up platform manifests with PostgreSQL and frozen bytes with the upstream's
+own storage. A platform database restore is not an artifact-byte restore. Platform
+conversation deletion denies further reads but does not erase upstream files,
+backups or user downloads. Log only safe request/local run identifiers, action,
+byte counts and error codes; do not log file contents or source excerpts.

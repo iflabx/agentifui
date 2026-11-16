@@ -289,3 +289,26 @@ These are the current rules worth preserving:
    arbitrary upstream metadata/tool output for the browser.
 7. A conversation has one persistence owner; execution, saving and human decisions
    retain trusted local identities and explicit unknown-outcome handling.
+
+## Frozen Result Delivery
+
+The optional LangChain result profile reuses the existing execution and shared
+chat path. Trusted capability validation selects the fixed `/ag-ui/deep` endpoint;
+it is not a second runner or a generic browser-controlled URL proxy. The upstream
+owns frozen report/CSV bytes, while `backend_runs.deliverables` owns a validated
+immutable metadata manifest, separate from the execution/message `result` field.
+
+`apps/api/src/lib/agent-result.ts` separates upstream wire validation from stored
+canonical validation and public projection. The authorized routes in
+`apps/api/src/routes/agent-runs.ts` derive native IDs from trusted bindings and
+verify byte length, media type and SHA-256 before returning a bounded response.
+Public clients use local IDs and `schemaVersion: 1`; byte loading is not part of
+AG-UI projection or model history. History merges result references by run instead
+of attaching all results to the last assistant message.
+
+Result discovery may register existing output without changing an unknown local
+execution or message-saving state. UI preview/reading failures remain independent
+of task success. The result loader does not use Dify's legacy byte cache. Existing
+Dify attachment/reference behavior and ordinary/HITL Agent paths retain their
+own capability boundaries. See [the result contract](LANGCHAIN-INTEGRATION.md#optional-frozen-result-profile)
+and [operational limits](OPERATIONS.md#8-result-artifact-troubleshooting).

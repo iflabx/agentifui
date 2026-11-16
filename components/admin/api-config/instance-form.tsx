@@ -141,6 +141,34 @@ export function InstanceForm(props: InstanceFormProps) {
               <p className="mt-2 font-serif text-xs text-stone-500 dark:text-stone-400">
                 {t('backend.langchainNote')}
               </p>
+              <label className="mt-4 flex items-center gap-2 font-serif text-sm text-stone-700 dark:text-stone-300">
+                <input
+                  type="checkbox"
+                  name="result_profile_enabled"
+                  checked={
+                    formData.config.langchain?.result_profile_enabled === true
+                  }
+                  disabled={isSyncing || isProcessing}
+                  onChange={event =>
+                    setFormData(previous => ({
+                      ...previous,
+                      config: {
+                        ...previous.config,
+                        langchain: {
+                          ...previous.config.langchain,
+                          assistant_id:
+                            previous.config.langchain?.assistant_id || '',
+                          result_profile_enabled: event.target.checked,
+                        },
+                      },
+                    }))
+                  }
+                />
+                {t('backend.resultProfileLabel')}
+              </label>
+              <p className="mt-2 font-serif text-xs text-stone-500 dark:text-stone-400">
+                {t('backend.resultProfileNote')}
+              </p>
             </div>
           )}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

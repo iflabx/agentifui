@@ -111,6 +111,7 @@ describe('Agent chat draft', () => {
       textOnly: false,
       humanInput: false,
       singleTask: false,
+      resultSingleBatch: false,
       refresh: jest.fn(),
       newConversationsEnabled: true,
       nextCursor: null,
@@ -135,6 +136,37 @@ describe('Agent chat draft', () => {
     render(<AgentChat appId="app" conversationId={null} />);
     expect(screen.getByRole('main')).toHaveClass('pt-16', 'md:pt-12');
   });
+
+  it.each([true, false])(
+    'shows the batch limit only for a result-enabled app (%s), without blocking input',
+    async resultEnabled => {
+      jest
+        .mocked(useAgentChat)
+        .mockImplementation(
+          jest.requireActual<typeof import('./use-agent-chat')>(
+            './use-agent-chat'
+          ).useAgentChat
+        );
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          app: { name: 'Agent' },
+          ...(resultEnabled
+            ? { capabilities: { resultArtifacts: { batchesPerThread: 1 } } }
+            : {}),
+        }),
+      });
+      render(<AgentChat appId="app" conversationId={null} />);
+      await waitFor(() => expect(screen.getByRole('textbox')).toBeEnabled());
+      if (resultEnabled)
+        expect(screen.getByText('resultSingleBatch')).toBeVisible();
+      else
+        expect(screen.queryByText('resultSingleBatch')).not.toBeInTheDocument();
+      expect(
+        screen.queryByText('confirmationSingleTask')
+      ).not.toBeInTheDocument();
+    }
+  );
 
   it('remounts and cleans up the chat session on a new login', () => {
     const original = jest.mocked(useAgentChat).getMockImplementation()!(
@@ -381,6 +413,13 @@ describe('Agent chat draft', () => {
       'unavailable',
     ],
     [503, 'AUTH_VERIFY_FAILED', false, 'AUTH_VERIFY_FAILED', 'requestFailed'],
+    [
+      409,
+      'AGENT_RESULT_PROFILE_DISABLED',
+      false,
+      'AGENT_RESULT_PROFILE_DISABLED',
+      'resultProfilePaused',
+    ],
     [
       503,
       'AGENT_REQUEST_FAILED',
