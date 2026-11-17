@@ -62,6 +62,19 @@ export const useChatflowExecutionStore = create<ChatflowExecutionState>(
       set(createChatflowExecutionResetState());
     },
 
+    restoreExecution: (nodes: ChatflowNode[]) => {
+      set({
+        nodes,
+        isExecuting: false,
+        currentNodeId: null,
+        currentIteration: null,
+        currentLoop: null,
+        executionProgress: calculateChatflowExecutionProgress(nodes),
+        error: null,
+        canRetry: false,
+      });
+    },
+
     addNode: (node: ChatflowNode) => {
       set(state => ({
         nodes: appendChatflowNode(state.nodes, node),

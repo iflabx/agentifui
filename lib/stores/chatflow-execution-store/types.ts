@@ -138,6 +138,7 @@ export interface ChatflowExecutionState {
   startExecution: () => void;
   stopExecution: () => void;
   resetExecution: () => void;
+  restoreExecution: (nodes: ChatflowNode[]) => void;
   addNode: (node: ChatflowNode) => void;
   updateNode: (nodeId: string, updates: Partial<ChatflowNode>) => void;
   setCurrentNode: (nodeId: string | null) => void;

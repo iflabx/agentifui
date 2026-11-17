@@ -412,6 +412,7 @@ function WorkflowLayoutSession({ instanceId }: WorkflowLayoutProps) {
           {mobileActiveTab === 'tracker' && (
             <div className="h-full">
               <WorkflowTracker
+                instanceId={instanceId}
                 isExecuting={isExecuting}
                 executionResult={activeExecutionResult}
                 currentExecution={activeExecution}
@@ -488,6 +489,7 @@ function WorkflowLayoutSession({ instanceId }: WorkflowLayoutProps) {
               <div className="hide-all-scrollbars flex h-full flex-col overflow-hidden">
                 <div className="no-scrollbar flex-1 overflow-x-hidden overflow-y-auto">
                   <WorkflowTracker
+                    instanceId={instanceId}
                     isExecuting={isExecuting}
                     executionResult={activeExecutionResult}
                     currentExecution={activeExecution}

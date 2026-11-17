@@ -7,6 +7,7 @@ import { isChatSubmitResult } from '@lib/hooks/chat-interface/guards';
 import { useChatInputStore } from '@lib/stores/chat-input-store';
 import { useChatStore } from '@lib/stores/chat-store';
 import { useChatflowExecutionStore } from '@lib/stores/chatflow-execution-store';
+import { buildChatflowExecutionMetadata } from '@lib/stores/chatflow-execution-store/history';
 import { useCurrentAppStore } from '@lib/stores/current-app-store';
 
 import { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
@@ -55,8 +56,13 @@ export function useChatflowInterface(preferredRouteAppId?: string | null) {
     useChatflowExecutionStore();
 
   // Use the base chat interface, passing the node event handler
+  const getAssistantMessageMetadata = useCallback(
+    () => buildChatflowExecutionMetadata(useChatflowExecutionStore.getState()),
+    []
+  );
   const chatInterface = useChatInterface(handleNodeEvent, {
     preferredRouteAppId,
+    getAssistantMessageMetadata,
   });
 
   /**

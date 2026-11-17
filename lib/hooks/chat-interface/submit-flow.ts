@@ -33,6 +33,7 @@ import {
   startNewChatConversation,
 } from './submit-start';
 import type {
+  AssistantMessageMetadataProvider,
   AssistantMessagePersistenceFallback,
   ChatStreamCompletionData,
   ChatSubmissionAccepted,
@@ -57,6 +58,7 @@ function buildAssistantPersistenceFallback(input: {
   completionData: ChatStreamCompletionData | null;
   incompleteAnswerMessage: string;
   assistantWasManuallyStopped: boolean;
+  additionalMetadata: Record<string, unknown>;
   updateMessage: (id: string, updates: ChatMessageUpdates) => void;
 }): AssistantPersistenceFallbackBuildResult {
   const normalizedAssistantContent = input.assistantWasManuallyStopped
@@ -97,6 +99,10 @@ function buildAssistantPersistenceFallback(input: {
     : {
         frontend_metadata: frontendMetadata,
       };
+  const assistantMetadata = {
+    ...completionMetadata,
+    ...input.additionalMetadata,
+  };
 
   if (normalizedAssistantContent.changed && input.assistantMessageId) {
     const existingMessage = useChatStore
@@ -109,7 +115,7 @@ function buildAssistantPersistenceFallback(input: {
         ? {
             metadata: {
               ...(existingMessage?.metadata || {}),
-              ...completionMetadata,
+              ...assistantMetadata,
             },
           }
         : {}),
@@ -121,7 +127,7 @@ function buildAssistantPersistenceFallback(input: {
       id: input.assistantMessageId,
       text: assistantText,
       tokenCount: input.completionData?.usage?.total_tokens,
-      metadata: completionMetadata,
+      metadata: assistantMetadata,
       wasManuallyStopped: input.assistantWasManuallyStopped,
     },
     normalizedText: assistantText,
@@ -144,6 +150,7 @@ interface ExecuteChatSubmitInput {
   difyConversationId: string | null;
   dbConversationUUID: string | null;
   onNodeEvent?: OnCreateConversationNodeEvent;
+  getAssistantMessageMetadata?: AssistantMessageMetadataProvider;
   isSubmittingRef: MutableRefObject<boolean>;
   chunkBufferRef: MutableRefObject<string>;
   appendTimerRef: MutableRefObject<NodeJS.Timeout | null>;
@@ -368,6 +375,20 @@ export async function executeChatSubmit(
       isCurrent,
     });
 
+    const additionalAssistantMetadata =
+      input.getAssistantMessageMetadata?.() || {};
+    if (assistantMessageId && Object.keys(additionalAssistantMetadata).length) {
+      const existingAssistantMessage = useChatStore
+        .getState()
+        .messages.find(message => message.id === assistantMessageId);
+      input.updateMessage(assistantMessageId, {
+        metadata: {
+          ...(existingAssistantMessage?.metadata || {}),
+          ...additionalAssistantMetadata,
+        },
+      });
+    }
+
     const latestAssistantMessage = assistantMessageId
       ? useChatStore
           .getState()
@@ -383,6 +404,7 @@ export async function executeChatSubmit(
         input.viewScope?.isStopped?.() === true ||
         latestAssistantMessage?.wasManuallyStopped === true,
       updateMessage: input.updateMessage,
+      additionalMetadata: additionalAssistantMetadata,
     });
     assistantFallback = assistantPersistenceFallback.assistantFallback;
 

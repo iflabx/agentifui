@@ -18,6 +18,7 @@ import { ResultViewer } from './result-viewer';
 import { UnifiedStatusPanel } from './unified-status-panel';
 
 interface WorkflowTrackerProps {
+  instanceId?: string;
   isExecuting: boolean;
   executionResult: unknown;
   currentExecution: AppExecution | null;
@@ -31,6 +32,7 @@ interface WorkflowTrackerProps {
 }
 
 export function WorkflowTracker({
+  instanceId,
   isExecuting,
   executionResult,
   currentExecution,
@@ -140,6 +142,7 @@ export function WorkflowTracker({
           <ResultViewer
             result={executionResult}
             execution={currentExecution}
+            appId={instanceId}
             onClose={() => setShowResultFor(null)}
           />
         )}

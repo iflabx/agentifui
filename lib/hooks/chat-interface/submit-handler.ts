@@ -22,7 +22,7 @@ import { resolveChatSubmitAppConfig } from './app-config';
 import type { ChatModerationTranslator } from './error-utils';
 import { chatSubmissionOwners } from './submission-owner';
 import { executeChatSubmit } from './submit-flow';
-import type { ChatNodeEvent } from './types';
+import type { AssistantMessageMetadataProvider, ChatNodeEvent } from './types';
 
 type ChatMessageUpdates = Partial<Omit<ChatMessage, 'id' | 'isUser'>>;
 
@@ -83,6 +83,7 @@ interface UseChatSubmitHandlerInput {
   difyConversationId: string | null;
   dbConversationUUID: string | null;
   onNodeEvent?: (event: ChatNodeEvent) => void;
+  getAssistantMessageMetadata?: AssistantMessageMetadataProvider;
   isSubmittingRef: MutableRefObject<boolean>;
   chunkBufferRef: MutableRefObject<string>;
   appendTimerRef: MutableRefObject<NodeJS.Timeout | null>;
@@ -134,6 +135,7 @@ export function useChatSubmitHandler({
   difyConversationId,
   dbConversationUUID,
   onNodeEvent,
+  getAssistantMessageMetadata,
   isSubmittingRef,
   chunkBufferRef,
   appendTimerRef,
@@ -367,6 +369,7 @@ export function useChatSubmitHandler({
           difyConversationId,
           dbConversationUUID,
           onNodeEvent,
+          getAssistantMessageMetadata,
           isSubmittingRef,
           chunkBufferRef,
           appendTimerRef,
@@ -425,6 +428,7 @@ export function useChatSubmitHandler({
       difyConversationId,
       dbConversationUUID,
       onNodeEvent,
+      getAssistantMessageMetadata,
       isSubmittingRef,
       chunkBufferRef,
       appendTimerRef,

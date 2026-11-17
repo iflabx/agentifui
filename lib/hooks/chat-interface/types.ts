@@ -37,6 +37,9 @@ export interface ChatSubmitResult {
   requestId?: string;
 }
 
+export type AssistantMessageMetadataProvider = () =>
+  Record<string, unknown> | undefined;
+
 export interface ChatStreamCompletionData {
   messageId?: string;
   userMessageFileIds?: string[];

@@ -30,6 +30,7 @@ import { getConversationByExternalId } from '@lib/services/client/conversations-
 import { useChatLayoutStore } from '@lib/stores/chat-layout-store';
 import { useChatStore } from '@lib/stores/chat-store';
 import { useChatflowExecutionStore } from '@lib/stores/chatflow-execution-store';
+import { readChatflowExecutionMetadata } from '@lib/stores/chatflow-execution-store/history';
 import { useFilePreviewStore } from '@lib/stores/ui/file-preview-store';
 import { cn } from '@lib/utils';
 
@@ -139,9 +140,22 @@ function LegacyChatPage({
   const chatflowInterface = useChatflowInterface();
   const regularInterface = useChatInterface();
   const { conversationAppId } = regularInterface;
+  const storedMessages = useChatStore(state => state.messages);
 
   // Use the wrapped hook to detect chatflow apps
   const { isChatflowApp } = useChatflowDetection();
+
+  const persistedChatflowExecution = React.useMemo(() => {
+    if (!isChatflowApp) return null;
+
+    for (const message of [...storedMessages].reverse()) {
+      if (message.isUser) continue;
+      const snapshot = readChatflowExecutionMetadata(message.metadata);
+      if (snapshot) return snapshot;
+    }
+
+    return null;
+  }, [isChatflowApp, storedMessages]);
 
   // Use the wrapped hook to manage chatflow state
   const {
@@ -157,11 +171,21 @@ function LegacyChatPage({
     scope:
       executionScope ??
       JSON.stringify([session?.user.id, conversationIdFromUrl]),
-    retainCompletedExecution: Boolean(executionScope),
     isChatflowApp,
+    retainCompletedExecution:
+      Boolean(executionScope) || Boolean(persistedChatflowExecution),
     chatflowInterface,
     regularInterface,
   });
+
+  useEffect(() => {
+    if (!isChatflowApp || !persistedChatflowExecution || isProcessing) return;
+
+    const executionState = useChatflowExecutionStore.getState();
+    if (executionState.isExecuting || executionState.nodes.length > 0) return;
+
+    executionState.restoreExecution(persistedChatflowExecution.nodes);
+  }, [isChatflowApp, isProcessing, persistedChatflowExecution]);
 
   useLayoutEffect(() => {
     if (!authLoading && !executionScope) {
