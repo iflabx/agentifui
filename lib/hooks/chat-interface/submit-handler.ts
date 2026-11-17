@@ -2,6 +2,7 @@ import { captureDifyInputSubmission } from '@components/chat-input/submission';
 import type { UseCreateConversationReturn } from '@lib/hooks/create-conversation/types';
 import { registerChatInputSubmission } from '@lib/hooks/use-chat-input-route-sync';
 import { useAttachmentStore } from '@lib/stores/attachment-store';
+import { appDrafts } from '@lib/stores/chat-input-scope-cache';
 import { useChatInputStore } from '@lib/stores/chat-input-store';
 import type { ChatMessage } from '@lib/stores/chat-store';
 import { selectIsProcessing, useChatStore } from '@lib/stores/chat-store';
@@ -287,7 +288,19 @@ export function useChatSubmitHandler({
         isCurrent,
         isStopped: () => owner.stopped,
         onRouteAdopted: (pathname: string) => {
-          if (isCurrent()) owner.paths.add(pathname);
+          if (!isCurrent()) return;
+          owner.paths.add(pathname);
+          if (/^\/chat\/temp-[^/]+$/.test(pathname)) {
+            const scope = useChatInputStore
+              .getState()
+              .resolveScope(owner.draftScope);
+            if (!scope.startsWith(scopePrefix)) return;
+            const [epoch, actor, app, target] = JSON.parse(scope);
+            appDrafts.set(
+              JSON.stringify([epoch, actor, app, pathname]),
+              target
+            );
+          }
         },
       };
 

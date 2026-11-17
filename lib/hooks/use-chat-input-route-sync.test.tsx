@@ -1,6 +1,7 @@
 import { captureDifyInputSubmission } from '@components/chat-input/submission';
 import { getConversationByExternalId } from '@lib/services/client/conversations-api';
 import { useAttachmentStore } from '@lib/stores/attachment-store';
+import { appDrafts } from '@lib/stores/chat-input-scope-cache';
 import {
   chatInputScope,
   useChatInputStore,
@@ -48,6 +49,58 @@ describe('input route scope synchronization', () => {
     expect(useChatInputStore.getState().currentRoute).toBe(originalScope);
     expect(useChatInputStore.getState().message).toBe('A text');
     expect(useAttachmentStore.getState().files).toHaveLength(1);
+  });
+
+  it('adopts a registered temporary route when the continuation input first mounts', () => {
+    mockPathname = '/apps/chatflow/app-A';
+    const form = renderHook(() =>
+      useChatInputRouteSync({ userId: 'actor', appId: 'app-A' })
+    );
+    const scope = form.result.current.scope!;
+    const unregister = registerChatInputSubmission(scope);
+    const input = useChatInputStore.getState();
+    mockPathname = '/chat/temp-form';
+    appDrafts.set(
+      JSON.stringify([input.actorEpoch, 'actor', 'app-A', mockPathname]),
+      JSON.parse(scope)[3]
+    );
+    const continuation = renderHook(() =>
+      useChatInputRouteSync({ userId: 'actor', appId: 'app-A' })
+    );
+    expect(continuation.result.current.scope).toBe(scope);
+    unregister();
+  });
+
+  it('keeps an accepted temporary draft alias during a delayed continuation mount', () => {
+    mockPathname = '/apps/chatflow/app-A';
+    const form = renderHook(() =>
+      useChatInputRouteSync({ userId: 'actor', appId: 'app-A' })
+    );
+    const source = form.result.current.scope!;
+    const unregister = registerChatInputSubmission(source);
+    const input = useChatInputStore.getState();
+    mockPathname = '/chat/temp-delayed-form';
+    appDrafts.set(
+      JSON.stringify([input.actorEpoch, 'actor', 'app-A', mockPathname]),
+      JSON.parse(source)[3]
+    );
+    const target = chatInputScope(
+      input.actorEpoch,
+      'actor',
+      'app-A',
+      'conversation:accepted-form'
+    );
+    act(() => {
+      input.migrateScope(source, target);
+    });
+    try {
+      renderHook(() =>
+        useChatInputRouteSync({ userId: 'actor', appId: 'app-A' })
+      );
+      expect(useChatInputStore.getState().currentRoute).toBe(target);
+    } finally {
+      unregister();
+    }
   });
 
   it('restores text and uploaded attachments on /chat/new across model A -> B -> A', () => {

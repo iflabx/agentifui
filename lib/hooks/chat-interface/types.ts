@@ -10,10 +10,14 @@ import type {
   DifySseNodeStartedEvent,
   DifySseParallelBranchFinishedEvent,
   DifySseParallelBranchStartedEvent,
+  DifySseWorkflowFinishedEvent,
+  DifySseWorkflowStartedEvent,
   DifyUsage,
 } from '@lib/services/dify/types';
 
 export type ChatNodeEvent =
+  | DifySseWorkflowStartedEvent
+  | DifySseWorkflowFinishedEvent
   | DifySseNodeStartedEvent
   | DifySseNodeFinishedEvent
   | DifySseIterationStartedEvent

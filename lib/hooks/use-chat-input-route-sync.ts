@@ -201,13 +201,14 @@ export function useChatInputRouteSync({
       } else {
         const key = JSON.stringify([actorEpoch, userId, resolvedApp, pathname]);
         const saved = enteredNewChat ? undefined : appDrafts.get(key);
+        const savedScope = saved
+          ? chatInputScope(actorEpoch, userId, resolvedApp, saved)
+          : undefined;
         const existing =
-          saved &&
-          useChatInputStore
-            .getState()
-            .resolveScope(
-              chatInputScope(actorEpoch, userId, resolvedApp, saved)
-            ) === chatInputScope(actorEpoch, userId, resolvedApp, saved)
+          savedScope &&
+          (useChatInputStore.getState().resolveScope(savedScope) ===
+            savedScope ||
+            (externalId?.startsWith('temp-') && pendingDrafts.has(savedScope)))
             ? saved
             : undefined;
         const target = existing || `newdraft:${crypto.randomUUID()}`;

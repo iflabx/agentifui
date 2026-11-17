@@ -1,3 +1,4 @@
+import { useChatInputRouteSync } from '@lib/hooks/use-chat-input-route-sync';
 import { useChatInputStore } from '@lib/stores/chat-input-store';
 import { useCurrentAppStore } from '@lib/stores/current-app-store';
 import { act, renderHook } from '@testing-library/react';
@@ -10,6 +11,9 @@ const mockSelectIsProcessing = jest.fn();
 const mockGetChatStoreState = jest.fn();
 const mockAcceptInput = jest.fn();
 const mockCaptureInput = jest.fn();
+let mockInputPath = '/apps/chatflow/app-1';
+
+jest.mock('next/navigation', () => ({ usePathname: () => mockInputPath }));
 
 jest.mock('@components/chat-input/submission', () => ({
   captureDifyInputSubmission: (...args: unknown[]) => mockCaptureInput(...args),
@@ -80,6 +84,7 @@ describe('useChatSubmitHandler', () => {
     (executeChatSubmit as jest.Mock).mockResolvedValue(undefined);
     useCurrentAppStore.setState({ currentAppId: 'app-1' });
     useChatInputStore.getState().setActor('user-1');
+    mockInputPath = '/apps/chatflow/app-1';
   });
 
   it('detaches a same-path selected-app submission, including A-B-A without rerender', async () => {
@@ -224,6 +229,46 @@ describe('useChatSubmitHandler', () => {
     expect(captured?.viewScope?.isCurrent()).toBe(false);
     rerender({ path: '/chat/real' });
     expect(captured?.viewScope?.isCurrent()).toBe(false);
+  });
+
+  it('keeps the form submission attached when a continuation input mounts on its temporary path', async () => {
+    const input = {
+      ...createInput(),
+      preferredRouteAppId: 'app-1',
+      currentPathname: mockInputPath,
+    };
+    const form = renderHook(() =>
+      useChatInputRouteSync({ userId: 'user-1', appId: 'app-1' })
+    );
+    const source = form.result.current.scope;
+    let finish!: () => void;
+    let captured: Parameters<typeof executeChatSubmit>[0] | undefined;
+    jest.mocked(executeChatSubmit).mockImplementation(async value => {
+      captured = value;
+      value.viewScope?.onRouteAdopted('/chat/temp-form');
+      await new Promise<void>(resolve => {
+        finish = resolve;
+      });
+    });
+    const submit = renderHook(() => useChatSubmitHandler(input));
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = submit.result.current('Question');
+      await Promise.resolve();
+    });
+    mockInputPath = '/chat/temp-form';
+    const continuation = renderHook(() =>
+      useChatInputRouteSync({ userId: 'user-1', appId: 'app-1' })
+    );
+    try {
+      expect(continuation.result.current.scope).toBe(source);
+      expect(captured?.viewScope?.isCurrent()).toBe(true);
+    } finally {
+      await act(async () => {
+        finish();
+        await pending;
+      });
+    }
   });
 
   it('blocks submission while another submit is in progress', async () => {
