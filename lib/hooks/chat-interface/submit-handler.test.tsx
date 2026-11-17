@@ -1,5 +1,6 @@
 import { useChatInputRouteSync } from '@lib/hooks/use-chat-input-route-sync';
 import { useChatInputStore } from '@lib/stores/chat-input-store';
+import { useChatflowExecutionStore } from '@lib/stores/chatflow-execution-store';
 import { useCurrentAppStore } from '@lib/stores/current-app-store';
 import { act, renderHook } from '@testing-library/react';
 
@@ -85,6 +86,27 @@ describe('useChatSubmitHandler', () => {
     useCurrentAppStore.setState({ currentAppId: 'app-1' });
     useChatInputStore.getState().setActor('user-1');
     mockInputPath = '/apps/chatflow/app-1';
+    useChatflowExecutionStore.getState().resetExecution();
+  });
+
+  it('binds execution ownership before adopting the exact temporary and real paths', async () => {
+    const input = createInput();
+    jest.mocked(executeChatSubmit).mockImplementationOnce(async submission => {
+      expect(useChatflowExecutionStore.getState().view?.paths).toEqual([
+        '/chat/new',
+      ]);
+      submission.viewScope?.onRouteAdopted('/chat/temp-owned');
+      submission.viewScope?.onRouteAdopted('/chat/real-owned');
+    });
+    const { result } = renderHook(() => useChatSubmitHandler(input));
+    await act(async () => {
+      await result.current('Question');
+    });
+    expect(useChatflowExecutionStore.getState().view).toMatchObject({
+      actorId: 'user-1',
+      appId: 'app-1',
+      paths: ['/chat/new', '/chat/temp-owned', '/chat/real-owned'],
+    });
   });
 
   it('detaches a same-path selected-app submission, including A-B-A without rerender', async () => {

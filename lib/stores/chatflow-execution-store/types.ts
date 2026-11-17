@@ -100,7 +100,17 @@ export interface ChatflowExecutionProgress {
   percentage: number;
 }
 
+export interface ChatflowExecutionView {
+  actorId: string;
+  actorEpoch: number;
+  appId: string;
+  draftScope: string;
+  scope: string;
+  paths: string[];
+}
+
 export interface ChatflowExecutionState {
+  view: ChatflowExecutionView | null;
   nodes: ChatflowNode[];
   currentNodeId: string | null;
   isExecuting: boolean;

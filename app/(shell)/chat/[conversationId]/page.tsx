@@ -20,6 +20,7 @@ import { useChatInterface } from '@lib/hooks/use-chat-interface';
 import { useChatPageState } from '@lib/hooks/use-chat-page-state';
 import { useChatScroll } from '@lib/hooks/use-chat-scroll';
 import { useChatflowDetection } from '@lib/hooks/use-chatflow-detection';
+import { useChatflowExecutionView } from '@lib/hooks/use-chatflow-execution-view';
 import { useChatflowInterface } from '@lib/hooks/use-chatflow-interface';
 import { useChatflowState } from '@lib/hooks/use-chatflow-state';
 import { useConversationMessages } from '@lib/hooks/use-conversation-messages';
@@ -43,6 +44,9 @@ export default function ChatPage() {
   const id = params?.conversationId ?? '';
   const { session, loading } = useAuthSession();
   const actorId = session?.user.id;
+  const pathname = usePathname() ?? '';
+  const executionView = useChatflowExecutionView(actorId, pathname, loading);
+  const hasExecutionView = Boolean(executionView);
   const t = useTranslations('langchain');
   const [routing, setRouting] = useState<{
     key: string;
@@ -53,7 +57,7 @@ export default function ChatPage() {
   const key = JSON.stringify([actorId, id]);
   const legacyNew = !id || id === 'new' || id.startsWith('temp-');
   useEffect(() => {
-    if (legacyNew || loading || !actorId) return;
+    if (legacyNew || hasExecutionView || loading || !actorId) return;
     let active = true;
     void getConversationByExternalId(id)
       .then(result => {
@@ -77,8 +81,17 @@ export default function ChatPage() {
     return () => {
       active = false;
     };
-  }, [actorId, id, key, legacyNew, loading]);
-  if (legacyNew || (!loading && !actorId)) return <LegacyChatPage />;
+  }, [actorId, id, key, legacyNew, hasExecutionView, loading]);
+  if (legacyNew || hasExecutionView || (!loading && !actorId))
+    return (
+      <LegacyChatPage
+        executionScope={executionView?.scope}
+        preserveMessages={executionView?.paths.some(path =>
+          path.startsWith('/chat/temp-')
+        )}
+        authLoading={loading}
+      />
+    );
   if (routing?.key !== key) return <p role="status">{t('loading')}</p>;
   if (routing.failed) return <p role="alert">{t('requestFailed')}</p>;
   return routing.appId ? (
@@ -88,11 +101,19 @@ export default function ChatPage() {
       conversationId={routing.conversationId ?? null}
     />
   ) : (
-    <LegacyChatPage />
+    <LegacyChatPage authLoading={loading} />
   );
 }
 
-function LegacyChatPage() {
+function LegacyChatPage({
+  executionScope,
+  preserveMessages = false,
+  authLoading,
+}: {
+  executionScope?: string;
+  preserveMessages?: boolean;
+  authLoading: boolean;
+}) {
   const params = useParams<{ conversationId: string }>();
   const conversationIdFromUrl =
     typeof params?.conversationId === 'string' ? params.conversationId : '';
@@ -133,27 +154,26 @@ function LegacyChatPage() {
     setShowNodeTracker,
     showFloatingController,
   } = useChatflowState({
-    scope: JSON.stringify([session?.user.id, conversationIdFromUrl]),
+    scope:
+      executionScope ??
+      JSON.stringify([session?.user.id, conversationIdFromUrl]),
+    retainCompletedExecution: Boolean(executionScope),
     isChatflowApp,
     chatflowInterface,
     regularInterface,
   });
 
-  // Critical fix: Clean up chatflow execution state when switching routes
-  // Ensure that when switching to historical conversations, previous node data is not displayed
   useLayoutEffect(() => {
-    if (
-      pathname?.startsWith('/chat/') &&
-      conversationIdFromUrl &&
-      conversationIdFromUrl !== 'new' &&
-      !conversationIdFromUrl.includes('temp-')
-    ) {
-      // Clean up chatflow execution state, ensure previous node data is not displayed
+    if (!authLoading && !executionScope) {
       resetExecution();
-
-      console.log('[ChatPage] chatflow execution state cleanup completed');
     }
-  }, [pathname, conversationIdFromUrl, resetExecution]);
+  }, [
+    pathname,
+    conversationIdFromUrl,
+    executionScope,
+    authLoading,
+    resetExecution,
+  ]);
 
   // Use the pagination loading hook to get historical messages
   const {
@@ -164,7 +184,9 @@ function LegacyChatPage() {
     setMessagesContainer,
     error,
     isLoadingInitial,
-  } = useConversationMessages();
+  } = useConversationMessages(
+    preserveMessages ? conversationIdFromUrl : undefined
+  );
 
   // Use wrapHandleSubmit to wrap the original handleSubmit function
   const handleSubmit = wrapHandleSubmit(originalHandleSubmit);
@@ -273,10 +295,10 @@ function LegacyChatPage() {
               {isChatflowApp && showNodeTracker && (
                 <ChatflowNodeTracker
                   isVisible={showNodeTracker && !isPreviewOpen}
-                  scope={JSON.stringify([
-                    conversationAppId,
-                    conversationIdFromUrl,
-                  ])}
+                  scope={
+                    executionScope ??
+                    JSON.stringify([conversationAppId, conversationIdFromUrl])
+                  }
                   onClose={() => {
                     setShowNodeTracker(false);
                     trackerButtonRef.current?.focus();

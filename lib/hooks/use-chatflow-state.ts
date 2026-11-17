@@ -34,6 +34,7 @@ type ChatflowInterfaceLike = ChatInterfaceLike & {
 
 interface UseChatflowStateInput {
   scope?: string;
+  retainCompletedExecution?: boolean;
   isChatflowApp: boolean;
   chatflowInterface: ChatflowInterfaceLike;
   regularInterface: ChatInterfaceLike;
@@ -50,6 +51,7 @@ interface UseChatflowStateInput {
  */
 export function useChatflowState({
   scope = '',
+  retainCompletedExecution = false,
   isChatflowApp,
   chatflowInterface,
   regularInterface,
@@ -65,7 +67,8 @@ export function useChatflowState({
       };
   const executionStart = nodeTracker.nodes[0]?.startTime ?? null;
   const hasActiveNodes =
-    nodeTracker.isExecuting && nodeTracker.nodes.length > 0;
+    (nodeTracker.isExecuting || retainCompletedExecution) &&
+    nodeTracker.nodes.length > 0;
   const [visibility, setVisibility] = React.useState({
     scope,
     executionStart,
@@ -87,7 +90,7 @@ export function useChatflowState({
   let showNodeTracker = visibility.show;
   if (contextChanged || executionChanged || executingChanged) {
     showNodeTracker = contextChanged
-      ? false
+      ? retainCompletedExecution && hasActiveNodes
       : preserveManualChoice
         ? visibility.show
         : executionStarted || executionChanged

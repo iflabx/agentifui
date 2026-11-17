@@ -11,6 +11,7 @@ export const CHATFLOW_EMPTY_PROGRESS: ChatflowExecutionProgress = {
 
 export function createChatflowExecutionBaseState(): Pick<
   ChatflowExecutionState,
+  | 'view'
   | 'nodes'
   | 'currentNodeId'
   | 'isExecuting'
@@ -23,6 +24,7 @@ export function createChatflowExecutionBaseState(): Pick<
   | 'canRetry'
 > {
   return {
+    view: null,
     nodes: [],
     currentNodeId: null,
     isExecuting: false,
@@ -49,6 +51,7 @@ export function createChatflowExecutionStartState(): Partial<ChatflowExecutionSt
 
 export function createChatflowExecutionResetState(): Partial<ChatflowExecutionState> {
   return {
+    view: null,
     nodes: [],
     currentNodeId: null,
     isExecuting: false,

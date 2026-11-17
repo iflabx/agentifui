@@ -1,11 +1,16 @@
 import { captureDifyInputSubmission } from '@components/chat-input/submission';
 import type { UseCreateConversationReturn } from '@lib/hooks/create-conversation/types';
 import { registerChatInputSubmission } from '@lib/hooks/use-chat-input-route-sync';
+import {
+  adoptChatflowExecutionPath,
+  bindChatflowExecutionView,
+} from '@lib/hooks/use-chatflow-execution-view';
 import { useAttachmentStore } from '@lib/stores/attachment-store';
 import { appDrafts } from '@lib/stores/chat-input-scope-cache';
 import { useChatInputStore } from '@lib/stores/chat-input-store';
 import type { ChatMessage } from '@lib/stores/chat-store';
 import { selectIsProcessing, useChatStore } from '@lib/stores/chat-store';
+import type { ChatflowExecutionView } from '@lib/stores/chatflow-execution-store/types';
 import { useCurrentAppStore } from '@lib/stores/current-app-store';
 import type { PendingConversation } from '@lib/stores/pending-conversation-store';
 
@@ -284,12 +289,14 @@ export function useChatSubmitHandler({
         latest.current.currentUserId === owner.userId &&
         latest.current.preferredRouteAppId === owner.routeAppId &&
         owner.paths.has(latest.current.currentPathname);
+      let executionView: ChatflowExecutionView | null = null;
       const viewScope = {
         isCurrent,
         isStopped: () => owner.stopped,
         onRouteAdopted: (pathname: string) => {
           if (!isCurrent()) return;
           owner.paths.add(pathname);
+          executionView = adoptChatflowExecutionPath(executionView, pathname);
           if (/^\/chat\/temp-[^/]+$/.test(pathname)) {
             const scope = useChatInputStore
               .getState()
@@ -327,6 +334,17 @@ export function useChatSubmitHandler({
       }
 
       const unregister = registerChatInputSubmission(owner.draftScope);
+      if (onNodeEvent && currentPathname) {
+        executionView = bindChatflowExecutionView(
+          {
+            actorId: currentUserId,
+            actorEpoch: owner.actorEpoch,
+            appId: appConfig.appId,
+            draftScope: owner.draftScope,
+          },
+          currentPathname
+        );
+      }
       try {
         chatSubmissionOwners.set(isSubmittingRef, {
           appConfig,

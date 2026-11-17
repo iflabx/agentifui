@@ -64,3 +64,22 @@ it('preserves a manual close before the first node arrives and resets it for a n
   rerender({ input: makeInterface(Date.now()) });
   expect(result.current.showNodeTracker).toBe(true);
 });
+
+it('keeps a completed owned process available after mounting and preserves a manual close', () => {
+  const input = makeInterface(123);
+  input.nodeTracker.isExecuting = false;
+  const { result, rerender } = renderHook(() =>
+    useChatflowState({
+      scope: 'owned-view',
+      retainCompletedExecution: true,
+      isChatflowApp: true,
+      chatflowInterface: input,
+      regularInterface: input,
+    })
+  );
+  expect(result.current.showNodeTracker).toBe(true);
+  act(() => result.current.setShowNodeTracker(false));
+  rerender();
+  expect(result.current.showNodeTracker).toBe(false);
+  expect(result.current.nodeTracker.nodes).toHaveLength(1);
+});

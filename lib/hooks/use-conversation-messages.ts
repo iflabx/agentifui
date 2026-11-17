@@ -39,7 +39,7 @@ export type { LoadingState } from './use-conversation-messages/types';
  * Conversation messages loading hook
  * Provides paginated message loading functionality
  */
-export function useConversationMessages() {
+export function useConversationMessages(preserveConversationId?: string) {
   const pathname = usePathname() ?? '';
 
   // Use unified loading state object for state management
@@ -484,7 +484,13 @@ export function useConversationMessages() {
     cancelCurrentRequest();
 
     // If the route change is caused by the first message sent, skip clearing and loading messages
-    if (isFirstMessageTransition) {
+    if (
+      isFirstMessageTransition ||
+      (externalId &&
+        externalId === preserveConversationId &&
+        useChatStore.getState().currentConversationId === externalId &&
+        hasExistingMessages)
+    ) {
       console.log(
         `[useConversationMessages] Route change caused by first message sent, keep existing messages`
       );
@@ -560,6 +566,7 @@ export function useConversationMessages() {
     };
   }, [
     pathname,
+    preserveConversationId,
     fetchDbConversationId,
     loadInitialMessages,
     resetLoader,
