@@ -101,26 +101,22 @@ export async function previewDifyFile(
     }
 
     const response = await fetch(signedUrl.toString(), { method: 'GET' });
-    if (!response.ok) {
-      throw new Error(
-        `Failed to preview file ${fileId}. Status: ${response.status}`
-      );
+    if (response.ok) {
+      return {
+        content: await response.blob(),
+        headers: {
+          contentType:
+            response.headers.get('Content-Type') || 'application/octet-stream',
+          contentLength: response.headers.get('Content-Length')
+            ? parseInt(response.headers.get('Content-Length')!, 10)
+            : undefined,
+          contentDisposition:
+            response.headers.get('Content-Disposition') || undefined,
+          cacheControl: response.headers.get('Cache-Control') || undefined,
+          acceptRanges: response.headers.get('Accept-Ranges') || undefined,
+        },
+      };
     }
-
-    return {
-      content: await response.blob(),
-      headers: {
-        contentType:
-          response.headers.get('Content-Type') || 'application/octet-stream',
-        contentLength: response.headers.get('Content-Length')
-          ? parseInt(response.headers.get('Content-Length')!, 10)
-          : undefined,
-        contentDisposition:
-          response.headers.get('Content-Disposition') || undefined,
-        cacheControl: response.headers.get('Cache-Control') || undefined,
-        acceptRanges: response.headers.get('Accept-Ranges') || undefined,
-      },
-    };
   }
 
   // Build query parameters

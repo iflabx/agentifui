@@ -7,6 +7,7 @@ describe('chatflow execution history metadata', () => {
   it('stores only display data and restores a completed execution', () => {
     const metadata = buildChatflowExecutionMetadata({
       isExecuting: false,
+      wasStopped: false,
       error: null,
       nodes: [
         {
@@ -49,5 +50,16 @@ describe('chatflow execution history metadata', () => {
         chatflow_execution: { version: 1, status: 'completed', nodes: [] },
       })
     ).toBeNull();
+  });
+
+  it('preserves a manually stopped execution status', () => {
+    const metadata = buildChatflowExecutionMetadata({
+      isExecuting: false,
+      wasStopped: true,
+      error: null,
+      nodes: [{ id: 'node-1', title: 'Answer', status: 'failed' }],
+    });
+
+    expect(readChatflowExecutionMetadata(metadata)?.status).toBe('stopped');
   });
 });

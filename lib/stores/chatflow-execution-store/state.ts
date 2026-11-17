@@ -21,6 +21,7 @@ export function createChatflowExecutionBaseState(): Pick<
   | 'loopExpandedStates'
   | 'executionProgress'
   | 'error'
+  | 'wasStopped'
   | 'canRetry'
 > {
   return {
@@ -34,6 +35,7 @@ export function createChatflowExecutionBaseState(): Pick<
     loopExpandedStates: {},
     executionProgress: { ...CHATFLOW_EMPTY_PROGRESS },
     error: null,
+    wasStopped: false,
     canRetry: false,
   };
 }
@@ -46,6 +48,7 @@ export function createChatflowExecutionStartState(): Partial<ChatflowExecutionSt
     nodes: [],
     currentNodeId: null,
     executionProgress: { ...CHATFLOW_EMPTY_PROGRESS },
+    wasStopped: false,
   };
 }
 
@@ -57,6 +60,7 @@ export function createChatflowExecutionResetState(): Partial<ChatflowExecutionSt
     isExecuting: false,
     executionProgress: { ...CHATFLOW_EMPTY_PROGRESS },
     error: null,
+    wasStopped: false,
     canRetry: false,
   };
 }

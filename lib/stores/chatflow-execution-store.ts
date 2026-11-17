@@ -52,6 +52,7 @@ export const useChatflowExecutionStore = create<ChatflowExecutionState>(
     stopExecution: () => {
       set(state => ({
         isExecuting: false,
+        wasStopped: true,
         nodes: markRunningChatflowNodesStopped(state.nodes),
         currentNodeId: null,
         canRetry: true,
@@ -71,6 +72,7 @@ export const useChatflowExecutionStore = create<ChatflowExecutionState>(
         currentLoop: null,
         executionProgress: calculateChatflowExecutionProgress(nodes),
         error: null,
+        wasStopped: false,
         canRetry: false,
       });
     },

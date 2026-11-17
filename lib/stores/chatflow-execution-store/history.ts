@@ -103,7 +103,10 @@ function snapshotNode(node: ChatflowNode): ChatflowNode {
 }
 
 export function buildChatflowExecutionMetadata(
-  state: Pick<ChatflowExecutionState, 'nodes' | 'isExecuting' | 'error'>
+  state: Pick<
+    ChatflowExecutionState,
+    'nodes' | 'isExecuting' | 'error' | 'wasStopped'
+  >
 ): Record<string, unknown> | undefined {
   if (state.nodes.length === 0) {
     return undefined;
@@ -114,7 +117,7 @@ export function buildChatflowExecutionMetadata(
       version: CHATFLOW_EXECUTION_METADATA_VERSION,
       status: state.error
         ? 'failed'
-        : state.isExecuting
+        : state.wasStopped
           ? 'stopped'
           : 'completed',
       nodes: state.nodes.map(snapshotNode),

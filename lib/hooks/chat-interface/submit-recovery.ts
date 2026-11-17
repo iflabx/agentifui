@@ -31,6 +31,7 @@ interface HandleChatSubmitStreamErrorInput {
     errorMessage?: string
   ) => Promise<boolean>;
   moderationT: ChatModerationTranslator;
+  getAssistantMessageMetadata?: () => Record<string, unknown> | undefined;
 }
 
 export function handleChatSubmitStreamError(
@@ -121,6 +122,7 @@ export function handleChatSubmitStreamError(
     isUser: false,
     error: errorMessage,
     persistenceStatus: 'pending',
+    metadata: input.getAssistantMessageMetadata?.(),
   });
 
   if (input.finalDbConvUUID) {

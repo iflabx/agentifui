@@ -454,6 +454,7 @@ export async function executeChatSubmit(
       saveMessage: input.saveMessage,
       saveErrorPlaceholder: input.saveErrorPlaceholder,
       moderationT: input.moderationT,
+      getAssistantMessageMetadata: input.getAssistantMessageMetadata,
     });
   } finally {
     if (isCurrent() && input.appendTimerRef.current) {

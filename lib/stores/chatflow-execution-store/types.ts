@@ -134,6 +134,7 @@ export interface ChatflowExecutionState {
   loopExpandedStates: Record<string, boolean>;
   executionProgress: ChatflowExecutionProgress;
   error: string | null;
+  wasStopped: boolean;
   canRetry: boolean;
   startExecution: () => void;
   stopExecution: () => void;
