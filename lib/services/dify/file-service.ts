@@ -87,7 +87,41 @@ export async function previewDifyFile(
   fileId: string,
   options: DifyFilePreviewOptions = {}
 ): Promise<DifyFilePreviewResponse> {
-  const { as_attachment = false } = options;
+  const { as_attachment = false, preview_url } = options;
+
+  if (preview_url) {
+    const signedUrl = new URL(
+      preview_url,
+      typeof window === 'undefined'
+        ? 'http://localhost'
+        : window.location.origin
+    );
+    if (as_attachment) {
+      signedUrl.searchParams.set('as_attachment', 'true');
+    }
+
+    const response = await fetch(signedUrl.toString(), { method: 'GET' });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to preview file ${fileId}. Status: ${response.status}`
+      );
+    }
+
+    return {
+      content: await response.blob(),
+      headers: {
+        contentType:
+          response.headers.get('Content-Type') || 'application/octet-stream',
+        contentLength: response.headers.get('Content-Length')
+          ? parseInt(response.headers.get('Content-Length')!, 10)
+          : undefined,
+        contentDisposition:
+          response.headers.get('Content-Disposition') || undefined,
+        cacheControl: response.headers.get('Cache-Control') || undefined,
+        acceptRanges: response.headers.get('Accept-Ranges') || undefined,
+      },
+    };
+  }
 
   // Build query parameters
   const searchParams = new URLSearchParams();

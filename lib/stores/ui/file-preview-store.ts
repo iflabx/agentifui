@@ -100,7 +100,10 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
       const response = await previewDifyFile(
         finalAppId,
         previewFileId,
-        { as_attachment: false } // Preview mode
+        {
+          as_attachment: false,
+          preview_url: previewFile.preview_url,
+        } // Preview mode
       );
       if (generation !== previewGeneration) return;
 
@@ -173,7 +176,10 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
       const response = await previewDifyFile(
         finalAppId,
         previewFileId,
-        { as_attachment: true } // Download mode
+        {
+          as_attachment: true,
+          preview_url: currentPreviewFile.preview_url,
+        } // Download mode
       );
       if (generation !== previewGeneration) return;
 

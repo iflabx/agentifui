@@ -29,6 +29,7 @@ export interface UploadFile extends Partial<WorkflowUploadOwner> {
   progress: number;
   error?: string;
   uploadedId?: string;
+  previewUrl?: string;
 }
 
 export type FileUploadFieldConfig = {
@@ -115,6 +116,7 @@ export function getSuccessfulFilesPayload(
             actor_epoch: file.actor_epoch,
           }
         : {}),
+      ...(file.previewUrl ? { preview_url: file.previewUrl } : {}),
     }));
 
   return {

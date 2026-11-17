@@ -16,6 +16,8 @@ export interface MessageAttachment {
   upload_file_id: string;
   /** Message-context preview file ID returned by Dify */
   preview_file_id?: string;
+  /** Signed Dify file URL returned when a workflow input is uploaded */
+  preview_url?: string;
   /** Dify application ID for API calls (optional for backward compatibility) */
   app_id?: string;
 }

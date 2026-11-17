@@ -148,7 +148,8 @@ function ScopedFileUploadField({
       progress?: number,
       nextError?: string,
       uploadedId?: string,
-      uploadOwner?: WorkflowUploadOwner
+      uploadOwner?: WorkflowUploadOwner,
+      previewUrl?: string
     ) => {
       setUploadFiles(prev =>
         prev.map(file =>
@@ -159,6 +160,7 @@ function ScopedFileUploadField({
                 progress: progress ?? file.progress,
                 error: status === 'error' ? nextError : undefined,
                 uploadedId: status === 'success' ? uploadedId : file.uploadedId,
+                previewUrl: status === 'success' ? previewUrl : file.previewUrl,
                 ...uploadOwner,
               }
             : file
@@ -217,7 +219,8 @@ function ScopedFileUploadField({
           undefined,
           undefined,
           response.id,
-          uploadOwner
+          uploadOwner,
+          response.preview_url || response.source_url || undefined
         );
       } catch (uploadError) {
         if (!isCurrent()) return;

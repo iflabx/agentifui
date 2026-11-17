@@ -33,6 +33,9 @@ function toAttachment(
     ...(typeof value.preview_file_id === 'string'
       ? { preview_file_id: value.preview_file_id }
       : {}),
+    ...(typeof value.preview_url === 'string'
+      ? { preview_url: value.preview_url }
+      : {}),
     ...(typeof value.app_id === 'string'
       ? { app_id: value.app_id }
       : appId

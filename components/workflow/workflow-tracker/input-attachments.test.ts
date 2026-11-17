@@ -37,4 +37,25 @@ describe('extractWorkflowInputAttachments', () => {
     expect(result).toHaveLength(1);
     expect(result[0]?.upload_file_id).toBe('file-1');
   });
+
+  it('restores the signed preview URL for workflow input files', () => {
+    const [attachment] = extractWorkflowInputAttachments({
+      source: {
+        upload_file_id: 'file-2',
+        name: 'report.txt',
+        size: 64,
+        mime_type: 'text/plain',
+        preview_url:
+          'https://dify.example.com/files/file-2/file-preview?signature=1',
+      },
+    });
+
+    expect(attachment).toEqual(
+      expect.objectContaining({
+        upload_file_id: 'file-2',
+        preview_url:
+          'https://dify.example.com/files/file-2/file-preview?signature=1',
+      })
+    );
+  });
 });

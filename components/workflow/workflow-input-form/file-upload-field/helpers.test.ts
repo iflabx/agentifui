@@ -9,13 +9,19 @@ describe('workflow upload provenance', () => {
     ...owner,
     status: 'success' as const,
     uploadedId: 'uploaded-B',
+    previewUrl:
+      'https://dify.example.com/files/uploaded-B/file-preview?signature=1',
   };
 
   it('preserves the upload app and actor in single and list payloads', () => {
     for (const single of [true, false]) {
       const payload = getSuccessfulFilesPayload([upload], single, owner);
       expect(single ? payload.value : (payload.value as unknown[])[0]).toEqual(
-        expect.objectContaining({ ...owner, upload_file_id: 'uploaded-B' })
+        expect.objectContaining({
+          ...owner,
+          upload_file_id: 'uploaded-B',
+          preview_url: upload.previewUrl,
+        })
       );
     }
   });
