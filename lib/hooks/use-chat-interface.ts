@@ -33,6 +33,7 @@ import { useChatStopHandler } from './chat-interface/stop-handler';
 import { useChatStreamingState } from './chat-interface/streaming-state';
 import { useChatSubmitHandler } from './chat-interface/submit-handler';
 import type { ChatNodeEvent } from './chat-interface/types';
+import { navigateToConversationIfNeeded } from './create-conversation/routing';
 import { useChatMessages } from './use-chat-messages';
 import { useCreateConversation } from './use-create-conversation';
 
@@ -132,7 +133,7 @@ export function useChatInterface(
 
   const navigateToConversation = useCallback(
     (conversationId: string) => {
-      router.replace(`/chat/${conversationId}`, { scroll: false });
+      navigateToConversationIfNeeded(conversationId, router.replace);
     },
     [router]
   );

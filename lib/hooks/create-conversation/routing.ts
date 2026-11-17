@@ -3,6 +3,15 @@
 import { useChatStore } from '@lib/stores/chat-store';
 import { useSidebarStore } from '@lib/stores/sidebar-store';
 
+export function navigateToConversationIfNeeded(
+  conversationId: string,
+  replace: (pathname: string, options: { scroll: boolean }) => void
+): void {
+  const pathname = `/chat/${conversationId}`;
+  if (window.location.pathname !== pathname)
+    replace(pathname, { scroll: false });
+}
+
 export function applyTemporaryConversationUi(
   tempConvId: string,
   setCurrentChatConversationId: (conversationId: string | null) => void
