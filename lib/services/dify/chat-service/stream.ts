@@ -942,10 +942,10 @@ export async function streamDifyChat(
             case 'message_file':
               if (
                 event.belongs_to === 'user' &&
-                event.id &&
-                !userMessageFileIds.includes(event.id)
+                (event.upload_file_id || event.id) &&
+                !userMessageFileIds.includes(event.upload_file_id || event.id)
               ) {
-                userMessageFileIds.push(event.id);
+                userMessageFileIds.push(event.upload_file_id || event.id);
               }
               break;
             case 'message_end':

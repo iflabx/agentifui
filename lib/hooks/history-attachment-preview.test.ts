@@ -132,6 +132,29 @@ describe('history attachment preview helpers', () => {
     ]);
   });
 
+  it('uses the upload file id for historical previews', () => {
+    const difyMessages = [
+      createDifyMessage({
+        message_files: [
+          {
+            id: 'message-file-record-1',
+            upload_file_id: 'upload-file-1',
+            type: 'document',
+            url: 'https://example.com/file',
+            belongs_to: 'user',
+          },
+        ],
+      }),
+    ];
+
+    expect(
+      applyAttachmentPreviewIds(
+        [createUserMessage(), createAssistantMessage()],
+        difyMessages
+      )[0]?.attachments
+    ).toEqual([expect.objectContaining({ preview_file_id: 'upload-file-1' })]);
+  });
+
   it('falls back to matching the Dify query text when assistant external ids are unavailable', () => {
     const messages = [
       createUserMessage({ id: 'user-2', text: 'same prompt' }),

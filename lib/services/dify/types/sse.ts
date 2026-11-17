@@ -20,6 +20,7 @@ export interface DifySseMessageEvent extends DifySseBaseEvent {
 export interface DifySseMessageFileEvent extends DifySseBaseEvent {
   event: 'message_file';
   id: string;
+  upload_file_id?: string;
   type: string;
   belongs_to: 'user' | 'assistant';
   url: string;

@@ -359,6 +359,43 @@ describe('streamDifyChat agent_thought handling', () => {
     });
   });
 
+  it('uses the upload file id from message_file events for persistence', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: createSseBody([
+        {
+          event: 'message_file',
+          task_id: 'task-1',
+          conversation_id: 'conv-1',
+          id: 'message-file-record-1',
+          upload_file_id: 'upload-file-1',
+          type: 'document',
+          belongs_to: 'user',
+          url: 'https://example.com/file-1',
+        },
+        {
+          event: 'message_end',
+          task_id: 'task-1',
+          conversation_id: 'conv-1',
+          id: 'message-1',
+          metadata: {},
+        },
+      ]),
+    });
+
+    const response = await streamDifyChat(
+      { query: 'hello', user: 'user-1', response_mode: 'streaming' },
+      'app-1'
+    );
+
+    await collectStream(response.answerStream);
+
+    await expect(response.completionPromise).resolves.toMatchObject({
+      userMessageFileIds: ['upload-file-1'],
+    });
+  });
+
   it('should close a synthetic think block on message_end when no answer text arrives', async () => {
     (global.fetch as jest.Mock).mockResolvedValue({
       ok: true,
