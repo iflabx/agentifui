@@ -298,6 +298,7 @@ function formatFilesForDify(files: any[]): any[] {
         name: file.name,
         size: file.size,
         mime_type: file.mime_type,
+        ...(file.preview_url ? { preview_url: file.preview_url } : {}),
         app_id: file.app_id,
         actor_id: file.actor_id,
         actor_epoch: file.actor_epoch,

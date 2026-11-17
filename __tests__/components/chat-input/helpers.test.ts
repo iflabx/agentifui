@@ -30,6 +30,8 @@ describe('chat input helpers', () => {
           type: 'application/pdf',
           status: 'success',
           uploadedId: 'upload-1',
+          uploadedPreviewUrl:
+            'https://dify.example/files/upload-1/file-preview?sign=1',
         },
         {
           name: 'skip.txt',
@@ -46,6 +48,7 @@ describe('chat input helpers', () => {
         name: 'demo.pdf',
         size: 12,
         mime_type: 'application/pdf',
+        preview_url: 'https://dify.example/files/upload-1/file-preview?sign=1',
       },
     ]);
     expect(buildSubmitFiles([] as never)).toBeUndefined();

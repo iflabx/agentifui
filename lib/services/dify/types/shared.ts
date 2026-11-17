@@ -12,6 +12,7 @@ export interface ChatUploadFile {
   name: string;
   size: number;
   mime_type: string;
+  preview_url?: string;
 }
 
 export interface DifyUsage {

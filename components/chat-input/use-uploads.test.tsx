@@ -61,11 +61,15 @@ describe('scoped input uploads', () => {
   });
 
   it('keeps a late upload on its original scope and ignores an older retry', async () => {
-    const pending: Array<(value: { id: string }) => void> = [];
+    const pending: Array<
+      (value: { id: string; preview_url?: string }) => void
+    > = [];
     jest.mocked(uploadDifyFile).mockImplementation(
       () =>
         new Promise(resolve => {
-          pending.push(resolve as (value: { id: string }) => void);
+          pending.push(
+            resolve as (value: { id: string; preview_url?: string }) => void
+          );
         })
     );
     const { result } = renderHook(() =>
@@ -83,13 +87,19 @@ describe('scoped input uploads', () => {
     });
     act(() => useAttachmentStore.getState().setScope('B'));
     await act(async () => {
-      pending[1]({ id: 'new' });
+      pending[1]({
+        id: 'new',
+        preview_url: 'https://dify.example/files/new/file-preview?sign=1',
+      });
       pending[0]({ id: 'old' });
     });
     expect(useAttachmentStore.getState().files).toEqual([]);
     expect(useAttachmentStore.getState().getFiles('A')[0].uploadedId).toBe(
       'new'
     );
+    expect(
+      useAttachmentStore.getState().getFiles('A')[0].uploadedPreviewUrl
+    ).toBe('https://dify.example/files/new/file-preview?sign=1');
     expect(uploadDifyFile).toHaveBeenCalledWith(
       'app-A',
       expect.any(File),
