@@ -12,6 +12,7 @@ import { ThinkBlockContent } from '@components/chat/markdown-block/think-block-c
 import { ThinkBlockHeader } from '@components/chat/markdown-block/think-block-header';
 import { FileAttachmentDisplay } from '@components/chat/messages/user-message/file-attachment-display';
 import { useMobile } from '@lib/hooks/use-mobile';
+import { useFilePreviewStore } from '@lib/stores/ui/file-preview-store';
 import { cn } from '@lib/utils';
 import 'katex/dist/katex.min.css';
 import { Copy, Download, X } from 'lucide-react';
@@ -383,7 +384,11 @@ export function ResultViewer({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (
+        e.key === 'Escape' &&
+        !e.defaultPrevented &&
+        !useFilePreviewStore.getState().isPreviewOpen
+      ) {
         onClose();
       }
     };

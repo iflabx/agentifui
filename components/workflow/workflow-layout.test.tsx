@@ -47,6 +47,9 @@ let mockLiveError: string | null = null;
 const mockRetryExecution = jest.fn();
 const mockClearExecutionState = jest.fn();
 
+jest.mock('@components/file-preview/file-preview-canvas', () => ({
+  FilePreviewCanvas: () => <div data-testid="workflow-file-preview" />,
+}));
 jest.mock('@lib/auth/better-auth/react-hooks', () => ({
   useAuthSession: () => ({ session: { user: { id: mockActorId } } }),
 }));
@@ -115,6 +118,11 @@ jest.mock('./workflow-tracker/result-viewer', () => ({
 }));
 
 describe('Workflow historical selection boundary', () => {
+  it('mounts the shared attachment preview panel', () => {
+    render(<WorkflowLayout instanceId="app-one" />);
+    expect(screen.getByTestId('workflow-file-preview')).toBeInTheDocument();
+  });
+
   beforeEach(() => {
     mockActorId = 'user';
     mockLiveError = null;

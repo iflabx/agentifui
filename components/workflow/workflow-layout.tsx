@@ -1,5 +1,6 @@
 'use client';
 
+import { FilePreviewCanvas } from '@components/file-preview/file-preview-canvas';
 import { ResizableSplitPane } from '@components/ui/resizable-split-pane';
 import { MobileTabSwitcher } from '@components/workflow/mobile-tab-switcher';
 import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
@@ -61,10 +62,13 @@ function buildExecutionViewerResult(
 export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
   const { session } = useAuthSession();
   return (
-    <WorkflowLayoutSession
-      key={JSON.stringify([session?.user.id, instanceId])}
-      instanceId={instanceId}
-    />
+    <>
+      <WorkflowLayoutSession
+        key={JSON.stringify([session?.user.id, instanceId])}
+        instanceId={instanceId}
+      />
+      <FilePreviewCanvas />
+    </>
   );
 }
 
