@@ -4,6 +4,44 @@ import { previewDifyFile } from './file-service';
 describe('Dify file preview service', () => {
   afterEach(() => jest.restoreAllMocks());
 
+  it('falls back after a signed URL network or CORS failure', async () => {
+    const fetchMock = jest
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(
+        new Response('retained original', {
+          headers: { 'Content-Type': 'text/plain' },
+        })
+      );
+    const result = await previewDifyFile('app-1', 'upload-1', {
+      preview_url:
+        'https://dify.example.com/files/upload-1/file-preview?sign=expired',
+    });
+    expect(await result.content.text()).toBe('retained original');
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      '/api/dify/app-1/files/upload-1/preview',
+      { method: 'GET' }
+    );
+  });
+
+  it('does not retry the same local preview endpoint on failure', async () => {
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: 'DIFY_FILE_PREVIEW_EXPIRED',
+          message: 'Upload the original again.',
+        }),
+        { status: 410 }
+      )
+    );
+    await expect(
+      previewDifyFile('app-1', 'upload-1', {
+        preview_url: '/api/dify/app-1/files/upload-1/preview',
+      })
+    ).rejects.toMatchObject({ status: 410, code: 'DIFY_FILE_PREVIEW_EXPIRED' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('uses the signed upload URL for workflow files', async () => {
     const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,

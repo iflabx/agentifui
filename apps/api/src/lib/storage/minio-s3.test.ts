@@ -201,4 +201,41 @@ describe.each([
       storage.buildPublicObjectUrl('avatars', 'user-test/avatar.png')
     ).toBe('https://cdn.example.com/test-bucket/avatars/user-test/avatar.png');
   });
+
+  if (_name === 'API') {
+    it('reads original ciphertext through the internal authenticated endpoint', async () => {
+      process.env.S3_PRESIGN_ENDPOINT = 'https://objects.example.com';
+      const fetchMock = jest
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(new Response('ciphertext'));
+      expect(await apiStorage.getObject('dify-uploads', 'opaque.bin')).toEqual(
+        Buffer.from('ciphertext')
+      );
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://storage.internal:9000/test-bucket/dify-uploads/opaque.bin',
+        expect.objectContaining({
+          method: 'GET',
+          signal: expect.any(AbortSignal),
+          headers: expect.objectContaining({
+            authorization: expect.stringContaining('AWS4-HMAC-SHA256'),
+          }),
+        })
+      );
+    });
+
+    it('distinguishes a missing original from unavailable storage', async () => {
+      jest
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(new Response(null, { status: 404 }))
+        .mockResolvedValueOnce(
+          new Response('private upstream details', { status: 403 })
+        );
+      expect(
+        await apiStorage.getObject('dify-uploads', 'opaque.bin')
+      ).toBeNull();
+      await expect(
+        apiStorage.getObject('dify-uploads', 'opaque.bin')
+      ).rejects.toThrow('Failed to read object: 403');
+    });
+  }
 });

@@ -4,7 +4,11 @@ import { UserMessage } from './user-message';
 
 let lastFileAttachmentDisplayProps: {
   appId?: string;
-  attachments: Array<{ app_id?: string; preview_file_id?: string }>;
+  attachments: Array<{
+    app_id?: string;
+    preview_file_id?: string;
+    preview_url?: string;
+  }>;
 } | null = null;
 
 jest.mock('@lib/hooks', () => ({
@@ -25,7 +29,11 @@ jest.mock('@components/chat/message-actions', () => ({
 jest.mock('./file-attachment-display', () => ({
   FileAttachmentDisplay: (props: {
     appId?: string;
-    attachments: Array<{ app_id?: string; preview_file_id?: string }>;
+    attachments: Array<{
+      app_id?: string;
+      preview_file_id?: string;
+      preview_url?: string;
+    }>;
   }) => {
     lastFileAttachmentDisplayProps = props;
     return <div data-testid="attachment-display" />;
@@ -33,6 +41,28 @@ jest.mock('./file-attachment-display', () => ({
 }));
 
 describe('UserMessage', () => {
+  it('preserves input-file preview URLs through the message rendering boundary', () => {
+    const previewUrl = '/api/dify/app-1/files/upload-1/preview';
+    render(
+      <UserMessage
+        id="message-1"
+        content="summarize"
+        attachments={[
+          {
+            id: 'attachment-1',
+            name: 'notes.txt',
+            size: 12,
+            type: 'text/plain',
+            upload_file_id: 'upload-1',
+            preview_url: previewUrl,
+          },
+        ]}
+      />
+    );
+    expect(lastFileAttachmentDisplayProps?.attachments[0]?.preview_url).toBe(
+      previewUrl
+    );
+  });
   beforeEach(() => {
     jest.clearAllMocks();
     lastFileAttachmentDisplayProps = null;

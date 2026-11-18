@@ -86,7 +86,7 @@ describe('useFilePreviewStore', () => {
     );
   });
 
-  it('prefers preview_file_id over upload_file_id for preview requests and caching', async () => {
+  it('keeps the upload ID even when historical preview_file_id contains a message-file ID', async () => {
     mockedPreviewDifyFile.mockResolvedValue({
       content: new Blob(['preview']),
       headers: {
@@ -103,8 +103,30 @@ describe('useFilePreviewStore', () => {
 
     expect(mockedPreviewDifyFile).toHaveBeenCalledWith(
       'attachment-app',
-      'preview-file-1',
+      'file-1',
       { as_attachment: false }
+    );
+  });
+
+  it('downloads with the same stable upload ID and URL used for preview', async () => {
+    mockedPreviewDifyFile.mockRejectedValueOnce(
+      new Error('stop before creating browser URL')
+    );
+    useFilePreviewStore.setState({
+      currentPreviewFile: createAttachment({
+        app_id: 'attachment-app',
+        preview_file_id: 'message-file-id',
+        preview_url: '/api/dify/attachment-app/files/file-1/preview',
+      }),
+    });
+    await useFilePreviewStore.getState().downloadFile();
+    expect(mockedPreviewDifyFile).toHaveBeenCalledWith(
+      'attachment-app',
+      'file-1',
+      {
+        as_attachment: true,
+        preview_url: '/api/dify/attachment-app/files/file-1/preview',
+      }
     );
   });
 });

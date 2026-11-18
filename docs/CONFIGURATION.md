@@ -391,6 +391,40 @@ Legacy compatibility switches still supported by runtime code:
 
 Use those only when you intentionally need the legacy relay upload path.
 
+### Dify input attachment previews
+
+Workflow uploads retain an encrypted original in the existing
+S3 bucket under `dify-uploads/`. This is required because Dify input-file signed
+URLs expire, and its service API preview endpoint does not cover all input-only
+files. Chatflow renews URLs through conversation history instead and does not
+depend on this archive or introduce an additional original copy.
+No additional storage service or database migration is needed. Workflow uploads
+require working S3 read/write access and `API_ENCRYPTION_KEY`; a storage failure
+is reported as an upload failure rather than silently returning a short-lived
+preview. Missing storage/key configuration is rejected before calling Dify;
+if the storage write fails afterwards, Dify may already have accepted the upload.
+
+Preview and download use the authenticated application API, scoped to the current
+user and service instance, with private/no-store responses. Storage contains
+AES-GCM ciphertext, not publicly readable original files, even if an existing
+bucket has public-read rules. Keep the bucket private nevertheless. Back up this
+prefix together with `API_ENCRYPTION_KEY`; replacing the key does not migrate
+these objects. Do not expose storage credentials to browsers.
+
+Older Chatflow attachments can obtain a fresh URL from Dify conversation history
+after the application verifies ownership. The browser must still be able to reach
+Dify's signed file origin, and that origin must allow the application's CORS
+requests. Older Workflow inputs whose signed
+URLs have expired and which have no retained original cannot be recovered through
+the Dify run-detail API; the user must upload the original again. A still-valid
+legacy URL remains usable. This change does not retroactively archive old files.
+
+Deleting a conversation or execution does not automatically purge uploaded
+originals (nor the upstream Dify uploads). Account for the extra original copies
+in storage capacity, backup and retention policies. No automatic expiration or
+unreferenced-upload cleanup is introduced by this preview fix; do not expire
+the entire prefix while attachments in retained histories are still needed.
+
 ## Fastify Sidecar and Proxy
 
 These variables control the split runtime between Next.js and Fastify.

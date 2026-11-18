@@ -43,13 +43,7 @@ export const UserMessage: React.FC<UserMessageProps> = ({
         {hasAttachments && (
           <FileAttachmentDisplay
             attachments={attachments.map(att => ({
-              id: att.id,
-              name: att.name,
-              size: att.size,
-              type: att.type,
-              upload_file_id: att.upload_file_id,
-              preview_file_id: att.preview_file_id,
-              // Historical messages should keep their original app context whenever possible.
+              ...att,
               app_id: att.app_id || previewAppId,
             }))}
             appId={previewAppId}
