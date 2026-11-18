@@ -86,6 +86,10 @@ export function isStoragePublicReadEnabled(): boolean {
   return parseBooleanEnv(process.env.S3_PUBLIC_READ_ENABLED, true);
 }
 
+export function assertStorageConfigured(): void {
+  resolveConfig();
+}
+
 function sha256Hex(data: string | Buffer): string {
   return crypto.createHash('sha256').update(data).digest('hex');
 }
@@ -183,6 +187,7 @@ async function signedRequest(options: {
   query?: URLSearchParams;
   body?: Buffer;
   contentType?: string;
+  timeoutMs?: number;
 }) {
   const config = resolveConfig();
   const now = new Date();
@@ -239,6 +244,9 @@ async function signedRequest(options: {
     method: options.method,
     headers,
     body: options.body ? new Uint8Array(options.body) : undefined,
+    ...(options.timeoutMs
+      ? { signal: AbortSignal.timeout(options.timeoutMs) }
+      : {}),
   });
 }
 
@@ -314,6 +322,7 @@ export async function putObject(
     key,
     body: bytes,
     contentType,
+    timeoutMs: 30000,
   });
 
   if (!response.ok) {
@@ -333,6 +342,22 @@ export async function deleteObject(namespace: string, filePath: string) {
     const bodyText = await response.text();
     throw new Error(`Failed to delete object: ${response.status} ${bodyText}`);
   }
+}
+
+export async function getObject(
+  namespace: string,
+  filePath: string
+): Promise<Buffer | null> {
+  const response = await signedRequest({
+    method: 'GET',
+    key: `${namespace}/${filePath}`,
+    timeoutMs: 30000,
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new Error(`Failed to read object: ${response.status}`);
+  }
+  return Buffer.from(await response.arrayBuffer());
 }
 
 export async function listObjects(namespace: string, prefix: string) {

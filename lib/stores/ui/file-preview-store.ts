@@ -47,14 +47,16 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
   // Actions
   openPreview: async (file: MessageAttachment, appId?: string) => {
     const generation = ++previewGeneration;
-    const previewFileId = file.preview_file_id || file.upload_file_id;
+    const previewFileId = file.upload_file_id || file.preview_file_id || '';
 
     // Preserve the file's original app context first; only fall back to the caller appId.
     const finalAppId = file.app_id || appId;
 
-    if (!finalAppId) {
+    if (!finalAppId || !previewFileId) {
       set({
-        error: 'No application ID available for file preview',
+        error: !finalAppId
+          ? 'No application ID available for file preview'
+          : 'No file ID available for file preview',
         isPreviewOpen: true,
         currentPreviewFile: file,
         isLoading: false,
@@ -100,7 +102,10 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
       const response = await previewDifyFile(
         finalAppId,
         previewFileId,
-        { as_attachment: false } // Preview mode
+        {
+          as_attachment: false,
+          preview_url: previewFile.preview_url,
+        } // Preview mode
       );
       if (generation !== previewGeneration) return;
 
@@ -160,11 +165,17 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
     const { currentPreviewFile } = get();
     if (!currentPreviewFile) return;
     const previewFileId =
-      currentPreviewFile.preview_file_id || currentPreviewFile.upload_file_id;
+      currentPreviewFile.upload_file_id ||
+      currentPreviewFile.preview_file_id ||
+      '';
 
     const finalAppId = currentPreviewFile.app_id;
-    if (!finalAppId) {
-      set({ error: 'No application ID available for file download' });
+    if (!finalAppId || !previewFileId) {
+      set({
+        error: !finalAppId
+          ? 'No application ID available for file download'
+          : 'No file ID available for file download',
+      });
       return;
     }
 
@@ -173,7 +184,10 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
       const response = await previewDifyFile(
         finalAppId,
         previewFileId,
-        { as_attachment: true } // Download mode
+        {
+          as_attachment: true,
+          preview_url: currentPreviewFile.preview_url,
+        } // Download mode
       );
       if (generation !== previewGeneration) return;
 

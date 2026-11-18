@@ -40,6 +40,9 @@ export function buildSubmitFiles(
     name: file.name,
     size: file.size,
     mime_type: file.type,
+    ...(file.uploadedPreviewUrl
+      ? { preview_url: file.uploadedPreviewUrl }
+      : {}),
     ...(file.uploadedAppId ? { app_id: file.uploadedAppId } : {}),
     ...(file.uploadedActorId
       ? { actor_id: file.uploadedActorId, actor_epoch: file.uploadedActorEpoch }

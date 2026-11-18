@@ -1,10 +1,16 @@
 import { captureDifyInputSubmission } from '@components/chat-input/submission';
 import type { UseCreateConversationReturn } from '@lib/hooks/create-conversation/types';
 import { registerChatInputSubmission } from '@lib/hooks/use-chat-input-route-sync';
+import {
+  adoptChatflowExecutionPath,
+  bindChatflowExecutionView,
+} from '@lib/hooks/use-chatflow-execution-view';
 import { useAttachmentStore } from '@lib/stores/attachment-store';
+import { appDrafts } from '@lib/stores/chat-input-scope-cache';
 import { useChatInputStore } from '@lib/stores/chat-input-store';
 import type { ChatMessage } from '@lib/stores/chat-store';
 import { selectIsProcessing, useChatStore } from '@lib/stores/chat-store';
+import type { ChatflowExecutionView } from '@lib/stores/chatflow-execution-store/types';
 import { useCurrentAppStore } from '@lib/stores/current-app-store';
 import type { PendingConversation } from '@lib/stores/pending-conversation-store';
 
@@ -16,7 +22,7 @@ import { resolveChatSubmitAppConfig } from './app-config';
 import type { ChatModerationTranslator } from './error-utils';
 import { chatSubmissionOwners } from './submission-owner';
 import { executeChatSubmit } from './submit-flow';
-import type { ChatNodeEvent } from './types';
+import type { AssistantMessageMetadataProvider, ChatNodeEvent } from './types';
 
 type ChatMessageUpdates = Partial<Omit<ChatMessage, 'id' | 'isUser'>>;
 
@@ -77,6 +83,7 @@ interface UseChatSubmitHandlerInput {
   difyConversationId: string | null;
   dbConversationUUID: string | null;
   onNodeEvent?: (event: ChatNodeEvent) => void;
+  getAssistantMessageMetadata?: AssistantMessageMetadataProvider;
   isSubmittingRef: MutableRefObject<boolean>;
   chunkBufferRef: MutableRefObject<string>;
   appendTimerRef: MutableRefObject<NodeJS.Timeout | null>;
@@ -128,6 +135,7 @@ export function useChatSubmitHandler({
   difyConversationId,
   dbConversationUUID,
   onNodeEvent,
+  getAssistantMessageMetadata,
   isSubmittingRef,
   chunkBufferRef,
   appendTimerRef,
@@ -283,11 +291,25 @@ export function useChatSubmitHandler({
         latest.current.currentUserId === owner.userId &&
         latest.current.preferredRouteAppId === owner.routeAppId &&
         owner.paths.has(latest.current.currentPathname);
+      let executionView: ChatflowExecutionView | null = null;
       const viewScope = {
         isCurrent,
         isStopped: () => owner.stopped,
         onRouteAdopted: (pathname: string) => {
-          if (isCurrent()) owner.paths.add(pathname);
+          if (!isCurrent()) return;
+          owner.paths.add(pathname);
+          executionView = adoptChatflowExecutionPath(executionView, pathname);
+          if (/^\/chat\/temp-[^/]+$/.test(pathname)) {
+            const scope = useChatInputStore
+              .getState()
+              .resolveScope(owner.draftScope);
+            if (!scope.startsWith(scopePrefix)) return;
+            const [epoch, actor, app, target] = JSON.parse(scope);
+            appDrafts.set(
+              JSON.stringify([epoch, actor, app, pathname]),
+              target
+            );
+          }
         },
       };
 
@@ -314,6 +336,17 @@ export function useChatSubmitHandler({
       }
 
       const unregister = registerChatInputSubmission(owner.draftScope);
+      if (onNodeEvent && currentPathname) {
+        executionView = bindChatflowExecutionView(
+          {
+            actorId: currentUserId,
+            actorEpoch: owner.actorEpoch,
+            appId: appConfig.appId,
+            draftScope: owner.draftScope,
+          },
+          currentPathname
+        );
+      }
       try {
         chatSubmissionOwners.set(isSubmittingRef, {
           appConfig,
@@ -336,6 +369,7 @@ export function useChatSubmitHandler({
           difyConversationId,
           dbConversationUUID,
           onNodeEvent,
+          getAssistantMessageMetadata,
           isSubmittingRef,
           chunkBufferRef,
           appendTimerRef,
@@ -394,6 +428,7 @@ export function useChatSubmitHandler({
       difyConversationId,
       dbConversationUUID,
       onNodeEvent,
+      getAssistantMessageMetadata,
       isSubmittingRef,
       chunkBufferRef,
       appendTimerRef,

@@ -79,8 +79,7 @@ function ScopedFileUploadField({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([]);
   const lastSuccessIdsRef = useRef('');
-  const attempts = useRef(new Map<string, symbol>());
-  const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  const attempts = useRef(new Map<string, symbol | null>());
   const activeViewRef = useRef(false);
   const owner = useMemo<WorkflowUploadOwner | null>(
     () =>
@@ -92,7 +91,6 @@ function ScopedFileUploadField({
   useLayoutEffect(() => {
     activeViewRef.current = true;
     const viewAttempts = attempts.current;
-    const viewTimers = timers.current;
     const unsubscribe = useChatInputStore.subscribe(next => {
       if (next.actorEpoch !== actorEpoch || next.actorId !== userId)
         activeViewRef.current = false;
@@ -101,8 +99,6 @@ function ScopedFileUploadField({
       activeViewRef.current = false;
       unsubscribe();
       viewAttempts.clear();
-      viewTimers.forEach(timer => clearTimeout(timer));
-      viewTimers.clear();
     };
   }, [actorEpoch, userId]);
 
@@ -152,7 +148,8 @@ function ScopedFileUploadField({
       progress?: number,
       nextError?: string,
       uploadedId?: string,
-      uploadOwner?: WorkflowUploadOwner
+      uploadOwner?: WorkflowUploadOwner,
+      previewUrl?: string
     ) => {
       setUploadFiles(prev =>
         prev.map(file =>
@@ -163,6 +160,7 @@ function ScopedFileUploadField({
                 progress: progress ?? file.progress,
                 error: status === 'error' ? nextError : undefined,
                 uploadedId: status === 'success' ? uploadedId : file.uploadedId,
+                previewUrl: status === 'success' ? previewUrl : file.previewUrl,
                 ...uploadOwner,
               }
             : file
@@ -181,6 +179,7 @@ function ScopedFileUploadField({
         !userId ||
         !instanceId ||
         !attempts.current.has(uploadFile.id) ||
+        attempts.current.get(uploadFile.id) !== null ||
         input.actorId !== userId ||
         input.actorEpoch !== actorEpoch
       )
@@ -220,7 +219,8 @@ function ScopedFileUploadField({
           undefined,
           undefined,
           response.id,
-          uploadOwner
+          uploadOwner,
+          response.preview_url || response.source_url || undefined
         );
       } catch (uploadError) {
         if (!isCurrent()) return;
@@ -236,21 +236,30 @@ function ScopedFileUploadField({
     [instanceId, userId, actorEpoch, loading, t, updateFileStatus]
   );
 
+  useEffect(() => {
+    if (loading) return;
+    uploadFiles.forEach(uploadFile => {
+      if (uploadFile.status === 'pending') void uploadFileToDify(uploadFile);
+    });
+  }, [loading, uploadFiles, uploadFileToDify]);
+
   const handleFileSelect = useCallback(
     (newFiles: File[]) => {
-      if (!activeViewRef.current || loading || !owner) return;
+      const input = useChatInputStore.getState();
+      if (
+        !activeViewRef.current ||
+        !owner ||
+        input.actorId !== owner.actor_id ||
+        input.actorEpoch !== owner.actor_epoch
+      )
+        return;
       const newUploadFiles = createUploadFiles(newFiles);
       newUploadFiles.forEach(uploadFile => {
-        attempts.current.set(uploadFile.id, Symbol(uploadFile.id));
-        const timer = setTimeout(() => {
-          timers.current.delete(timer);
-          void uploadFileToDify(uploadFile);
-        }, 100);
-        timers.current.add(timer);
+        attempts.current.set(uploadFile.id, null);
       });
       setUploadFiles(prev => [...prev, ...newUploadFiles]);
     },
-    [uploadFileToDify, loading, owner]
+    [owner]
   );
 
   const handleFileInputChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -271,10 +280,17 @@ function ScopedFileUploadField({
     (id: string) => {
       const uploadFile = uploadFiles.find(file => file.id === id);
       if (uploadFile && uploadFile.status === 'error') {
-        void uploadFileToDify(uploadFile);
+        attempts.current.set(id, null);
+        setUploadFiles(prev =>
+          prev.map(file =>
+            file.id === id
+              ? { ...file, status: 'pending', error: undefined }
+              : file
+          )
+        );
       }
     },
-    [uploadFiles, uploadFileToDify]
+    [uploadFiles]
   );
 
   const handleDrop = (event: DragEvent) => {
@@ -340,7 +356,7 @@ function ScopedFileUploadField({
         fileInputRef={fileInputRef}
         fileSizeHint={fileSizeHint}
         fileTypeHint={fileTypeInfo.hint}
-        inputDisabled={isUploading || !canUploadMore}
+        inputDisabled={!owner || isUploading || !canUploadMore}
         isUploading={isUploading}
         maxFiles={maxFiles}
         onDragOver={handleDragOver}

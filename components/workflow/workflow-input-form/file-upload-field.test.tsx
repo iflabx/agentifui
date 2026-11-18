@@ -28,6 +28,7 @@ describe('form upload ownership', () => {
   });
   afterEach(() => {
     jest.useRealTimers();
+    jest.restoreAllMocks();
   });
 
   function setup() {
@@ -145,7 +146,8 @@ describe('form upload ownership', () => {
     expect(view.onChange).not.toHaveBeenCalled();
   });
 
-  it('does not start a scheduled old-actor upload after logout and same-account login', async () => {
+  it('does not start a queued old-actor upload after logout and same-account login', async () => {
+    mockAuth.loading = true;
     const view = setup();
     act(() => {
       view.select();
@@ -167,4 +169,150 @@ describe('form upload ownership', () => {
     });
     expect(uploadDifyFile).not.toHaveBeenCalled();
   });
+
+  it('preserves files selected during same-actor authentication refresh and uploads once it finishes', async () => {
+    const view = setup();
+    const refresh = (loading: boolean) => {
+      mockAuth.loading = loading;
+      view.rerender(
+        <FileUploadField
+          config={{ max_length: 3 }}
+          instanceId="app-B"
+          value={null}
+          onChange={view.onChange}
+          isSingleFileMode
+        />
+      );
+    };
+    refresh(true);
+    await act(async () => {
+      view.select();
+      jest.advanceTimersByTime(100);
+    });
+    expect(view.getByText('b.txt')).toBeInTheDocument();
+    expect(uploadDifyFile).not.toHaveBeenCalled();
+    await act(async () => {
+      refresh(false);
+      jest.advanceTimersByTime(100);
+    });
+    expect(uploadDifyFile).toHaveBeenCalledTimes(1);
+    expect(view.onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ upload_file_id: 'uploaded-B' })
+    );
+  });
+
+  it('does not repeat an in-flight upload when authentication refresh completes', async () => {
+    let finishUpload!: (value: never) => void;
+    jest.mocked(uploadDifyFile).mockImplementation(
+      () =>
+        new Promise(resolve => {
+          finishUpload = resolve;
+        })
+    );
+    const view = setup();
+    act(() => {
+      view.select();
+    });
+    mockAuth.loading = true;
+    const refresh = () =>
+      view.rerender(
+        <FileUploadField
+          config={{ max_length: 3 }}
+          instanceId="app-B"
+          value={null}
+          onChange={view.onChange}
+          isSingleFileMode
+        />
+      );
+    refresh();
+    await act(async () => {
+      jest.advanceTimersByTime(100);
+    });
+    mockAuth.loading = false;
+    await act(async () => {
+      refresh();
+      jest.advanceTimersByTime(100);
+    });
+    expect(uploadDifyFile).toHaveBeenCalledTimes(1);
+    expect(view.onChange).not.toHaveBeenCalled();
+    await act(async () => {
+      finishUpload({ id: 'uploaded-B' } as never);
+    });
+    expect(view.onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ upload_file_id: 'uploaded-B' })
+    );
+  });
+
+  it('queues a failed upload retry during authentication refresh and retries only once', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    jest
+      .mocked(uploadDifyFile)
+      .mockRejectedValueOnce(new Error('Upload failed'));
+    const view = setup();
+    await act(async () => {
+      view.select();
+    });
+    expect(uploadDifyFile).toHaveBeenCalledTimes(1);
+    const refresh = (loading: boolean) => {
+      mockAuth.loading = loading;
+      view.rerender(
+        <FileUploadField
+          config={{ max_length: 3 }}
+          instanceId="app-B"
+          value={null}
+          onChange={view.onChange}
+          isSingleFileMode
+        />
+      );
+    };
+    refresh(true);
+    fireEvent.click(
+      view.getByRole('button', {
+        name: 'pages.workflow.fileUpload.retryUpload',
+      })
+    );
+    expect(uploadDifyFile).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      refresh(false);
+    });
+    expect(uploadDifyFile).toHaveBeenCalledTimes(2);
+    expect(view.onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ upload_file_id: 'uploaded-B' })
+    );
+  });
+
+  it.each(['actor', 'app', 'remove', 'unmount'])(
+    'discards a queued selection after %s before authentication refresh completes',
+    async change => {
+      mockAuth.loading = true;
+      const view = setup();
+      act(() => {
+        view.select();
+      });
+      expect(view.getByText('b.txt')).toBeInTheDocument();
+      if (change === 'actor')
+        act(() => {
+          useChatInputStore.getState().setActor(null);
+          useChatInputStore.getState().setActor('actor');
+        });
+      if (change === 'remove') fireEvent.click(view.getByRole('button'));
+      if (change === 'unmount') view.unmount();
+      mockAuth.loading = false;
+      if (change !== 'unmount')
+        view.rerender(
+          <FileUploadField
+            config={{ max_length: 3 }}
+            instanceId={change === 'app' ? 'app-C' : 'app-B'}
+            value={null}
+            onChange={view.onChange}
+            isSingleFileMode
+          />
+        );
+      await act(async () => {
+        jest.advanceTimersByTime(100);
+      });
+      expect(uploadDifyFile).not.toHaveBeenCalled();
+      expect(view.onChange).not.toHaveBeenCalled();
+    }
+  );
 });

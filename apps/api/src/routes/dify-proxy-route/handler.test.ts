@@ -8,6 +8,7 @@ import {
   registerSubmission,
   rejectSubmission,
 } from '../../lib/agent-submissions';
+import { handleOwnedDifyFilePreview } from './file-preview';
 import { handleDifyProxy } from './handler';
 import { runInputModeration } from './input-moderation';
 import { resolveProxyRequestContext } from './request-context';
@@ -16,6 +17,10 @@ import { dispatchDifyUpstreamRequest } from './upstream';
 
 jest.mock('./request-context', () => ({
   resolveProxyRequestContext: jest.fn(),
+}));
+
+jest.mock('./file-preview', () => ({
+  handleOwnedDifyFilePreview: jest.fn().mockResolvedValue(false),
 }));
 
 jest.mock('../../lib/agent-submissions', () => ({
@@ -117,6 +122,7 @@ describe('handleDifyProxy input moderation integration', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.mocked(handleOwnedDifyFilePreview).mockResolvedValue(false);
     jest.mocked(registerSubmission).mockResolvedValue({
       task: { root_task_id: 'root-task' } as never,
       replayed: false,
@@ -148,6 +154,24 @@ describe('handleDifyProxy input moderation integration', () => {
       outcome: 'skip',
     });
     mockedDispatchDifyUpstreamRequest.mockResolvedValue(undefined);
+  });
+
+  it('serves an owned preview before the admin-only upstream gate', async () => {
+    mockedResolveProxyRequestContext.mockResolvedValue({
+      ok: true,
+      context: {
+        appId: 'app-1',
+        slug: ['files', 'upload-1', 'preview'],
+        routePath: '/api/dify/app-1/files/upload-1/preview',
+        actor: { userId: 'user-1', role: 'user' },
+      },
+    });
+    jest.mocked(handleOwnedDifyFilePreview).mockResolvedValue(true);
+    const reply = createReply();
+    await handleDifyProxy(createRequest('GET'), reply, createConfig());
+    expect(handleOwnedDifyFilePreview).toHaveBeenCalledTimes(1);
+    expect(reply.status).not.toHaveBeenCalledWith(403);
+    expect(mockedDispatchDifyUpstreamRequest).not.toHaveBeenCalled();
   });
 
   it('requires durable identity for generation even when bypassing the UI', async () => {

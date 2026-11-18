@@ -14,12 +14,22 @@ import {
   getDifyProxyCircuitSnapshot,
 } from '../../lib/dify-proxy-resilience';
 import {
+  assertDifyUploadStorage,
+  saveDifyUpload,
+} from '../../lib/dify-upload-archive';
+import {
   injectTrustedUserContext,
   loadTrustedUserProfile,
   shouldInjectTrustedUserContext,
 } from './trusted-user-context';
 import type { DifyProxyRequestContext, DifyProxyTargetConfig } from './types';
 import { dispatchDifyUpstreamRequest } from './upstream';
+
+jest.mock('../../lib/dify-upload-archive', () => ({
+  assertDifyUploadStorage: jest.fn(),
+  saveDifyUpload: jest.fn().mockResolvedValue(undefined),
+  readDifyUpload: jest.fn().mockResolvedValue(null),
+}));
 
 jest.mock('../../lib/dify-proxy-resilience', () => ({
   DifyProxyRequestError: jest.requireActual('../../lib/dify-proxy-resilience')
@@ -593,6 +603,12 @@ describe('dispatchDifyUpstreamRequest trusted user context integration', () => {
 
   it('rebuilds multipart uploads with the trusted identity and a fresh boundary', async () => {
     mockedShouldInjectTrustedUserContext.mockReturnValue(false);
+    mockedFetch.mockResolvedValueOnce(
+      new Response('{"id":"file-1"}', {
+        status: 201,
+        headers: { 'content-type': 'application/json' },
+      })
+    );
     const form = new FormData();
     form.append('user', 'victim');
     form.append('file', new Blob(['safe-file']), 'file.txt');
@@ -608,6 +624,7 @@ describe('dispatchDifyUpstreamRequest trusted user context integration', () => {
       createContext({ slug: ['files', 'upload'] }),
       createTargetConfig({
         appType: 'workflow',
+        serviceInstanceId: 'canonical-app',
         rawBody: Buffer.from(await upload.arrayBuffer()),
       })
     );
@@ -624,6 +641,59 @@ describe('dispatchDifyUpstreamRequest trusted user context integration', () => {
     expect(await ((init.body as FormData).get('file') as File).text()).toBe(
       'safe-file'
     );
+  });
+
+  it('rejects missing Workflow storage configuration before uploading to Dify', async () => {
+    jest.mocked(assertDifyUploadStorage).mockImplementationOnce(() => {
+      throw new Error('not configured');
+    });
+    mockedShouldInjectTrustedUserContext.mockReturnValue(false);
+    await expect(
+      dispatchDifyUpstreamRequest(
+        createRequest(),
+        createReply(),
+        createContext({ slug: ['files', 'upload'] }),
+        createTargetConfig({ appType: 'workflow' })
+      )
+    ).rejects.toMatchObject({
+      statusCode: 503,
+      code: 'DIFY_UPLOAD_STORAGE_UNAVAILABLE',
+    });
+    expect(mockedFetch).not.toHaveBeenCalled();
+  });
+
+  it('preserves storage failures as 503 after a successful Workflow upstream upload', async () => {
+    mockedShouldInjectTrustedUserContext.mockReturnValue(false);
+    jest
+      .mocked(saveDifyUpload)
+      .mockRejectedValueOnce(new Error('storage unavailable'));
+    mockedFetch.mockResolvedValueOnce(
+      new Response('{"id":"file-1"}', { status: 201 })
+    );
+    const form = new FormData();
+    form.set('file', new Blob(['test']), 'test.txt');
+    const upload = new Request('https://upstream.example.com', {
+      method: 'POST',
+      body: form,
+    });
+    await expect(
+      dispatchDifyUpstreamRequest(
+        createRequest({
+          headers: { 'content-type': upload.headers.get('content-type') },
+        }),
+        createReply(),
+        createContext({ slug: ['files', 'upload'] }),
+        createTargetConfig({
+          appType: 'workflow',
+          serviceInstanceId: 'canonical-app',
+          rawBody: Buffer.from(await upload.arrayBuffer()),
+        })
+      )
+    ).rejects.toMatchObject({
+      statusCode: 503,
+      code: 'DIFY_UPLOAD_STORAGE_UNAVAILABLE',
+    });
+    expect(mockedFetch).toHaveBeenCalledTimes(1);
   });
 
   it.each(['chat-messages?ignored=1', 'chat-messages#ignored', '..'])(

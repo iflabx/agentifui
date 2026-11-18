@@ -10,10 +10,14 @@ import type {
   DifySseNodeStartedEvent,
   DifySseParallelBranchFinishedEvent,
   DifySseParallelBranchStartedEvent,
+  DifySseWorkflowFinishedEvent,
+  DifySseWorkflowStartedEvent,
   DifyUsage,
 } from '@lib/services/dify/types';
 
 export type ChatNodeEvent =
+  | DifySseWorkflowStartedEvent
+  | DifySseWorkflowFinishedEvent
   | DifySseNodeStartedEvent
   | DifySseNodeFinishedEvent
   | DifySseIterationStartedEvent
@@ -32,6 +36,9 @@ export interface ChatSubmitResult {
   errorCode?: string;
   requestId?: string;
 }
+
+export type AssistantMessageMetadataProvider = () =>
+  Record<string, unknown> | undefined;
 
 export interface ChatStreamCompletionData {
   messageId?: string;

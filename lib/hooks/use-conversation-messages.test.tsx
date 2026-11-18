@@ -44,6 +44,35 @@ describe('conversation message pagination', () => {
     });
   });
 
+  it('preserves completed live messages when mounting the promoted conversation', () => {
+    useChatStore.setState({
+      currentConversationId: 'conversation',
+      messages: [{ id: 'answer', text: 'Completed summary', isUser: false }],
+    });
+    const { result } = renderHook(() =>
+      useConversationMessages('conversation')
+    );
+    expect(useChatStore.getState().messages[0]?.text).toBe('Completed summary');
+    expect(result.current.loading.state).toBe('success');
+    expect(getConversationByExternalId).not.toHaveBeenCalled();
+    expect(getMessagePage).not.toHaveBeenCalled();
+  });
+
+  it('does not reuse live messages for a different route', async () => {
+    useChatStore.setState({
+      currentConversationId: 'previous',
+      messages: [{ id: 'old', text: 'Previous answer', isUser: false }],
+    });
+    jest.mocked(getMessagePage).mockResolvedValue({
+      success: true,
+      data: { messages: [message(1)], hasMore: false, nextCursor: null },
+    });
+    const { result } = renderHook(() => useConversationMessages('previous'));
+    await waitFor(() => expect(result.current.loading.state).toBe('success'));
+    expect(getMessagePage).toHaveBeenCalledTimes(1);
+    expect(useChatStore.getState().messages[0]?.text).toBe('1');
+  });
+
   it('keeps a partial page final, without unnecessary loads', async () => {
     jest.mocked(getMessagePage).mockResolvedValue({
       success: true,

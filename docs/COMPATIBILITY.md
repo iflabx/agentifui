@@ -71,6 +71,23 @@ are different operations. Likewise, an execution completing is not proof its
 messages were saved. Preserve unknown-outcome handling instead of adding blind
 generation/resume retries.
 
+### Execution Process Presentation
+
+Dify workflow/chatflow steps and LangChain tool activities share process rows,
+controlled state labels and a completed-activity count. This is presentation reuse,
+not a new common backend event or persistence contract. It does not add Dify node
+projection to the negotiated AG-UI chatbot path or imply a known task-completion
+percentage. Existing workflow/chatflow iteration, loop and parallel details remain
+available when the upstream supplies them.
+
+LangChain process details are grouped by local run and preserve the original
+message/tool anchors; older unordered records are labeled as summaries. Workflow
+execution history can show saved node summaries, including the existing failure
+snapshot formats. These summaries are read-only, not a complete nested execution
+replay; unfinished snapshot nodes have unknown outcomes rather than live timers.
+Chatflow process tracking remains transient and is not reconstructed after refresh.
+Missing snapshots show no process record, never another live task's steps.
+
 ## 3. Versions And Service Contracts
 
 | Component           | Current target/reference                                                                                          | What is not implied                                                                                |

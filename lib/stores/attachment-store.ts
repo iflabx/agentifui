@@ -9,6 +9,7 @@ export interface AttachmentFile {
   status: 'pending' | 'uploading' | 'success' | 'error';
   error?: string;
   uploadedId?: string;
+  uploadedPreviewUrl?: string;
   uploadedAppId?: string;
   uploadedActorId?: string;
   uploadedActorEpoch?: number;
@@ -43,6 +44,7 @@ interface AttachmentStoreState {
     result:
       | {
           uploadedId: string;
+          previewUrl?: string;
           appId?: string;
           actorId?: string;
           actorEpoch?: number;
@@ -164,6 +166,7 @@ export const useAttachmentStore = create<AttachmentStoreState>((set, get) => ({
               ...('uploadedId' in result
                 ? {
                     uploadedId: result.uploadedId,
+                    uploadedPreviewUrl: result.previewUrl,
                     uploadedAppId: result.appId,
                     uploadedActorId: result.actorId,
                     uploadedActorEpoch: result.actorEpoch,
@@ -174,6 +177,7 @@ export const useAttachmentStore = create<AttachmentStoreState>((set, get) => ({
                     error: result.error,
                     status: 'error' as const,
                     uploadedId: undefined,
+                    uploadedPreviewUrl: undefined,
                     uploadedAppId: undefined,
                     uploadedActorId: undefined,
                     uploadedActorEpoch: undefined,

@@ -10,7 +10,9 @@ import {
 import { ThinkBlockContent } from '@components/chat/markdown-block/think-block-content';
 // --- Import ThinkBlock components ---
 import { ThinkBlockHeader } from '@components/chat/markdown-block/think-block-header';
+import { FileAttachmentDisplay } from '@components/chat/messages/user-message/file-attachment-display';
 import { useMobile } from '@lib/hooks/use-mobile';
+import { useFilePreviewStore } from '@lib/stores/ui/file-preview-store';
 import { cn } from '@lib/utils';
 import 'katex/dist/katex.min.css';
 import { Copy, Download, X } from 'lucide-react';
@@ -26,9 +28,12 @@ import React, { useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 
+import { extractWorkflowInputAttachments } from './input-attachments';
+
 interface ResultViewerProps {
   result: unknown;
   execution: unknown;
+  appId?: string;
   onClose: () => void;
 }
 
@@ -93,10 +98,26 @@ const parseThinkContent = (
 export function ResultViewer({
   result,
   execution,
+  appId,
   onClose,
 }: ResultViewerProps) {
   const isMobile = useMobile();
   const t = useTranslations('pages.workflow.resultViewer');
+  const executionRecord =
+    execution && typeof execution === 'object'
+      ? (execution as {
+          inputs?: unknown;
+          service_instance_id?: string;
+        })
+      : null;
+  const inputAttachments = useMemo(
+    () =>
+      extractWorkflowInputAttachments(
+        executionRecord?.inputs,
+        appId || executionRecord?.service_instance_id
+      ),
+    [appId, executionRecord?.inputs, executionRecord?.service_instance_id]
+  );
 
   // --- ThinkBlock status management ---
   const [isThinkOpen, setIsThinkOpen] = useState(false); // Default folded
@@ -363,7 +384,11 @@ export function ResultViewer({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (
+        e.key === 'Escape' &&
+        !e.defaultPrevented &&
+        !useFilePreviewStore.getState().isPreviewOpen
+      ) {
         onClose();
       }
     };
@@ -459,6 +484,19 @@ export function ResultViewer({
           )}
 
           {/* Main content area */}
+          {inputAttachments.length > 0 && (
+            <section className="mb-5">
+              <h3 className="mb-2 font-serif text-sm font-semibold text-gray-900 dark:text-gray-100">
+                {t('inputFiles')}
+              </h3>
+              <FileAttachmentDisplay
+                attachments={inputAttachments}
+                appId={appId || executionRecord?.service_instance_id}
+                className="justify-start px-0"
+              />
+            </section>
+          )}
+
           {(mainContent || (!hasThinkBlock && formattedContent)) && (
             <div
               className={cn(

@@ -17,6 +17,8 @@ import {
   DifySseNodeStartedEvent,
   DifySseParallelBranchFinishedEvent,
   DifySseParallelBranchStartedEvent,
+  DifySseWorkflowFinishedEvent,
+  DifySseWorkflowStartedEvent,
   DifyStreamResponse,
   DifyUsage,
 } from '../types';
@@ -51,6 +53,8 @@ interface ThinkStructureDebugSummary {
 }
 
 type NodeEvent =
+  | DifySseWorkflowStartedEvent
+  | DifySseWorkflowFinishedEvent
   | DifySseNodeStartedEvent
   | DifySseNodeFinishedEvent
   | DifySseIterationStartedEvent
@@ -702,6 +706,10 @@ export async function streamDifyChat(
           }
 
           switch (event.event) {
+            case 'workflow_started':
+            case 'workflow_finished':
+              emitNodeEvent(onNodeEvent, event, event.event);
+              break;
             case 'workflow_paused': {
               const error = createUnsupportedWorkflowPauseError();
               resolveFirstAnswer(false);
@@ -934,10 +942,10 @@ export async function streamDifyChat(
             case 'message_file':
               if (
                 event.belongs_to === 'user' &&
-                event.id &&
-                !userMessageFileIds.includes(event.id)
+                (event.upload_file_id || event.id) &&
+                !userMessageFileIds.includes(event.upload_file_id || event.id)
               ) {
-                userMessageFileIds.push(event.id);
+                userMessageFileIds.push(event.upload_file_id || event.id);
               }
               break;
             case 'message_end':

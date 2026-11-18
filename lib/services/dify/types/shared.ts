@@ -12,6 +12,7 @@ export interface ChatUploadFile {
   name: string;
   size: number;
   mime_type: string;
+  preview_url?: string;
 }
 
 export interface DifyUsage {
@@ -53,10 +54,13 @@ export interface DifyFileUploadResponse {
   mime_type: string;
   created_by: string | number;
   created_at: number;
+  preview_url?: string | null;
+  source_url?: string | null;
 }
 
 export interface DifyFilePreviewOptions {
   as_attachment?: boolean;
+  preview_url?: string;
 }
 
 export interface DifyFilePreviewResponse {

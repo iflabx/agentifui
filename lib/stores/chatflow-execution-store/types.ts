@@ -100,7 +100,17 @@ export interface ChatflowExecutionProgress {
   percentage: number;
 }
 
+export interface ChatflowExecutionView {
+  actorId: string;
+  actorEpoch: number;
+  appId: string;
+  draftScope: string;
+  scope: string;
+  paths: string[];
+}
+
 export interface ChatflowExecutionState {
+  view: ChatflowExecutionView | null;
   nodes: ChatflowNode[];
   currentNodeId: string | null;
   isExecuting: boolean;
@@ -124,10 +134,12 @@ export interface ChatflowExecutionState {
   loopExpandedStates: Record<string, boolean>;
   executionProgress: ChatflowExecutionProgress;
   error: string | null;
+  wasStopped: boolean;
   canRetry: boolean;
   startExecution: () => void;
   stopExecution: () => void;
   resetExecution: () => void;
+  restoreExecution: (nodes: ChatflowNode[]) => void;
   addNode: (node: ChatflowNode) => void;
   updateNode: (nodeId: string, updates: Partial<ChatflowNode>) => void;
   setCurrentNode: (nodeId: string | null) => void;

@@ -2,6 +2,7 @@ import type { DifyRetrieverResource } from './shared';
 
 export interface DifyMessageFile {
   id: string;
+  upload_file_id?: string;
   type: string;
   url: string;
   belongs_to: 'user' | 'assistant';

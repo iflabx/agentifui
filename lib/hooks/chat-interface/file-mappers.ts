@@ -19,6 +19,9 @@ export function mapChatUploadFilesToMessageAttachments(
       size: uploadFile.size,
       type: uploadFile.mime_type,
       upload_file_id: uploadFile.upload_file_id,
+      ...(uploadFile.preview_url
+        ? { preview_url: uploadFile.preview_url }
+        : {}),
       app_id: uploadFile.app_id || appId || undefined,
     };
   });

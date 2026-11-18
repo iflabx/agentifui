@@ -4,6 +4,7 @@ import Fastify, { type HTTPMethods } from 'fastify';
 import type { ApiRuntimeConfig } from '../config';
 import { resolveDifyConfig } from '../lib/dify-config';
 import { fetchWithDifyProxyResilience } from '../lib/dify-proxy-resilience';
+import { saveDifyUpload } from '../lib/dify-upload-archive';
 import { resolveIdentityFromSession } from '../lib/session-identity';
 import { difyProxyRoutes } from './dify-proxy';
 import { handleDifyProxy } from './dify-proxy-route/handler';
@@ -18,6 +19,12 @@ jest.mock('./dify-proxy-route/ops-route', () => ({
 
 jest.mock('../lib/dify-config', () => ({
   resolveDifyConfig: jest.fn(),
+}));
+
+jest.mock('../lib/dify-upload-archive', () => ({
+  assertDifyUploadStorage: jest.fn(),
+  saveDifyUpload: jest.fn().mockResolvedValue(undefined),
+  readDifyUpload: jest.fn().mockResolvedValue(null),
 }));
 
 jest.mock('../lib/dify-proxy-resilience', () => ({
@@ -183,6 +190,19 @@ describe('Dify route-specific upload limits', () => {
           payload: Buffer.from(await upload.arrayBuffer()),
         });
         expect(response.statusCode).toBe(status);
+        if (path === 'files/upload') {
+          expect(saveDifyUpload).toHaveBeenCalledWith(
+            {
+              userId: actor.userId,
+              serviceInstanceId: '00000000-0000-4000-8000-000000000456',
+              fileId: 'file-1',
+            },
+            expect.any(Blob)
+          );
+          expect(response.json().preview_url).toBe(
+            '/api/dify/app-1/files/file-1/preview'
+          );
+        }
         expect(mockedHandleDifyProxy.mock.calls[0][0].params).toEqual({
           appId: 'app-1',
           '*': path,

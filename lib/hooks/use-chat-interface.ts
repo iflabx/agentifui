@@ -32,7 +32,11 @@ import type { ChatModerationTranslator } from './chat-interface/error-utils';
 import { useChatStopHandler } from './chat-interface/stop-handler';
 import { useChatStreamingState } from './chat-interface/streaming-state';
 import { useChatSubmitHandler } from './chat-interface/submit-handler';
-import type { ChatNodeEvent } from './chat-interface/types';
+import type {
+  AssistantMessageMetadataProvider,
+  ChatNodeEvent,
+} from './chat-interface/types';
+import { navigateToConversationIfNeeded } from './create-conversation/routing';
 import { useChatMessages } from './use-chat-messages';
 import { useCreateConversation } from './use-create-conversation';
 
@@ -44,6 +48,7 @@ const CHUNK_APPEND_INTERVAL = 30;
 
 interface UseChatInterfaceOptions {
   preferredRouteAppId?: string | null;
+  getAssistantMessageMetadata?: AssistantMessageMetadataProvider;
 }
 
 // Multi-provider support: chat interface now supports multi-provider environments
@@ -132,7 +137,7 @@ export function useChatInterface(
 
   const navigateToConversation = useCallback(
     (conversationId: string) => {
-      router.replace(`/chat/${conversationId}`, { scroll: false });
+      navigateToConversationIfNeeded(conversationId, router.replace);
     },
     [router]
   );
@@ -158,6 +163,7 @@ export function useChatInterface(
     difyConversationId,
     dbConversationUUID,
     onNodeEvent,
+    getAssistantMessageMetadata: options.getAssistantMessageMetadata,
     isSubmittingRef,
     chunkBufferRef,
     appendTimerRef,

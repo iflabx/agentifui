@@ -68,6 +68,24 @@ describe('submission-local Dify input acceptance', () => {
     ]);
   });
 
+  it('binds a form submission without consuming unrelated continuation text or uploads', () => {
+    const source = useChatInputStore.getState().currentRoute;
+    useAttachmentStore.getState().addFiles([new File(['next'], 'next.txt')]);
+    const accept = captureDifyInputSubmission('Form question', 'actor');
+    accept('app', { externalId: 'form-external', taskId: 'form-task' });
+    accept('app', { externalId: 'form-external', taskId: 'form-task' });
+    expect(bindChatInputConversation).toHaveBeenCalledTimes(1);
+    expect(bindChatInputConversation).toHaveBeenCalledWith(
+      source,
+      'actor',
+      'app',
+      'form-external',
+      undefined
+    );
+    expect(useChatInputStore.getState().message).toBe('Question');
+    expect(useAttachmentStore.getState().files[0].name).toBe('next.txt');
+  });
+
   it('rejects another app and logout/login reuse of the same actor', () => {
     const accept = captureDifyInputSubmission('Question', 'actor');
     accept('other-app', { externalId: 'external-A', taskId: 'task-A' });

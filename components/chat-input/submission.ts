@@ -18,7 +18,6 @@ export function captureDifyInputSubmission(message: string, userId: string) {
     const prefix = JSON.stringify([epoch, userId, appId]).slice(0, -1) + ',';
     if (
       accepted ||
-      !eligible ||
       !ownsActor() ||
       !snapshot.scope.startsWith(prefix) ||
       !binding.externalId ||
@@ -26,8 +25,10 @@ export function captureDifyInputSubmission(message: string, userId: string) {
     )
       return;
     accepted = true;
-    useChatInputStore.getState().consumeSnapshot(snapshot);
-    useAttachmentStore.getState().consumeFiles(snapshot.scope, files);
+    if (eligible) {
+      useChatInputStore.getState().consumeSnapshot(snapshot);
+      useAttachmentStore.getState().consumeFiles(snapshot.scope, files);
+    }
     void bindChatInputConversation(
       snapshot.scope,
       userId,

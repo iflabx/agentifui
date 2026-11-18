@@ -1,3 +1,4 @@
+import { useChatflowExecutionStore } from '@lib/stores/chatflow-execution-store';
 import { ReadableStream } from 'stream/web';
 import { TextDecoder, TextEncoder } from 'util';
 
@@ -40,6 +41,78 @@ describe('streamDifyChat agent_thought handling', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it('forwards Chatflow lifecycle events in order around node events', async () => {
+    const events = [
+      { event: 'workflow_started', data: { id: 'run' } },
+      { event: 'node_started', data: { node_id: 'node' } },
+      {
+        event: 'node_finished',
+        data: { node_id: 'node', status: 'succeeded' },
+      },
+      { event: 'workflow_finished', data: { id: 'run', status: 'succeeded' } },
+      { event: 'message', answer: 'Done' },
+      { event: 'message_end', metadata: {} },
+    ];
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      body: createSseBody(events),
+    });
+    const onNodeEvent = jest.fn();
+    const response = await streamDifyChat(
+      { query: 'hello', user: 'user-1', response_mode: 'streaming' },
+      'app-1',
+      undefined,
+      onNodeEvent
+    );
+    expect(await collectStream(response.answerStream)).toBe('Done');
+    expect(onNodeEvent.mock.calls.map(([event]) => event)).toEqual(
+      events.slice(0, 4)
+    );
+  });
+
+  it('finishes the real Chatflow tracker without erasing completed nodes', async () => {
+    const store = useChatflowExecutionStore;
+    store.getState().resetExecution();
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      body: createSseBody([
+        { event: 'workflow_started', data: { id: 'run' } },
+        {
+          event: 'node_started',
+          data: { node_id: 'node', title: 'Answer', node_type: 'answer' },
+        },
+        { event: 'message', answer: 'Done' },
+        {
+          event: 'node_finished',
+          data: { node_id: 'node', status: 'succeeded' },
+        },
+        {
+          event: 'workflow_finished',
+          data: { id: 'run', status: 'succeeded' },
+        },
+        { event: 'message_end', metadata: {} },
+      ]),
+    });
+    try {
+      const response = await streamDifyChat(
+        { query: 'hello', user: 'user-1', response_mode: 'streaming' },
+        'app-1',
+        undefined,
+        store.getState().handleNodeEvent
+      );
+      const first = await response.answerStream.next();
+      expect(first.value).toBe('Done');
+      expect(store.getState().isExecuting).toBe(true);
+      await collectStream(response.answerStream);
+      expect(store.getState().isExecuting).toBe(false);
+      expect(store.getState().nodes).toEqual([
+        expect.objectContaining({ id: 'node', status: 'completed' }),
+      ]);
+    } finally {
+      store.getState().resetExecution();
+    }
   });
 
   it.each([false, true])(
@@ -283,6 +356,43 @@ describe('streamDifyChat agent_thought handling', () => {
       usage: {
         total_tokens: 10,
       },
+    });
+  });
+
+  it('uses the upload file id from message_file events for persistence', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: createSseBody([
+        {
+          event: 'message_file',
+          task_id: 'task-1',
+          conversation_id: 'conv-1',
+          id: 'message-file-record-1',
+          upload_file_id: 'upload-file-1',
+          type: 'document',
+          belongs_to: 'user',
+          url: 'https://example.com/file-1',
+        },
+        {
+          event: 'message_end',
+          task_id: 'task-1',
+          conversation_id: 'conv-1',
+          id: 'message-1',
+          metadata: {},
+        },
+      ]),
+    });
+
+    const response = await streamDifyChat(
+      { query: 'hello', user: 'user-1', response_mode: 'streaming' },
+      'app-1'
+    );
+
+    await collectStream(response.answerStream);
+
+    await expect(response.completionPromise).resolves.toMatchObject({
+      userMessageFileIds: ['upload-file-1'],
     });
   });
 

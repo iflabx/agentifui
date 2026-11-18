@@ -1,6 +1,9 @@
 import { useChatStore } from '@lib/stores/chat-store';
 
-import { finalizeChatSubmitStream } from './submit-recovery';
+import {
+  finalizeChatSubmitStream,
+  handleChatSubmitStreamError,
+} from './submit-recovery';
 
 describe('finalizeChatSubmitStream', () => {
   beforeEach(() => {
@@ -143,5 +146,39 @@ describe('finalizeChatSubmitStream', () => {
     expect(updateMessage).not.toHaveBeenCalled();
     expect(saveMessage).not.toHaveBeenCalled();
     expect(saveStoppedAssistantMessage).not.toHaveBeenCalled();
+  });
+
+  it('persists execution metadata when the stream fails before an assistant message', () => {
+    const saveMessage = jest.fn().mockResolvedValue(true);
+    const errorMessage = handleChatSubmitStreamError({
+      error: new Error('stream failed'),
+      assistantMessageId: null,
+      finalDbConvUUID: 'conv-1',
+      userMessage: {
+        id: 'user-1',
+        text: 'hello',
+        isUser: true,
+        persistenceStatus: 'saved',
+      },
+      addMessage: message => useChatStore.getState().addMessage(message),
+      setMessageError: jest.fn(),
+      updateMessage: jest.fn(),
+      saveMessage,
+      saveErrorPlaceholder: jest.fn().mockResolvedValue(true),
+      moderationT: jest.fn(),
+      getAssistantMessageMetadata: () => ({
+        chatflow_execution: { version: 1, status: 'failed', nodes: [] },
+      }),
+    });
+
+    expect(errorMessage.message).toBe('stream failed');
+    expect(saveMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: {
+          chatflow_execution: { version: 1, status: 'failed', nodes: [] },
+        },
+      }),
+      'conv-1'
+    );
   });
 });

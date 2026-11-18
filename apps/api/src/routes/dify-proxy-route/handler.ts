@@ -15,6 +15,7 @@ import {
 } from '../../lib/agent-submissions';
 import { REQUEST_ID_HEADER } from '../../lib/app-error';
 import { buildAppErrorPayload } from './error-handling';
+import { handleOwnedDifyFilePreview } from './file-preview';
 import {
   adjustApiPathByAppType,
   buildScopedUpstreamQuery,
@@ -78,6 +79,16 @@ async function handleDifyProxyRequest(
     reply.status(targetConfigResult.status).send(targetConfigResult.payload);
     return;
   }
+
+  if (
+    await handleOwnedDifyFilePreview(
+      request,
+      reply,
+      contextResult.context,
+      targetConfigResult.targetConfig
+    )
+  )
+    return;
 
   if (
     contextResult.context.actor.role !== 'admin' &&

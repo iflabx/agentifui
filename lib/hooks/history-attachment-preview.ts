@@ -18,9 +18,9 @@ export function resolveHistoryAttachmentPreviewUserId(input: {
 function hasAttachmentsWithoutPreviewId(message: ChatMessage): boolean {
   return Boolean(
     message.isUser &&
-      message.attachments?.some(
-        attachment => !attachment.preview_file_id && attachment.upload_file_id
-      )
+    message.attachments?.some(
+      attachment => !attachment.preview_file_id && attachment.upload_file_id
+    )
   );
 }
 
@@ -43,7 +43,8 @@ function applyPreviewIdsToAttachments(
       return attachment;
     }
 
-    const previewFileId = messageFiles[index]?.id;
+    const previewFileId =
+      messageFiles[index]?.upload_file_id || messageFiles[index]?.id;
     if (!previewFileId) {
       return attachment;
     }

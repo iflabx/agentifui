@@ -87,7 +87,43 @@ export async function previewDifyFile(
   fileId: string,
   options: DifyFilePreviewOptions = {}
 ): Promise<DifyFilePreviewResponse> {
-  const { as_attachment = false } = options;
+  const { as_attachment = false, preview_url } = options;
+
+  if (preview_url && !preview_url.startsWith('/api/dify/')) {
+    try {
+      const signedUrl = new URL(
+        preview_url,
+        typeof window === 'undefined'
+          ? 'http://localhost'
+          : window.location.origin
+      );
+      if (as_attachment) {
+        signedUrl.searchParams.set('as_attachment', 'true');
+      }
+
+      if (!['http:', 'https:'].includes(signedUrl.protocol)) {
+        throw new Error('Invalid file preview URL');
+      }
+      const response = await fetch(signedUrl.toString(), { method: 'GET' });
+      if (response.ok) {
+        return {
+          content: await response.blob(),
+          headers: {
+            contentType:
+              response.headers.get('Content-Type') ||
+              'application/octet-stream',
+            contentLength: response.headers.get('Content-Length')
+              ? parseInt(response.headers.get('Content-Length')!, 10)
+              : undefined,
+            contentDisposition:
+              response.headers.get('Content-Disposition') || undefined,
+            cacheControl: response.headers.get('Cache-Control') || undefined,
+            acceptRanges: response.headers.get('Accept-Ranges') || undefined,
+          },
+        };
+      }
+    } catch {}
+  }
 
   // Build query parameters
   const searchParams = new URLSearchParams();
@@ -111,8 +147,11 @@ export async function previewDifyFile(
       try {
         const errorBody = await response.text();
         const errorJson = JSON.parse(errorBody);
-        errorCode = errorJson.code || response.status.toString();
-        errorMessage = `${errorMessage}. Status: ${response.status}. Code: ${errorCode}. ${errorJson.message || errorBody}`;
+        errorCode =
+          errorJson.code ||
+          errorJson.app_error?.code ||
+          response.status.toString();
+        errorMessage = `${errorMessage}. Status: ${response.status}. Code: ${errorCode}. ${errorJson.message || errorJson.app_error?.userMessage || errorJson.error || errorBody}`;
       } catch {
         errorMessage = `${errorMessage}. Status: ${response.status}`;
       }

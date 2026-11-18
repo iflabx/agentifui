@@ -7,15 +7,10 @@ import { isChatSubmitResult } from '@lib/hooks/chat-interface/guards';
 import { useChatInputStore } from '@lib/stores/chat-input-store';
 import { useChatStore } from '@lib/stores/chat-store';
 import { useChatflowExecutionStore } from '@lib/stores/chatflow-execution-store';
+import { buildChatflowExecutionMetadata } from '@lib/stores/chatflow-execution-store/history';
 import { useCurrentAppStore } from '@lib/stores/current-app-store';
 
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-} from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 
 import { usePathname } from 'next/navigation';
 
@@ -61,8 +56,13 @@ export function useChatflowInterface(preferredRouteAppId?: string | null) {
     useChatflowExecutionStore();
 
   // Use the base chat interface, passing the node event handler
+  const getAssistantMessageMetadata = useCallback(
+    () => buildChatflowExecutionMetadata(useChatflowExecutionStore.getState()),
+    []
+  );
   const chatInterface = useChatInterface(handleNodeEvent, {
     preferredRouteAppId,
+    getAssistantMessageMetadata,
   });
 
   /**
@@ -146,29 +146,6 @@ export function useChatflowInterface(preferredRouteAppId?: string | null) {
     },
     [chatInterface, startExecution, view, formScope, userId, actorEpoch]
   );
-
-  // Listen to SSE events and update node status
-  useEffect(() => {
-    const { isWaitingForResponse } = chatInterface;
-
-    if (isWaitingForResponse) {
-      // Start execution tracking when waiting for response
-      console.log(
-        '[ChatflowInterface] Waiting for response, start execution tracking'
-      );
-      startExecution();
-    } else {
-      // Fix: End of streaming response does not mean node execution is complete
-      // Should not force stop execution, let nodes finish naturally
-      // Only call stopExecution when truly needed (e.g. user manually stops)
-      console.log(
-        '[ChatflowInterface] Streaming response finished, but nodes may still be running'
-      );
-
-      // No longer automatically call stopExecution, let nodes finish via node_finished event
-      // This avoids marking running nodes as failed incorrectly
-    }
-  }, [chatInterface.isWaitingForResponse, startExecution]);
 
   /**
    * Override stop processing method, handle both chat stop and fine-grained node status
@@ -321,6 +298,7 @@ function formatFilesForDify(files: any[]): any[] {
         name: file.name,
         size: file.size,
         mime_type: file.mime_type,
+        ...(file.preview_url ? { preview_url: file.preview_url } : {}),
         app_id: file.app_id,
         actor_id: file.actor_id,
         actor_epoch: file.actor_epoch,

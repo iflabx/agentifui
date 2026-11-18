@@ -1,5 +1,6 @@
 import {
   applyTemporaryConversationUi,
+  navigateToConversationIfNeeded,
   selectConversationIfCurrent,
   syncFallbackConversationPath,
   syncRealConversationUi,
@@ -72,5 +73,26 @@ describe('create-conversation routing helpers', () => {
     selectConversationIfCurrent('real-9', 'selection failed');
 
     expect(mockSelectItem).toHaveBeenCalledWith('chat', 'real-9', true);
+  });
+
+  it('does not navigate again after native history has promoted the live conversation', () => {
+    const replace = jest.fn();
+    window.history.replaceState({}, '', '/chat/temp-1');
+    syncRealConversationUi('temp-1', 'real-1');
+
+    navigateToConversationIfNeeded('real-1', replace);
+    navigateToConversationIfNeeded('real-1', replace);
+
+    expect(replace).not.toHaveBeenCalled();
+    expect(window.location.pathname).toBe('/chat/real-1');
+  });
+
+  it('still navigates when the target conversation has not been adopted', () => {
+    const replace = jest.fn();
+
+    navigateToConversationIfNeeded('real-1', replace);
+
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(replace).toHaveBeenCalledWith('/chat/real-1', { scroll: false });
   });
 });

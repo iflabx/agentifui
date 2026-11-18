@@ -13,6 +13,7 @@ let mockPathname = '/apps/chatflow/app-B';
 const mockSubmit = jest.fn();
 const mockStop = jest.fn();
 const mockSession = { session: { user: { id: 'actor' } }, loading: false };
+let mockWaiting = false;
 
 jest.mock('next/navigation', () => ({ usePathname: () => mockPathname }));
 jest.mock('@lib/auth/better-auth/react-hooks', () => ({
@@ -22,8 +23,8 @@ jest.mock('./use-chat-interface', () => ({
   useChatInterface: () => ({
     handleSubmit: mockSubmit,
     handleStopProcessing: mockStop,
-    isWaitingForResponse: false,
     conversationAppId: null,
+    isWaitingForResponse: mockWaiting,
   }),
 }));
 
@@ -48,6 +49,7 @@ describe('Chatflow form and stop ownership', () => {
     jest.clearAllMocks();
     mockPathname = '/apps/chatflow/app-B';
     mockSession.loading = false;
+    mockWaiting = false;
     useChatInputStore.getState().setActor(null);
     useChatInputStore.getState().setActor('actor');
     const input = useChatInputStore.getState();
@@ -80,6 +82,15 @@ describe('Chatflow form and stop ownership', () => {
       await result.current.handleChatflowSubmit('B', {});
     });
     expect(mockSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not erase received nodes when another interface mounts while waiting', () => {
+    act(startTask);
+    mockWaiting = true;
+    renderHook(() => useChatflowInterface('app-B'));
+    expect(
+      useChatflowExecutionStore.getState().nodes.map(node => node.id)
+    ).toEqual(['node-A']);
   });
 
   it('keeps validated form upload provenance through Dify formatting', async () => {

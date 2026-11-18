@@ -1,7 +1,9 @@
 'use client';
 
+import { FilePreviewCanvas } from '@components/file-preview/file-preview-canvas';
 import { ResizableSplitPane } from '@components/ui/resizable-split-pane';
 import { MobileTabSwitcher } from '@components/workflow/mobile-tab-switcher';
+import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
 import { useMobile } from '@lib/hooks/use-mobile';
 import { useWorkflowExecution } from '@lib/hooks/use-workflow-execution';
 import { getExecutionById } from '@lib/services/client/app-executions-api';
@@ -58,6 +60,19 @@ function buildExecutionViewerResult(
  * - Unified status management and data flow
  */
 export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
+  const { session } = useAuthSession();
+  return (
+    <>
+      <WorkflowLayoutSession
+        key={JSON.stringify([session?.user.id, instanceId])}
+        instanceId={instanceId}
+      />
+      <FilePreviewCanvas />
+    </>
+  );
+}
+
+function WorkflowLayoutSession({ instanceId }: WorkflowLayoutProps) {
   const isMobile = useMobile();
   const t = useTranslations('pages.workflow.buttons');
   const router = useRouter();
@@ -235,7 +250,7 @@ export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
     [closeHistoricalExecution, requestedExecutionId, restoredExecution?.id]
   );
 
-  const isShowingRestoredExecution = !!restoredExecution && !isExecuting;
+  const isShowingRestoredExecution = !!restoredExecution;
   const activeExecution = isShowingRestoredExecution
     ? restoredExecution
     : currentExecution;
@@ -370,7 +385,7 @@ export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
     return (
       <div className="flex h-full flex-col overflow-hidden">
         {/* Global error banner */}
-        {error && (
+        {error && !isShowingRestoredExecution && (
           <ErrorBanner
             error={error}
             canRetry={canRetry}
@@ -401,18 +416,17 @@ export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
           {mobileActiveTab === 'tracker' && (
             <div className="h-full">
               <WorkflowTracker
+                instanceId={instanceId}
                 isExecuting={isExecuting}
                 executionResult={activeExecutionResult}
                 currentExecution={activeExecution}
+                historical={isShowingRestoredExecution}
                 autoOpenResult={true}
                 openResultSignal={resultOpenSignal}
-                forceShowResult={
-                  isShowingRestoredExecution && !!activeExecutionResult
-                }
                 onStop={canStop ? handleStopExecution : undefined}
                 onRetry={handleRetryExecution}
                 onReset={handleCompleteReset}
-                onCloseResult={
+                onCloseHistory={
                   isShowingRestoredExecution
                     ? closeHistoricalExecution
                     : undefined
@@ -441,7 +455,7 @@ export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
   return (
     <div className="relative flex h-full flex-col overflow-hidden">
       {/* Global error banner */}
-      {error && (
+      {error && !isShowingRestoredExecution && (
         <ErrorBanner
           error={error}
           canRetry={canRetry}
@@ -479,18 +493,17 @@ export function WorkflowLayout({ instanceId }: WorkflowLayoutProps) {
               <div className="hide-all-scrollbars flex h-full flex-col overflow-hidden">
                 <div className="no-scrollbar flex-1 overflow-x-hidden overflow-y-auto">
                   <WorkflowTracker
+                    instanceId={instanceId}
                     isExecuting={isExecuting}
                     executionResult={activeExecutionResult}
                     currentExecution={activeExecution}
+                    historical={isShowingRestoredExecution}
                     autoOpenResult={true}
                     openResultSignal={resultOpenSignal}
-                    forceShowResult={
-                      isShowingRestoredExecution && !!activeExecutionResult
-                    }
                     onStop={canStop ? handleStopExecution : undefined}
                     onRetry={handleRetryExecution}
                     onReset={handleCompleteReset}
-                    onCloseResult={
+                    onCloseHistory={
                       isShowingRestoredExecution
                         ? closeHistoricalExecution
                         : undefined

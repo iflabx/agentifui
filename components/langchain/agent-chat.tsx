@@ -4,6 +4,9 @@ import { ChatInputView } from '@components/chat-input/view';
 import { ChatInputBackdrop } from '@components/chat/chat-input-backdrop';
 import { AssistantMessage } from '@components/chat/messages/assistant-message/assistant-message';
 import { UserMessage } from '@components/chat/messages/user-message/user-message';
+import { toolProcessItem } from '@components/execution-process/adapters';
+import { ExecutionProcessDisclosure } from '@components/execution-process/disclosure';
+import { ExecutionProcessRow } from '@components/execution-process/row';
 import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
 import { formatUiErrorMessage, toUiError } from '@lib/errors/ui-error';
 import { localizeChatModerationMessage } from '@lib/hooks/chat-interface/error-utils';
@@ -154,6 +157,15 @@ function AgentChatSession({
                   ? 'unknown'
                   : 'running';
   const renderedResultIds = new Set<string>();
+  const timeline = agentTimeline(chat.view);
+  const processRuns = new Map<string, typeof chat.view.tools>();
+  for (const entry of timeline) {
+    if (entry.type !== 'tool') continue;
+    const key =
+      entry.tool.runId || JSON.stringify(['unscoped', entry.tool.toolCallId]);
+    processRuns.set(key, [...(processRuns.get(key) || []), entry.tool]);
+  }
+  const renderedProcessRuns = new Set<string>();
 
   useLayoutEffect(() => {
     if (actorEpoch === null || authLoading) return;
@@ -264,23 +276,49 @@ function AgentChatSession({
               {errorMessage}
             </p>
           )}
-          {agentTimeline(chat.view).map(item => {
+          {timeline.map(item => {
             if (item.type === 'tool') {
               const tool = item.tool;
+              const runKey =
+                tool.runId || JSON.stringify(['unscoped', tool.toolCallId]);
+              const showProcessEntry = !renderedProcessRuns.has(runKey);
+              renderedProcessRuns.add(runKey);
+              const activities = processRuns.get(runKey) || [tool];
+              const historicalProcess =
+                chat.historyLoading ||
+                !chat.busy ||
+                !tool.runId ||
+                tool.runId !== chat.view.runId;
               return (
                 <div
                   key={JSON.stringify([tool.runId, tool.toolCallId])}
-                  className="my-3 rounded-lg border border-stone-200 p-3 text-sm dark:border-stone-700"
+                  className="my-3"
                 >
-                  <strong>
-                    {t(tool.order === undefined ? 'toolSummary' : 'tool')}:{' '}
-                    {tool.name}
-                  </strong>
-                  <p>{tool.status}</p>
-                  {tool.summary && (
-                    <p className="break-words whitespace-pre-wrap text-stone-500">
-                      {tool.summary}
+                  <ExecutionProcessRow
+                    item={toolProcessItem(tool, historicalProcess)}
+                  />
+                  {tool.order === undefined && (
+                    <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
+                      {t('toolSummary')}
                     </p>
+                  )}
+                  {showProcessEntry && (
+                    <ExecutionProcessDisclosure
+                      key={JSON.stringify([
+                        actorId,
+                        appId,
+                        conversationId,
+                        chat.draftScope,
+                        runKey,
+                      ])}
+                      items={activities.map(activity =>
+                        toolProcessItem(activity, historicalProcess)
+                      )}
+                      historical={historicalProcess}
+                      unordered={activities.some(
+                        activity => activity.order === undefined
+                      )}
+                    />
                   )}
                 </div>
               );

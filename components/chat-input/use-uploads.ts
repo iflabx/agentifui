@@ -43,6 +43,7 @@ export function useChatInputUploads({
         if (!isCurrentActor()) return;
         useAttachmentStore.getState().finishUpload(scope, fileId, attempt, {
           uploadedId: response.id,
+          previewUrl: response.preview_url || response.source_url || undefined,
           appId: currentAppId,
           actorId: sessionUserId,
           actorEpoch,

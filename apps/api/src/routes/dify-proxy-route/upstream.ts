@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
+import { AgentPolicyError } from '../../lib/agent-backends';
 import {
   confirmSubmission,
   markSubmissionSubmitting,
@@ -12,12 +13,14 @@ import {
   getDifyProxyCircuitSnapshot,
 } from '../../lib/dify-proxy-resilience';
 import { observeDifyResponse } from '../../lib/dify-submission-observer';
+import { assertDifyUploadStorage } from '../../lib/dify-upload-archive';
 import { buildRouteErrorPayload } from '../../lib/route-error';
 import {
   buildAppErrorPayload,
   logDifyProxyFailure,
   withAgentErrorEnvelope,
 } from './error-handling';
+import { archiveDifyUploadResponse } from './file-preview';
 import {
   adjustApiPathByAppType,
   bindDifyRequestUser,
@@ -515,6 +518,17 @@ export async function dispatchDifyUpstreamRequest(
   }
 
   const downstream = new AbortController();
+  if (
+    actualMethod === 'POST' &&
+    slugPath === 'files/upload' &&
+    targetConfig.appType?.trim().toLowerCase() === 'workflow'
+  ) {
+    try {
+      assertDifyUploadStorage();
+    } catch {
+      throw new AgentPolicyError(503, 'DIFY_UPLOAD_STORAGE_UNAVAILABLE');
+    }
+  }
   const abortDownstream = () => downstream.abort();
   const onResponseClose = () => {
     if (!reply.raw.writableEnded) abortDownstream();
@@ -588,6 +602,20 @@ export async function dispatchDifyUpstreamRequest(
       return;
     }
 
+    if (
+      resilienceResult.response.ok &&
+      actualMethod === 'POST' &&
+      slugPath === 'files/upload' &&
+      upstreamPayload instanceof FormData
+    ) {
+      resilienceResult.response = await archiveDifyUploadResponse(
+        resilienceResult.response,
+        upstreamPayload,
+        context,
+        targetConfig
+      );
+    }
+
     const nativeRefusal =
       !resilienceResult.response.ok &&
       [400, 401, 403, 404, 405, 413, 415, 422].includes(
@@ -633,6 +661,7 @@ export async function dispatchDifyUpstreamRequest(
           'AGENT_NOT_DISPATCHED'
         ).catch(() => undefined);
     }
+    if (error instanceof AgentPolicyError) throw error;
     if (
       error instanceof DifyProxyRequestError &&
       error.reason !== 'network-error' &&
