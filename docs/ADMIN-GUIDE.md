@@ -85,6 +85,48 @@ Keep website account IDs, product instance identifiers, the service-instance UUI
 native Dify conversation IDs and LangChain thread/run IDs distinct. Users should
 follow product links rather than construct URLs from upstream identifiers.
 
+### Check Configuration Without Saving
+
+The application create/edit form's top action row includes **Check configuration**,
+alongside the default-application and parameter actions where applicable. Results
+appear as dismissible notifications, like configuration-sync feedback, rather
+than a separate panel at the bottom of the form. The notification includes the
+checked capabilities and relevant limitations; editing the checked settings or
+leaving the form dismisses the old result. Select an
+enabled provider, choose the backend and fill in its required connection fields.
+For LangChain, include the assistant ID. New applications need an API key;
+existing applications can reuse their saved credential when the key field is
+empty. A draft key overrides the saved key for this check only. It is neither
+saved nor returned in the result.
+
+The server uses the selected provider's saved base URL, not an arbitrary URL
+submitted by the browser. When reusing an existing credential, its application
+must still belong to that provider and backend. Check a changed backend with an
+appropriate new credential rather than forwarding an old credential elsewhere.
+
+Checks are read-only: Dify reads `/parameters`; LangChain reads `/capabilities`
+and validates the selected assistant against the configured ordinary, human-input
+or report/CSV integration. No generation, thread creation, approval, resume or
+configuration save is performed. The bounded check can report authentication
+failure, timeout, unavailable service, incompatible response or an unsupported
+read-only interface. Unsupported does not prove the service itself is offline.
+
+Changing connection or capability settings invalidates the displayed result;
+check again even if you restore the old values. The result is temporary, tied to
+the current form, and is not persisted as a permanent health certificate. A
+successful check confirms only the relevant read interface and declared contract,
+not that a model is enabled or that a complete conversation will succeed. Use
+real functional acceptance separately. A paused new-task setting is distinguished
+from missing upstream result support; existing history remains subject to the
+normal read authorization rules.
+
+Application cards reuse the existing description (including existing display
+fallbacks) and let users expand the full text. Fill in the description with the
+application's purpose and business restrictions; no AI-generated description or
+additional purpose field is introduced. Entry-mode labels describe the configured
+interaction, not model quality or an online availability guarantee. Provider
+addresses, credentials and raw diagnostic responses are not added to cards.
+
 ### Dify
 
 1. Publish the application in Dify and obtain its application-scoped Service API

@@ -12,6 +12,7 @@ import { cn } from '@lib/utils';
 
 import { useTranslations } from 'next-intl';
 
+import { InstanceDiagnostics } from './instance-diagnostics';
 import type { InstanceFormProps } from './instance-form-types';
 import {
   changeInstanceAppType,
@@ -58,27 +59,32 @@ export function InstanceForm(props: InstanceFormProps) {
           'border-stone-200 bg-white dark:border-stone-600 dark:bg-stone-800'
         )}
       >
-        {isLangChain ? (
-          <h3 className="mb-6 font-serif text-lg font-bold text-stone-900 dark:text-stone-100">
-            {isEditing ? t('title.edit') : t('title.add')}
-          </h3>
-        ) : (
-          <InstanceFormHeader
-            isEditing={isEditing}
-            instanceId={instance?.id}
-            instanceName={formData.display_name || 'this app'}
-            isCurrentDefault={isCurrentDefault}
-            setAsDefault={setAsDefault}
-            onToggleSetAsDefault={() => setSetAsDefault(!setAsDefault)}
-            hasUnsavedChanges={hasUnsavedChanges}
-            isSyncing={isSyncing}
-            canSync={
-              isEditing || Boolean(formData.config.api_url && formData.apiKey)
-            }
-            onOpenDifyPanel={() => setShowDifyPanel(true)}
-            onSyncFromDify={handleSyncFromDify}
-          />
-        )}
+        <InstanceFormHeader
+          isEditing={isEditing}
+          instanceId={instance?.id}
+          instanceName={formData.display_name || 'this app'}
+          isCurrentDefault={isCurrentDefault}
+          setAsDefault={setAsDefault}
+          onToggleSetAsDefault={() => setSetAsDefault(!setAsDefault)}
+          hasUnsavedChanges={hasUnsavedChanges}
+          isSyncing={isSyncing}
+          canSync={
+            isEditing || Boolean(formData.config.api_url && formData.apiKey)
+          }
+          onOpenDifyPanel={() => setShowDifyPanel(true)}
+          onSyncFromDify={handleSyncFromDify}
+          showDifyActions={!isLangChain}
+          diagnostics={
+            <InstanceDiagnostics
+              formData={formData}
+              providerId={
+                isEditing ? instance?.provider_id || '' : selectedProviderId
+              }
+              serviceInstanceId={isEditing ? instance?.id : undefined}
+              disabled={isProcessing || isSyncing}
+            />
+          }
+        />
 
         <InstanceProviderCard
           isEditing={isEditing}

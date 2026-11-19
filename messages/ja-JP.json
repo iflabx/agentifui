@@ -585,6 +585,18 @@
           "list": "リスト"
         },
         "appCard": {
+          "moreDescription": "説明をすべて表示",
+          "lessDescription": "説明を折りたたむ",
+          "openApp": "{name} を開く",
+          "addFavorite": "お気に入りに追加",
+          "removeFavorite": "お気に入りから削除",
+          "entryModes": {
+            "conversation": "会話",
+            "workflow": "ワークフロー",
+            "generation": "テキスト生成",
+            "text": "テキスト対話"
+          },
+          "textOnlyLimit": "テキスト専用：添付、引用、音声、カスタム変数は利用できません。",
           "noDescription": "説明なし",
           "defaultType": "アプリ"
         },
@@ -1101,6 +1113,33 @@
         }
       },
       "apiConfig": {
+        "diagnostics": {
+          "title": "設定チェック",
+          "note": "読み取り専用で確認します。設定の保存やモデルの実行は行いません。成功は確認したインターフェースのみを保証します。",
+          "check": "設定を確認",
+          "checking": "確認中…",
+          "unchecked": "未確認です。",
+          "stale": "設定が変更されました。再確認してください。",
+          "resultsPaused": "新規タスクは停止中です。既存の記録は閲覧できます。",
+          "codes": {
+            "connected": "接続と認証を確認しました。",
+            "invalidConfiguration": "プロバイダー、バックエンド、アシスタントを確認してください。",
+            "credentialsRequired": "API キーを入力するか保存済みの認証情報を使用してください。",
+            "authenticationFailed": "認証失敗。キーと権限を確認してください。",
+            "timeout": "タイムアウトしました。再試行してください。",
+            "unavailable": "サービスを利用できません。設定と接続を確認してください。",
+            "unsupported": "必要な読み取り専用インターフェースがありません。",
+            "incompatible": "応答に互換性がありません。",
+            "resultConfigurationMismatch": "対応する成果物プロファイルを有効にしてください。",
+            "resultsUnavailable": "設定された成果物プロファイルに対応していません。"
+          },
+          "capabilities": {
+            "text": "テキスト対話",
+            "inputForm": "入力フォームの宣言",
+            "humanInput": "人による確認の契約",
+            "results": "レポートと CSV の契約"
+          }
+        },
         "emptyState": {
           "title": "アプリケーションインスタンスを選択",
           "description": "左側のリストからアプリケーションインスタンスを選択して設定を表示・編集するか、追加ボタンをクリックして新しいアプリケーションインスタンスを作成してください"

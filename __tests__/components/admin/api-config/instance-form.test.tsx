@@ -1,9 +1,16 @@
 import { InstanceForm } from '@components/admin/api-config/instance-form';
+import {
+  handleCreateInstance,
+  handleUpdateInstance,
+} from '@components/admin/api-config/instance-save-handlers';
 import { validateDifyFormData } from '@lib/services/dify/validation';
+import type { Provider } from '@lib/types/database';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { toast } from 'sonner';
 
 const mockTranslate = (key: string) => key;
+const mockDiagnosticFetch = jest.fn();
+const originalFetch = global.fetch;
 const mockStore = {
   serviceInstances: [],
   apiKeys: [] as { service_instance_id: string }[],
@@ -29,7 +36,12 @@ jest.mock('@lib/services/dify/validation', () => ({
   validateDifyFormData: jest.fn(() => []),
 }));
 jest.mock('sonner', () => ({
-  toast: { error: jest.fn(), warning: jest.fn(), success: jest.fn() },
+  toast: {
+    error: jest.fn(),
+    warning: jest.fn(),
+    success: jest.fn(),
+    dismiss: jest.fn(),
+  },
 }));
 jest.mock('@components/admin/api-config/dify-parameters-panel', () => ({
   __esModule: true,
@@ -87,10 +99,192 @@ function renderForm(instance = langchainInstance) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  global.fetch = mockDiagnosticFetch;
+  mockDiagnosticFetch.mockResolvedValue({
+    ok: true,
+    json: async () => ({
+      status: 'success',
+      code: 'connected',
+      capabilities: [],
+    }),
+  });
   mockStore.apiKeys = [{ service_instance_id: 'instance' }];
 });
+afterEach(() => {
+  global.fetch = originalFetch;
+});
+
+describe.each(['dify', 'langchain'] as const)(
+  '%s instance save credential normalization',
+  backend => {
+    const credentials = [
+      ['  synthetic-key  ', 'synthetic-key'],
+      ['   ', ''],
+      ['', ''],
+      [undefined, undefined],
+    ] as const;
+
+    it.each(credentials)(
+      'normalizes both create arguments for draft key %p',
+      async (apiKey, expectedKey) => {
+        const data = {
+          selectedProviderId: 'provider',
+          apiKey,
+          config: { backend_type: backend },
+        };
+        const addInstance = jest.fn().mockResolvedValue({ id: 'new-instance' });
+        await handleCreateInstance(
+          data,
+          mockStore.providers as Provider[],
+          addInstance,
+          jest.fn(),
+          jest.fn(),
+          mockTranslate
+        );
+        expect(addInstance).toHaveBeenCalledTimes(1);
+        expect(addInstance).toHaveBeenCalledWith(
+          { ...data, provider_id: 'provider', apiKey: expectedKey },
+          expectedKey
+        );
+        expect(data.apiKey).toBe(apiKey);
+      }
+    );
+
+    it.each(credentials)(
+      'normalizes both edit arguments for draft key %p',
+      async (apiKey, expectedKey) => {
+        const data = { apiKey, config: { backend_type: backend } };
+        const updateInstance = jest.fn().mockResolvedValue({ id: 'instance' });
+        await handleUpdateInstance(
+          { id: 'instance' },
+          data,
+          updateInstance,
+          jest.fn(),
+          jest.fn(),
+          mockTranslate
+        );
+        expect(updateInstance).toHaveBeenCalledTimes(1);
+        expect(updateInstance).toHaveBeenCalledWith(
+          'instance',
+          { ...data, apiKey: expectedKey },
+          expectedKey
+        );
+        expect(data.apiKey).toBe(apiKey);
+      }
+    );
+  }
+);
 
 describe('LangChain admin instance form', () => {
+  it.each([false, true])(
+    'places the configuration check immediately after the sync action when editing is %s',
+    isEditing => {
+      render(
+        <InstanceForm
+          instance={
+            isEditing
+              ? {
+                  ...langchainInstance,
+                  config: {
+                    ...langchainInstance.config,
+                    backend_type: 'dify',
+                  },
+                }
+              : null
+          }
+          isEditing={isEditing}
+          onSave={jest.fn()}
+          onCancel={jest.fn()}
+          isProcessing={false}
+        />
+      );
+      const check = screen.getByRole('button', { name: 'check' });
+      const sync = screen.getByRole('button', { name: 'syncConfig' });
+      const actions = Array.from(
+        check.parentElement!.querySelectorAll('button')
+      );
+      expect(actions.findIndex(action => action === check)).toBe(
+        actions.findIndex(action => action === sync) + 1
+      );
+    }
+  );
+
+  it.each(['dify', 'langchain'] as const)(
+    'places the %s diagnostic in the top action row outside the save form',
+    backend => {
+      const { container } = render(
+        <InstanceForm
+          instance={{
+            ...langchainInstance,
+            config: { ...langchainInstance.config, backend_type: backend },
+          }}
+          isEditing
+          onSave={jest.fn()}
+          onCancel={jest.fn()}
+          isProcessing={false}
+        />
+      );
+      const button = screen.getByRole('button', { name: 'check' });
+      const form = container.querySelector('form')!;
+      expect(form.contains(button)).toBe(false);
+      expect(
+        button.compareDocumentPosition(form) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy();
+      expect(button).toHaveAttribute('type', 'button');
+      if (backend === 'dify') {
+        expect(button.parentElement).toContainElement(
+          screen.getByRole('button', { name: 'defaultApp.setAsDefault' })
+        );
+        expect(button.parentElement).toContainElement(
+          screen.getByRole('button', { name: 'difyConfig.title' })
+        );
+      } else {
+        expect(screen.queryByText('difyConfig.title')).not.toBeInTheDocument();
+        expect(
+          screen.queryByText('defaultApp.setAsDefault')
+        ).not.toBeInTheDocument();
+      }
+    }
+  );
+
+  it.each([false, true])(
+    'binds diagnostics to the selected provider and edit identity: %s',
+    async isEditing => {
+      const onSave = jest.fn();
+      render(
+        <InstanceForm
+          instance={isEditing ? langchainInstance : null}
+          isEditing={isEditing}
+          onSave={onSave}
+          onCancel={jest.fn()}
+          isProcessing={false}
+        />
+      );
+      if (!isEditing) {
+        fireEvent.change(screen.getByLabelText('backend.label'), {
+          target: { value: 'langchain' },
+        });
+        fireEvent.change(screen.getByLabelText('apiKey *'), {
+          target: { value: 'draft-key' },
+        });
+      }
+      fireEvent.change(screen.getByLabelText('backend.assistantId'), {
+        target: { value: '  updated-agent  ' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'check' }));
+      await screen.findByText('codes.connected');
+      expect(JSON.parse(mockDiagnosticFetch.mock.calls[0][1].body)).toEqual({
+        providerId: 'provider',
+        backend: 'langchain',
+        assistantId: 'updated-agent',
+        ...(isEditing
+          ? { serviceInstanceId: 'instance' }
+          : { apiKey: 'draft-key' }),
+      });
+      expect(onSave).not.toHaveBeenCalled();
+    }
+  );
+
   it('defaults new apps to Dify and creates LangChain through the existing credential field', () => {
     const onSave = jest.fn();
     const { container } = render(

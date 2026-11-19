@@ -32,7 +32,10 @@ export const handleCreateInstance = async (
   setIsProcessing(true);
 
   // Extract setAsDefault state and other data
-  const { setAsDefault, ...instanceData } = data;
+  const { setAsDefault, ...instanceData } = {
+    ...data,
+    apiKey: data.apiKey?.trim(),
+  };
 
   // Use the user-selected provider
   const providerId = data.selectedProviderId;
@@ -62,7 +65,7 @@ export const handleCreateInstance = async (
         ...instanceData,
         provider_id: providerId,
       },
-      data.apiKey
+      instanceData.apiKey
     );
 
     toast.success(t('success.instanceCreated'));
@@ -103,7 +106,12 @@ export const handleUpdateInstance = async (
       toast.error(t('errors.updateFailed'));
       return;
     }
-    await updateInstance(selectedInstance.id, data, data.apiKey);
+    const instanceData = { ...data, apiKey: data.apiKey?.trim() };
+    await updateInstance(
+      selectedInstance.id,
+      instanceData,
+      instanceData.apiKey
+    );
     toast.success(t('success.instanceUpdated'));
     handleClearSelection();
   } catch (error) {

@@ -585,6 +585,18 @@
           "list": "清單"
         },
         "appCard": {
+          "moreDescription": "查看完整描述",
+          "lessDescription": "收合描述",
+          "openApp": "開啟 {name}",
+          "addFavorite": "加入收藏",
+          "removeFavorite": "取消收藏",
+          "entryModes": {
+            "conversation": "對話",
+            "workflow": "工作流程",
+            "generation": "文字生成",
+            "text": "文字互動"
+          },
+          "textOnlyLimit": "純文字入口：不支援附件、引用、語音和自訂變數。",
           "noDescription": "暫無描述",
           "defaultType": "應用程式"
         },
@@ -1101,6 +1113,33 @@
         }
       },
       "apiConfig": {
+        "diagnostics": {
+          "title": "設定檢查",
+          "note": "以目前表單進行唯讀檢查，不儲存設定、不呼叫模型。成功僅代表所檢查介面可用，不取代實際對話驗收。",
+          "check": "檢查設定",
+          "checking": "檢查中…",
+          "unchecked": "尚未檢查。",
+          "stale": "設定已變更，請重新檢查。",
+          "resultsPaused": "已暫停新任務，既有紀錄仍可查看。",
+          "codes": {
+            "connected": "連線與驗證檢查通過。",
+            "invalidConfiguration": "請檢查供應商、後端及助理設定。",
+            "credentialsRequired": "請輸入 API 金鑰，或使用已儲存的憑證。",
+            "authenticationFailed": "驗證失敗，請檢查金鑰及權限。",
+            "timeout": "檢查逾時，請重試。",
+            "unavailable": "服務無法使用，請檢查設定與網路。",
+            "unsupported": "服務未提供所需的唯讀介面。",
+            "incompatible": "回應與所選整合方式不相容。",
+            "resultConfigurationMismatch": "請為助理啟用對應的結果交付設定。",
+            "resultsUnavailable": "助理不支援所設定的結果交付契約。"
+          },
+          "capabilities": {
+            "text": "文字互動",
+            "inputForm": "已宣告輸入表單",
+            "humanInput": "人工確認契約",
+            "results": "報告與 CSV 契約"
+          }
+        },
         "emptyState": {
           "title": "選擇應用程式實例",
           "description": "從左側列表中選擇一個應用程式實例來查看和編輯其設定，或點擊新增按鈕建立新的應用程式實例"

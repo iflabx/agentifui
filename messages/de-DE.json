@@ -585,6 +585,18 @@
           "list": "Liste"
         },
         "appCard": {
+          "moreDescription": "Vollständige Beschreibung",
+          "lessDescription": "Beschreibung einklappen",
+          "openApp": "{name} öffnen",
+          "addFavorite": "Zu Favoriten hinzufügen",
+          "removeFavorite": "Aus Favoriten entfernen",
+          "entryModes": {
+            "conversation": "Unterhaltung",
+            "workflow": "Workflow",
+            "generation": "Textgenerierung",
+            "text": "Textinteraktion"
+          },
+          "textOnlyLimit": "Nur Text: keine Anhänge, Quellenverweise, Sprache oder eigenen Variablen.",
           "noDescription": "Keine Beschreibung",
           "defaultType": "App"
         },
@@ -1101,6 +1113,33 @@
         }
       },
       "apiConfig": {
+        "diagnostics": {
+          "title": "Konfiguration prüfen",
+          "note": "Schreibgeschützte Prüfung. Speichert keine Einstellungen und startet kein Modell. Erfolg bestätigt nur die geprüfte Schnittstelle.",
+          "check": "Konfiguration prüfen",
+          "checking": "Prüfung läuft…",
+          "unchecked": "Noch nicht geprüft.",
+          "stale": "Konfiguration geändert. Erneut prüfen.",
+          "resultsPaused": "Neue Aufgaben pausiert; vorhandene Einträge bleiben lesbar.",
+          "codes": {
+            "connected": "Verbindung und Authentifizierung geprüft.",
+            "invalidConfiguration": "Anbieter, Backend und Assistent prüfen.",
+            "credentialsRequired": "API-Schlüssel eingeben oder gespeicherte Zugangsdaten verwenden.",
+            "authenticationFailed": "Authentifizierung fehlgeschlagen. Schlüssel und Rechte prüfen.",
+            "timeout": "Zeitüberschreitung. Erneut versuchen.",
+            "unavailable": "Dienst nicht verfügbar. Einstellungen und Verbindung prüfen.",
+            "unsupported": "Benötigte schreibgeschützte Schnittstelle fehlt.",
+            "incompatible": "Antwort mit gewählter Integration inkompatibel.",
+            "resultConfigurationMismatch": "Passendes Ergebnisprofil für diesen Assistenten aktivieren.",
+            "resultsUnavailable": "Assistent unterstützt das konfigurierte Ergebnisprofil nicht."
+          },
+          "capabilities": {
+            "text": "Textinteraktion",
+            "inputForm": "Eingabeformular deklariert",
+            "humanInput": "Vertrag für menschliche Bestätigung",
+            "results": "Bericht- und CSV-Vertrag"
+          }
+        },
         "emptyState": {
           "title": "Anwendungsinstanz auswählen",
           "description": "Wählen Sie eine Anwendungsinstanz aus der linken Liste aus, um ihre Konfiguration anzuzeigen und zu bearbeiten, oder klicken Sie auf die Hinzufügen-Schaltfläche, um eine neue Anwendungsinstanz zu erstellen"

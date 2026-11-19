@@ -585,6 +585,18 @@
           "list": "List"
         },
         "appCard": {
+          "moreDescription": "Read full description",
+          "lessDescription": "Collapse description",
+          "openApp": "Open {name}",
+          "addFavorite": "Add to favorites",
+          "removeFavorite": "Remove from favorites",
+          "entryModes": {
+            "conversation": "Conversation",
+            "workflow": "Workflow",
+            "generation": "Text generation",
+            "text": "Text interaction"
+          },
+          "textOnlyLimit": "Text-only entry: no attachments, citations, voice or custom variables.",
           "noDescription": "No description",
           "defaultType": "App"
         },
@@ -1101,6 +1113,33 @@
         }
       },
       "apiConfig": {
+        "diagnostics": {
+          "title": "Configuration check",
+          "note": "Read-only check of the current form. Does not save settings or run a model. Success confirms only the checked interface, not a complete conversation.",
+          "check": "Check configuration",
+          "checking": "Checking…",
+          "unchecked": "Not checked.",
+          "stale": "Configuration changed. Check again.",
+          "resultsPaused": "New tasks are paused; existing records remain readable.",
+          "codes": {
+            "connected": "Connection and authentication checked.",
+            "invalidConfiguration": "Check provider, backend and assistant settings.",
+            "credentialsRequired": "Enter an API key or use the saved credential.",
+            "authenticationFailed": "Authentication failed. Check key and permissions.",
+            "timeout": "Check timed out. Try again.",
+            "unavailable": "Service unavailable. Check settings and connectivity.",
+            "unsupported": "Required read-only interface is not available.",
+            "incompatible": "Response incompatible with the selected integration.",
+            "resultConfigurationMismatch": "Enable the matching result profile for this assistant.",
+            "resultsUnavailable": "Assistant does not support the configured result profile."
+          },
+          "capabilities": {
+            "text": "Text interaction",
+            "inputForm": "Input form declared",
+            "humanInput": "Human confirmation contract",
+            "results": "Report and CSV contract"
+          }
+        },
         "emptyState": {
           "title": "Select Application Instance",
           "description": "Select an application instance from the left list to view and edit its configuration, or click the add button to create a new application instance"

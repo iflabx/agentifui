@@ -585,6 +585,18 @@
           "list": "Liste"
         },
         "appCard": {
+          "moreDescription": "Lire la description complète",
+          "lessDescription": "Réduire la description",
+          "openApp": "Ouvrir {name}",
+          "addFavorite": "Ajouter aux favoris",
+          "removeFavorite": "Retirer des favoris",
+          "entryModes": {
+            "conversation": "Conversation",
+            "workflow": "Workflow",
+            "generation": "Génération de texte",
+            "text": "Interaction textuelle"
+          },
+          "textOnlyLimit": "Texte uniquement : sans pièces jointes, citations, voix ni variables personnalisées.",
           "noDescription": "Aucune description",
           "defaultType": "Application"
         },
@@ -1101,6 +1113,33 @@
         }
       },
       "apiConfig": {
+        "diagnostics": {
+          "title": "Vérifier la configuration",
+          "note": "Vérification en lecture seule. Ne sauvegarde rien et ne lance aucun modèle. Le succès confirme uniquement l’interface vérifiée.",
+          "check": "Vérifier la configuration",
+          "checking": "Vérification…",
+          "unchecked": "Non vérifié.",
+          "stale": "Configuration modifiée. Vérifiez à nouveau.",
+          "resultsPaused": "Nouvelles tâches suspendues ; les enregistrements restent consultables.",
+          "codes": {
+            "connected": "Connexion et authentification vérifiées.",
+            "invalidConfiguration": "Vérifiez fournisseur, backend et assistant.",
+            "credentialsRequired": "Saisissez une clé API ou utilisez les identifiants enregistrés.",
+            "authenticationFailed": "Échec d’authentification. Vérifiez clé et droits.",
+            "timeout": "Délai dépassé. Réessayez.",
+            "unavailable": "Service indisponible. Vérifiez réglages et connexion.",
+            "unsupported": "Interface de lecture seule requise absente.",
+            "incompatible": "Réponse incompatible avec l’intégration.",
+            "resultConfigurationMismatch": "Activez le profil de résultats correspondant.",
+            "resultsUnavailable": "L’assistant ne prend pas en charge ce profil de résultats."
+          },
+          "capabilities": {
+            "text": "Interaction textuelle",
+            "inputForm": "Formulaire déclaré",
+            "humanInput": "Contrat de confirmation humaine",
+            "results": "Contrat de rapport et CSV"
+          }
+        },
         "emptyState": {
           "title": "Sélectionner une instance d'application",
           "description": "Sélectionnez une instance d'application dans la liste de gauche pour afficher et modifier sa configuration, ou cliquez sur le bouton Ajouter pour créer une nouvelle instance d'application"
