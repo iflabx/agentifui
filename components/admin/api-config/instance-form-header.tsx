@@ -72,7 +72,6 @@ export function InstanceFormHeader({
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        {diagnostics}
         {showDifyActions &&
           (isEditing ? (
             <button
@@ -195,6 +194,7 @@ export function InstanceFormHeader({
             </button>
           </div>
         )}
+        {diagnostics}
       </div>
     </div>
   );

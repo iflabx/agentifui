@@ -176,6 +176,39 @@ describe.each(['dify', 'langchain'] as const)(
 );
 
 describe('LangChain admin instance form', () => {
+  it.each([false, true])(
+    'places the configuration check immediately after the sync action when editing is %s',
+    isEditing => {
+      render(
+        <InstanceForm
+          instance={
+            isEditing
+              ? {
+                  ...langchainInstance,
+                  config: {
+                    ...langchainInstance.config,
+                    backend_type: 'dify',
+                  },
+                }
+              : null
+          }
+          isEditing={isEditing}
+          onSave={jest.fn()}
+          onCancel={jest.fn()}
+          isProcessing={false}
+        />
+      );
+      const check = screen.getByRole('button', { name: 'check' });
+      const sync = screen.getByRole('button', { name: 'syncConfig' });
+      const actions = Array.from(
+        check.parentElement!.querySelectorAll('button')
+      );
+      expect(actions.findIndex(action => action === check)).toBe(
+        actions.findIndex(action => action === sync) + 1
+      );
+    }
+  );
+
   it.each(['dify', 'langchain'] as const)(
     'places the %s diagnostic in the top action row outside the save form',
     backend => {
