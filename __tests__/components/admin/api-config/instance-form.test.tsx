@@ -36,7 +36,12 @@ jest.mock('@lib/services/dify/validation', () => ({
   validateDifyFormData: jest.fn(() => []),
 }));
 jest.mock('sonner', () => ({
-  toast: { error: jest.fn(), warning: jest.fn(), success: jest.fn() },
+  toast: {
+    error: jest.fn(),
+    warning: jest.fn(),
+    success: jest.fn(),
+    dismiss: jest.fn(),
+  },
 }));
 jest.mock('@components/admin/api-config/dify-parameters-panel', () => ({
   __esModule: true,
@@ -171,6 +176,44 @@ describe.each(['dify', 'langchain'] as const)(
 );
 
 describe('LangChain admin instance form', () => {
+  it.each(['dify', 'langchain'] as const)(
+    'places the %s diagnostic in the top action row outside the save form',
+    backend => {
+      const { container } = render(
+        <InstanceForm
+          instance={{
+            ...langchainInstance,
+            config: { ...langchainInstance.config, backend_type: backend },
+          }}
+          isEditing
+          onSave={jest.fn()}
+          onCancel={jest.fn()}
+          isProcessing={false}
+        />
+      );
+      const button = screen.getByRole('button', { name: 'check' });
+      const form = container.querySelector('form')!;
+      expect(form.contains(button)).toBe(false);
+      expect(
+        button.compareDocumentPosition(form) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy();
+      expect(button).toHaveAttribute('type', 'button');
+      if (backend === 'dify') {
+        expect(button.parentElement).toContainElement(
+          screen.getByRole('button', { name: 'defaultApp.setAsDefault' })
+        );
+        expect(button.parentElement).toContainElement(
+          screen.getByRole('button', { name: 'difyConfig.title' })
+        );
+      } else {
+        expect(screen.queryByText('difyConfig.title')).not.toBeInTheDocument();
+        expect(
+          screen.queryByText('defaultApp.setAsDefault')
+        ).not.toBeInTheDocument();
+      }
+    }
+  );
+
   it.each([false, true])(
     'binds diagnostics to the selected provider and edit identity: %s',
     async isEditing => {

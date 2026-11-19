@@ -5,11 +5,20 @@ import {
   screen,
   waitFor,
 } from '@testing-library/react';
+import { toast } from 'sonner';
 
 import { InstanceDiagnostics } from './instance-diagnostics';
 import { createEmptyInstanceFormData } from './instance-form-utils';
 
 jest.mock('next-intl', () => ({ useTranslations: () => (key: string) => key }));
+jest.mock('sonner', () => ({
+  toast: {
+    success: jest.fn(() => 'diagnostic-toast'),
+    error: jest.fn(() => 'diagnostic-toast'),
+    warning: jest.fn(() => 'diagnostic-toast'),
+    dismiss: jest.fn(),
+  },
+}));
 const originalFetch = global.fetch;
 const fetchMock = jest.fn();
 const success = {
@@ -27,6 +36,7 @@ const props = () => ({
   disabled: false,
 });
 beforeEach(() => {
+  jest.clearAllMocks();
   global.fetch = fetchMock;
   fetchMock.mockReset();
 });
@@ -44,8 +54,15 @@ it('is unchecked until explicitly triggered and never submits the form', async (
   );
   expect(screen.getByText('unchecked')).toBeInTheDocument();
   expect(fetchMock).not.toHaveBeenCalled();
+  expect(toast.success).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'check' }));
   await screen.findByText('codes.connected');
+  expect(toast.success).toHaveBeenCalledWith('codes.connected', {
+    description: 'capabilities.text note',
+    duration: 8000,
+    closeButton: true,
+  });
+  expect(screen.getByRole('status')).toHaveClass('sr-only');
   expect(onSubmit).not.toHaveBeenCalled();
   expect(fetchMock).toHaveBeenCalledTimes(1);
   const [url, request] = fetchMock.mock.calls[0];
@@ -71,9 +88,11 @@ it('invalidates a successful check after config edits, even if reverted', async 
     />
   );
   expect(screen.getByText('stale')).toBeInTheDocument();
+  expect(toast.dismiss).toHaveBeenCalledWith('diagnostic-toast');
   rerender(<InstanceDiagnostics {...currentProps} />);
   expect(screen.getByText('stale')).toBeInTheDocument();
   expect(screen.queryByText('codes.connected')).not.toBeInTheDocument();
+  expect(toast.success).toHaveBeenCalledTimes(1);
 });
 
 it('discards a slow response from an older configuration', async () => {
@@ -94,6 +113,7 @@ it('discards a slow response from an older configuration', async () => {
   await act(async () => finish({ ok: true, json: async () => success }));
   expect(screen.getByText('stale')).toBeInTheDocument();
   expect(screen.queryByText('codes.connected')).not.toBeInTheDocument();
+  expect(toast.success).not.toHaveBeenCalled();
 });
 
 it('allows editing with a saved credential and does not transmit an empty key', async () => {
@@ -110,6 +130,12 @@ it('allows editing with a saved credential and does not transmit an empty key', 
   );
   fireEvent.click(screen.getByRole('button', { name: 'check' }));
   await screen.findByText('resultsPaused');
+  expect(toast.success).toHaveBeenCalledWith(
+    'codes.connected',
+    expect.objectContaining({
+      description: 'capabilities.text resultsPaused note',
+    })
+  );
   expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
     providerId: 'provider',
     serviceInstanceId: 'saved-instance',
@@ -195,18 +221,49 @@ it('shows unsupported and failed results rather than a green success', async () 
   render(<InstanceDiagnostics {...props()} />);
   fireEvent.click(screen.getByRole('button', { name: 'check' }));
   await screen.findByText('codes.unsupported');
+  expect(toast.warning).toHaveBeenCalledWith(
+    'codes.unsupported',
+    expect.objectContaining({ description: 'note' })
+  );
   fireEvent.click(screen.getByRole('button', { name: 'check' }));
   await screen.findByText('codes.unavailable');
+  expect(toast.error).toHaveBeenCalledWith(
+    'codes.unavailable',
+    expect.objectContaining({ description: 'note' })
+  );
   expect(screen.queryByText('private failure')).not.toBeInTheDocument();
 });
 
 it('aborts a pending diagnostic on unmount', async () => {
-  fetchMock.mockImplementation(() => new Promise(() => {}));
+  let finish!: (value: unknown) => void;
+  fetchMock.mockImplementation(
+    () =>
+      new Promise(resolve => {
+        finish = resolve;
+      })
+  );
   const { unmount } = render(<InstanceDiagnostics {...props()} />);
   fireEvent.click(screen.getByRole('button', { name: 'check' }));
   const signal = fetchMock.mock.calls[0][1].signal;
   unmount();
   await waitFor(() => expect(signal.aborted).toBe(true));
+  await act(async () => finish({ ok: true, json: async () => success }));
+  expect(toast.success).not.toHaveBeenCalled();
+  expect(toast.warning).not.toHaveBeenCalled();
+  expect(toast.error).not.toHaveBeenCalled();
+});
+
+it('dismisses its result on unmount and before another check', async () => {
+  fetchMock.mockResolvedValue({ ok: true, json: async () => success });
+  const { unmount } = render(<InstanceDiagnostics {...props()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'check' }));
+  await screen.findByText('codes.connected');
+  fireEvent.click(screen.getByRole('button', { name: 'check' }));
+  expect(toast.dismiss).toHaveBeenCalledWith('diagnostic-toast');
+  await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(2));
+  jest.mocked(toast.dismiss).mockClear();
+  unmount();
+  expect(toast.dismiss).toHaveBeenCalledWith('diagnostic-toast');
 });
 
 it('normalizes the assistant ID like saving and distinguishes invalid configuration', async () => {

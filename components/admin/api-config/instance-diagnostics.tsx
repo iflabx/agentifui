@@ -1,5 +1,8 @@
 'use client';
 
+import { Loader2, ShieldCheck } from 'lucide-react';
+import { toast } from 'sonner';
+
 import { useEffect, useRef, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
@@ -44,6 +47,7 @@ export function InstanceDiagnostics({
     formData.config.interaction_protocol,
   ]);
   const controller = useRef<AbortController | null>(null);
+  const notification = useRef<string | number | undefined>(undefined);
   const [previousFingerprint, setPreviousFingerprint] = useState(fingerprint);
   const [check, setCheck] = useState<{
     fingerprint: string;
@@ -58,7 +62,16 @@ export function InstanceDiagnostics({
     );
   }
 
-  useEffect(() => () => controller.current?.abort(), [fingerprint]);
+  useEffect(
+    () => () => {
+      controller.current?.abort();
+      if (notification.current !== undefined) {
+        toast.dismiss(notification.current);
+        notification.current = undefined;
+      }
+    },
+    [fingerprint]
+  );
 
   const current = check?.fingerprint === fingerprint;
   const pending = current && check?.pending;
@@ -70,6 +83,10 @@ export function InstanceDiagnostics({
 
   const diagnose = async () => {
     controller.current?.abort();
+    if (notification.current !== undefined) {
+      toast.dismiss(notification.current);
+      notification.current = undefined;
+    }
     const request = new AbortController();
     controller.current = request;
     setCheck({ fingerprint, pending: true });
@@ -96,27 +113,45 @@ export function InstanceDiagnostics({
     }
     if (!request.signal.aborted && controller.current === request) {
       setCheck({ fingerprint, pending: false, result });
+      const notify =
+        result.status === 'success'
+          ? toast.success
+          : result.status === 'unsupported'
+            ? toast.warning
+            : toast.error;
+      notification.current = notify(translate(`codes.${result.code}`), {
+        description: [
+          ...(result.status === 'success'
+            ? result.capabilities.map(capability =>
+                translate(`capabilities.${capability}`)
+              )
+            : []),
+          ...(result.resultsPaused ? [translate('resultsPaused')] : []),
+          translate('note'),
+        ].join(' '),
+        duration: 8000,
+        closeButton: true,
+      });
     }
   };
 
   return (
-    <section
-      className="rounded-lg border border-stone-200 p-4 dark:border-stone-600"
-      aria-label={translate('title')}
-    >
-      <h4 className="font-serif text-sm font-semibold">{translate('title')}</h4>
-      <p className="mt-1 text-xs text-stone-600 dark:text-stone-400">
-        {translate('note')}
-      </p>
+    <>
       <button
         type="button"
         onClick={diagnose}
         disabled={disabled || !ready || Boolean(pending)}
-        className="mt-3 rounded-md border border-stone-300 px-3 py-2 text-sm disabled:opacity-50 dark:border-stone-500"
+        title={translate('note')}
+        className="flex items-center gap-2 rounded-lg border border-stone-300 bg-stone-100 px-3 py-2 font-serif text-sm font-medium text-stone-700 transition-colors hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-50 dark:border-stone-600 dark:bg-stone-700 dark:text-stone-300 dark:hover:bg-stone-600"
       >
+        {pending ? (
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+        ) : (
+          <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+        )}
         {pending ? translate('checking') : translate('check')}
       </button>
-      <div role="status" aria-live="polite" className="mt-2 text-sm">
+      <div role="status" aria-live="polite" className="sr-only">
         {pending
           ? translate('checking')
           : result
@@ -140,6 +175,6 @@ export function InstanceDiagnostics({
           <p className="mt-2">{translate('resultsPaused')}</p>
         )}
       </div>
-    </section>
+    </>
   );
 }

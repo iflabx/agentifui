@@ -87,7 +87,12 @@ follow product links rather than construct URLs from upstream identifiers.
 
 ### Check Configuration Without Saving
 
-The application create/edit form includes **Check configuration**. Select an
+The application create/edit form's top action row includes **Check configuration**,
+alongside the default-application and parameter actions where applicable. Results
+appear as dismissible notifications, like configuration-sync feedback, rather
+than a separate panel at the bottom of the form. The notification includes the
+checked capabilities and relevant limitations; editing the checked settings or
+leaving the form dismisses the old result. Select an
 enabled provider, choose the backend and fill in its required connection fields.
 For LangChain, include the assistant ID. New applications need an API key;
 existing applications can reuse their saved credential when the key field is
