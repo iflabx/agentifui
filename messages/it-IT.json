@@ -585,6 +585,18 @@
           "list": "Lista"
         },
         "appCard": {
+          "moreDescription": "Leggi descrizione completa",
+          "lessDescription": "Comprimi descrizione",
+          "openApp": "Apri {name}",
+          "addFavorite": "Aggiungi ai preferiti",
+          "removeFavorite": "Rimuovi dai preferiti",
+          "entryModes": {
+            "conversation": "Conversazione",
+            "workflow": "Flusso di lavoro",
+            "generation": "Generazione di testo",
+            "text": "Interazione testuale"
+          },
+          "textOnlyLimit": "Solo testo: senza allegati, citazioni, voce o variabili personalizzate.",
           "noDescription": "Nessuna descrizione",
           "defaultType": "App"
         },
@@ -1101,6 +1113,33 @@
         }
       },
       "apiConfig": {
+        "diagnostics": {
+          "title": "Verifica configurazione",
+          "note": "Verifica in sola lettura. Non salva impostazioni né esegue modelli. Il successo conferma solo l’interfaccia verificata.",
+          "check": "Verifica configurazione",
+          "checking": "Verifica in corso…",
+          "unchecked": "Non verificato.",
+          "stale": "Configurazione modificata. Verificare di nuovo.",
+          "resultsPaused": "Nuove attività sospese; i record restano consultabili.",
+          "codes": {
+            "connected": "Connessione e autenticazione verificate.",
+            "invalidConfiguration": "Controllare fornitore, backend e assistente.",
+            "credentialsRequired": "Inserire una chiave API o usare la credenziale salvata.",
+            "authenticationFailed": "Autenticazione fallita. Controllare chiave e permessi.",
+            "timeout": "Tempo scaduto. Riprovare.",
+            "unavailable": "Servizio non disponibile. Controllare impostazioni e connessione.",
+            "unsupported": "Interfaccia di sola lettura richiesta non disponibile.",
+            "incompatible": "Risposta incompatibile con l’integrazione.",
+            "resultConfigurationMismatch": "Attivare il profilo dei risultati corrispondente.",
+            "resultsUnavailable": "L’assistente non supporta il profilo dei risultati configurato."
+          },
+          "capabilities": {
+            "text": "Interazione testuale",
+            "inputForm": "Modulo dichiarato",
+            "humanInput": "Contratto di conferma umana",
+            "results": "Contratto per report e CSV"
+          }
+        },
         "emptyState": {
           "title": "Seleziona Istanza Applicazione",
           "description": "Seleziona un'istanza di applicazione dalla lista a sinistra per visualizzare e modificare la sua configurazione, oppure clicca sul pulsante aggiungi per creare una nuova istanza di applicazione"

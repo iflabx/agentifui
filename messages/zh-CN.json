@@ -585,6 +585,18 @@
           "list": "列表"
         },
         "appCard": {
+          "moreDescription": "查看完整描述",
+          "lessDescription": "收起描述",
+          "openApp": "打开 {name}",
+          "addFavorite": "添加收藏",
+          "removeFavorite": "取消收藏",
+          "entryModes": {
+            "conversation": "对话",
+            "workflow": "工作流",
+            "generation": "文本生成",
+            "text": "文本交互"
+          },
+          "textOnlyLimit": "纯文本入口：不支持附件、引用、语音和自定义变量。",
           "noDescription": "暂无描述",
           "defaultType": "应用"
         },
@@ -1101,6 +1113,33 @@
         }
       },
       "apiConfig": {
+        "diagnostics": {
+          "title": "配置检查",
+          "note": "使用当前表单进行只读检查，不保存配置、不调用模型。成功仅代表所检查接口可用，不代替真实对话验收。",
+          "check": "检查配置",
+          "checking": "检查中…",
+          "unchecked": "尚未检查。",
+          "stale": "配置已改变，请重新检查。",
+          "resultsPaused": "已暂停新任务，已有记录仍可查看。",
+          "codes": {
+            "connected": "连接与鉴权检查通过。",
+            "invalidConfiguration": "请检查提供商、后端及助手配置。",
+            "credentialsRequired": "请输入 API 密钥，或使用已保存的凭据。",
+            "authenticationFailed": "鉴权失败，请检查密钥及权限。",
+            "timeout": "检查超时，请重试。",
+            "unavailable": "服务不可用，请检查配置和网络。",
+            "unsupported": "服务未提供所需的只读接口。",
+            "incompatible": "返回内容与所选接入方式不兼容。",
+            "resultConfigurationMismatch": "请为该助手启用对应的结果交付配置。",
+            "resultsUnavailable": "该助手不支持所配置的结果交付契约。"
+          },
+          "capabilities": {
+            "text": "文本交互",
+            "inputForm": "已声明输入表单",
+            "humanInput": "人工确认契约",
+            "results": "报告与 CSV 契约"
+          }
+        },
         "emptyState": {
           "title": "选择应用实例",
           "description": "从左侧列表中选择一个应用实例来查看和编辑其配置，或点击添加按钮创建新的应用实例"

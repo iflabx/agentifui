@@ -12,6 +12,7 @@ import { cn } from '@lib/utils';
 
 import { useTranslations } from 'next-intl';
 
+import { InstanceDiagnostics } from './instance-diagnostics';
 import type { InstanceFormProps } from './instance-form-types';
 import {
   changeInstanceAppType,
@@ -397,6 +398,14 @@ export function InstanceForm(props: InstanceFormProps) {
             onTagsChange={updateTags}
           />
 
+          <InstanceDiagnostics
+            formData={formData}
+            providerId={
+              isEditing ? instance?.provider_id || '' : selectedProviderId
+            }
+            serviceInstanceId={isEditing ? instance?.id : undefined}
+            disabled={isProcessing || isSyncing}
+          />
           <FormActions isProcessing={isProcessing} onCancel={onCancel} />
         </form>
       </div>

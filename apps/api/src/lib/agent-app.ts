@@ -81,7 +81,7 @@ export const AGENT_APP_VISIBILITY_SQL = `
   )
 `;
 
-function decryptCredential(value: string): string {
+export function decryptCredential(value: string): string {
   if (!value.includes(':')) {
     return value;
   }

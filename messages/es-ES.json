@@ -585,6 +585,18 @@
           "list": "Lista"
         },
         "appCard": {
+          "moreDescription": "Ver descripción completa",
+          "lessDescription": "Contraer descripción",
+          "openApp": "Abrir {name}",
+          "addFavorite": "Añadir a favoritos",
+          "removeFavorite": "Quitar de favoritos",
+          "entryModes": {
+            "conversation": "Conversación",
+            "workflow": "Flujo de trabajo",
+            "generation": "Generación de texto",
+            "text": "Interacción de texto"
+          },
+          "textOnlyLimit": "Solo texto: sin adjuntos, citas, voz ni variables personalizadas.",
           "noDescription": "Sin descripción",
           "defaultType": "Aplicación"
         },
@@ -1101,6 +1113,33 @@
         }
       },
       "apiConfig": {
+        "diagnostics": {
+          "title": "Comprobar configuración",
+          "note": "Comprobación de solo lectura. No guarda ajustes ni ejecuta modelos. El éxito solo confirma la interfaz comprobada.",
+          "check": "Comprobar configuración",
+          "checking": "Comprobando…",
+          "unchecked": "Sin comprobar.",
+          "stale": "La configuración cambió. Compruebe de nuevo.",
+          "resultsPaused": "Tareas nuevas pausadas; los registros siguen disponibles.",
+          "codes": {
+            "connected": "Conexión y autenticación comprobadas.",
+            "invalidConfiguration": "Revise proveedor, backend y asistente.",
+            "credentialsRequired": "Introduzca una clave API o use la credencial guardada.",
+            "authenticationFailed": "Error de autenticación. Revise clave y permisos.",
+            "timeout": "Tiempo agotado. Reintente.",
+            "unavailable": "Servicio no disponible. Revise ajustes y conexión.",
+            "unsupported": "No hay interfaz de solo lectura compatible.",
+            "incompatible": "Respuesta incompatible con la integración.",
+            "resultConfigurationMismatch": "Active el perfil de resultados correspondiente.",
+            "resultsUnavailable": "El asistente no admite el perfil de resultados configurado."
+          },
+          "capabilities": {
+            "text": "Interacción de texto",
+            "inputForm": "Formulario declarado",
+            "humanInput": "Contrato de confirmación humana",
+            "results": "Contrato de informe y CSV"
+          }
+        },
         "emptyState": {
           "title": "Seleccionar Instancia de Aplicación",
           "description": "Selecciona una instancia de aplicación de la lista izquierda para ver y editar su configuración, o haz clic en el botón agregar para crear una nueva instancia de aplicación"

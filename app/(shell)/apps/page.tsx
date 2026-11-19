@@ -95,14 +95,10 @@ export default function AppsPage() {
 
       const difyAppType = metadata?.dify_apptype;
 
-      let description =
+      const description =
         metadata?.brief_description ||
         app.description ||
         difyParams?.opening_statement;
-
-      if (!description) {
-        description = t('appCard.noDescription');
-      }
 
       return {
         instanceId:

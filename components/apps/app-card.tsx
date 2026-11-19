@@ -10,6 +10,8 @@ import React from 'react';
 import { useTranslations } from 'next-intl';
 import Image from 'next/image';
 
+import { AppEntrySummary } from './app-entry-summary';
+
 interface AppInstance {
   instanceId: string;
   displayName: string;
@@ -136,7 +138,6 @@ export function AppCard({ app, viewMode, onClick }: AppCardProps) {
 
   return (
     <div
-      onClick={() => onClick(app)}
       className={cn(
         'group relative cursor-pointer transition-all duration-200',
         'rounded-lg border bg-white',
@@ -153,12 +154,16 @@ export function AppCard({ app, viewMode, onClick }: AppCardProps) {
           <button
             onClick={handleToggleFavorite}
             className={cn(
-              'absolute top-2 right-2 flex h-6 w-6 items-center justify-center rounded-full',
-              'opacity-0 transition-all duration-200 group-hover:opacity-100',
+              'absolute top-2 right-2 z-10 flex h-6 w-6 items-center justify-center rounded-full',
+              'opacity-0 transition-all duration-200 group-hover:opacity-100 focus-visible:opacity-100',
               'hover:scale-110',
               isAppFavorite
                 ? 'bg-red-100 text-red-500 opacity-100 dark:bg-red-900/30 dark:text-red-400'
                 : 'bg-stone-100 text-stone-400 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-500 dark:hover:bg-stone-700'
+            )}
+            type="button"
+            aria-label={t(
+              isAppFavorite ? 'appCard.removeFavorite' : 'appCard.addFavorite'
             )}
           >
             <Heart
@@ -177,19 +182,24 @@ export function AppCard({ app, viewMode, onClick }: AppCardProps) {
                 'text-stone-900 dark:text-gray-100'
               )}
             >
-              {app.displayName}
+              <button
+                type="button"
+                onClick={() => onClick(app)}
+                aria-label={t('appCard.openApp', { name: app.displayName })}
+                className="text-left after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-stone-500"
+              >
+                {app.displayName}
+              </button>
             </h3>
           </div>
 
           <div className="mb-3 flex-1">
-            <p
-              className={cn(
-                'line-clamp-2 font-serif text-xs leading-relaxed',
-                'text-stone-600 dark:text-stone-400'
-              )}
-            >
-              {app.description || t('appCard.noDescription')}
-            </p>
+            <AppEntrySummary
+              description={app.description}
+              config={app.config}
+              difyAppType={difyAppType}
+              compact={false}
+            />
           </div>
 
           <div className="mt-auto flex items-center justify-between text-xs">
@@ -214,7 +224,14 @@ export function AppCard({ app, viewMode, onClick }: AppCardProps) {
                   'text-stone-900 dark:text-gray-100'
                 )}
               >
-                {app.displayName}
+                <button
+                  type="button"
+                  onClick={() => onClick(app)}
+                  aria-label={t('appCard.openApp', { name: app.displayName })}
+                  className="text-left after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-stone-500"
+                >
+                  {app.displayName}
+                </button>
               </h3>
 
               {(isLangChain || difyTypeInfo) && (
@@ -229,25 +246,27 @@ export function AppCard({ app, viewMode, onClick }: AppCardProps) {
               )}
             </div>
 
-            <p
-              className={cn(
-                'line-clamp-1 font-serif text-xs',
-                'text-stone-600 dark:text-stone-400'
-              )}
-            >
-              {app.description || t('appCard.noDescription')}
-            </p>
+            <AppEntrySummary
+              description={app.description}
+              config={app.config}
+              difyAppType={difyAppType}
+              compact={true}
+            />
           </div>
 
           <div className="flex items-center gap-2">
             <button
               onClick={handleToggleFavorite}
               className={cn(
-                'flex h-6 w-6 items-center justify-center rounded-full',
+                'relative z-10 flex h-6 w-6 items-center justify-center rounded-full',
                 'transition-all duration-200',
                 isAppFavorite
                   ? 'bg-red-100 text-red-500 dark:bg-red-900/30 dark:text-red-400'
-                  : 'bg-stone-100 text-stone-400 opacity-0 group-hover:opacity-100 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-500 dark:hover:bg-stone-700'
+                  : 'bg-stone-100 text-stone-400 opacity-0 group-hover:opacity-100 hover:bg-stone-200 focus-visible:opacity-100 dark:bg-stone-800 dark:text-stone-500 dark:hover:bg-stone-700'
+              )}
+              type="button"
+              aria-label={t(
+                isAppFavorite ? 'appCard.removeFavorite' : 'appCard.addFavorite'
               )}
             >
               <Heart

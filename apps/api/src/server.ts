@@ -11,6 +11,7 @@ import {
 import { installCapacityControl } from './lib/capacity-control';
 import { recordApiErrorEvent } from './lib/error-events';
 import { resolveRuntimeContentDir } from './lib/runtime-content';
+import { adminAppDiagnosticsRoutes } from './routes/admin-app-diagnostics';
 import { adminAuthFallbackPolicyRoutes } from './routes/admin-auth-fallback-policy';
 import { adminAuthFallbackPolicyUserRoutes } from './routes/admin-auth-fallback-policy-user';
 import { adminEncryptRoutes } from './routes/admin-encrypt';
@@ -178,6 +179,7 @@ export async function createApiServer(config: ApiRuntimeConfig) {
   await app.register(agentRunsRoutes, { config });
   await app.register(internalDataRoutes, { config });
   await app.register(internalDifyConfigRoutes, { config });
+  await app.register(adminAppDiagnosticsRoutes, { config });
   await app.register(internalErrorEventsClientRoutes, { config });
   await app.register(internalProfileRoutes, { config });
   await app.register(internalRealtimeStreamRoutes, { config });
