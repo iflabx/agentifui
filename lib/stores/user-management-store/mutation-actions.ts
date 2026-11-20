@@ -11,6 +11,7 @@ import {
 } from './helpers';
 import type {
   EnhancedUser,
+  SessionRevocationResult,
   UserManagementStoreGet,
   UserManagementStoreSet,
 } from './types';
@@ -20,6 +21,17 @@ export function createMutationActions(
   get: UserManagementStoreGet
 ) {
   return {
+    revokeAllSessions: async (
+      userId: string
+    ): Promise<SessionRevocationResult> => {
+      const result = await callInternalDataAction<SessionRevocationResult>(
+        'users.revokeAllSessions',
+        { userId, reasonCode: 'ADMIN_REQUEST' }
+      );
+      if (!result.success)
+        throw new Error(result.error?.message || 'Session revocation failed');
+      return result.data;
+    },
     updateUser: async (userId: string, updates: Partial<EnhancedUser>) => {
       set(state => ({
         loading: updateLoadingState(state.loading, 'updating', true),

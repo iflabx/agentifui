@@ -69,6 +69,16 @@ API_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abc
 
 If you run tests inside a dev container, replace `127.0.0.1` with the host gateway that reaches the shared data services.
 
+Governance integration tests additionally require the explicitly configured
+database name `agentifui_test` or a disposable name starting with `gov_verify_`;
+they refuse other database names. The upgrade regression creates a temporary
+`gov_verify_upgrade_*` database, applies old and new migrations, and drops only
+that temporary database. Its isolated test identity therefore needs database and
+test-role creation privileges. Never grant those privileges to the application
+runtime role or point these tests at a business database. Real Better Auth
+revocation checks also need isolated Redis; object-storage tests require a
+dedicated private bucket, not a public development bucket.
+
 ## Why Redis Needs More Than a Different DB
 
 A separate Redis DB such as `/2` is necessary but not sufficient.

@@ -611,7 +611,7 @@ it('serializes a real HTTP rotation that wins the app lock before admission, the
   }
 });
 
-it('rejects HTTP quota deletion after waiting for real uncommitted admission, preserving its reservation', async () => {
+it('quickly rejects HTTP quota deletion during real uncommitted admission, preserving its reservation', async () => {
   const entry = await register();
   const admission = await database.connect();
   let deleting: ReturnType<typeof action> | undefined;
@@ -624,16 +624,19 @@ it('rejects HTTP quota deletion after waiting for real uncommitted admission, pr
       0,
       1
     );
-    await waitFor(
-      async () =>
-        (
-          await database.query(
-            "SELECT 1 FROM pg_stat_activity WHERE wait_event_type='Lock' AND query LIKE '%DELETE FROM group_app_permissions%' AND pid<>pg_backend_pid()"
-          )
-        ).rowCount !== 0
-    );
-    await admission.query('COMMIT');
     expect(await deleting).toMatchObject({
+      status: 409,
+      body: { error: 'ADMIN_MUTATION_BUSY' },
+    });
+    await admission.query('COMMIT');
+    expect(
+      await action(
+        'groups.removeGroupAppPermission',
+        { groupId: group, serviceInstanceId: applications[0] },
+        0,
+        1
+      )
+    ).toMatchObject({
       status: 409,
       body: { error: 'AGENT_QUOTA_BUSY' },
     });

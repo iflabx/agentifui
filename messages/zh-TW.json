@@ -1,4 +1,11 @@
 {
+  "governance": {
+    "revokeSessions": "撤銷全部登入工作階段",
+    "revokeConfirm": "確定撤銷此帳號現有的登入工作階段？仍允許重新登入；如需禁止存取，請先停用帳號。已開始的回覆可能繼續。",
+    "revoked": "已撤銷 {count} 個登入工作階段。",
+    "cleanupPending": "登入工作階段已撤銷，快取清理待完成；資料庫仍會拒絕舊工作階段。",
+    "revokeFailed": "無法確認撤銷結果，請先核對稽核記錄再重試。"
+  },
   "executionProcess": {
     "title": "執行過程",
     "close": "關閉執行過程",

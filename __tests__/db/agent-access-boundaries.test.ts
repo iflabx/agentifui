@@ -369,6 +369,12 @@ it.each([
 ] as const)(
   'denies unproven app-scoped %s %s before any upstream request',
   async (method, path) => {
+    if (path === 'files/synthetic-file/preview') {
+      for (const actor of [0, 1, 2])
+        expect((await proxy(actor, path, method)).statusCode).toBe(404);
+      expect(upstreamRequests).toHaveLength(0);
+      return;
+    }
     for (const actor of [0, 1])
       expect((await proxy(actor, path, method)).statusCode).toBe(403);
     expect(upstreamRequests).toHaveLength(0);

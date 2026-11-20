@@ -1,6 +1,11 @@
 /** @jest-environment node */
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
+import {
+  canReadDifyUpload,
+  hasDifyUploadReference,
+  registerDifyUpload,
+} from '../../lib/dify-upload-access';
 import { readDifyUpload, saveDifyUpload } from '../../lib/dify-upload-archive';
 import { queryRowsWithPgUserContext } from '../../lib/pg-context';
 import {
@@ -13,6 +18,11 @@ import type { DifyProxyRequestContext, DifyProxyTargetConfig } from './types';
 jest.mock('../../lib/dify-upload-archive', () => ({
   readDifyUpload: jest.fn(),
   saveDifyUpload: jest.fn(),
+}));
+jest.mock('../../lib/dify-upload-access', () => ({
+  canReadDifyUpload: jest.fn().mockResolvedValue(true),
+  hasDifyUploadReference: jest.fn().mockResolvedValue(false),
+  registerDifyUpload: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('../../lib/pg-context', () => ({
   queryRowsWithPgUserContext: jest.fn(),
@@ -48,6 +58,9 @@ describe('owned Dify file previews', () => {
   }
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.mocked(canReadDifyUpload).mockResolvedValue(true);
+    jest.mocked(hasDifyUploadReference).mockResolvedValue(false);
+    jest.mocked(registerDifyUpload).mockResolvedValue(undefined);
     jest.mocked(readDifyUpload).mockResolvedValue(null);
     jest.mocked(saveDifyUpload).mockResolvedValue(undefined);
     jest.mocked(queryRowsWithPgUserContext).mockResolvedValue([]);
@@ -59,14 +72,33 @@ describe('owned Dify file previews', () => {
     const upstream = new Response(
       '{"id":"upload-1","preview_url":"https://dify.example.com/signed"}'
     );
-    const result = await archiveDifyUploadResponse(
-      upstream,
-      new FormData(),
-      context,
-      { ...target, appType: 'chatflow' }
-    );
-    expect(result).toBe(upstream);
+    const form = new FormData();
+    form.set('file', new File(['hello'], 'hello.txt'));
+    const result = await archiveDifyUploadResponse(upstream, form, context, {
+      ...target,
+      appType: 'chatflow',
+    });
+    expect((await result.json()).id).toBe('upload-1');
+    expect(registerDifyUpload).toHaveBeenCalled();
     expect(saveDifyUpload).not.toHaveBeenCalled();
+  });
+
+  it('returns a controlled unavailable preview for an owned staged upload, never the admin fallback', async () => {
+    const reply = createReply();
+    expect(
+      await handleOwnedDifyFilePreview(request, reply, context, {
+        ...target,
+        appType: 'chatflow',
+      })
+    ).toBe(true);
+    expect(reply.status).toHaveBeenCalledWith(410);
+    expect(reply.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        app_error: expect.objectContaining({
+          code: 'DIFY_FILE_PREVIEW_EXPIRED',
+        }),
+      })
+    );
   });
 
   it('renews Chatflow history without accessing S3 even when S3 is unavailable', async () => {
@@ -220,6 +252,16 @@ describe('owned Dify file previews', () => {
     );
   });
 
+  it('rejects deleted or unproven references before reading archived bytes or upstream', async () => {
+    jest.mocked(canReadDifyUpload).mockResolvedValue(false);
+    const fetchMock = jest.spyOn(globalThis, 'fetch');
+    await expect(
+      handleOwnedDifyFilePreview(request, createReply(), context, target)
+    ).rejects.toMatchObject({ statusCode: 404, code: 'DIFY_FILE_NOT_FOUND' });
+    expect(readDifyUpload).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('refreshes legacy inputs-only files by upload ID, paging past unrelated messages', async () => {
     jest
       .mocked(queryRowsWithPgUserContext)
@@ -277,14 +319,17 @@ describe('owned Dify file previews', () => {
         'user-1',
         ['external-app', 'canonical-app', 'external-app'],
         '{"attachments":[{"upload_file_id":"upload-1"}]}',
+        null,
+        null,
       ]
     );
   });
 
   it('does not fetch another user or app attachment, including for admins', async () => {
     const fetchMock = jest.spyOn(globalThis, 'fetch');
-    expect(
-      await handleOwnedDifyFilePreview(
+    jest.mocked(canReadDifyUpload).mockResolvedValue(false);
+    await expect(
+      handleOwnedDifyFilePreview(
         request,
         createReply(),
         {
@@ -293,15 +338,127 @@ describe('owned Dify file previews', () => {
         },
         target
       )
-    ).toBe(false);
+    ).rejects.toMatchObject({ statusCode: 404, code: 'DIFY_FILE_NOT_FOUND' });
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(queryRowsWithPgUserContext).toHaveBeenLastCalledWith(
-      'other',
-      'admin',
-      expect.stringContaining('user_id = $1::uuid'),
-      ['other', expect.any(Array), 'upload-1']
-    );
+    expect(queryRowsWithPgUserContext).not.toHaveBeenCalled();
   });
+
+  it('registers a legacy Workflow file only after scoped archive decryption succeeds', async () => {
+    jest.mocked(canReadDifyUpload).mockResolvedValueOnce(false);
+    jest.mocked(hasDifyUploadReference).mockResolvedValue(true);
+    const content = Buffer.from('synthetic legacy file');
+    jest
+      .mocked(readDifyUpload)
+      .mockResolvedValue({ content, contentType: 'text/plain' });
+    const reply = createReply();
+    await handleOwnedDifyFilePreview(request, reply, context, target);
+    expect(registerDifyUpload).toHaveBeenCalledWith(
+      {
+        userId: 'user-1',
+        serviceInstanceId: 'canonical-app',
+        fileId: 'upload-1',
+      },
+      true
+    );
+    expect(
+      jest.mocked(readDifyUpload).mock.invocationCallOrder[0]
+    ).toBeLessThan(jest.mocked(registerDifyUpload).mock.invocationCallOrder[0]);
+    expect(reply.send).toHaveBeenCalledWith(content);
+  });
+
+  it.each(['workflow', 'chatflow'])(
+    'does not promote forged historical %s metadata into upload ownership',
+    async appType => {
+      jest.mocked(canReadDifyUpload).mockResolvedValue(false);
+      jest.mocked(hasDifyUploadReference).mockResolvedValue(true);
+      jest
+        .mocked(queryRowsWithPgUserContext)
+        .mockResolvedValue([{ external_id: 'forged-conversation' }]);
+      jest
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(new Response('{"data":[]}'));
+      const reply = createReply();
+      await expect(
+        handleOwnedDifyFilePreview(request, reply, context, {
+          ...target,
+          appType,
+        })
+      ).rejects.toMatchObject({ statusCode: 404, code: 'DIFY_FILE_NOT_FOUND' });
+      expect(registerDifyUpload).not.toHaveBeenCalled();
+      expect(reply.send).not.toHaveBeenCalled();
+    }
+  );
+
+  it('requires native current-user history evidence before registering a legacy Chatflow file', async () => {
+    jest.mocked(canReadDifyUpload).mockResolvedValueOnce(false);
+    jest.mocked(hasDifyUploadReference).mockResolvedValue(true);
+    jest
+      .mocked(queryRowsWithPgUserContext)
+      .mockResolvedValue([{ external_id: 'conversation-1' }]);
+    const url =
+      'https://dify.example.com/files/upload-1/file-preview?sign=fresh';
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: [{ inputs: { file: { related_id: 'upload-1', url } } }],
+        })
+      )
+    );
+    const reply = createReply();
+    await handleOwnedDifyFilePreview(request, reply, context, {
+      ...target,
+      appType: 'chatflow',
+    });
+    expect(
+      new URL(String(fetchMock.mock.calls[0][0])).searchParams.get('user')
+    ).toBe('user-1');
+    expect(registerDifyUpload).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'user-1' }),
+      true
+    );
+    expect(readDifyUpload).not.toHaveBeenCalled();
+    expect(reply.header).toHaveBeenCalledWith('Location', url);
+  });
+
+  it.each(['workflow', 'chatflow'])(
+    'rechecks a deleted legacy %s reference before serving',
+    async appType => {
+      jest.mocked(canReadDifyUpload).mockResolvedValue(false);
+      jest.mocked(hasDifyUploadReference).mockResolvedValue(true);
+      jest.mocked(readDifyUpload).mockResolvedValue({
+        content: Buffer.from('synthetic'),
+        contentType: 'text/plain',
+      });
+      jest
+        .mocked(queryRowsWithPgUserContext)
+        .mockResolvedValue([{ external_id: 'conversation-1' }]);
+      jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                inputs: {
+                  file: {
+                    related_id: 'upload-1',
+                    url: 'https://dify.example.com/files/upload-1/file-preview?sign=fresh',
+                  },
+                },
+              },
+            ],
+          })
+        )
+      );
+      const reply = createReply();
+      await expect(
+        handleOwnedDifyFilePreview(request, reply, context, {
+          ...target,
+          appType,
+        })
+      ).rejects.toMatchObject({ statusCode: 404 });
+      expect(reply.send).not.toHaveBeenCalled();
+      expect(reply.header).not.toHaveBeenCalled();
+    }
+  );
 
   it('reports the legacy Workflow limitation instead of trying to renew a stale run detail', async () => {
     jest

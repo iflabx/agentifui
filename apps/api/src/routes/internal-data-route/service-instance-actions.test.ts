@@ -5,6 +5,8 @@ import { handleServiceInstanceAction } from './service-instance-actions';
 
 jest.mock('../../lib/pg-context', () => ({
   queryRowsWithPgSystemContext: jest.fn(),
+  systemQueryForClient: () =>
+    jest.requireMock('../../lib/pg-context').queryRowsWithPgSystemContext,
 }));
 jest.mock('./domain-helpers', () => ({
   ensureProviderDefaultServiceInstance: jest.fn(),

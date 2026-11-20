@@ -19,6 +19,23 @@ Dify human input, token billing or a general policy platform.
 
 ## Deployment And Request Contract
 
+For the governance closeout, apply the additive migrations
+`20261119100000_add_admin_audit_events.sql` and
+`20261119110000_add_dify_upload_access.sql` before deploying the matching API.
+The former supports covered high-risk management transactions; the latter
+registers trusted uploads, verifies legacy ownership on demand and protects
+deleted-history reads. Historical message metadata and execution inputs alone
+never establish file ownership. Retain both tables on code rollback; do not
+restore revoked sessions, erase audit evidence or drop attachment access
+protection. Test migrations on an
+isolated copy/new database before approved deployment. No automatic GC, master-key
+migration or forced task reconciliation is included.
+
+See [management audit and sessions](ADMIN-GUIDE.md),
+[read-only task investigation](OPERATIONS.md#read-only-task-investigation),
+[data handling](SECURITY-PRIVACY.md#5-retention-deletion-and-backups) and
+[credential incident response](CREDENTIAL-INCIDENTS.md) for operational limits.
+
 Apply `20261113150000_add_backend_conversation_runs.sql` before
 `20261114160000_add_agent_submission_governance.sql`, using the normal migration
 process. The latter is required for both backends, including Dify-only use.

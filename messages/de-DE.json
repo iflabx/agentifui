@@ -1,4 +1,11 @@
 {
+  "governance": {
+    "revokeSessions": "Alle Anmeldesitzungen widerrufen",
+    "revokeConfirm": "Bestehende Sitzungen widerrufen? Eine erneute Anmeldung bleibt möglich; sperren Sie zuerst das Konto, um Zugriff zu verhindern. Bereits angenommene Antworten können weiterlaufen.",
+    "revoked": "{count} Sitzungen widerrufen.",
+    "cleanupPending": "Sitzungen widerrufen. Cache-Bereinigung ausstehend; die Datenbank weist alte Sitzungen ab.",
+    "revokeFailed": "Ergebnis nicht bestätigt. Prüfen Sie vor einem neuen Versuch das Audit-Protokoll."
+  },
   "executionProcess": {
     "title": "Ausführungsverlauf",
     "close": "Ausführungsverlauf schließen",

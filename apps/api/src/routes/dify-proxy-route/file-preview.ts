@@ -1,6 +1,11 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import { AgentPolicyError } from '../../lib/agent-backends';
+import {
+  canReadDifyUpload,
+  hasDifyUploadReference,
+  registerDifyUpload,
+} from '../../lib/dify-upload-access';
 import { readDifyUpload, saveDifyUpload } from '../../lib/dify-upload-archive';
 import { queryRowsWithPgUserContext } from '../../lib/pg-context';
 import { buildRouteErrorPayload } from '../../lib/route-error';
@@ -12,7 +17,8 @@ export async function archiveDifyUploadResponse(
   context: DifyProxyRequestContext,
   target: DifyProxyTargetConfig
 ): Promise<Response> {
-  if (target.appType?.trim().toLowerCase() !== 'workflow') return upstream;
+  const workflow = target.appType?.trim().toLowerCase() === 'workflow';
+  if (!target.serviceInstanceId || target.tempConfigUsed) return upstream;
   const file = form.get('file');
   const data = await upstream.json();
   if (
@@ -23,14 +29,13 @@ export async function archiveDifyUploadResponse(
     throw new AgentPolicyError(502, 'DIFY_UPLOAD_RESPONSE_INVALID');
   }
   try {
-    await saveDifyUpload(
-      {
-        userId: context.actor.userId,
-        serviceInstanceId: target.serviceInstanceId,
-        fileId: data.id,
-      },
-      file
-    );
+    const scope = {
+      userId: context.actor.userId,
+      serviceInstanceId: target.serviceInstanceId,
+      fileId: data.id,
+    };
+    if (workflow) await saveDifyUpload(scope, file);
+    await registerDifyUpload(scope);
   } catch {
     throw new AgentPolicyError(503, 'DIFY_UPLOAD_STORAGE_UNAVAILABLE');
   }
@@ -40,7 +45,11 @@ export async function archiveDifyUploadResponse(
   return new Response(
     JSON.stringify({
       ...data,
-      preview_url: `/api/dify/${encodeURIComponent(context.appId)}/files/${encodeURIComponent(data.id)}/preview`,
+      ...(workflow
+        ? {
+            preview_url: `/api/dify/${encodeURIComponent(context.appId)}/files/${encodeURIComponent(data.id)}/preview`,
+          }
+        : {}),
     }),
     { status: upstream.status, headers }
   );
@@ -138,6 +147,36 @@ export async function handleOwnedDifyFilePreview(
     return false;
   }
 
+  const scope = {
+    userId: context.actor.userId,
+    serviceInstanceId: target.serviceInstanceId,
+    fileId,
+  };
+  const query = new URL(request.url, 'http://preview.invalid').searchParams;
+  const reference = {
+    conversationId: query.get('conversation_id') || undefined,
+    executionId: query.get('execution_id') || undefined,
+  };
+  if (
+    Object.values(reference).some(
+      value =>
+        value &&
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          value
+        )
+    )
+  )
+    throw new AgentPolicyError(400, 'DIFY_FILE_CONTEXT_INVALID');
+  const registered = await canReadDifyUpload(scope, reference);
+  if (!registered && !(await hasDifyUploadReference(scope, reference)))
+    throw new AgentPolicyError(404, 'DIFY_FILE_NOT_FOUND');
+
+  const confirmLegacyOwnership = async () => {
+    if (!registered) await registerDifyUpload(scope, true);
+    if (!(await canReadDifyUpload(scope, reference)))
+      throw new AgentPolicyError(404, 'DIFY_FILE_NOT_FOUND');
+  };
+
   let archived: Awaited<ReturnType<typeof readDifyUpload>> = null;
   if (target.appType?.trim().toLowerCase() === 'workflow') {
     try {
@@ -151,6 +190,7 @@ export async function handleOwnedDifyFilePreview(
     }
   }
   if (archived) {
+    await confirmLegacyOwnership();
     const activeType =
       /^(?:text\/(?:html|xml)|application\/(?:xhtml\+xml|xml)|image\/svg\+xml)(?:;|$)/i.test(
         archived.contentType
@@ -178,14 +218,17 @@ export async function handleOwnedDifyFilePreview(
     context.actor.role,
     `SELECT c.external_id FROM conversations c
      JOIN messages m ON m.conversation_id = c.id
-     WHERE c.user_id = $1::uuid AND m.user_id = $1::uuid AND m.role = 'user'
+     WHERE c.user_id = $1::uuid AND m.user_id = $1::uuid AND m.role = 'user' AND c.status='active'
        AND c.app_id::text = ANY($2::text[])
+       AND $5::uuid IS NULL AND ($4::uuid IS NULL OR c.id=$4::uuid)
        AND m.metadata @> $3::jsonb
      LIMIT 1`,
     [
       context.actor.userId,
       appIds,
       JSON.stringify({ attachments: [{ upload_file_id: fileId }] }),
+      reference.conversationId || null,
+      reference.executionId || null,
     ]
   );
   if (rows[0]?.external_id) {
@@ -196,6 +239,7 @@ export async function handleOwnedDifyFilePreview(
       fileId
     );
     if (url) {
+      await confirmLegacyOwnership();
       reply
         .header('Cache-Control', 'private, no-store')
         .header('Location', url)
@@ -205,19 +249,8 @@ export async function handleOwnedDifyFilePreview(
     }
   }
 
-  const executions = rows.length
-    ? []
-    : await queryRowsWithPgUserContext<{ id: string }>(
-        context.actor.userId,
-        context.actor.role,
-        `SELECT id FROM app_executions
-     WHERE user_id = $1::uuid AND service_instance_id::text = ANY($2::text[])
-       AND jsonb_path_exists(inputs, '$.** ? (@.upload_file_id == $fileId)',
-         jsonb_build_object('fileId', $3::text))
-     LIMIT 1`,
-        [context.actor.userId, appIds, fileId]
-      );
-  if (!rows.length && !executions.length) return false;
+  if (!registered) throw new AgentPolicyError(404, 'DIFY_FILE_NOT_FOUND');
+
   reply.status(410).send(
     buildRouteErrorPayload({
       request,

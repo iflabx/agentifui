@@ -43,7 +43,7 @@ describe('realtime subscription lifecycle', () => {
       writableEnded: false,
       setHeader: jest.fn(),
       flushHeaders: jest.fn(),
-      write: jest.fn(),
+      write: jest.fn().mockReturnValue(true),
       end: jest.fn(() => {
         response.writableEnded = true;
       }),

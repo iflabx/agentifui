@@ -7,6 +7,7 @@ export interface ActorIdentity {
 export interface ProfileStatusIdentity extends ActorIdentity {
   authUserId: string;
   status: string | null;
+  sessionExpiresAt?: string;
 }
 
 export type ResolveIdentityResult =
@@ -24,11 +25,10 @@ export interface SessionIdentityRow {
   user_id: string | null;
   role: string | null;
   status: string | null;
+  session_expires_at?: string;
 }
 
 export type SessionResolverMetricKey =
-  | 'local_ok'
-  | 'local_unauthorized'
-  | 'local_error';
+  'local_ok' | 'local_unauthorized' | 'local_error';
 
 export type SessionResolverMetrics = Record<SessionResolverMetricKey, number>;

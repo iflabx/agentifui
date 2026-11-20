@@ -152,7 +152,74 @@ when existing reconciliation cannot resolve it. There is no general admin
 clear Redis or mark an unknown task failed merely to remove an alert. Pending
 human decisions can also constrain credential changes and code rollback.
 
+### Read-Only Task Investigation
+
+An active administrator can use the existing same-origin, session-authenticated
+`POST /api/internal/data` with:
+
+```json
+{ "action": "tasks.getRecent", "payload": { "page": 1, "limit": 25 } }
+```
+
+Optional `taskId`, `appId` (local UUIDs) and `state` narrow the result. Pages are
+bounded to 100 rows. No native thread IDs, credentials, prompts or responses are
+returned. There is no dedicated task-management UI. This query never calls the
+Agent service, replays work, repairs saves, changes state or releases quota.
+
+`state`/`execution_status` describe execution; `persistence_status` describes
+local saving. `blocking_reason` distinguishes unconfirmed upstream outcome,
+waiting for input, pending save and failed save. `occupies_slot` reflects current
+local admission rules, not proof the upstream model is still running. A waiting
+human-input task need not consume a compute slot but still protects its task and
+credentials. `used_count` is already counted consumption; `reserved_count` is
+outstanding reservations on that same grant, not an additional global counter.
+Resume/run rows are projections of existing ledgers, not another billing ledger.
+
+Resume records reuse the root submission's local task ID where available. An
+accepted human decision is not reported as waiting for input merely because its
+historical root run remains `waiting`; submitting/unknown decisions must not be
+submitted again to investigate them.
+
+Use these local facts to ask the upstream operator for evidence. Preserve unknown
+outcomes; there is no admin force-release/refund action. Do not resubmit the model
+request to investigate an ambiguous result. Keep a private request/incident record
+using the [operations template](templates/operations-governance.md).
+
 ## 5. Upgrades And Capacity Changes
+
+### Governance Schema Upgrade
+
+For versions containing the governance changes, apply these pending migrations
+in order, using the migration owner before starting the new application:
+
+1. `20261119100000_add_admin_audit_events.sql` creates the append-only runtime
+   audit table and indexes. Successful covered management changes require its
+   audit write to commit in the same transaction.
+2. `20261119110000_add_dify_upload_access.sql` creates the trusted upload-access
+   registration and installs binding triggers. Browser-writable historical
+   references are not backfilled as ownership. Legacy previews register access
+   only after current-user/application reference checks and scoped archive
+   decryption or current-user upstream history verification. Do not enable the
+   new API against an unmigrated database.
+
+Back up first and allow time for DDL locks.
+Fresh installs use the full ordered migration set; upgrades apply each pending
+file once through the deployment's migration procedure. Verify runtime-role
+grants, ordinary-user attachment access and administrative audit writes after
+migration. Keep registration and audit tables on code rollback; they contain
+history, not disposable caches. Older code does not implement these new access
+and revocation guarantees. Do not drop the tables as a substitute for a reviewed
+rollback plan. Neither migration deletes file objects or existing conversations.
+Legacy files without verifiable ownership remain unavailable; retain their
+history and originals for investigation rather than assigning ownership from
+message metadata or execution inputs.
+
+Database-backed Better Auth sessions are required; remove any configuration
+explicitly disabling their persistence before deploying this version. Review
+[session configuration](CONFIGURATION.md#better-auth-and-sso) and retain the
+existing authentication/encryption secrets.
+
+### Deployment Sequence
 
 Use the [version and upgrade navigation](COMPATIBILITY.md#5-choose-documentation-and-plan-an-upgrade)
 to select the installed/target documentation and backend requirements. Published
@@ -226,6 +293,11 @@ human confirmation when that profile changes; and persistence/draining across
 replicas when capacity or shutdown changes. Container health or SMTP acceptance
 alone does not prove those workflows succeeded.
 
+When an account, application, provider or group permission is revoked, verify a
+new request in the same session is rejected. Do not expect an already accepted
+streaming response to stop in the middle, and do not use an existing realtime
+connection as proof that a later request is authorized.
+
 For incidents and handoff, retain the version, time, application, sanitized error
 code/request identifier, impact, action taken and recovery outcome. Review logs
 before sharing: no session tokens, reset links, service keys, raw user content or
@@ -233,6 +305,13 @@ private backups in public reports. Give administrators the
 [management guide](ADMIN-GUIDE.md) and users the [user guide](USER-GUIDE.md).
 
 ## 8. Result Artifact Troubleshooting
+
+Use the [credential incident procedure](CREDENTIAL-INCIDENTS.md) for suspected
+service-token or master-key exposure. It is a manual authorized process, not an
+automatic scanner or action trigger. Complete the private
+[operations record](templates/operations-governance.md) for retention choices,
+data requests, external-service terms and actual backup/restore evidence.
+Unknown policy and untested recovery must stay explicitly unconfirmed.
 
 Before enabling results, apply the additive
 `20261116100000_add_agent_run_deliverables.sql` migration through the normal

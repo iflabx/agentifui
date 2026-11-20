@@ -1,4 +1,11 @@
 {
+  "governance": {
+    "revokeSessions": "Revoke all login sessions",
+    "revokeConfirm": "Revoke this account's existing login sessions? Signing in again remains allowed; suspend the account first to prevent access. Replies already accepted may continue.",
+    "revoked": "Revoked {count} login sessions.",
+    "cleanupPending": "Login sessions are revoked. Cache cleanup is pending; database checks still reject the old sessions.",
+    "revokeFailed": "Unable to confirm session revocation. Check the audit result before retrying."
+  },
   "executionProcess": {
     "title": "Execution process",
     "close": "Close execution process",

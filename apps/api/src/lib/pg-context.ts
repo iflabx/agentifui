@@ -6,6 +6,7 @@ export interface PgRlsContextInput {
   userId?: string | null;
   role?: string | null;
   systemActor?: boolean;
+  statementTimeoutMs?: number;
 }
 
 function parseBooleanEnv(value: string | undefined): boolean | null {
@@ -118,6 +119,17 @@ export async function runWithPgRlsContext<T>(
 
   try {
     await client.query('BEGIN');
+    if (context.statementTimeoutMs !== undefined) {
+      if (
+        !Number.isSafeInteger(context.statementTimeoutMs) ||
+        context.statementTimeoutMs < 1
+      )
+        throw new Error('Invalid statement timeout');
+      await client.query(
+        "SELECT set_config('statement_timeout', $1::text, true)",
+        [String(context.statementTimeoutMs)]
+      );
+    }
     await client.query(
       `SELECT set_config('app.current_user_id', $1::text, true)`,
       [normalizedUserId]
@@ -179,13 +191,38 @@ export async function queryRowsWithPgUserContext<
   userId: string | null | undefined,
   role: string | null | undefined,
   sql: string,
-  params: unknown[] = []
+  params: unknown[] = [],
+  options: Pick<PgRlsContextInput, 'statementTimeoutMs'> = {}
 ): Promise<T[]> {
-  return queryRowsWithPgRlsContext<T>({ userId, role }, sql, params);
+  return queryRowsWithPgRlsContext<T>(
+    { ...options, userId, role },
+    sql,
+    params
+  );
 }
 
 export async function queryRowsWithPgSystemContext<
   T extends QueryResultRow = QueryResultRow,
->(sql: string, params: unknown[] = []): Promise<T[]> {
-  return queryRowsWithPgRlsContext<T>({ systemActor: true }, sql, params);
+>(
+  sql: string,
+  params: unknown[] = [],
+  options: Pick<PgRlsContextInput, 'statementTimeoutMs'> = {}
+): Promise<T[]> {
+  return queryRowsWithPgRlsContext<T>(
+    { ...options, systemActor: true },
+    sql,
+    params
+  );
+}
+
+export function systemQueryForClient(
+  client?: PoolClient
+): typeof queryRowsWithPgSystemContext {
+  if (!client) return queryRowsWithPgSystemContext;
+  return async <Row extends QueryResultRow = QueryResultRow>(
+    sql: string,
+    params: unknown[] = []
+  ): Promise<Row[]> => {
+    return (await client.query<Row>(sql, params)).rows;
+  };
 }

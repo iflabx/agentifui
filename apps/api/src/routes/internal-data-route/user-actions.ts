@@ -1,18 +1,17 @@
+import type { PoolClient } from 'pg';
+
 import {
-  queryRowsWithPgSystemContext,
-  queryRowsWithPgUserContext,
-  runWithPgSystemContext,
+  runWithPgSystemContext as runSystemTransaction,
+  systemQueryForClient,
 } from '../../lib/pg-context';
 import { loadGroupsByUserIdMap } from './domain-helpers';
 import {
   escapeLikePattern,
-  isIdpManagedAuthSource,
   normalizeAuthSource,
   normalizeNullableTextValue,
   parseAccountStatus,
   parsePositiveInt,
   parseUserRole,
-  readBoolean,
   readObject,
   readString,
   readStringArray,
@@ -32,8 +31,14 @@ import {
 export async function handleUserAction(
   action: string,
   payload: Record<string, unknown> | undefined,
-  actorUserId: string | undefined
+  actorUserId: string | undefined,
+  client?: PoolClient
 ): Promise<ApiActionResponse | null> {
+  const queryRowsWithPgSystemContext = systemQueryForClient(client);
+  const runWithPgSystemContext = client
+    ? async <Result>(operation: (connection: PoolClient) => Promise<Result>) =>
+        operation(client)
+    : runSystemTransaction;
   if (!LOCAL_USER_ACTIONS.has(action)) {
     return null;
   }

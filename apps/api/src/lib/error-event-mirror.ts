@@ -1,3 +1,7 @@
+import {
+  sanitizeDiagnosticEvent,
+  sanitizeDiagnosticText,
+} from '@agentifui/shared';
 import { existsSync } from 'node:fs';
 import { appendFile, mkdir } from 'node:fs/promises';
 import os from 'node:os';
@@ -48,6 +52,11 @@ export async function appendErrorEventMirror(
   input: ErrorEventMirrorInput
 ): Promise<void> {
   try {
+    const safe = sanitizeDiagnosticEvent({
+      ...input,
+      context: input.contextJson,
+    });
+    input = { ...safe, contextJson: safe.context || {} };
     const targetPath = getMirrorPath();
     await mkdir(path.dirname(targetPath), { recursive: true });
 
@@ -76,7 +85,9 @@ export async function appendErrorEventMirror(
   } catch (error) {
     console.warn(
       '[ErrorEventMirror] failed to append local mirror:',
-      error instanceof Error ? error.message : String(error)
+      sanitizeDiagnosticText(
+        error instanceof Error ? error.message : String(error)
+      )
     );
   }
 }

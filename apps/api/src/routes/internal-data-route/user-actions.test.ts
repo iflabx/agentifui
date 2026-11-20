@@ -3,6 +3,7 @@ import { runWithPgSystemContext } from '../../lib/pg-context';
 import { handleUserAction } from './user-actions';
 
 jest.mock('../../lib/pg-context', () => ({
+  ...jest.requireActual('../../lib/pg-context'),
   queryRowsWithPgSystemContext: jest.fn(),
   queryRowsWithPgUserContext: jest.fn(),
   runWithPgSystemContext: jest.fn(),

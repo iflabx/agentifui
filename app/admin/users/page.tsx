@@ -29,6 +29,11 @@ import { PaginationControls } from '@/admin/users/pagination-controls';
 export default function UsersManagementPage() {
   const { profile: currentUserProfile } = useProfile();
   const t = useTranslations('pages.admin.users');
+  const governanceT = useTranslations('governance');
+  const [revokeTarget, setRevokeTarget] = React.useState<EnhancedUser | null>(
+    null
+  );
+  const [revoking, setRevoking] = React.useState(false);
 
   const [showDeleteDialog, setShowDeleteDialog] = React.useState(false);
   const [userToDelete, setUserToDelete] = React.useState<EnhancedUser | null>(
@@ -68,6 +73,7 @@ export default function UsersManagementPage() {
     changeUserStatus,
     updateUser,
     removeUser,
+    revokeAllSessions,
     batchChangeRole,
     batchChangeStatus,
     clearError,
@@ -102,6 +108,23 @@ export default function UsersManagementPage() {
   const handleRefresh = () => {
     loadUsers();
     loadStats();
+  };
+
+  const handleRevokeSessions = async () => {
+    if (!revokeTarget) return;
+    setRevoking(true);
+    try {
+      const result = await revokeAllSessions(revokeTarget.id);
+      toast.success(governanceT('revoked', { count: result.revokedCount }));
+      if (result.cacheCleanup === 'pending')
+        toast.warning(governanceT('cleanupPending'));
+      setRevokeTarget(null);
+      if (revokeTarget.id === currentUserId) window.location.reload();
+    } catch {
+      toast.error(governanceT('revokeFailed'));
+    } finally {
+      setRevoking(false);
+    }
   };
 
   const handleAddUser = () => {
@@ -362,11 +385,23 @@ export default function UsersManagementPage() {
           onEditUser={handleEditUser}
           onViewUser={handleViewUser}
           onDeleteUser={handleDeleteUser}
+          onRevokeSessions={setRevokeTarget}
           onChangeRole={handleChangeRole}
           onChangeStatus={handleChangeStatus}
         />
 
         <PaginationControls pagination={pagination} onPageChange={setPage} />
+
+        <ConfirmDialog
+          isOpen={Boolean(revokeTarget)}
+          onClose={() => !revoking && setRevokeTarget(null)}
+          onConfirm={handleRevokeSessions}
+          title={governanceT('revokeSessions')}
+          message={governanceT('revokeConfirm')}
+          confirmText={governanceT('revokeSessions')}
+          variant="danger"
+          isLoading={revoking}
+        />
 
         <ConfirmDialog
           isOpen={showDeleteDialog}

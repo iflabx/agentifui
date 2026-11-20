@@ -79,10 +79,26 @@ assert that this table enumerates every network request in every optional setup.
 - Backend IDs and native service tokens are not website-user authorization.
   Existing trusted conversation/run bindings and actor checks must remain intact.
 
+For Agent requests, the API rechecks the session, account status, application
+visibility, provider status and group permission at the start of each new
+request. Revoking access therefore blocks the next request in the same browser
+session; it does not cancel a response that was already accepted and is still
+being delivered. Realtime subscriptions apply the same checks when they are
+opened or replayed, but an existing connection is not promised to disconnect
+immediately after a permission change.
+
+Conversation-message subscriptions remain owner-only, including for administrators;
+management access does not grant access to another user's message body. Resource
+authorization SQL uses a five-second transaction-local statement timeout, alongside
+the connection-pool timeout. A timeout rejects the check rather than reusing stale
+permission. This is a per-statement bound, not a five-second whole-request SLA.
+
 For suspected credential exposure, restrict access and revoke/rotate the affected
 upstream credential. Preserve private evidence and coordinate protected local
 configuration changes; do not clear unresolved run/quota state just to bypass a
 busy guard. See [administrator troubleshooting](ADMIN-GUIDE.md#7-configuration-changes-and-troubleshooting).
+Use [credential incident handling](CREDENTIAL-INCIDENTS.md) for the authorized
+manual steps. No automatic exposure detector or automatic revocation is implied.
 
 ## 4. Before Exposing An Installation
 
@@ -133,6 +149,32 @@ Database/object backups and old releases can retain data after a UI deletion.
 The database is not encrypted end-to-end by the chat UI. Deployment-specific
 at-rest encryption and key management remain operator responsibilities.
 
+After `20261119110000_add_dify_upload_access.sql`, Dify uploaded-file proxy reads
+require a trusted per-owner/application upload registration and a non-deleted
+conversation or Workflow execution reference, or a newly staged upload not yet
+bound to saved history. The migration does not promote browser-writable history
+into ownership. For legacy files, the preview handler first checks the current
+actor's application access and non-deleted reference, then verifies the scoped
+encrypted archive or current-user upstream history before registering ownership
+and rechecking access. Unverifiable files remain unavailable; their bytes and
+history are not deleted. Copying a file ID into a new message does not grant
+access to another user's upload.
+
+Current-actor application/reference checks precede encrypted archive/cache
+reads; registration and final access checks precede serving content. Deleting a
+reference removes that reference's authority; a different valid reference can
+still authorize the same file. Explicit deleted conversation/execution context
+cannot borrow another resource's access. Bytes are not physically erased.
+Already issued upstream signed links, downloaded copies and restored backups
+remain outside this immediate access-control guarantee. Generic storage-signed
+uploads and upstream data lifecycles retain their separate documented boundaries.
+
+Use the [application](templates/application-governance.md) and
+[operations](templates/operations-governance.md) templates to declare actual
+retention, data destinations and verified manual request handling. Unfilled
+templates are not site policies; no uniform automatic retention period, full
+personal-data export or cross-provider deletion tool is introduced.
+
 ## 6. What Existing Governance Does Not Promise
 
 The application implements the documented user/application access, task
@@ -156,6 +198,13 @@ For ordinary support, provide the source version, approximate time, affected app
 type, sanitized request/error identifier and synthetic reproduction. Remove
 cookies, auth headers, action links, service keys, personal conversation text,
 real identity exports and private configuration from screenshots and logs.
+
+Browser error reports omit full URL queries/fragments and unapproved business
+context. Shared bounded cleaning runs before new error persistence, mirror writes
+and correlation fingerprints, including direct client submissions. It masks known
+authentication URL paths and recognizable credential/header text; it is not a
+universal DLP system. Historical records are not rewritten or erased by this
+change. Review old logs privately before sharing or scheduling any cleanup.
 
 For a suspected vulnerability, use the private reporting instructions in
 [SECURITY.md](https://github.com/iflabx/agentifui/blob/main/SECURITY.md). For secret publication, also follow

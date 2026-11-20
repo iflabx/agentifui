@@ -43,6 +43,10 @@ jest.mock('../lib/error-events', () => ({
 }));
 
 const UPLOAD_PATHS = ['files/upload', 'audio-to-text'];
+
+jest.mock('../lib/dify-upload-access', () => ({
+  registerDifyUpload: jest.fn().mockResolvedValue(undefined),
+}));
 const MULTIPART_CONTENT_TYPE = 'multipart/form-data; boundary=test-boundary';
 
 function createMultipartBody(totalBytes: number): Buffer {

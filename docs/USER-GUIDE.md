@@ -346,6 +346,19 @@ email-address or SSO-account editor. Never share a signed-in browser session.
 
 ## 8. Common Problems
 
+An administrator can revoke all existing website login sessions; sign in again
+if asked. A suspended account instead needs an administrator's access review.
+Revocation is not a guarantee that an already accepted Agent reply or tool action
+has stopped upstream.
+
+For an access issue, disputed output or a personal-data export/deletion request,
+use the contact route published by this installation in its application description
+or Home/About notice. Provide a safe request/error ID and approximate time, not
+passwords, service keys, reset links or complete private conversations. A reaction
+button is not a formal request channel. Administrators verify identity and scope;
+accepting a request does not mean full export/erasure has already occurred.
+Local history deletion does not erase upstream copies, downloaded files or backups.
+
 | Symptom                                   | What to do                                                                                                                 |
 | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | Login returns an error or loops           | Use the normal instance address and original sign-in method; report the time and sanitized error to the administrator      |

@@ -1,4 +1,6 @@
-import { queryRowsWithPgSystemContext } from '../../lib/pg-context';
+import type { PoolClient } from 'pg';
+
+import { systemQueryForClient } from '../../lib/pg-context';
 import {
   encryptApiKeyValue,
   readBoolean,
@@ -16,8 +18,10 @@ import {
 
 export async function handleApiKeyAction(
   action: string,
-  payload: Record<string, unknown> | undefined
+  payload: Record<string, unknown> | undefined,
+  client?: PoolClient
 ): Promise<ApiActionResponse | null> {
+  const queryRowsWithPgSystemContext = systemQueryForClient(client);
   if (!LOCAL_API_KEY_ACTIONS.has(action)) {
     return null;
   }

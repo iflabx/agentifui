@@ -1,4 +1,9 @@
-import { queryRowsWithPgSystemContext } from '../../lib/pg-context';
+import type { PoolClient } from 'pg';
+
+import {
+  queryRowsWithPgSystemContext,
+  systemQueryForClient,
+} from '../../lib/pg-context';
 import type { GroupMembershipSummaryRow } from './types';
 
 export async function loadGroupsByUserIdMap(
@@ -40,8 +45,10 @@ export async function loadGroupsByUserIdMap(
 
 export async function ensureProviderDefaultServiceInstance(
   providerId: string,
-  options: { preferredId?: string | null; excludeId?: string | null } = {}
+  options: { preferredId?: string | null; excludeId?: string | null } = {},
+  client?: PoolClient
 ): Promise<string | null> {
+  const queryRowsWithPgSystemContext = systemQueryForClient(client);
   const existingDefaultRows = await queryRowsWithPgSystemContext<{
     id: string;
   }>(

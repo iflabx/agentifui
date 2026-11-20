@@ -127,7 +127,8 @@ export async function resolveAgentApp(
      JOIN providers p ON p.id = si.provider_id AND p.is_active = TRUE
      WHERE si.id = $1::uuid AND ${AGENT_APP_VISIBILITY_SQL}
      LIMIT 1`,
-    [serviceInstanceId, userId]
+    [serviceInstanceId, userId],
+    { statementTimeoutMs: 5000 }
   );
   const row = rows[0];
   if (!row) {
