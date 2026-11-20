@@ -1,6 +1,22 @@
 import type { FastifyPluginAsync } from 'fastify';
+import { randomUUID } from 'node:crypto';
+import type { PoolClient } from 'pg';
 
 import type { ApiRuntimeConfig } from '../config';
+import {
+  isAuditedAdminAction,
+  listAdminAudit,
+  recordAdminFailure,
+  runAuditedAdminMutation,
+} from '../lib/admin-audit';
+import { isAllowedMutationOrigin } from '../lib/request-origin';
+import { extractCandidateSessionTokens } from '../lib/session-identity/helpers';
+import {
+  type RevokedLoginSession,
+  cleanupRevokedLoginSessions,
+  deleteUserLoginSessions,
+} from '../lib/session-revocation';
+import { listTaskOperations } from '../lib/task-operations';
 import { handleApiKeyAction } from './internal-data-route/api-key-actions';
 import { handleAppExecutionAction } from './internal-data-route/app-execution-actions';
 import { ensureActionPermission } from './internal-data-route/auth';
@@ -15,6 +31,7 @@ import {
   sendActionResponse,
   toErrorResponse,
   toFailureResponse,
+  toSuccessResponse,
 } from './internal-data-route/helpers';
 import { handleMessageAction } from './internal-data-route/message-actions';
 import { handleProviderAction } from './internal-data-route/provider-actions';
@@ -140,7 +157,8 @@ function logActionOutcome(input: {
 async function handleLocalInternalDataAction(
   action: string,
   payload: Record<string, unknown> | undefined,
-  actorUserId: string | undefined
+  actorUserId: string | undefined,
+  client?: PoolClient
 ): Promise<ApiActionResponse | null> {
   const conversationResult = await handleConversationAction(
     action,
@@ -174,30 +192,40 @@ async function handleLocalInternalDataAction(
     return groupAuthResult;
   }
 
-  const userResult = await handleUserAction(action, payload, actorUserId);
+  const userResult = await handleUserAction(
+    action,
+    payload,
+    actorUserId,
+    client
+  );
   if (userResult) {
     return userResult;
   }
 
-  const groupAdminResult = await handleGroupAdminAction(action, payload);
+  const groupAdminResult = await handleGroupAdminAction(
+    action,
+    payload,
+    client
+  );
   if (groupAdminResult) {
     return groupAdminResult;
   }
 
-  const providerResult = await handleProviderAction(action, payload);
+  const providerResult = await handleProviderAction(action, payload, client);
   if (providerResult) {
     return providerResult;
   }
 
   const serviceInstanceResult = await handleServiceInstanceAction(
     action,
-    payload
+    payload,
+    client
   );
   if (serviceInstanceResult) {
     return serviceInstanceResult;
   }
 
-  const apiKeyResult = await handleApiKeyAction(action, payload);
+  const apiKeyResult = await handleApiKeyAction(action, payload, client);
   if (apiKeyResult) {
     return apiKeyResult;
   }
@@ -236,6 +264,13 @@ export const internalDataRoutes: FastifyPluginAsync<
     let actorUserId: string | undefined;
 
     try {
+      if (!isAllowedMutationOrigin(request, options.config))
+        return sendActionResponse(
+          request,
+          reply,
+          toErrorResponse('Origin rejected', 403)
+        );
+
       const permission = await ensureActionPermission(
         request,
         options.config,
@@ -244,6 +279,21 @@ export const internalDataRoutes: FastifyPluginAsync<
       );
       actorUserId = permission.actorUserId;
       if (permission.error) {
+        if (isAuditedAdminAction(action, payload))
+          await recordAdminFailure(
+            {
+              action,
+              payload: payload || {},
+              actorUserId,
+              tokens: [],
+              requestId: request.id,
+            },
+            randomUUID(),
+            permission.error.statusCode >= 500 ? 'failed' : 'denied',
+            permission.error.statusCode >= 500
+              ? 'ADMIN_AUTHORIZATION_UNAVAILABLE'
+              : 'ADMIN_PERMISSION_DENIED'
+          );
         logActionOutcome({
           request: request.log,
           actionContext,
@@ -259,11 +309,61 @@ export const internalDataRoutes: FastifyPluginAsync<
         );
       }
 
-      const localHandled = await handleLocalInternalDataAction(
-        action,
-        payload,
-        actorUserId
-      );
+      let localHandled: ApiActionResponse | null;
+      if (action === 'audit.getRecent') {
+        localHandled = await listAdminAudit(payload || {});
+      } else if (action === 'tasks.getRecent') {
+        localHandled = await listTaskOperations(payload || {}, actorUserId!);
+      } else if (isAuditedAdminAction(action, payload)) {
+        let revoked: RevokedLoginSession[] = [];
+        localHandled = await runAuditedAdminMutation(
+          {
+            action,
+            payload: payload || {},
+            actorUserId,
+            tokens: extractCandidateSessionTokens(request, options.config),
+            requestId: request.id,
+          },
+          async client => {
+            if (action === 'users.revokeAllSessions') {
+              const userId = readString(payload?.userId);
+              if (!userId) return toErrorResponse('Missing userId', 400);
+              revoked = await deleteUserLoginSessions(client, userId);
+              return toSuccessResponse({
+                revokedCount: revoked.length,
+                cacheCleanup: 'pending',
+              });
+            }
+            return handleLocalInternalDataAction(
+              action,
+              payload,
+              actorUserId,
+              client
+            );
+          }
+        );
+        if (
+          action === 'users.revokeAllSessions' &&
+          localHandled.statusCode < 400
+        ) {
+          const cacheCleanup = await cleanupRevokedLoginSessions(revoked);
+          const envelope = localHandled.payload as Record<string, unknown>;
+          localHandled.payload = {
+            ...envelope,
+            data: {
+              revokedCount: revoked.length,
+              cacheCleanup,
+              operationId: envelope.operationId,
+            },
+          };
+        }
+      } else {
+        localHandled = await handleLocalInternalDataAction(
+          action,
+          payload,
+          actorUserId
+        );
+      }
 
       if (localHandled) {
         logActionOutcome({

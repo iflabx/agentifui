@@ -1,4 +1,11 @@
 {
+  "governance": {
+    "revokeSessions": "Révoquer toutes les sessions",
+    "revokeConfirm": "Révoquer les sessions existantes ? Une nouvelle connexion reste possible ; suspendez le compte pour interdire l’accès. Les réponses déjà acceptées peuvent continuer.",
+    "revoked": "{count} sessions révoquées.",
+    "cleanupPending": "Sessions révoquées. Nettoyage du cache en attente ; la base de données refuse les anciennes sessions.",
+    "revokeFailed": "Résultat non confirmé. Consultez le journal d’audit avant de réessayer."
+  },
   "executionProcess": {
     "title": "Déroulement de l’exécution",
     "close": "Fermer le déroulement",

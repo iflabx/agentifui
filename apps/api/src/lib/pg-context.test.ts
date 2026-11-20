@@ -86,4 +86,31 @@ describe('fastify pg-context strict mode injection', () => {
     );
     expect(strictModeCall).toBeUndefined();
   });
+
+  it('bounds authorization SQL on the server and rolls back timeout errors', async () => {
+    const client = createClient();
+    connectMock.mockResolvedValue(client);
+    const { queryRowsWithPgSystemContext } = await import('./pg-context');
+    await queryRowsWithPgSystemContext('SELECT 1', [], {
+      statementTimeoutMs: 5000,
+    });
+    expect(client.query).toHaveBeenCalledWith(
+      "SELECT set_config('statement_timeout', $1::text, true)",
+      ['5000']
+    );
+    const timeout = Object.assign(new Error('Synthetic timeout'), {
+      code: '57014',
+    });
+    client.query.mockImplementation(async sql => {
+      if (sql === 'SELECT blocked') throw timeout;
+      return { rows: [] };
+    });
+    await expect(
+      queryRowsWithPgSystemContext('SELECT blocked', [], {
+        statementTimeoutMs: 5000,
+      })
+    ).rejects.toBe(timeout);
+    expect(client.query).toHaveBeenLastCalledWith('ROLLBACK');
+    expect(client.release).toHaveBeenCalledTimes(2);
+  });
 });

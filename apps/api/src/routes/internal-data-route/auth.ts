@@ -20,12 +20,15 @@ import {
 
 export async function resolveActorIdentity(
   request: FastifyRequest,
-  config: ApiRuntimeConfig
+  config: ApiRuntimeConfig,
+  current = false
 ): Promise<
   | { ok: true; identity: ProfileStatusIdentity }
   | { ok: false; error: ApiActionResponse }
 > {
-  const resolved = await resolveProfileStatusFromSession(request, config);
+  const resolved = await resolveProfileStatusFromSession(request, config, {
+    bypassCache: current,
+  });
   if (resolved.kind === 'unauthorized') {
     return {
       ok: false,
@@ -48,7 +51,7 @@ export async function ensureActionPermission(
   payload: Record<string, unknown> | undefined
 ): Promise<{ error: ApiActionResponse | null; actorUserId?: string }> {
   if (ADMIN_ACTIONS.has(action)) {
-    const resolved = await resolveActorIdentity(request, config);
+    const resolved = await resolveActorIdentity(request, config, true);
     if (!resolved.ok) {
       const status = resolved.error.statusCode;
       if (status === 401) {
@@ -64,6 +67,7 @@ export async function ensureActionPermission(
     if (resolved.identity.role !== 'admin') {
       return {
         error: toErrorResponse('Insufficient permissions', 403),
+        actorUserId: resolved.identity.userId,
       };
     }
 
@@ -103,7 +107,8 @@ export async function loadConversationOwnedByActor(
         AND ${access === 'write' ? unboundConversationSql : boundConversationAccessSql('$2')}
       LIMIT 1
     `,
-    [conversationId, actorUserId]
+    [conversationId, actorUserId],
+    { statementTimeoutMs: 5000 }
   );
 
   return Boolean(rows[0]?.id);
@@ -176,7 +181,8 @@ export async function loadExecutionOwnedByActor(
         AND user_id = $2::uuid
       LIMIT 1
     `,
-    [executionId, actorUserId]
+    [executionId, actorUserId],
+    { statementTimeoutMs: 5000 }
   );
 
   return rows[0] ? sanitizeExecution(rows[0]) : null;

@@ -1,3 +1,7 @@
+import {
+  sanitizeDiagnosticEvent,
+  sanitizeDiagnosticText,
+} from '@agentifui/shared';
 import { createHash } from 'node:crypto';
 import { createClient } from 'redis';
 
@@ -109,8 +113,7 @@ function withRedisPrefix(key: string): string {
 async function getRedisClient() {
   const globalState = globalThis as unknown as Record<string, unknown>;
   let client = globalState[REDIS_CLIENT_KEY] as
-    | ReturnType<typeof createClient>
-    | undefined;
+    ReturnType<typeof createClient> | undefined;
   if (!client) {
     client = createClient({
       url: resolveRedisUrl(),
@@ -120,7 +123,12 @@ async function getRedisClient() {
       pingInterval: Number(process.env.REDIS_PING_INTERVAL_MS || 10000),
     });
     client.on('error', error => {
-      console.warn('[FastifyFrontendErrorEvents] redis client error:', error);
+      console.warn(
+        '[FastifyFrontendErrorEvents] redis client error:',
+        sanitizeDiagnosticText(
+          error instanceof Error ? error.message : String(error)
+        )
+      );
     });
     globalState[REDIS_CLIENT_KEY] = client;
   }
@@ -160,7 +168,9 @@ async function publishToRedisStream(input: {
   } catch (error) {
     console.warn(
       '[FastifyFrontendErrorEvents] Redis stream publish failed:',
-      error instanceof Error ? error.message : String(error)
+      sanitizeDiagnosticText(
+        error instanceof Error ? error.message : String(error)
+      )
     );
   }
 }
@@ -179,6 +189,7 @@ export async function recordFrontendErrorEvent(input: {
   route?: string;
   context?: Record<string, unknown>;
 }): Promise<void> {
+  input = sanitizeDiagnosticEvent(input);
   const userMessage = normalizeText(input.userMessage) || 'Unknown error';
   const developerMessage = normalizeText(input.developerMessage);
   const method = normalizeText(input.method).toUpperCase() || null;

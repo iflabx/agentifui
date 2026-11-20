@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 
 import type { ApiRuntimeConfig } from '../config';
+import { runAuditedAdminMutation } from '../lib/admin-audit';
 import { AgentPolicyError, describeBackend } from '../lib/agent-backends';
 import { getSubmissionForActor } from '../lib/agent-submissions';
 import {
@@ -8,11 +9,17 @@ import {
   queryRowsWithPgUserContext,
 } from '../lib/pg-context';
 import { publicAppConfig } from '../lib/public-app-config';
+import { isAllowedMutationOrigin } from '../lib/request-origin';
 import { buildRouteErrorPayload } from '../lib/route-error';
 import {
   type ActorIdentity,
   resolveIdentityFromSession,
 } from '../lib/session-identity';
+import { extractCandidateSessionTokens } from '../lib/session-identity/helpers';
+import {
+  toErrorResponse,
+  toSuccessResponse,
+} from './internal-data-route/helpers';
 
 interface InternalAppsRoutesOptions {
   config: ApiRuntimeConfig;
@@ -170,7 +177,9 @@ async function requireAdminActor(
   | { ok: true; actor: ActorIdentity }
   | { ok: false; statusCode: number; payload: Record<string, unknown> }
 > {
-  const resolved = await resolveIdentityFromSession(request, config);
+  const resolved = await resolveIdentityFromSession(request, config, {
+    bypassCache: true,
+  });
   if (resolved.kind === 'unauthorized') {
     return {
       ok: false,
@@ -478,6 +487,15 @@ export const internalAppsRoutes: FastifyPluginAsync<
     };
   }>('/api/internal/apps', async (request, reply) => {
     try {
+      if (!isAllowedMutationOrigin(request, options.config))
+        return reply.status(403).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 403,
+            code: 'ORIGIN_REJECTED',
+            userMessage: 'Origin rejected',
+          })
+        );
       const admin = await requireAdminActor(request, options.config);
       if (!admin.ok) {
         return reply.status(admin.statusCode).send(admin.payload);
@@ -501,10 +519,18 @@ export const internalAppsRoutes: FastifyPluginAsync<
         );
       }
 
-      const rows = await queryRowsWithPgUserContext<AppRow>(
-        admin.actor.userId,
-        admin.actor.role,
-        `
+      const auditResponse = await runAuditedAdminMutation(
+        {
+          action: 'apps.updateVisibility',
+          payload: { id, updates: { visibility } },
+          actorUserId: admin.actor.userId,
+          tokens: extractCandidateSessionTokens(request, options.config),
+          requestId: request.id,
+        },
+        async client => {
+          const rows = (
+            await client.query<AppRow>(
+              `
           UPDATE service_instances si
           SET visibility = $1,
               updated_at = NOW()
@@ -527,23 +553,27 @@ export const internalAppsRoutes: FastifyPluginAsync<
             p.is_active AS provider_is_active,
             p.is_default AS provider_is_default
         `,
-        [visibility, id]
+              [visibility, id]
+            )
+          ).rows;
+          if (!rows[0]) return toErrorResponse('App instance not found', 404);
+          return toSuccessResponse({
+            app: toAppDetail(rows[0], admin.actor.role),
+          });
+        }
       );
-
-      if (!rows[0]) {
-        return reply.status(404).send(
-          buildRouteErrorPayload({
-            request,
-            statusCode: 404,
-            code: 'APP_INSTANCE_NOT_FOUND',
-            userMessage: 'App instance not found',
-          })
-        );
-      }
-
+      const envelope = auditResponse.payload as {
+        data?: { app?: unknown };
+        operationId?: string;
+      };
+      if (auditResponse.statusCode >= 400)
+        return reply
+          .status(auditResponse.statusCode)
+          .send(auditResponse.payload);
       return reply.send({
         success: true,
-        app: toAppDetail(rows[0], admin.actor.role),
+        app: envelope.data?.app,
+        operationId: envelope.operationId,
       });
     } catch (error) {
       request.log.error(

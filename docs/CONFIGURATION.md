@@ -494,6 +494,13 @@ files, not in the repository.
 
 Session identity synchronization knobs:
 
+Database-backed sessions are required: `BETTER_AUTH_STORE_SESSION_IN_DB=false`
+is rejected. Better Auth cookie session caching is explicitly disabled so a
+cookie cannot independently authenticate a revoked database session. Redis
+session hits recheck database token/session/user/expiry, failing closed on a
+database error. Do not remove that validation to work around cache outages.
+See [session revocation](ADMIN-GUIDE.md#revoke-all-login-sessions).
+
 - `AUTH_IDENTITY_SYNC_INLINE`
 - `AUTH_IDENTITY_RECOVER_MISSING_MAPPING`: allow one compensating sync when
   read-only resolve finds a missing identity mapping or profile row

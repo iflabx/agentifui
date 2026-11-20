@@ -25,6 +25,10 @@ import {
 import type { DifyProxyRequestContext, DifyProxyTargetConfig } from './types';
 import { dispatchDifyUpstreamRequest } from './upstream';
 
+jest.mock('../../lib/dify-upload-access', () => ({
+  registerDifyUpload: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock('../../lib/dify-upload-archive', () => ({
   assertDifyUploadStorage: jest.fn(),
   saveDifyUpload: jest.fn().mockResolvedValue(undefined),

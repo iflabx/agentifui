@@ -4,6 +4,11 @@ import os from 'node:os';
 import path from 'node:path';
 import 'server-only';
 
+import {
+  sanitizeDiagnosticEvent,
+  sanitizeDiagnosticText,
+} from '../../../packages/shared/src/diagnostic-privacy';
+
 export interface ErrorEventMirrorInput {
   runtime: 'next' | 'fastify';
   fingerprint: string;
@@ -49,6 +54,11 @@ export async function appendErrorEventMirror(
   input: ErrorEventMirrorInput
 ): Promise<void> {
   try {
+    const safe = sanitizeDiagnosticEvent({
+      ...input,
+      context: input.contextJson,
+    });
+    input = { ...safe, contextJson: safe.context || {} };
     const targetPath = getMirrorPath();
     await mkdir(path.dirname(targetPath), { recursive: true });
 
@@ -77,7 +87,9 @@ export async function appendErrorEventMirror(
   } catch (error) {
     console.warn(
       '[ErrorEventMirror] failed to append local mirror:',
-      error instanceof Error ? error.message : String(error)
+      sanitizeDiagnosticText(
+        error instanceof Error ? error.message : String(error)
+      )
     );
   }
 }

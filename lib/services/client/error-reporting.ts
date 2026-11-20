@@ -1,5 +1,7 @@
 import type { AppErrorSeverity } from '@lib/errors/app-error';
 
+import { sanitizeDiagnosticEvent } from '../../../packages/shared/src/diagnostic-privacy';
+
 export interface ClientErrorReportInput {
   code: string;
   userMessage: string;
@@ -48,14 +50,10 @@ function shouldReport(key: string): boolean {
 function buildPayload(input: ClientErrorReportInput): Record<string, unknown> {
   const pathname =
     typeof window !== 'undefined' ? window.location.pathname : undefined;
-  const search = typeof window !== 'undefined' ? window.location.search : '';
-  const href = typeof window !== 'undefined' ? window.location.href : undefined;
-  const userAgent =
-    typeof navigator !== 'undefined' ? navigator.userAgent : undefined;
   const language =
     typeof navigator !== 'undefined' ? navigator.language : undefined;
 
-  return {
+  return sanitizeDiagnosticEvent({
     code: sanitizeText(input.code, 'CLIENT_RUNTIME_ERROR'),
     userMessage: sanitizeText(input.userMessage, 'Unexpected client error'),
     developerMessage: input.developerMessage
@@ -63,20 +61,17 @@ function buildPayload(input: ClientErrorReportInput): Record<string, unknown> {
       : undefined,
     severity: input.severity || 'error',
     retryable: typeof input.retryable === 'boolean' ? input.retryable : true,
-    requestId: input.requestId,
+    requestId: input.requestId || '',
     traceId: input.traceId,
     httpStatus: input.httpStatus,
     method: input.method || 'CLIENT',
     route: input.route || pathname || '/client',
     context: {
       pathname,
-      search,
-      href,
-      userAgent,
       language,
       ...input.context,
     },
-  };
+  });
 }
 
 export async function reportClientError(

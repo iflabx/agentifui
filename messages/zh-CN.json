@@ -1,4 +1,11 @@
 {
+  "governance": {
+    "revokeSessions": "撤销全部登录会话",
+    "revokeConfirm": "确定撤销此账号已有的登录会话？仍允许重新登录；如需禁止访问，请先暂停账号。已经开始的回复可能继续。",
+    "revoked": "已撤销 {count} 个登录会话。",
+    "cleanupPending": "登录会话已撤销，缓存清理待完成；数据库校验仍会拒绝旧会话。",
+    "revokeFailed": "未能确认会话撤销结果，请先核对审计记录再重试。"
+  },
   "executionProcess": {
     "title": "执行过程",
     "close": "关闭执行过程",

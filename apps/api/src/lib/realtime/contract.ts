@@ -145,6 +145,12 @@ export const SubscriptionConfigs = {
     schema: 'public',
     table: 'service_instances',
   }),
+
+  apiKeys: (): SubscriptionConfig => ({
+    event: '*',
+    schema: 'public',
+    table: 'api_keys',
+  }),
 };
 
 export function deriveRealtimeKeysForTableChange(input: {

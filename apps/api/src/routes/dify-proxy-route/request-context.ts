@@ -55,7 +55,9 @@ export async function resolveProxyRequestContext(
     };
   }
 
-  const identity = await resolveIdentityFromSession(request, config);
+  const identity = await resolveIdentityFromSession(request, config, {
+    bypassCache: true,
+  });
   if (identity.kind === 'unauthorized') {
     return {
       ok: false,

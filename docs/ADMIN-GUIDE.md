@@ -284,6 +284,30 @@ See [authentication configuration](CONFIGURATION.md#better-auth-and-sso).
 Change one authentication mechanism at a time and preserve a verified recovery
 method to avoid locking out administrators.
 
+### Revoke All Login Sessions
+
+An active administrator can select **Revoke all login sessions** in a user's
+row menu and confirm. The result reports the number actually deleted and whether
+targeted cache cleanup completed or remains pending. This also permits revoking
+your own sessions, which sends you back to sign-in. It does not delete history.
+
+Suspension preserves sessions: restoring an account can make its unexpired
+sessions usable again. Revocation permanently deletes the sessions visible to
+that operation; the user can sign in again and concurrent new sign-ins are not
+part of that snapshot. For an emergency lockout, suspend first, then revoke.
+Already accepted Agent replies may continue; revocation is not upstream cancel.
+
+PostgreSQL session existence is authoritative, including Redis cache hits in
+Web authentication. Ordinary API identity reads have a cache lifetime capped at
+one second from lookup start and at session expiry; new Agent requests and
+management authorization bypass that cache. In-flight requests already checked
+can finish. Cache cleanup pending does not restore a deleted database session.
+
+The administrator action is `users.revokeAllSessions` with `{userId}` through
+the existing session-authenticated `POST /api/internal/data`. Never send a
+browser-supplied actor or token list. A result-unknown response requires audit
+lookup by `operationId` before a manual retry.
+
 ### Configure An Organizational Sign-In Record
 
 1. Open `/admin/sso-providers` and create or edit the provider record. Set its
@@ -309,6 +333,12 @@ arbitrary OAuth compatibility based solely on a database record or form choice.
 GitHub uses its dedicated server-side social-provider setup, not this CAS record.
 
 ## 6. Content And Languages
+
+For an enabled application's purpose, owner, permitted inputs and external data
+destinations, complete the private
+[application governance record](templates/application-governance.md). Put only
+approved user-facing notices and a contact route in existing descriptions or
+Home/About pages. They are not private incident storage.
 
 In **Content**, choose Home or About and the language you want to edit. Save the
 current edits before invoking translation. Translation is an explicit action
@@ -379,6 +409,37 @@ stale list/update notification from a failed database save. It is not a substitu
 for verifying the saved conversation and is not a user-facing chat room or a
 general monitoring/queue-management console. Navigation exposure can differ from
 the main admin dashboard; direct server-side authorization still applies.
+
+### Restricted Management Audit
+
+After applying `20261119100000_add_admin_audit_events.sql`, the first audit scope
+covers user profile/role/status/create/delete and session revocation, group
+membership/application grants and group deletion, API-key changes, application
+visibility, and application/provider deletion that can remove grants or keys.
+Ordinary provider configuration and SSO changes are not yet included. There is
+no complete audit dashboard or claim of database-administrator tamper resistance.
+
+Covered business writes and their safe before/after summaries share one
+transaction. Audit failure rolls back those writes. Summaries contain IDs,
+permissions and non-secret credential versions, not raw keys or request bodies.
+Denied/failed writes attempt a separate safe record, which can itself fail.
+The append-only runtime interface has no edit/delete action; user deletion does
+not cascade-delete audit history. Batches/snapshots over 100 entries are rejected
+rather than silently truncated; split large operational changes deliberately.
+
+Current administrators can query the existing session-authenticated internal-data
+interface, not a public or anonymous endpoint:
+
+```json
+{ "action": "audit.getRecent", "payload": { "limit": 25 } }
+```
+
+Optional filters are `operationId` and `action`; the next cursor is
+`{"createdAt":"<exact created_at from last row>","id":"<last row id>"}`.
+Preserve the returned PostgreSQL timestamp precision. Maximum page size is 100.
+Copy only safe IDs into private support records. Do not blindly retry a management
+write after `ADMIN_COMMIT_UNKNOWN`; look up its operation ID first. A missing
+record without confirmed rollback still does not prove the operation failed.
 
 ## 8. Minimal Application Acceptance
 

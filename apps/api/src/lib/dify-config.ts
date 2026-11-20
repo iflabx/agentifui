@@ -114,7 +114,8 @@ async function resolveScopedServiceInstance(
       WHERE si.instance_id = $1
       LIMIT 1
     `,
-      [appId]
+      [appId],
+      { statementTimeoutMs: 5000 }
     );
 
   return directRows[0] || null;
@@ -151,7 +152,8 @@ async function resolveServiceInstanceWithProvider(
             AND p.is_active = TRUE
           LIMIT 1
         `,
-        [scoped.id]
+        [scoped.id],
+        { statementTimeoutMs: 5000 }
       );
 
     return rows[0] || null;
@@ -173,7 +175,8 @@ async function resolveServiceInstanceWithProvider(
           AND p.is_active = TRUE
         LIMIT 1
       `,
-      [appId]
+      [appId],
+      { statementTimeoutMs: 5000 }
     );
 
   if (directRows[0]) {
@@ -243,7 +246,8 @@ export async function resolveDifyConfig(
       ORDER BY created_at ASC, id ASC
       LIMIT 1
     `,
-    [serviceInstance.id]
+    [serviceInstance.id],
+    { statementTimeoutMs: 5000 }
   );
 
   const encryptedOrPlain = apiKeyRows[0]?.key_value;

@@ -31,6 +31,7 @@ interface UserTableProps {
   onEditUser: (user: EnhancedUser) => void;
   onViewUser: (user: EnhancedUser) => void;
   onDeleteUser: (user: EnhancedUser) => void;
+  onRevokeSessions?: (user: EnhancedUser) => void;
   onChangeRole: (
     user: EnhancedUser,
     role: 'admin' | 'manager' | 'user'
@@ -56,6 +57,7 @@ export function UserTable({
   onEditUser,
   onViewUser,
   onDeleteUser,
+  onRevokeSessions,
   onChangeRole,
   onChangeStatus,
 }: UserTableProps) {
@@ -226,6 +228,7 @@ export function UserTable({
                 formatDate={formatDate}
                 isSelected={selectedUserIds.includes(user.id)}
                 onDeleteUser={onDeleteUser}
+                onRevokeSessions={onRevokeSessions}
                 onEditUser={onEditUser}
                 onRequestRoleChange={handleRoleChange}
                 onRequestStatusChange={handleStatusChange}

@@ -28,6 +28,12 @@ export function getAuthSecondaryStorage() {
 }
 
 export function getAuthSessionConfig() {
+  if (!parseBooleanEnv(process.env.BETTER_AUTH_STORE_SESSION_IN_DB, true)) {
+    throw new Error(
+      '[better-auth] BETTER_AUTH_STORE_SESSION_IN_DB=false is unsupported; database-backed sessions are required for reliable session revocation'
+    );
+  }
+
   const expiresIn = parsePositiveIntegerEnv(
     process.env.BETTER_AUTH_SESSION_EXPIRES_IN_SECONDS
   );
@@ -45,10 +51,8 @@ export function getAuthSessionConfig() {
       userAgent: 'user_agent',
       userId: 'user_id',
     },
-    storeSessionInDatabase: parseBooleanEnv(
-      process.env.BETTER_AUTH_STORE_SESSION_IN_DB,
-      true
-    ),
+    storeSessionInDatabase: true,
+    cookieCache: { enabled: false },
     preserveSessionInDatabase: parseBooleanEnv(
       process.env.BETTER_AUTH_PRESERVE_SESSION_IN_DB,
       false

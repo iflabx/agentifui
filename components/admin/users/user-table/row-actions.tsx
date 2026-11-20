@@ -4,6 +4,8 @@ import type { AccountStatus, UserRole } from '@lib/types/database';
 import { cn } from '@lib/utils';
 import { Edit2, Eye, MoreHorizontal, Trash2 } from 'lucide-react';
 
+import { useTranslations } from 'next-intl';
+
 import {
   type UserTableTranslations,
   canChangeUserRole,
@@ -17,6 +19,7 @@ interface UserRowActionsProps {
   currentUserId?: string | null;
   currentUserRole?: UserRole | null;
   onDeleteUser: (user: EnhancedUser) => void;
+  onRevokeSessions?: (user: EnhancedUser) => void;
   onEditUser: (user: EnhancedUser) => void;
   onRequestRoleChange: (user: EnhancedUser, role: UserRole) => void;
   onRequestStatusChange: (user: EnhancedUser, status: AccountStatus) => void;
@@ -29,6 +32,7 @@ export function UserRowActions({
   currentUserId,
   currentUserRole,
   onDeleteUser,
+  onRevokeSessions,
   onEditUser,
   onRequestRoleChange,
   onRequestStatusChange,
@@ -36,6 +40,7 @@ export function UserRowActions({
   t,
   user,
 }: UserRowActionsProps) {
+  const governanceT = useTranslations('governance');
   const currentUser = {
     id: currentUserId,
     role: currentUserRole,
@@ -57,6 +62,15 @@ export function UserRowActions({
       }
     >
       <div className="py-1">
+        {currentUserRole === 'admin' && onRevokeSessions && (
+          <button
+            type="button"
+            onClick={() => onRevokeSessions(user)}
+            className="flex w-full items-center gap-3 px-4 py-2 font-serif text-sm text-stone-700 hover:bg-stone-100 dark:text-stone-300 dark:hover:bg-stone-700"
+          >
+            {governanceT('revokeSessions')}
+          </button>
+        )}
         <button
           onClick={() => onViewUser(user)}
           className={cn(

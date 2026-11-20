@@ -45,6 +45,9 @@ Neither is an automatic scaling system or a required first-install step.
   navigation. A backend's native feature is not automatically a product feature.
 - [Deployment security and data handling](SECURITY-PRIVACY.md): local/external
   data flow, secrets, public exposure, retention/deletion and current limits.
+- [Credential incidents](CREDENTIAL-INCIDENTS.md), [application register](templates/application-governance.md)
+  and [operations worksheet](templates/operations-governance.md): manual response
+  and blank governance templates; completed site records remain private.
 - [Security policy](https://github.com/iflabx/agentifui/blob/main/SECURITY.md): privately reporting a vulnerability and
   remediation/version-support boundaries.
 - [GitHub Releases](https://github.com/iflabx/agentifui/releases): published change

@@ -1,3 +1,4 @@
+import { sanitizeDiagnosticText } from '@agentifui/shared';
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 
 import type { ApiRuntimeConfig } from '../config';
@@ -166,7 +167,13 @@ export const internalErrorEventsClientRoutes: FastifyPluginAsync<
           }
         } catch (identityError) {
           request.log.warn(
-            { err: identityError },
+            {
+              reason: sanitizeDiagnosticText(
+                identityError instanceof Error
+                  ? identityError.message
+                  : String(identityError)
+              ),
+            },
             '[FastifyAPI][internal-error-events-client] failed to resolve session identity'
           );
         }
@@ -200,7 +207,11 @@ export const internalErrorEventsClientRoutes: FastifyPluginAsync<
         });
       } catch (error) {
         request.log.error(
-          { err: error },
+          {
+            reason: sanitizeDiagnosticText(
+              error instanceof Error ? error.message : String(error)
+            ),
+          },
           '[FastifyAPI][internal-error-events-client] POST failed'
         );
         applyCommonHeaders(fallbackRequestId, reply);
@@ -212,7 +223,7 @@ export const internalErrorEventsClientRoutes: FastifyPluginAsync<
             userMessage: 'Failed to record client error',
             developerMessage:
               error instanceof Error
-                ? error.message
+                ? sanitizeDiagnosticText(error.message)
                 : 'Unknown client error report failure',
           })
         );

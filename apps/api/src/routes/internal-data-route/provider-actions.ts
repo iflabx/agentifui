@@ -1,4 +1,6 @@
-import { queryRowsWithPgSystemContext } from '../../lib/pg-context';
+import type { PoolClient } from 'pg';
+
+import { systemQueryForClient } from '../../lib/pg-context';
 import {
   readBoolean,
   readObject,
@@ -15,8 +17,10 @@ import {
 
 export async function handleProviderAction(
   action: string,
-  payload: Record<string, unknown> | undefined
+  payload: Record<string, unknown> | undefined,
+  client?: PoolClient
 ): Promise<ApiActionResponse | null> {
+  const queryRowsWithPgSystemContext = systemQueryForClient(client);
   if (!LOCAL_PROVIDER_ACTIONS.has(action)) {
     return null;
   }

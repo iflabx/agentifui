@@ -1,3 +1,4 @@
+import { sanitizeDiagnosticEvent } from '@agentifui/shared';
 import { createHash } from 'node:crypto';
 
 import type { ApiErrorDetail } from './app-error';
@@ -73,9 +74,13 @@ export async function recordApiErrorEvent(input: {
   route?: string;
   actorUserId?: string;
 }): Promise<void> {
-  const detail = input.detail;
-  const method = (input.method || '').trim().toUpperCase() || null;
-  const route = (input.route || '').trim() || null;
+  const detail = sanitizeDiagnosticEvent({
+    ...input.detail,
+    route: input.route,
+    method: input.method,
+  });
+  const method = (detail.method || '').trim().toUpperCase() || null;
+  const route = detail.route || null;
   const actorUserId = (input.actorUserId || '').trim() || null;
   const contextJson = sanitizeContext(detail.context);
   const fingerprint = buildFingerprint({

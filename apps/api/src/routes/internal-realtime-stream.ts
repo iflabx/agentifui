@@ -1,7 +1,11 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 
 import type { ApiRuntimeConfig } from '../config';
-import { queryRowsWithPgUserContext } from '../lib/pg-context';
+import { queryRowsWithPgSystemContext } from '../lib/pg-context';
+import {
+  projectAuthorizedRealtimeEvent,
+  realtimeConversationAccessSql,
+} from '../lib/realtime/access';
 import {
   readRealtimeEventsSince,
   subscribeRealtimeEvents,
@@ -28,7 +32,7 @@ interface InternalRealtimeStreamRoutesOptions {
 type KeyScope =
   | { type: 'self-or-admin'; userId: string }
   | { type: 'admin-only' }
-  | { type: 'conversation-owner-or-admin'; conversationId: string }
+  | { type: 'conversation-owner'; conversationId: string }
   | { type: 'authenticated' };
 
 const KEEPALIVE_INTERVAL_MS = Number(
@@ -64,7 +68,9 @@ async function requireActor(
   | { ok: true; actor: ActorIdentity }
   | { ok: false; statusCode: number; payload: Record<string, unknown> }
 > {
-  const resolved = await resolveIdentityFromSession(request, config);
+  const resolved = await resolveIdentityFromSession(request, config, {
+    bypassCache: true,
+  });
   if (resolved.kind === 'unauthorized') {
     return {
       ok: false,
@@ -130,7 +136,7 @@ function getKeyScope(key: string): KeyScope | null {
     if (!conversationId) {
       return null;
     }
-    return { type: 'conversation-owner-or-admin', conversationId };
+    return { type: 'conversation-owner', conversationId };
   }
 
   return null;
@@ -149,38 +155,24 @@ async function authorizeKeyScope(
   if (scope.type === 'self-or-admin') {
     return identity.role === 'admin' || identity.userId === scope.userId;
   }
-  if (scope.type === 'conversation-owner-or-admin') {
-    if (identity.role === 'admin') {
-      return true;
-    }
-
-    const rows = await queryRowsWithPgUserContext<{ id: string }>(
-      identity.userId,
-      identity.role,
+  if (scope.type === 'conversation-owner') {
+    const rows = await queryRowsWithPgSystemContext<{ id: string }>(
       `
-        SELECT id::text
+        SELECT conversations.id::text
         FROM conversations
-        WHERE id = $1::uuid
+        WHERE conversations.id = $1::uuid
+          AND conversations.status = 'active'
+          AND conversations.user_id = $2::uuid
+          AND ${realtimeConversationAccessSql()}
         LIMIT 1
       `,
-      [scope.conversationId]
+      [scope.conversationId, identity.userId],
+      { statementTimeoutMs: 5000 }
     );
     return Boolean(rows[0]);
   }
 
   return false;
-}
-
-function parseEvent(eventRaw: string | undefined): SubscriptionConfig['event'] {
-  if (
-    eventRaw === 'INSERT' ||
-    eventRaw === 'UPDATE' ||
-    eventRaw === 'DELETE' ||
-    eventRaw === '*'
-  ) {
-    return eventRaw;
-  }
-  return '*';
 }
 
 function defaultConfigByKey(key: string): SubscriptionConfig {
@@ -205,6 +197,9 @@ function defaultConfigByKey(key: string): SubscriptionConfig {
   if (key === SubscriptionKeys.serviceInstances()) {
     return SubscriptionConfigs.serviceInstances();
   }
+  if (key === SubscriptionKeys.apiKeys()) {
+    return SubscriptionConfigs.apiKeys();
+  }
   return {
     event: '*',
     schema: 'public',
@@ -212,27 +207,8 @@ function defaultConfigByKey(key: string): SubscriptionConfig {
   };
 }
 
-function resolveConfigFromQuery(
-  key: string,
-  query: {
-    schema?: string;
-    table?: string;
-    event?: string;
-    filter?: string;
-  }
-): SubscriptionConfig {
-  const fallback = defaultConfigByKey(key);
-  const schema = (query.schema || '').trim() || fallback.schema;
-  const table = (query.table || '').trim() || fallback.table;
-  const event = parseEvent(query.event) || fallback.event;
-  const filter = (query.filter || '').trim() || fallback.filter;
-
-  return {
-    schema,
-    table,
-    event,
-    ...(filter ? { filter } : {}),
-  };
+function resolveConfigFromKey(key: string): SubscriptionConfig {
+  return defaultConfigByKey(key);
 }
 
 function formatSseEvent(event: string, data: string, id?: string): string {
@@ -299,7 +275,7 @@ export const internalRealtimeStreamRoutes: FastifyPluginAsync<
       );
     }
 
-    const config = resolveConfigFromQuery(key, request.query);
+    const config = resolveConfigFromKey(key);
     if (!config.table) {
       return reply.status(400).send(
         buildRouteErrorPayload({
@@ -330,6 +306,11 @@ export const internalRealtimeStreamRoutes: FastifyPluginAsync<
     let closed = false;
     let unsubscribe: (() => void) | null = null;
     let keepAliveTimer: ReturnType<typeof setInterval> | null = null;
+    let pendingEvents = 0;
+    let finishReplay: () => void = () => {};
+    let eventQueue = new Promise<void>(resolve => {
+      finishReplay = resolve;
+    });
 
     const close = () => {
       if (closed) {
@@ -379,7 +360,7 @@ export const internalRealtimeStreamRoutes: FastifyPluginAsync<
         return;
       }
       try {
-        reply.raw.write(formatSseEvent(event, data, id));
+        if (!reply.raw.write(formatSseEvent(event, data, id))) close();
       } catch {
         close();
       }
@@ -426,7 +407,23 @@ export const internalRealtimeStreamRoutes: FastifyPluginAsync<
         if (!matchesSubscriptionConfig(config, event.payload)) {
           return;
         }
-        sendEnvelope(event);
+        if (++pendingEvents > 256) {
+          close();
+          return;
+        }
+        eventQueue = eventQueue
+          .then(async () => {
+            if (closed) return;
+            const safe = await projectAuthorizedRealtimeEvent(
+              event,
+              auth.actor
+            );
+            if (safe && !closed) sendEnvelope(safe);
+          })
+          .catch(() => close())
+          .finally(() => {
+            pendingEvents -= 1;
+          });
       });
       if (closed) {
         release();
@@ -465,7 +462,11 @@ export const internalRealtimeStreamRoutes: FastifyPluginAsync<
           if (!matchesSubscriptionConfig(config, replayEvent.payload)) {
             continue;
           }
-          sendEnvelope(replayEvent);
+          const safe = await projectAuthorizedRealtimeEvent(
+            replayEvent,
+            auth.actor
+          );
+          if (safe && !closed) sendEnvelope(safe);
         }
       }
     } catch (error) {
@@ -474,6 +475,8 @@ export const internalRealtimeStreamRoutes: FastifyPluginAsync<
         '[FastifyRealtimeStream] subscription failed'
       );
       close();
+    } finally {
+      finishReplay();
     }
 
     return reply;

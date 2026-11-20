@@ -4,6 +4,10 @@ import { getPgPool } from '@lib/server/pg/pool';
 import { createHash } from 'node:crypto';
 import 'server-only';
 
+import {
+  sanitizeDiagnosticEvent,
+  sanitizeDiagnosticText,
+} from '../../../packages/shared/src/diagnostic-privacy';
 import { appendErrorEventMirror } from './error-event-mirror';
 
 export interface RecordErrorEventInput {
@@ -160,7 +164,9 @@ async function publishToRedisStream(
   } catch (error) {
     console.warn(
       '[ErrorEvents] Redis stream publish failed:',
-      error instanceof Error ? error.message : String(error)
+      sanitizeDiagnosticText(
+        error instanceof Error ? error.message : String(error)
+      )
     );
   }
 }
@@ -168,6 +174,7 @@ async function publishToRedisStream(
 export async function recordErrorEvent(
   input: RecordErrorEventInput
 ): Promise<void> {
+  input = sanitizeDiagnosticEvent(input);
   const userMessage = normalizeText(input.userMessage) || 'Unknown error';
   const developerMessage = normalizeText(input.developerMessage);
   const method = normalizeText(input.method).toUpperCase() || null;

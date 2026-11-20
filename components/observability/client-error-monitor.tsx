@@ -21,18 +21,6 @@ function normalizeUnknownReason(reason: unknown): {
     };
   }
 
-  if (reason && typeof reason === 'object') {
-    try {
-      return {
-        userMessage: JSON.stringify(reason).slice(0, 1000),
-      };
-    } catch {
-      return {
-        userMessage: 'Unhandled promise rejection',
-      };
-    }
-  }
-
   return {
     userMessage: 'Unhandled promise rejection',
   };

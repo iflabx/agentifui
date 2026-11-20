@@ -318,6 +318,9 @@ export const LOCAL_ERROR_OBSERVABILITY_ACTIONS = new Set([
 ]);
 
 export const ADMIN_ACTIONS = new Set([
+  'users.revokeAllSessions',
+  'audit.getRecent',
+  'tasks.getRecent',
   'users.getUserList',
   'users.getUserStats',
   'users.getUserById',

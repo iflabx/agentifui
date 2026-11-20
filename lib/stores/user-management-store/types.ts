@@ -3,6 +3,12 @@ import type { AccountStatus, UserRole } from '@lib/types/database';
 
 export type { EnhancedUser, UserFilters, UserStats } from '@lib/db/users';
 
+export interface SessionRevocationResult {
+  operationId: string;
+  revokedCount: number;
+  cacheCleanup: 'completed' | 'pending';
+}
+
 export interface LoadingState {
   users: boolean;
   stats: boolean;
@@ -60,6 +66,7 @@ export interface UserManagementState {
   changeUserRole: (userId: string, role: UserRole) => Promise<boolean>;
   changeUserStatus: (userId: string, status: AccountStatus) => Promise<boolean>;
   removeUser: (userId: string) => Promise<boolean>;
+  revokeAllSessions: (userId: string) => Promise<SessionRevocationResult>;
   batchChangeStatus: (status: AccountStatus) => Promise<boolean>;
   batchChangeRole: (role: UserRole) => Promise<boolean>;
   showUserDetailModal: (user: EnhancedUser) => void;

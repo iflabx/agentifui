@@ -26,6 +26,7 @@ interface UserTableRowProps {
   formatDate: FormatDateFn;
   isSelected: boolean;
   onDeleteUser: (user: EnhancedUser) => void;
+  onRevokeSessions?: (user: EnhancedUser) => void;
   onEditUser: (user: EnhancedUser) => void;
   onRequestRoleChange: (user: EnhancedUser, role: UserRole) => void;
   onRequestStatusChange: (user: EnhancedUser, status: AccountStatus) => void;
@@ -41,6 +42,7 @@ export function UserTableRow({
   formatDate,
   isSelected,
   onDeleteUser,
+  onRevokeSessions,
   onEditUser,
   onRequestRoleChange,
   onRequestStatusChange,
@@ -235,6 +237,7 @@ export function UserTableRow({
           currentUserId={currentUserId}
           currentUserRole={currentUserRole}
           onDeleteUser={onDeleteUser}
+          onRevokeSessions={onRevokeSessions}
           onEditUser={onEditUser}
           onRequestRoleChange={onRequestRoleChange}
           onRequestStatusChange={onRequestStatusChange}

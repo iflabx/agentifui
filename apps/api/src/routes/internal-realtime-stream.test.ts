@@ -4,6 +4,7 @@ import { type IncomingMessage, request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
 import type { ApiRuntimeConfig } from '../config';
+import { queryRowsWithPgSystemContext } from '../lib/pg-context';
 import {
   readRealtimeEventsSince,
   subscribeRealtimeEvents,
@@ -13,6 +14,7 @@ import { resolveIdentityFromSession } from '../lib/session-identity';
 import { internalRealtimeStreamRoutes } from './internal-realtime-stream';
 
 jest.mock('../lib/pg-context', () => ({
+  queryRowsWithPgSystemContext: jest.fn(),
   queryRowsWithPgUserContext: jest.fn(),
 }));
 
@@ -66,6 +68,35 @@ describe('realtime SSE connection management', () => {
       }
       expect(subscribeRealtimeEvents).not.toHaveBeenCalled();
       expect(readRealtimeEventsSince).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('checks active conversation access for administrators', async () => {
+    jest.clearAllMocks();
+    jest.mocked(resolveIdentityFromSession).mockResolvedValue({
+      kind: 'ok',
+      identity: { userId: 'admin-user', role: 'admin' },
+    });
+    jest.mocked(queryRowsWithPgSystemContext).mockResolvedValue([]);
+    const app = Fastify({ logger: false });
+    await app.register(internalRealtimeStreamRoutes, { config });
+
+    try {
+      const response = await app.inject(
+        '/api/internal/realtime/stream?key=conversation-messages%3Aconversation-id'
+      );
+      expect(response.statusCode).toBe(403);
+      expect(queryRowsWithPgSystemContext).toHaveBeenCalledWith(
+        expect.stringContaining("conversations.status = 'active'"),
+        ['conversation-id', 'admin-user'],
+        { statementTimeoutMs: 5000 }
+      );
+      expect(
+        jest.mocked(queryRowsWithPgSystemContext).mock.calls[0][0]
+      ).not.toContain("OR $3::text = 'admin'");
+      expect(subscribeRealtimeEvents).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }

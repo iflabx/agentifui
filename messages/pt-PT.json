@@ -1,4 +1,11 @@
 {
+  "governance": {
+    "revokeSessions": "Revogar todas as sessões",
+    "revokeConfirm": "Revogar as sessões existentes? É possível voltar a iniciar sessão; suspenda primeiro a conta para impedir o acesso. As respostas já aceites podem continuar.",
+    "revoked": "Foram revogadas {count} sessões.",
+    "cleanupPending": "Sessões revogadas. Limpeza da cache pendente; a base de dados rejeita as sessões antigas.",
+    "revokeFailed": "Não foi possível confirmar o resultado. Consulte a auditoria antes de repetir."
+  },
   "executionProcess": {
     "title": "Processo de execução",
     "close": "Fechar processo de execução",

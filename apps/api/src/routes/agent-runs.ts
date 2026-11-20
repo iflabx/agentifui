@@ -85,7 +85,9 @@ function routeParams(request: FastifyRequest) {
 }
 
 async function context(request: FastifyRequest, config: ApiRuntimeConfig) {
-  const identity = await resolveIdentityFromSession(request, config);
+  const identity = await resolveIdentityFromSession(request, config, {
+    bypassCache: true,
+  });
   if (identity.kind !== 'ok') {
     throw new AgentAppError(
       identity.kind === 'unauthorized' ? 401 : 503,

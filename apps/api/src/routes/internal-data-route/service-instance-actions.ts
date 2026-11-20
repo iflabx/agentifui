@@ -1,7 +1,8 @@
-import { queryRowsWithPgSystemContext } from '../../lib/pg-context';
+import type { PoolClient } from 'pg';
+
+import { systemQueryForClient } from '../../lib/pg-context';
 import { ensureProviderDefaultServiceInstance } from './domain-helpers';
 import {
-  normalizeNullableTextValue,
   parseAppVisibility,
   readBoolean,
   readObject,
@@ -32,8 +33,10 @@ function validateInteractionProtocol(config: Record<string, unknown>) {
 
 export async function handleServiceInstanceAction(
   action: string,
-  payload: Record<string, unknown> | undefined
+  payload: Record<string, unknown> | undefined,
+  client?: PoolClient
 ): Promise<ApiActionResponse | null> {
+  const queryRowsWithPgSystemContext = systemQueryForClient(client);
   if (!LOCAL_SERVICE_INSTANCE_ACTIONS.has(action)) {
     return null;
   }
@@ -179,9 +182,13 @@ export async function handleServiceInstanceAction(
       return toErrorResponse('Failed to create service instance', 500);
     }
 
-    await ensureProviderDefaultServiceInstance(providerId, {
-      preferredId: created.id,
-    });
+    await ensureProviderDefaultServiceInstance(
+      providerId,
+      {
+        preferredId: created.id,
+      },
+      client
+    );
 
     const refreshedRows =
       await queryRowsWithPgSystemContext<ServiceInstanceRow>(
@@ -344,14 +351,22 @@ export async function handleServiceInstanceAction(
     }
     const updated = sanitizeServiceInstanceRow(rows[0]);
 
-    await ensureProviderDefaultServiceInstance(targetProviderId, {
-      preferredId: updated.is_default ? updated.id : null,
-      excludeId: updated.is_default ? null : updated.id,
-    });
+    await ensureProviderDefaultServiceInstance(
+      targetProviderId,
+      {
+        preferredId: updated.is_default ? updated.id : null,
+        excludeId: updated.is_default ? null : updated.id,
+      },
+      client
+    );
     if (current.provider_id !== targetProviderId) {
-      await ensureProviderDefaultServiceInstance(current.provider_id, {
-        excludeId: updated.id,
-      });
+      await ensureProviderDefaultServiceInstance(
+        current.provider_id,
+        {
+          excludeId: updated.id,
+        },
+        client
+      );
     }
 
     const refreshedRows =
@@ -414,7 +429,11 @@ export async function handleServiceInstanceAction(
     );
     const deleted = Boolean(deletedRows[0]?.id);
     if (deleted) {
-      await ensureProviderDefaultServiceInstance(target.provider_id);
+      await ensureProviderDefaultServiceInstance(
+        target.provider_id,
+        {},
+        client
+      );
     }
     return toSuccessResponse(deleted);
   }
