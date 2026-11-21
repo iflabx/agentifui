@@ -5,6 +5,7 @@ import {
   evaluateBatchRoleChangePermission,
   evaluateDeletePermission,
   evaluateRoleChangePermission,
+  evaluateStatusChangePermission,
   getPaginationRange,
   getUserDisplayName,
 } from '@/admin/users/page-helpers';
@@ -21,6 +22,64 @@ const baseUser: EnhancedUser = {
 };
 
 describe('admin users page helpers', () => {
+  it('protects actual own role changes but allows unchanged own-admin role saves', () => {
+    const targetUser = { ...baseUser, id: 'admin-1', role: 'admin' as const };
+    expect(
+      evaluateRoleChangePermission({
+        currentUserId: 'admin-1',
+        currentUserRole: 'admin',
+        targetUser,
+        newRole: 'admin',
+      })
+    ).toEqual({ allowed: true });
+    expect(
+      evaluateRoleChangePermission({
+        currentUserId: 'admin-1',
+        currentUserRole: 'admin',
+        targetUser,
+        newRole: 'user',
+      })
+    ).toMatchObject({ allowed: false });
+    expect(
+      evaluateBatchRoleChangePermission({
+        currentUserId: 'admin-1',
+        currentUserRole: 'admin',
+        selectedUsers: [targetUser],
+        newRole: 'admin',
+      })
+    ).toEqual({ allowed: true });
+  });
+
+  it.each(['suspended', 'pending'] as const)(
+    'rejects changing own status to %s',
+    newStatus => {
+      expect(
+        evaluateStatusChangePermission({
+          currentUserId: baseUser.id,
+          currentUserRole: 'admin',
+          targetUser: baseUser,
+          newStatus,
+        })
+      ).toEqual({ allowed: false, reasonKey: 'messages.cannotDeactivateSelf' });
+      expect(
+        evaluateStatusChangePermission({
+          currentUserId: 'other-admin',
+          currentUserRole: 'admin',
+          targetUser: baseUser,
+          newStatus,
+        })
+      ).toEqual({ allowed: true });
+      expect(
+        evaluateStatusChangePermission({
+          currentUserId: baseUser.id,
+          currentUserRole: 'admin',
+          targetUser: { ...baseUser, status: newStatus },
+          newStatus,
+        })
+      ).toEqual({ allowed: true });
+    }
+  );
+
   it('prefers full name then email for display name', () => {
     expect(
       getUserDisplayName({ ...baseUser, full_name: 'Alice' }, 'Default')

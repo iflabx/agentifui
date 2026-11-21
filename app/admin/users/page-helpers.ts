@@ -30,6 +30,8 @@ export function evaluateRoleChangePermission(input: {
     return { allowed: false };
   }
 
+  if (input.targetUser.role === input.newRole) return { allowed: true };
+
   if (input.targetUser.id === input.currentUserId) {
     return {
       allowed: false,
@@ -84,7 +86,7 @@ export function evaluateBatchRoleChangePermission(input: {
   }
 
   const includesSelf = input.selectedUsers.some(
-    user => user.id === input.currentUserId
+    user => user.id === input.currentUserId && user.role !== input.newRole
   );
   if (includesSelf) {
     return {
@@ -103,6 +105,23 @@ export function evaluateBatchRoleChangePermission(input: {
     };
   }
 
+  return { allowed: true };
+}
+
+export function evaluateStatusChangePermission(input: {
+  currentUserId?: string | null;
+  currentUserRole?: UserRole | null;
+  targetUser: EnhancedUser;
+  newStatus: AccountStatus;
+}): PermissionResult {
+  if (input.currentUserRole !== 'admin') return { allowed: false };
+  if (
+    input.targetUser.id === input.currentUserId &&
+    input.targetUser.status !== input.newStatus &&
+    input.newStatus !== 'active'
+  ) {
+    return { allowed: false, reasonKey: 'messages.cannotDeactivateSelf' };
+  }
   return { allowed: true };
 }
 

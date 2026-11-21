@@ -73,8 +73,9 @@ export function UserTable({
   const [isUpdating, setIsUpdating] = useState(false);
 
   const isAllSelected =
-    users.length > 0 && selectedUserIds.length === users.length;
-  const isPartiallySelected = selectedUserIds.length > 0 && !isAllSelected;
+    users.length > 0 && users.every(user => selectedUserIds.includes(user.id));
+  const isPartiallySelected =
+    users.some(user => selectedUserIds.includes(user.id)) && !isAllSelected;
 
   const handleRoleChange = (
     user: EnhancedUser,

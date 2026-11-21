@@ -1,4 +1,4 @@
-import { toggleSelectedUserIds } from './helpers';
+import { toggleSelectedUserIds, updateLoadingState } from './helpers';
 import { initialState } from './state';
 import type {
   EnhancedUser,
@@ -24,6 +24,7 @@ export function createSelectionActions(
     setPage: (page: number) => {
       set(state => ({
         filters: { ...state.filters, page },
+        selectedUserIds: [],
       }));
 
       void get().loadUsers();
@@ -32,30 +33,47 @@ export function createSelectionActions(
     setPageSize: (pageSize: number) => {
       set(state => ({
         filters: { ...state.filters, pageSize, page: 1 },
+        selectedUserIds: [],
       }));
 
       void get().loadUsers();
     },
 
     selectUser: (user: EnhancedUser) => {
-      set({ selectedUser: user });
+      set(state => ({
+        selectedUser: user,
+        readRequestIds: {
+          ...state.readRequestIds,
+          userDetail: state.readRequestIds.userDetail + 1,
+        },
+        loading: updateLoadingState(state.loading, 'userDetail', false),
+      }));
     },
 
     selectUsers: (userIds: string[]) => {
-      set({ selectedUserIds: userIds });
+      set(state => ({
+        selectedUserIds: state.loading.users
+          ? []
+          : [...new Set(userIds)].filter(userId =>
+              state.users.some(user => user.id === userId)
+            ),
+      }));
     },
 
     toggleUserSelection: (userId: string) => {
+      if (get().loading.users || !get().users.some(user => user.id === userId))
+        return;
       set(state => ({
         selectedUserIds: toggleSelectedUserIds(state.selectedUserIds, userId),
       }));
     },
 
     clearSelection: () => {
-      set({ selectedUserIds: [], selectedUser: null });
+      set({ selectedUserIds: [] });
     },
 
     showUserDetailModal: (user: EnhancedUser) => {
+      get().selectUser(user);
       set({
         selectedUser: user,
         showUserDetail: true,
@@ -63,10 +81,15 @@ export function createSelectionActions(
     },
 
     hideUserDetailModal: () => {
-      set({
+      set(state => ({
         showUserDetail: false,
         selectedUser: null,
-      });
+        readRequestIds: {
+          ...state.readRequestIds,
+          userDetail: state.readRequestIds.userDetail + 1,
+        },
+        loading: updateLoadingState(state.loading, 'userDetail', false),
+      }));
     },
 
     clearError: () => {
@@ -74,7 +97,14 @@ export function createSelectionActions(
     },
 
     resetStore: () => {
-      set(initialState);
+      set(state => ({
+        ...initialState,
+        readRequestIds: {
+          users: state.readRequestIds.users + 1,
+          stats: state.readRequestIds.stats + 1,
+          userDetail: state.readRequestIds.userDetail + 1,
+        },
+      }));
     },
   };
 }

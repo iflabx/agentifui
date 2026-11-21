@@ -8,13 +8,15 @@ import { cn } from '@lib/utils';
 import { useEffect } from 'react';
 
 export default function PermissionsPage() {
-  const { loadApps, loadGroups, error } = usePermissionManagementStore();
+  const { loadApps, loadGroups, reset, error } = usePermissionManagementStore();
 
   // initialize data
   useEffect(() => {
+    reset();
     loadApps();
     loadGroups();
-  }, [loadApps, loadGroups]);
+    return reset;
+  }, [loadApps, loadGroups, reset]);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">

@@ -5,10 +5,7 @@ import { Clock, Crown, Shield, UserCheck, UserIcon, UserX } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 export type UserTableBadgeVariant =
-  | 'success'
-  | 'warning'
-  | 'danger'
-  | 'neutral';
+  'success' | 'warning' | 'danger' | 'neutral';
 
 export type UserTableTranslations = (
   key: string,
@@ -42,6 +39,8 @@ export function canChangeUserRole(
     return false;
   }
 
+  if (targetUser.role === newRole) return true;
+
   if (targetUser.id === currentUser.id) {
     return false;
   }
@@ -51,6 +50,19 @@ export function canChangeUserRole(
   }
 
   return true;
+}
+
+export function canChangeUserStatus(
+  currentUser: CurrentUserAccess,
+  targetUser: EnhancedUser,
+  newStatus: AccountStatus
+) {
+  return (
+    currentUser.role === 'admin' &&
+    (targetUser.status === newStatus ||
+      targetUser.id !== currentUser.id ||
+      newStatus === 'active')
+  );
 }
 
 export function canDeleteUser(

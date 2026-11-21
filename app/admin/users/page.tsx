@@ -22,6 +22,7 @@ import {
   evaluateBatchRoleChangePermission,
   evaluateDeletePermission,
   evaluateRoleChangePermission,
+  evaluateStatusChangePermission,
   getUserDisplayName,
 } from '@/admin/users/page-helpers';
 import { PaginationControls } from '@/admin/users/pagination-controls';
@@ -47,8 +48,7 @@ export default function UsersManagementPage() {
     value: string;
   } | null>(null);
   const [isBatchUpdating, setIsBatchUpdating] = React.useState(false);
-  const [showEditModal, setShowEditModal] = React.useState(false);
-  const [editingUserId, setEditingUserId] = React.useState<string | null>(null);
+  const [readOnlyDetail, setReadOnlyDetail] = React.useState(false);
   const [isSavingEdit, setIsSavingEdit] = React.useState(false);
 
   const {
@@ -60,10 +60,12 @@ export default function UsersManagementPage() {
     error,
     selectedUserIds,
     selectedUser,
+    showUserDetail,
     loadUsers,
     loadStats,
     loadFilterOptions,
     loadUserDetail,
+    hideUserDetailModal,
     updateFilters,
     setPage,
     toggleUserSelection,
@@ -81,12 +83,6 @@ export default function UsersManagementPage() {
 
   const currentUserId = currentUserProfile?.id;
   const currentUserRole = currentUserProfile?.role;
-  const editingUser =
-    (editingUserId && selectedUser?.id === editingUserId
-      ? selectedUser
-      : null) ||
-    users.find(user => user.id === editingUserId) ||
-    null;
   const isRefreshing = loading.users || loading.stats;
 
   const getDisplayName = (user?: Partial<EnhancedUser> | null) =>
@@ -96,7 +92,13 @@ export default function UsersManagementPage() {
     loadUsers();
     loadStats();
     loadFilterOptions();
-  }, [loadUsers, loadStats, loadFilterOptions]);
+    return hideUserDetailModal;
+  }, [loadUsers, loadStats, loadFilterOptions, hideUserDetailModal]);
+
+  useEffect(() => {
+    setShowBatchDialog(false);
+    setBatchAction(null);
+  }, [selectedUserIds]);
 
   useEffect(() => {
     if (error) {
@@ -185,6 +187,16 @@ export default function UsersManagementPage() {
     user: EnhancedUser,
     status: 'active' | 'suspended' | 'pending'
   ) => {
+    const permission = evaluateStatusChangePermission({
+      currentUserId,
+      currentUserRole,
+      targetUser: user,
+      newStatus: status,
+    });
+    if (!permission.allowed) {
+      if (permission.reasonKey) toast.error(t(permission.reasonKey));
+      return;
+    }
     const success = await changeUserStatus(user.id, status);
     if (success) {
       toast.success(
@@ -253,19 +265,35 @@ export default function UsersManagementPage() {
   const handleBatchChangeStatus = (
     status: 'active' | 'suspended' | 'pending'
   ) => {
+    const permission = users
+      .filter(user => selectedUserIds.includes(user.id))
+      .map(user =>
+        evaluateStatusChangePermission({
+          currentUserId,
+          currentUserRole,
+          targetUser: user,
+          newStatus: status,
+        })
+      )
+      .find(result => !result.allowed);
+    if (permission) {
+      if (permission.reasonKey) toast.error(t(permission.reasonKey));
+      return;
+    }
     setBatchAction(createBatchActionValue('status', status));
     setShowBatchDialog(true);
   };
 
   const handleConfirmBatchAction = async () => {
-    if (!batchAction) {
+    if (!batchAction || selectedUserIds.length === 0) {
       return;
     }
 
     setIsBatchUpdating(true);
     try {
+      let success: boolean;
       if (batchAction.type === 'role') {
-        const success = await batchChangeRole(
+        success = await batchChangeRole(
           batchAction.value as 'admin' | 'manager' | 'user'
         );
         if (success) {
@@ -276,7 +304,7 @@ export default function UsersManagementPage() {
           );
         }
       } else {
-        const success = await batchChangeStatus(
+        success = await batchChangeStatus(
           batchAction.value as 'active' | 'suspended' | 'pending'
         );
         if (success) {
@@ -287,37 +315,59 @@ export default function UsersManagementPage() {
           );
         }
       }
-      setShowBatchDialog(false);
-      setBatchAction(null);
+      if (success) {
+        setShowBatchDialog(false);
+        setBatchAction(null);
+      }
     } finally {
       setIsBatchUpdating(false);
     }
   };
 
   const handleViewUser = async (user: EnhancedUser) => {
+    setReadOnlyDetail(true);
     await loadUserDetail(user.id);
-    toast.success(
-      t('actions.viewUser', {
-        name: getDisplayName(user),
-      })
-    );
   };
 
   const handleEditUser = async (user: EnhancedUser) => {
-    setEditingUserId(user.id);
-    setShowEditModal(true);
+    setReadOnlyDetail(false);
     await loadUserDetail(user.id);
   };
 
   const handleSaveEdit = async (updates: Record<string, unknown>) => {
-    if (!editingUserId) {
+    if (!selectedUser || readOnlyDetail) {
       return false;
+    }
+
+    if (updates.role !== undefined) {
+      const permission = evaluateRoleChangePermission({
+        currentUserId,
+        currentUserRole,
+        targetUser: selectedUser,
+        newRole: updates.role as EnhancedUser['role'],
+      });
+      if (!permission.allowed) {
+        if (permission.reasonKey) toast.error(t(permission.reasonKey));
+        return false;
+      }
+    }
+    if (updates.status !== undefined) {
+      const permission = evaluateStatusChangePermission({
+        currentUserId,
+        currentUserRole,
+        targetUser: selectedUser,
+        newStatus: updates.status as EnhancedUser['status'],
+      });
+      if (!permission.allowed) {
+        if (permission.reasonKey) toast.error(t(permission.reasonKey));
+        return false;
+      }
     }
 
     setIsSavingEdit(true);
     try {
       const success = await updateUser(
-        editingUserId,
+        selectedUser.id,
         updates as Partial<EnhancedUser>
       );
       if (!success) {
@@ -326,11 +376,6 @@ export default function UsersManagementPage() {
       }
 
       toast.success(t('editModal.messages.updateSuccess'));
-      await Promise.all([
-        loadUsers(),
-        loadStats(),
-        loadUserDetail(editingUserId),
-      ]);
       return true;
     } finally {
       setIsSavingEdit(false);
@@ -341,8 +386,7 @@ export default function UsersManagementPage() {
     if (isSavingEdit) {
       return;
     }
-    setShowEditModal(false);
-    setEditingUserId(null);
+    hideUserDetailModal();
   };
 
   return (
@@ -365,6 +409,10 @@ export default function UsersManagementPage() {
           onFiltersChange={updateFilters}
           onReset={handleResetFilters}
         />
+
+        <p className="mb-4 text-sm text-stone-500">
+          {t('batchOperations.currentPageOnly')}
+        </p>
 
         {selectedUserIds.length > 0 && (
           <BatchActionsBar
@@ -448,11 +496,13 @@ export default function UsersManagementPage() {
         />
 
         <UserEditModal
-          isOpen={showEditModal}
-          user={editingUser}
+          isOpen={showUserDetail}
+          user={selectedUser}
           isLoading={loading.userDetail}
           isSubmitting={isSavingEdit}
           canEditRoleStatus={currentUserRole === 'admin'}
+          currentUserId={currentUserId}
+          readOnly={readOnlyDetail}
           onClose={handleCloseEditModal}
           onSave={handleSaveEdit}
         />

@@ -23,6 +23,7 @@ describe('user deletion', () => {
 
   it('locks the authentication account and deletes both records in one transaction', async () => {
     query.mockResolvedValueOnce({ rows: [{ id: userId }] });
+    query.mockResolvedValueOnce({ rows: [{ role: 'user' }] });
     query.mockResolvedValueOnce({ rows: [{ id: userId }] });
     query.mockResolvedValueOnce({ rows: [] });
     const response = await handleUserAction(
@@ -34,6 +35,7 @@ describe('user deletion', () => {
     expect(runWithPgSystemContext).toHaveBeenCalledTimes(1);
     expect(query.mock.calls.map(([sql]) => sql)).toEqual([
       expect.stringContaining('FROM auth_users WHERE id = $1::uuid FOR UPDATE'),
+      expect.stringContaining('SELECT role::text FROM profiles'),
       expect.stringContaining('DELETE FROM profiles'),
       expect.stringContaining('DELETE FROM auth_users'),
     ]);
@@ -50,7 +52,7 @@ describe('user deletion', () => {
       'admin'
     );
     expect(response?.statusCode).toBe(404);
-    expect(query).toHaveBeenCalledTimes(2);
+    expect(query).toHaveBeenCalledTimes(3);
   });
 
   it('does not delete the current administrator', async () => {
@@ -65,6 +67,7 @@ describe('user deletion', () => {
 
   it('leaves transaction failure handling to the database context', async () => {
     query.mockResolvedValueOnce({ rows: [{ id: userId }] });
+    query.mockResolvedValueOnce({ rows: [{ role: 'user' }] });
     query.mockResolvedValueOnce({ rows: [{ id: userId }] });
     query.mockRejectedValueOnce(new Error('authentication deletion failed'));
     await expect(

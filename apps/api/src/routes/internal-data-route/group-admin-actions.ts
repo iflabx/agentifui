@@ -271,7 +271,17 @@ export async function handleGroupAdminAction(
       });
     }
 
+    const hasUsageQuota = Object.prototype.hasOwnProperty.call(
+      data,
+      'usage_quota'
+    );
     const usageQuotaRaw = data.usage_quota;
+    if (
+      hasUsageQuota &&
+      usageQuotaRaw !== null &&
+      (typeof usageQuotaRaw !== 'number' || !Number.isFinite(usageQuotaRaw))
+    )
+      return toErrorResponse('Invalid usage quota', 400);
     const usageQuota =
       typeof usageQuotaRaw === 'number' && Number.isFinite(usageQuotaRaw)
         ? Math.max(0, Math.floor(usageQuotaRaw))
@@ -290,7 +300,8 @@ export async function handleGroupAdminAction(
           ON CONFLICT (group_id, service_instance_id)
           DO UPDATE
             SET is_enabled = EXCLUDED.is_enabled,
-                usage_quota = EXCLUDED.usage_quota
+                usage_quota = CASE WHEN $4::boolean THEN EXCLUDED.usage_quota
+                  ELSE group_app_permissions.usage_quota END
           RETURNING *
         )
         SELECT
@@ -308,7 +319,7 @@ export async function handleGroupAdminAction(
         FROM upserted u
         LEFT JOIN service_instances si ON si.id = u.service_instance_id
       `,
-      [groupId, serviceInstanceId, usageQuota]
+      [groupId, serviceInstanceId, usageQuota, hasUsageQuota]
     );
 
     return toSuccessResponse(

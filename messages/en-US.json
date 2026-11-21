@@ -1715,7 +1715,8 @@
           "setAsManager": "Set as Manager",
           "setAsUser": "Set as Regular User",
           "activate": "Activate",
-          "suspend": "Suspend"
+          "suspend": "Suspend",
+          "currentPageOnly": "Selection applies to the current page only. Changing the page, filters, or page size clears the selection."
         },
         "actions": {
           "refreshData": "Refresh Data",
@@ -1773,7 +1774,8 @@
             "active": "Active",
             "suspended": "Suspended",
             "pending": "Pending"
-          }
+          },
+          "cannotDeactivateSelf": "You cannot deactivate your own account."
         },
         "editModal": {
           "title": "Edit User: {name}",
@@ -1818,7 +1820,8 @@
             "jobTitle": "Job title",
             "managerName": "Manager",
             "syncedAt": "Synced at",
-            "lastSeenAt": "Last seen at"
+            "lastSeenAt": "Last seen at",
+            "emailHint": "The authentication email is read-only. Change it through the authentication email-change process."
           },
           "actions": {
             "cancel": "Cancel",
@@ -2090,7 +2093,10 @@
             "next": "Next"
           },
           "addSuccess": "Successfully added {count} members to group",
-          "addPartialSuccess": "{errorCount} members failed to add"
+          "addPartialSuccess": "{errorCount} members failed to add",
+          "currentPageSelection": "Selection applies to the current page only. Changing pages or the search clears your selection.",
+          "loadError": "Failed to load available members. Please retry.",
+          "refreshError": "Failed to refresh members or available users. Lists and counts may be outdated. Retry the refresh instead of adding members again."
         },
         "messages": {
           "deleteConfirm": "Are you sure you want to delete group \"{name}\"? This action cannot be undone.",
@@ -2142,6 +2148,7 @@
             "description": "Choose an application from the left list to configure permissions"
           },
           "visibilitySettings": {
+            "retainedGroups": "Group grants, quotas and usage are retained when visibility changes and apply again in group-only mode.",
             "title": "Visibility Settings",
             "currentSetting": "Current",
             "options": {
@@ -2160,6 +2167,20 @@
             }
           },
           "groupPermissions": {
+            "summary": "{total} groups · {enabled} authorized",
+            "matchingCount": "{count} matching",
+            "searchPlaceholder": "Search group name or description",
+            "filterLabel": "Filter by access",
+            "filters": {
+              "all": "All groups",
+              "enabled": "Authorized",
+              "disabled": "Not authorized"
+            },
+            "noMatches": "No matching groups",
+            "saving": "Saving…",
+            "loading": "Loading group permissions...",
+            "loadFailed": "Could not load group permissions. Access status is unknown.",
+            "retry": "Retry",
             "title": "Group Permissions",
             "description": "Select which groups can access this application",
             "noGroups": {
@@ -2184,6 +2205,7 @@
           }
         },
         "messages": {
+          "permissionRefreshFailed": "Permission saved, but refreshing failed. Retry loading before making more changes.",
           "visibilityUpdateSuccess": "Application visibility updated to \"{visibility}\"",
           "groupPermissionEnabled": "Enabled {groupName} access to this application",
           "groupPermissionDisabled": "Disabled {groupName} access to this application",

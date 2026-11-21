@@ -1715,7 +1715,8 @@
           "setAsManager": "Définir comme gestionnaire",
           "setAsUser": "Définir comme utilisateur régulier",
           "activate": "Activer",
-          "suspend": "Suspendre"
+          "suspend": "Suspendre",
+          "currentPageOnly": "La sélection concerne uniquement la page actuelle. Changer de page, de filtre ou de taille de page efface la sélection."
         },
         "actions": {
           "refreshData": "Actualiser les données",
@@ -1773,7 +1774,8 @@
           "roleChangeConfirm": "Changer le rôle de {name} en {role} ?",
           "statusChangeConfirm": "Changer le statut de {name} en {status} ?",
           "batchRoleChangeConfirm": "Changer les rôles de {count} utilisateurs en {role} ?",
-          "batchStatusChangeConfirm": "Changer le statut de {count} utilisateurs en {status} ?"
+          "batchStatusChangeConfirm": "Changer le statut de {count} utilisateurs en {status} ?",
+          "cannotDeactivateSelf": "Vous ne pouvez pas désactiver votre propre compte."
         },
         "editModal": {
           "title": "Modifier l'utilisateur : {name}",
@@ -1818,7 +1820,8 @@
             "jobTitle": "Intitulé de poste",
             "managerName": "Responsable",
             "syncedAt": "Synchronisé le",
-            "lastSeenAt": "Vu pour la dernière fois le"
+            "lastSeenAt": "Vu pour la dernière fois le",
+            "emailHint": "L’adresse de connexion est en lecture seule. Modifiez-la via la procédure de changement d’adresse d’authentification."
           },
           "actions": {
             "cancel": "Annuler",
@@ -2090,7 +2093,10 @@
             "next": "Suivant"
           },
           "addSuccess": "Ajout réussi de {count} membres au groupe",
-          "addPartialSuccess": "Échec de l'ajout de {errorCount} membres"
+          "addPartialSuccess": "Échec de l'ajout de {errorCount} membres",
+          "currentPageSelection": "La sélection concerne uniquement la page actuelle. Changer de page ou de recherche efface la sélection.",
+          "loadError": "Impossible de charger les membres disponibles. Réessayez.",
+          "refreshError": "Impossible d’actualiser les membres ou les utilisateurs disponibles. Les listes et les compteurs peuvent être obsolètes. Réessayez l’actualisation plutôt que d’ajouter à nouveau des membres."
         },
         "messages": {
           "deleteConfirm": "Êtes-vous sûr de vouloir supprimer le groupe \"{name}\" ? Cette action est irréversible.",
@@ -2142,6 +2148,7 @@
             "description": "Choisissez une application dans la liste de gauche pour configurer les autorisations"
           },
           "visibilitySettings": {
+            "retainedGroups": "Les autorisations, quotas et usages des groupes sont conservés et s'appliquent à nouveau en mode groupe.",
             "title": "Paramètres de visibilité",
             "currentSetting": "Actuel",
             "options": {
@@ -2160,6 +2167,20 @@
             }
           },
           "groupPermissions": {
+            "summary": "{total} groupes · {enabled} autorisés",
+            "matchingCount": "{count} résultats",
+            "searchPlaceholder": "Rechercher un nom ou une description de groupe",
+            "filterLabel": "Filtrer par accès",
+            "filters": {
+              "all": "Tous les groupes",
+              "enabled": "Autorisés",
+              "disabled": "Non autorisés"
+            },
+            "noMatches": "Aucun groupe correspondant",
+            "saving": "Enregistrement…",
+            "loading": "Chargement des autorisations de groupe...",
+            "loadFailed": "Impossible de charger les autorisations de groupe. L'état d'accès est inconnu.",
+            "retry": "Réessayer",
             "title": "Autorisations de groupe",
             "description": "Sélectionnez les groupes pouvant accéder à cette application",
             "noGroups": {
@@ -2184,6 +2205,7 @@
           }
         },
         "messages": {
+          "permissionRefreshFailed": "Autorisation enregistrée, mais actualisation échouée. Rechargez avant toute autre modification.",
           "visibilityUpdateSuccess": "Visibilité de l'application mise à jour en \"{visibility}\"",
           "groupPermissionEnabled": "Accès de {groupName} à cette application activé",
           "groupPermissionDisabled": "Accès de {groupName} à cette application désactivé",

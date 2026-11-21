@@ -77,15 +77,28 @@ export async function handleUserAction(
 
     const authSource = readString(filters.auth_source);
     if (authSource) {
-      whereParams.push(authSource);
-      whereClauses.push(`p.auth_source = $${whereParams.length}`);
+      if (authSource === 'better-auth' || authSource === 'email') {
+        whereParams.push([
+          'better-auth',
+          'email',
+          'password',
+          'credentials',
+          'native',
+        ]);
+        whereClauses.push(
+          `COALESCE(NULLIF(p.auth_source, ''), 'native') = ANY($${whereParams.length}::text[])`
+        );
+      } else {
+        whereParams.push(authSource);
+        whereClauses.push(`p.auth_source = $${whereParams.length}`);
+      }
     }
 
     const search = readString(filters.search);
     if (search) {
       whereParams.push(`%${escapeLikePattern(search)}%`);
       whereClauses.push(
-        `(p.full_name ILIKE $${whereParams.length} ESCAPE '\\' OR p.username ILIKE $${whereParams.length} ESCAPE '\\')`
+        `(p.full_name ILIKE $${whereParams.length} ESCAPE '\\' OR p.username ILIKE $${whereParams.length} ESCAPE '\\' OR p.email ILIKE $${whereParams.length} ESCAPE '\\')`
       );
     }
 
@@ -244,9 +257,11 @@ export async function handleUserAction(
     const profileRows = await queryRowsWithPgSystemContext<{
       id: string;
       auth_source: string | null;
+      role: string;
+      status: string;
     }>(
       `
-        SELECT id::text, auth_source
+        SELECT id::text, auth_source, role::text, status::text
         FROM profiles
         WHERE id = $1::uuid
         LIMIT 1
@@ -258,6 +273,22 @@ export async function handleUserAction(
     if (!currentProfile?.id) {
       return toErrorResponse('User profile not found', 404);
     }
+
+    const requestedRole = parseUserRole(updates.role);
+    if (requestedRole && requestedRole !== currentProfile.role) {
+      if (currentProfile.id === actorUserId)
+        return toErrorResponse('Cannot change your own role', 403);
+      if (currentProfile.role === 'admin' && requestedRole !== 'admin')
+        return toErrorResponse('Cannot downgrade another administrator', 403);
+    }
+    const requestedStatus = parseAccountStatus(updates.status);
+    if (
+      currentProfile.id === actorUserId &&
+      requestedStatus &&
+      requestedStatus !== 'active' &&
+      requestedStatus !== currentProfile.status
+    )
+      return toErrorResponse('Cannot deactivate your own account', 403);
 
     const editableColumns = resolveEditableProfileColumns(
       currentProfile.auth_source
@@ -305,14 +336,6 @@ export async function handleUserAction(
         }
         setClauses.push(`status = $${index}::account_status`);
         values.push(parsedStatus);
-        index += 1;
-        continue;
-      }
-
-      if (key === 'email') {
-        const normalizedEmail = normalizeNullableTextValue(rawValue);
-        setClauses.push(`email = $${index}`);
-        values.push(normalizedEmail ? normalizedEmail.toLowerCase() : null);
         index += 1;
         continue;
       }
@@ -379,28 +402,30 @@ export async function handleUserAction(
       return toErrorResponse('cannot delete current actor', 403);
     }
 
-    const deleted = await runWithPgSystemContext(async client => {
+    const deletion = await runWithPgSystemContext(async client => {
       await client.query(
         'SELECT id FROM auth_users WHERE id = $1::uuid FOR UPDATE',
         [userId]
       );
+      const target = await client.query<{ role: string }>(
+        'SELECT role::text FROM profiles WHERE id = $1::uuid FOR UPDATE',
+        [userId]
+      );
+      if (target.rows[0]?.role === 'admin')
+        return toErrorResponse('Cannot delete another administrator', 403);
       const { rows } = await client.query<{ id: string }>(
         `DELETE FROM profiles WHERE id = $1::uuid RETURNING id::text`,
         [userId]
       );
       if (!rows[0]?.id) {
-        return false;
+        return toErrorResponse('User not found', 404);
       }
       await client.query('DELETE FROM auth_users WHERE id = $1::uuid', [
         userId,
       ]);
-      return true;
+      return toSuccessResponse(null);
     });
-    if (!deleted) {
-      return toErrorResponse('User not found', 404);
-    }
-
-    return toSuccessResponse(null);
+    return deletion;
   }
 
   if (action === 'users.createUserProfile') {
@@ -478,6 +503,12 @@ export async function handleUserAction(
       return toSuccessResponse(null);
     }
 
+    if (
+      status !== 'active' &&
+      userIds.some(userId => userId.toLowerCase() === actorUserId.toLowerCase())
+    )
+      return toErrorResponse('Cannot deactivate your own account', 403);
+
     await queryRowsWithPgSystemContext(
       `
         UPDATE profiles
@@ -500,6 +531,20 @@ export async function handleUserAction(
     if (userIds.length === 0) {
       return toSuccessResponse(null);
     }
+
+    const targets = await queryRowsWithPgSystemContext<{
+      id: string;
+      role: string;
+    }>(
+      'SELECT id::text, role::text FROM profiles WHERE id = ANY($1::uuid[]) ORDER BY id',
+      [userIds]
+    );
+    if (
+      targets.some(target => target.id === actorUserId && target.role !== role)
+    )
+      return toErrorResponse('Cannot change your own role', 403);
+    if (role !== 'admin' && targets.some(target => target.role === 'admin'))
+      return toErrorResponse('Cannot downgrade another administrator', 403);
 
     await queryRowsWithPgSystemContext(
       `

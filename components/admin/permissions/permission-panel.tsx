@@ -97,6 +97,9 @@ export function PermissionPanel() {
             {t('visibilitySettings.title')}
           </h4>
           <VisibilitySelector app={selectedApp} />
+          <p className="mt-2 text-xs text-stone-500">
+            {t('visibilitySettings.retainedGroups')}
+          </p>
         </div>
 
         {selectedApp.visibility === 'group_only' && (
@@ -117,7 +120,7 @@ export function PermissionPanel() {
             >
               {t('groupPermissions.description')}
             </p>
-            <GroupPermissionList app={selectedApp} />
+            <GroupPermissionList key={selectedApp.id} app={selectedApp} />
           </div>
         )}
 

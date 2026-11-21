@@ -1715,7 +1715,8 @@
           "setAsManager": "マネージャーに設定",
           "setAsUser": "一般ユーザーに設定",
           "activate": "有効化",
-          "suspend": "停止"
+          "suspend": "停止",
+          "currentPageOnly": "選択は現在のページのみです。ページ、絞り込み、表示件数を変更すると選択が解除されます。"
         },
         "actions": {
           "refreshData": "データを更新",
@@ -1773,7 +1774,8 @@
           "roleChangeConfirm": "{name}の役割を{role}に変更しますか？",
           "statusChangeConfirm": "{name}のステータスを{status}に変更しますか？",
           "batchRoleChangeConfirm": "{count}ユーザーの役割を{role}に変更しますか？",
-          "batchStatusChangeConfirm": "{count}ユーザーのステータスを{status}に変更しますか？"
+          "batchStatusChangeConfirm": "{count}ユーザーのステータスを{status}に変更しますか？",
+          "cannotDeactivateSelf": "自分のアカウントを無効化することはできません。"
         },
         "editModal": {
           "title": "ユーザーを編集: {name}",
@@ -1818,7 +1820,8 @@
             "jobTitle": "役職",
             "managerName": "上長",
             "syncedAt": "同期日時",
-            "lastSeenAt": "最終アクセス日時"
+            "lastSeenAt": "最終アクセス日時",
+            "emailHint": "認証用メールアドレスは読み取り専用です。認証のメール変更手続きから変更してください。"
           },
           "actions": {
             "cancel": "キャンセル",
@@ -2090,7 +2093,10 @@
             "next": "次へ"
           },
           "addSuccess": "{count}名のメンバーをグループに正常に追加しました",
-          "addPartialSuccess": "{errorCount}名のメンバーの追加に失敗しました"
+          "addPartialSuccess": "{errorCount}名のメンバーの追加に失敗しました",
+          "currentPageSelection": "選択は現在のページのみです。ページや検索を変更すると選択が解除されます。",
+          "loadError": "追加可能なメンバーを読み込めませんでした。再試行してください。",
+          "refreshError": "メンバーまたは候補一覧を更新できませんでした。一覧や件数が古い可能性があります。再追加せず、更新を再試行してください。"
         },
         "messages": {
           "deleteConfirm": "グループ「{name}」を削除してもよろしいですか？この操作は元に戻せません。",
@@ -2142,6 +2148,7 @@
             "description": "左のアプリケーションリストから権限を設定するアプリケーションを選択してください"
           },
           "visibilitySettings": {
+            "retainedGroups": "表示設定を変更してもグループの権限、上限、使用量は保持され、グループモードに戻すと再び適用されます。",
             "title": "可視性設定",
             "currentSetting": "現在の設定",
             "options": {
@@ -2160,6 +2167,20 @@
             }
           },
           "groupPermissions": {
+            "summary": "全 {total} グループ・許可済み {enabled} 件",
+            "matchingCount": "一致 {count} 件",
+            "searchPlaceholder": "グループ名または説明で検索",
+            "filterLabel": "アクセス権で絞り込み",
+            "filters": {
+              "all": "すべてのグループ",
+              "enabled": "許可済み",
+              "disabled": "未許可"
+            },
+            "noMatches": "一致するグループはありません",
+            "saving": "保存中…",
+            "loading": "グループ権限を読み込み中...",
+            "loadFailed": "グループ権限を読み込めませんでした。アクセス状態は未確認です。",
+            "retry": "再試行",
             "title": "グループ権限",
             "description": "このアプリケーションにアクセスできるグループを選択",
             "noGroups": {
@@ -2184,6 +2205,7 @@
           }
         },
         "messages": {
+          "permissionRefreshFailed": "権限は保存されましたが、再読み込みに失敗しました。次の変更前に再読み込みしてください。",
           "visibilityUpdateSuccess": "アプリケーションの可視性が「{visibility}」に更新されました",
           "groupPermissionEnabled": "{groupName}のこのアプリケーションへのアクセスを有効にしました",
           "groupPermissionDisabled": "{groupName}のこのアプリケーションへのアクセスを無効にしました",

@@ -223,8 +223,20 @@ select an application and set its visibility:
 
 For group-only applications, enable each intended group's access and verify both
 an allowed and a disallowed ordinary account. Switching away from group-only
-visibility can remove its group-permission records; review the impact before
-changing the setting. Disabling an application/provider prevents new use, but
+visibility retains group grants, quotas and usage. Those grants apply only in
+group-only mode and apply again when switching back. Access toggles preserve
+existing quotas and usage; they do not reset or remove a limit.
+
+For a long group list, search by group name or description and filter by
+**All groups**, **Authorized** or **Not authorized**. The toolbar shows total,
+authorized and matching group counts. Rows show the group name, member count
+and a shortened description; hover over truncated text to read it in full.
+Each access toggle saves immediately. While saving and refreshing that change,
+the list keeps its confirmed values and marks the affected row as saving;
+other access toggles are temporarily disabled. A failed write or refresh shows
+an error with a retry action rather than treating unknown access as disabled.
+
+Disabling an application/provider prevents new use, but
 does not promise cancellation of a task already dispatched to the backend.
 
 Group allowance, when configured, and concurrent-run admission are different
@@ -246,7 +258,7 @@ is enabled on this installation.
 
 1. Locate the account by its known identity and inspect its role, status and
    external attributes before changing it.
-2. Open the edit dialog. Enabled fields can include display name, username, email,
+2. Open the edit dialog. Enabled fields can include display name, username,
    phone and avatar URL according to the source and returned editable-field list.
    Organizational/SSO identity fields may be locked. Do not remove those locks by
    changing the account's auth-source label.
@@ -257,10 +269,16 @@ is enabled on this installation.
    proceeding. User deletion is not the same as suspension and is not a promise
    to erase upstream data or backups.
 
-Changing a business-profile email is not an automatic, verified migration of
-all Better Auth/SSO credentials or account links. Use a maintainer-reviewed
-identity change when login identity itself must change. Keep at least one usable
-administrator access method while adjusting roles or auth policy.
+Authentication email is read-only in user management; changing login identity
+requires an appropriate verified authentication flow. Local profile edits,
+including the avatar, remain in place after signing in again. External identity
+fields continue to follow their provider's synchronization rules.
+
+Administrators cannot change their own role or deactivate themselves, or
+downgrade/delete another administrator. These rules apply to edit dialogs,
+individual actions and batch requests. Unchanged roles do not block ordinary
+profile edits. User and member selection is limited to the current page and
+clears when changing pages or filters; review the selection before confirming.
 
 Use **Users** to inspect accounts and make supported role/status changes. Suspend
 or restrict an account according to your organization's policy; do not publish
