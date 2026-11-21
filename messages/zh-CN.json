@@ -1715,7 +1715,8 @@
           "setAsManager": "设为经理",
           "setAsUser": "设为普通用户",
           "activate": "激活",
-          "suspend": "暂停"
+          "suspend": "暂停",
+          "currentPageOnly": "仅选择当前页用户；翻页、筛选或调整每页数量会清空选择。"
         },
         "actions": {
           "refreshData": "刷新数据",
@@ -1773,7 +1774,8 @@
           "roleChangeConfirm": "将{name}的角色更改为{role} ？",
           "statusChangeConfirm": "将{name}的状态更改为{status} ？",
           "batchRoleChangeConfirm": "将{count}个用户的角色更改为{role} ？",
-          "batchStatusChangeConfirm": "将{count}个用户的状态更改为{status} ？"
+          "batchStatusChangeConfirm": "将{count}个用户的状态更改为{status} ？",
+          "cannotDeactivateSelf": "不能停用自己的账户。"
         },
         "editModal": {
           "title": "编辑用户：{name}",
@@ -1818,7 +1820,8 @@
             "jobTitle": "职位",
             "managerName": "直属主管",
             "syncedAt": "同步时间",
-            "lastSeenAt": "最近活跃时间"
+            "lastSeenAt": "最近活跃时间",
+            "emailHint": "认证邮箱只读，修改邮箱需通过认证改绑流程。"
           },
           "actions": {
             "cancel": "取消",
@@ -2090,7 +2093,10 @@
             "next": "下一页"
           },
           "addSuccess": "成功添加 {count} 个成员到群组",
-          "addPartialSuccess": "{errorCount} 个成员添加失败"
+          "addPartialSuccess": "{errorCount} 个成员添加失败",
+          "currentPageSelection": "仅选择当前页；翻页或修改搜索会清空选择。",
+          "loadError": "加载候选成员失败，请重试。",
+          "refreshError": "成员或候选列表刷新失败，列表及计数可能不是最新；请重试刷新，不要重复添加。"
         },
         "messages": {
           "deleteConfirm": "确定要删除群组\"{name}\"吗？此操作不可撤销。",
@@ -2142,6 +2148,7 @@
             "description": "从左侧应用列表中选择一个应用来配置权限"
           },
           "visibilitySettings": {
+            "retainedGroups": "切换可见性会保留群组授权、配额与用量，切回群组模式后重新生效。",
             "title": "可见性设置",
             "currentSetting": "当前设置",
             "options": {
@@ -2160,6 +2167,9 @@
             }
           },
           "groupPermissions": {
+            "loading": "正在加载群组权限…",
+            "loadFailed": "群组权限加载失败，当前访问状态尚未确认。",
+            "retry": "重试",
             "title": "群组权限",
             "description": "选择哪些群组可以访问此应用",
             "noGroups": {
@@ -2184,6 +2194,7 @@
           }
         },
         "messages": {
+          "permissionRefreshFailed": "权限已保存，但刷新失败。请重新加载后再继续修改。",
           "visibilityUpdateSuccess": "应用可见性已更新为\"{visibility}\"",
           "groupPermissionEnabled": "已启用{groupName}对此应用的访问权限",
           "groupPermissionDisabled": "已禁用{groupName}对此应用的访问权限",

@@ -95,6 +95,38 @@ async function waitForAccountLock() {
 }
 
 describe('account deletion and stale identities', () => {
+  it.each(['https://example.invalid/edited-avatar.png', null])(
+    'retains a local avatar edit (%s) when signing in again',
+    async avatar => {
+      await pool.query(
+        "UPDATE profiles SET auth_source='better-auth' WHERE id=$1",
+        [userId]
+      );
+      expect(
+        (
+          await handleUserAction(
+            'users.updateUserProfile',
+            { userId, updates: { avatar_url: avatar } },
+            administratorId
+          )
+        )?.statusCode
+      ).toBe(200);
+      const synchronized = await ensureProfileStatus(userId, {
+        id: userId,
+        email,
+        image: 'https://example.invalid/old-auth-avatar.png',
+      });
+      expect(synchronized.success).toBe(true);
+      expect(
+        (
+          await pool.query('SELECT avatar_url FROM profiles WHERE id=$1', [
+            userId,
+          ])
+        ).rows
+      ).toEqual([{ avatar_url: avatar }]);
+    }
+  );
+
   it('rejects concurrent unmapped legacy identities with a single-connection pool without creating accounts or mappings', async () => {
     const subjects = Array.from(
       { length: 6 },

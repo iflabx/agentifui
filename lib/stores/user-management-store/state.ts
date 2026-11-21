@@ -13,6 +13,7 @@ export const initialState: Pick<
   | 'error'
   | 'showUserDetail'
   | 'showBatchActions'
+  | 'readRequestIds'
 > = {
   users: [],
   stats: null,
@@ -42,4 +43,5 @@ export const initialState: Pick<
   error: null,
   showUserDetail: false,
   showBatchActions: false,
+  readRequestIds: { users: 0, stats: 0, userDetail: 0 },
 };

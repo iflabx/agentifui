@@ -44,10 +44,10 @@ export function PermissionHeader() {
       <div className="flex items-center gap-3">
         <button
           onClick={handleRefresh}
-          disabled={loading.apps || loading.groups}
+          disabled={loading.apps || loading.groups || loading.updating}
           className={cn(
             'flex items-center gap-2 rounded-xl border px-4 py-2.5 font-serif shadow-sm transition-all duration-200',
-            loading.apps || loading.groups
+            loading.apps || loading.groups || loading.updating
               ? 'cursor-not-allowed opacity-50'
               : isDark
                 ? 'border-stone-600/50 text-stone-300 hover:border-stone-500 hover:bg-stone-700/50 hover:shadow-md'
@@ -57,7 +57,8 @@ export function PermissionHeader() {
           <RefreshCw
             className={cn(
               'h-4 w-4',
-              (loading.apps || loading.groups) && 'animate-spin'
+              (loading.apps || loading.groups || loading.updating) &&
+                'animate-spin'
             )}
           />
           <span className="hidden sm:inline">{t('refreshButton')}</span>

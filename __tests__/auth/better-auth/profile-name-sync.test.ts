@@ -61,6 +61,19 @@ describe('profile name synchronization', () => {
     expect(query.mock.calls[1][1][4]).toBe('oidc');
   });
 
+  it('preserves an edited or cleared local avatar across login synchronization', async () => {
+    query.mockResolvedValueOnce({ rows: [{ ...row, avatar_url: null }] });
+    const result = await ensureProfileStatus(userId, {
+      ...sessionUser,
+      image: 'https://example.invalid/old-avatar.png',
+    });
+    expect(result.success).toBe(true);
+    expect(query.mock.calls[1][0]).toContain(
+      "WHEN $5 = 'better-auth' THEN avatar_url"
+    );
+    expect(query.mock.calls[1][0]).toContain('ELSE COALESCE($3, avatar_url)');
+  });
+
   it('initializes new profiles with the session name', async () => {
     query
       .mockResolvedValueOnce({ rows: [] })

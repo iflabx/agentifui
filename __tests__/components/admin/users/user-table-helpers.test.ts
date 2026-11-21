@@ -1,6 +1,7 @@
 /** @jest-environment node */
 import {
   canChangeUserRole,
+  canChangeUserStatus,
   canDeleteUser,
   canEditUser,
   formatUserPhone,
@@ -58,6 +59,21 @@ describe('user table helpers', () => {
     expect(canChangeUserRole(currentAdmin, otherUser as never, 'manager')).toBe(
       true
     );
+    expect(canChangeUserRole(currentAdmin, selfAdmin as never, 'admin')).toBe(
+      true
+    );
+    expect(
+      canChangeUserStatus(currentAdmin, selfAdmin as never, 'suspended')
+    ).toBe(false);
+    expect(
+      canChangeUserStatus(currentAdmin, selfAdmin as never, 'pending')
+    ).toBe(false);
+    expect(
+      canChangeUserStatus(currentAdmin, selfAdmin as never, 'active')
+    ).toBe(true);
+    expect(
+      canChangeUserStatus(currentAdmin, otherAdmin as never, 'suspended')
+    ).toBe(true);
     expect(canDeleteUser(currentAdmin, selfAdmin as never)).toBe(false);
     expect(canDeleteUser(currentAdmin, otherAdmin as never)).toBe(false);
     expect(canDeleteUser(currentAdmin, otherUser as never)).toBe(true);

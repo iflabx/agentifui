@@ -25,14 +25,30 @@ export function buildUserFilterWhereClause(filters: UserFilters): {
   }
 
   if (filters.auth_source) {
-    params.push(filters.auth_source);
-    clauses.push(`p.auth_source = $${params.length}`);
+    if (
+      filters.auth_source === 'better-auth' ||
+      filters.auth_source === 'email'
+    ) {
+      params.push([
+        'better-auth',
+        'email',
+        'password',
+        'credentials',
+        'native',
+      ]);
+      clauses.push(
+        `COALESCE(NULLIF(p.auth_source, ''), 'native') = ANY($${params.length}::text[])`
+      );
+    } else {
+      params.push(filters.auth_source);
+      clauses.push(`p.auth_source = $${params.length}`);
+    }
   }
 
   if (filters.search?.trim()) {
     params.push(`%${escapeLikePattern(filters.search.trim())}%`);
     clauses.push(
-      `(p.full_name ILIKE $${params.length} ESCAPE '\\' OR p.username ILIKE $${params.length} ESCAPE '\\')`
+      `(p.full_name ILIKE $${params.length} ESCAPE '\\' OR p.username ILIKE $${params.length} ESCAPE '\\' OR p.email ILIKE $${params.length} ESCAPE '\\')`
     );
   }
 

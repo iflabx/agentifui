@@ -452,7 +452,6 @@ export const PROFILE_ALWAYS_EDITABLE_COLUMNS = new Set([
 ]);
 
 export const PROFILE_LOCAL_ONLY_EDITABLE_COLUMNS = new Set([
-  'email',
   'phone',
   'full_name',
 ]);

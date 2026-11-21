@@ -78,7 +78,7 @@ export function EditGroupModal({
 
     const success = await updateGroup(group.id, {
       name: formData.name.trim(),
-      description: formData.description.trim() || undefined,
+      description: formData.description.trim(),
     });
 
     if (success) {

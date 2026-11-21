@@ -2,11 +2,8 @@ import { callInternalDataAction } from '@lib/db/internal-data-api';
 import type { AccountStatus, UserRole } from '@lib/types/database';
 
 import {
-  applyBatchRole,
-  applyBatchStatus,
   getErrorMessage,
   mergeSelectedUser,
-  mergeUpdatedUser,
   updateLoadingState,
 } from './helpers';
 import type {
@@ -33,6 +30,8 @@ export function createMutationActions(
       return result.data;
     },
     updateUser: async (userId: string, updates: Partial<EnhancedUser>) => {
+      const profileUpdates = { ...updates };
+      delete profileUpdates.email;
       set(state => ({
         loading: updateLoadingState(state.loading, 'updating', true),
         error: null,
@@ -43,19 +42,21 @@ export function createMutationActions(
           'users.updateUserProfile',
           {
             userId,
-            updates,
+            updates: profileUpdates,
           }
         );
 
         if (result.success) {
           const updatedUser = result.data;
           set(state => ({
-            users: mergeUpdatedUser(state.users, userId, updatedUser),
             selectedUser: mergeSelectedUser(
               state.selectedUser,
               userId,
               updatedUser
             ),
+          }));
+          await Promise.all([get().loadUsers(), get().loadStats()]);
+          set(state => ({
             loading: updateLoadingState(state.loading, 'updating', false),
           }));
           return true;
@@ -76,19 +77,11 @@ export function createMutationActions(
     },
 
     changeUserRole: async (userId: string, role: UserRole) => {
-      const result = await get().updateUser(userId, { role });
-      if (result) {
-        void get().loadStats();
-      }
-      return result;
+      return get().updateUser(userId, { role });
     },
 
     changeUserStatus: async (userId: string, status: AccountStatus) => {
-      const result = await get().updateUser(userId, { status });
-      if (result) {
-        void get().loadStats();
-      }
-      return result;
+      return get().updateUser(userId, { status });
     },
 
     removeUser: async (userId: string) => {
@@ -103,14 +96,11 @@ export function createMutationActions(
         });
 
         if (result.success) {
+          if (get().selectedUser?.id === userId) get().hideUserDetailModal();
+          await Promise.all([get().loadUsers(), get().loadStats()]);
           set(state => ({
-            users: state.users.filter(user => user.id !== userId),
-            selectedUserIds: state.selectedUserIds.filter(id => id !== userId),
-            selectedUser:
-              state.selectedUser?.id === userId ? null : state.selectedUser,
             loading: updateLoadingState(state.loading, 'deleting', false),
           }));
-          void get().loadStats();
           return true;
         }
 
@@ -130,7 +120,9 @@ export function createMutationActions(
 
     batchChangeStatus: async (status: AccountStatus) => {
       const state = get();
-      const userIds = state.selectedUserIds;
+      const userIds = state.users
+        .filter(user => state.selectedUserIds.includes(user.id))
+        .map(user => user.id);
 
       if (userIds.length === 0) {
         return false;
@@ -155,8 +147,8 @@ export function createMutationActions(
         );
 
         if (result.success) {
+          await Promise.all([get().loadUsers(), get().loadStats()]);
           set(currentState => ({
-            users: applyBatchStatus(currentState.users, userIds, status),
             selectedUserIds: [],
             loading: updateLoadingState(
               currentState.loading,
@@ -164,7 +156,6 @@ export function createMutationActions(
               false
             ),
           }));
-          void get().loadStats();
           return true;
         }
 
@@ -192,7 +183,9 @@ export function createMutationActions(
 
     batchChangeRole: async (role: UserRole) => {
       const state = get();
-      const userIds = state.selectedUserIds;
+      const userIds = state.users
+        .filter(user => state.selectedUserIds.includes(user.id))
+        .map(user => user.id);
 
       if (userIds.length === 0) {
         return false;
@@ -217,8 +210,8 @@ export function createMutationActions(
         );
 
         if (result.success) {
+          await Promise.all([get().loadUsers(), get().loadStats()]);
           set(currentState => ({
-            users: applyBatchRole(currentState.users, userIds, role),
             selectedUserIds: [],
             loading: updateLoadingState(
               currentState.loading,
@@ -226,7 +219,6 @@ export function createMutationActions(
               false
             ),
           }));
-          void get().loadStats();
           return true;
         }
 

@@ -49,7 +49,10 @@ export async function ensureProfileStatus(
             WHEN $5 = '${INTERNAL_AUTH_PROVIDER}' THEN COALESCE(full_name, $2)
             ELSE COALESCE($2, full_name)
           END,
-          avatar_url = COALESCE($3, avatar_url),
+          avatar_url = CASE
+            WHEN $5 = '${INTERNAL_AUTH_PROVIDER}' THEN avatar_url
+            ELSE COALESCE($3, avatar_url)
+          END,
           email = COALESCE($4, email),
           auth_source = COALESCE($5, auth_source),
           last_login = NOW(),

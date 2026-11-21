@@ -17,16 +17,30 @@ interface GroupPermissionListProps {
 
 export function GroupPermissionList({ app }: GroupPermissionListProps) {
   const { isDark } = useTheme();
-  const { groups, setGroupPermission, loading } =
-    usePermissionManagementStore();
+  const {
+    groups,
+    setGroupPermission,
+    loading,
+    groupsLoaded,
+    permissionStatus,
+    permissionError,
+    loadGroups,
+    loadAppPermissions,
+  } = usePermissionManagementStore();
   const t = useTranslations(
     'pages.admin.permissions.permissionPanel.groupPermissions'
   );
   const tMessages = useTranslations('pages.admin.permissions.messages');
 
   const handleTogglePermission = async (groupId: string, enabled: boolean) => {
-    const success = await setGroupPermission(app.id, groupId, enabled, null);
+    const success = await setGroupPermission(app.id, groupId, enabled);
     if (success) {
+      if (
+        usePermissionManagementStore.getState().permissionStatus === 'error'
+      ) {
+        toast.warning(tMessages('permissionRefreshFailed'));
+        return;
+      }
       const groupName = groups.find(g => g.id === groupId)?.name || 'Group';
       const messageKey = enabled
         ? 'groupPermissionEnabled'
@@ -34,6 +48,33 @@ export function GroupPermissionList({ app }: GroupPermissionListProps) {
       toast.success(tMessages(messageKey, { groupName }));
     }
   };
+
+  if (permissionStatus === 'error') {
+    return (
+      <div role="alert" className="space-y-2 text-sm">
+        <p>{t('loadFailed')}</p>
+        <p>{permissionError}</p>
+        <button
+          type="button"
+          onClick={() =>
+            groupsLoaded ? loadAppPermissions(app.id) : loadGroups()
+          }
+          disabled={loading.groups}
+          className="underline"
+        >
+          {t('retry')}
+        </button>
+      </div>
+    );
+  }
+
+  if (permissionStatus !== 'ready' || loading.groups) {
+    return (
+      <p role="status" className="text-sm">
+        {t('loading')}
+      </p>
+    );
+  }
 
   if (groups.length === 0) {
     return (
@@ -140,6 +181,10 @@ export function GroupPermissionList({ app }: GroupPermissionListProps) {
                 </span>
 
                 <button
+                  type="button"
+                  role="switch"
+                  aria-checked={isEnabled}
+                  aria-label={`${group.name}: ${isEnabled ? t('actions.disable') : t('actions.enable')}`}
                   onClick={() => handleTogglePermission(group.id, !isEnabled)}
                   disabled={loading.updating}
                   className={cn(

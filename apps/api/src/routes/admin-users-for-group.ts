@@ -4,6 +4,7 @@ import type { ApiRuntimeConfig } from '../config';
 import { queryRowsWithPgSystemContext } from '../lib/pg-context';
 import { buildRouteErrorPayload } from '../lib/route-error';
 import { resolveIdentityFromSession } from '../lib/session-identity';
+import { escapeLikePattern } from './internal-data-route/helpers/parse';
 
 interface AdminUsersForGroupRoutesOptions {
   config: ApiRuntimeConfig;
@@ -100,10 +101,10 @@ export const adminUsersForGroupRoutes: FastifyPluginAsync<
       const params: unknown[] = [];
 
       if (trimmedSearch.length > 0) {
-        params.push(`%${trimmedSearch}%`);
+        params.push(`%${escapeLikePattern(trimmedSearch)}%`);
         const searchParamIndex = params.length;
         whereClauses.push(
-          `(username ILIKE $${searchParamIndex} OR full_name ILIKE $${searchParamIndex} OR email ILIKE $${searchParamIndex})`
+          `(username ILIKE $${searchParamIndex} ESCAPE E'\\\\' OR full_name ILIKE $${searchParamIndex} ESCAPE E'\\\\' OR email ILIKE $${searchParamIndex} ESCAPE E'\\\\')`
         );
       }
 

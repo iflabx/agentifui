@@ -1715,7 +1715,8 @@
           "setAsManager": "Establecer como Gerente",
           "setAsUser": "Establecer como Usuario Regular",
           "activate": "Activar",
-          "suspend": "Suspender"
+          "suspend": "Suspender",
+          "currentPageOnly": "La selección se limita a la página actual. Cambiar de página, filtros o tamaño de página borra la selección."
         },
         "actions": {
           "refreshData": "Actualizar Datos",
@@ -1773,7 +1774,8 @@
           "roleChangeConfirm": "¿Cambiar el rol de {name} a {role}?",
           "statusChangeConfirm": "¿Cambiar el estado de {name} a {status}?",
           "batchRoleChangeConfirm": "¿Cambiar los roles de {count} usuarios a {role}?",
-          "batchStatusChangeConfirm": "¿Cambiar el estado de {count} usuarios a {status}?"
+          "batchStatusChangeConfirm": "¿Cambiar el estado de {count} usuarios a {status}?",
+          "cannotDeactivateSelf": "No puede desactivar su propia cuenta."
         },
         "editModal": {
           "title": "Editar usuario: {name}",
@@ -1818,7 +1820,8 @@
             "jobTitle": "Cargo",
             "managerName": "Responsable",
             "syncedAt": "Sincronizado el",
-            "lastSeenAt": "Última actividad"
+            "lastSeenAt": "Última actividad",
+            "emailHint": "El correo de autenticación es de solo lectura. Cámbielo mediante el proceso de cambio de correo de autenticación."
           },
           "actions": {
             "cancel": "Cancelar",
@@ -2090,7 +2093,10 @@
             "next": "Siguiente"
           },
           "addSuccess": "Se agregaron exitosamente {count} miembros al grupo",
-          "addPartialSuccess": "{errorCount} miembros fallaron al agregarse"
+          "addPartialSuccess": "{errorCount} miembros fallaron al agregarse",
+          "currentPageSelection": "La selección se limita a la página actual. Cambiar de página o búsqueda borra la selección.",
+          "loadError": "No se pudieron cargar los miembros disponibles. Vuelva a intentarlo.",
+          "refreshError": "No se pudieron actualizar los miembros o usuarios disponibles. Las listas y cifras pueden estar desactualizadas. Reintente la actualización en lugar de volver a añadir miembros."
         },
         "messages": {
           "deleteConfirm": "¿Estás seguro de que quieres eliminar el grupo \"{name}\"? Esta acción no se puede deshacer.",
@@ -2142,6 +2148,7 @@
             "description": "Elige una aplicación de la lista izquierda para configurar permisos"
           },
           "visibilitySettings": {
+            "retainedGroups": "Los permisos, las cuotas y el uso se conservan al cambiar la visibilidad y vuelven a aplicarse en modo de grupo.",
             "title": "Configuraciones de Visibilidad",
             "currentSetting": "Actual",
             "options": {
@@ -2160,6 +2167,9 @@
             }
           },
           "groupPermissions": {
+            "loading": "Cargando permisos de grupo...",
+            "loadFailed": "No se pudieron cargar los permisos de grupo. El estado de acceso es desconocido.",
+            "retry": "Reintentar",
             "title": "Permisos de Grupo",
             "description": "Selecciona qué grupos pueden acceder a esta aplicación",
             "noGroups": {
@@ -2184,6 +2194,7 @@
           }
         },
         "messages": {
+          "permissionRefreshFailed": "Permiso guardado, pero falló la actualización. Recarga antes de realizar más cambios.",
           "visibilityUpdateSuccess": "Visibilidad de aplicación actualizada a \"{visibility}\"",
           "groupPermissionEnabled": "Habilitado acceso de {groupName} a esta aplicación",
           "groupPermissionDisabled": "Deshabilitado acceso de {groupName} a esta aplicación",

@@ -54,7 +54,7 @@ interface GroupManagementState {
 
   // Action methods
   loadGroups: () => Promise<void>;
-  loadGroupMembers: (groupId: string) => Promise<void>;
+  loadGroupMembers: (groupId: string) => Promise<boolean>;
   loadStats: () => Promise<void>;
 
   createGroup: (data: {
@@ -76,370 +76,404 @@ interface GroupManagementState {
 }
 
 export const useGroupManagementStore = create<GroupManagementState>(
-  (set, get) => ({
-    // Initial state
-    groups: [],
-    currentGroup: null,
-    groupMembers: {},
-    stats: {
-      totalGroups: 0,
-      totalMembers: 0,
-      activeGroups: 0,
-    },
+  (set, get) => {
+    const memberRequestVersions = new Map<string, number>();
 
-    loading: {
-      groups: false,
-      members: false,
-      stats: false,
-      creating: false,
-      updating: false,
-      deleting: false,
-    },
+    return {
+      // Initial state
+      groups: [],
+      currentGroup: null,
+      groupMembers: {},
+      stats: {
+        totalGroups: 0,
+        totalMembers: 0,
+        activeGroups: 0,
+      },
 
-    error: null,
-    searchTerm: '',
+      loading: {
+        groups: false,
+        members: false,
+        stats: false,
+        creating: false,
+        updating: false,
+        deleting: false,
+      },
 
-    // Load group list
-    loadGroups: async () => {
-      set(state => ({
-        loading: { ...state.loading, groups: true },
-        error: null,
-      }));
+      error: null,
+      searchTerm: '',
 
-      try {
-        const result =
-          await callInternalDataAction<Group[]>('groups.getGroups');
+      // Load group list
+      loadGroups: async () => {
+        set(state => ({
+          loading: { ...state.loading, groups: true },
+          error: null,
+        }));
 
-        if (result.success) {
+        try {
+          const result =
+            await callInternalDataAction<Group[]>('groups.getGroups');
+
+          if (result.success) {
+            set(state => ({
+              groups: result.data,
+              loading: { ...state.loading, groups: false },
+            }));
+          } else {
+            set(state => ({
+              error: result.error.message,
+              loading: { ...state.loading, groups: false },
+            }));
+          }
+        } catch {
           set(state => ({
-            groups: result.data,
+            error: 'Failed to load groups',
             loading: { ...state.loading, groups: false },
           }));
-        } else {
-          set(state => ({
-            error: result.error.message,
-            loading: { ...state.loading, groups: false },
-          }));
         }
-      } catch {
+      },
+
+      // Load group members
+      loadGroupMembers: async (groupId: string) => {
+        const requestVersion = (memberRequestVersions.get(groupId) || 0) + 1;
+        memberRequestVersions.set(groupId, requestVersion);
         set(state => ({
-          error: 'Failed to load groups',
-          loading: { ...state.loading, groups: false },
+          loading: { ...state.loading, members: true },
+          error: null,
         }));
-      }
-    },
 
-    // Load group members
-    loadGroupMembers: async (groupId: string) => {
-      set(state => ({
-        loading: { ...state.loading, members: true },
-        error: null,
-      }));
+        try {
+          const result = await callInternalDataAction<GroupMember[]>(
+            'groups.getGroupMembers',
+            { groupId }
+          );
 
-      try {
-        const result = await callInternalDataAction<GroupMember[]>(
-          'groups.getGroupMembers',
-          { groupId }
-        );
-
-        if (result.success) {
+          if (result.success) {
+            if (memberRequestVersions.get(groupId) !== requestVersion)
+              return false;
+            set(state => {
+              const group = state.groups.find(group => group.id === groupId);
+              const previousCount =
+                group?.member_count ?? state.groupMembers[groupId]?.length ?? 0;
+              const memberCount = result.data.length;
+              return {
+                groupMembers: {
+                  ...state.groupMembers,
+                  [groupId]: result.data,
+                },
+                groups: state.groups.map(group =>
+                  group.id === groupId
+                    ? { ...group, member_count: memberCount }
+                    : group
+                ),
+                currentGroup:
+                  state.currentGroup?.id === groupId
+                    ? { ...state.currentGroup, member_count: memberCount }
+                    : state.currentGroup,
+                stats: {
+                  ...state.stats,
+                  totalMembers:
+                    state.stats.totalMembers + memberCount - previousCount,
+                },
+                loading: { ...state.loading, members: false },
+              };
+            });
+            return true;
+          } else {
+            if (memberRequestVersions.get(groupId) !== requestVersion)
+              return false;
+            set(state => ({
+              error: result.error.message,
+              loading: { ...state.loading, members: false },
+            }));
+            return false;
+          }
+        } catch {
+          if (memberRequestVersions.get(groupId) !== requestVersion)
+            return false;
           set(state => ({
-            groupMembers: {
-              ...state.groupMembers,
-              [groupId]: result.data,
-            },
+            error: 'Failed to load group members',
             loading: { ...state.loading, members: false },
           }));
-        } else {
-          set(state => ({
-            error: result.error.message,
-            loading: { ...state.loading, members: false },
-          }));
+          return false;
         }
-      } catch {
+      },
+
+      // Load statistics
+      loadStats: async () => {
         set(state => ({
-          error: 'Failed to load group members',
-          loading: { ...state.loading, members: false },
+          loading: { ...state.loading, stats: true },
+          error: null,
         }));
-      }
-    },
 
-    // Load statistics
-    loadStats: async () => {
-      set(state => ({
-        loading: { ...state.loading, stats: true },
-        error: null,
-      }));
+        try {
+          const groupsResult =
+            await callInternalDataAction<Group[]>('groups.getGroups');
 
-      try {
-        const groupsResult =
-          await callInternalDataAction<Group[]>('groups.getGroups');
+          if (groupsResult.success) {
+            const groups = groupsResult.data;
+            const totalGroups = groups.length;
 
-        if (groupsResult.success) {
-          const groups = groupsResult.data;
-          const totalGroups = groups.length;
+            // Use member_count field in group data to calculate total members
+            // Avoid querying members for each group to prevent failures for new groups
+            const totalMembers = groups.reduce((sum, group) => {
+              return sum + (group.member_count || 0);
+            }, 0);
 
-          // Use member_count field in group data to calculate total members
-          // Avoid querying members for each group to prevent failures for new groups
-          const totalMembers = groups.reduce((sum, group) => {
-            return sum + (group.member_count || 0);
-          }, 0);
+            const stats: GroupStats = {
+              totalGroups,
+              totalMembers,
+              activeGroups: totalGroups, // All groups are considered active for now
+            };
 
-          const stats: GroupStats = {
-            totalGroups,
-            totalMembers,
-            activeGroups: totalGroups, // All groups are considered active for now
-          };
-
+            set(state => ({
+              groups: state.groups.map(group => {
+                const latest = groups.find(latest => latest.id === group.id);
+                return latest
+                  ? { ...group, member_count: latest.member_count }
+                  : group;
+              }),
+              stats,
+              loading: { ...state.loading, stats: false },
+            }));
+          } else {
+            set(state => ({
+              error: groupsResult.error.message,
+              loading: { ...state.loading, stats: false },
+            }));
+          }
+        } catch {
           set(state => ({
-            stats,
+            error: 'Failed to load stats',
             loading: { ...state.loading, stats: false },
           }));
-        } else {
-          set(state => ({
-            error: groupsResult.error.message,
-            loading: { ...state.loading, stats: false },
-          }));
         }
-      } catch {
+      },
+
+      // Create group
+      createGroup: async data => {
         set(state => ({
-          error: 'Failed to load stats',
-          loading: { ...state.loading, stats: false },
+          loading: { ...state.loading, creating: true },
+          error: null,
         }));
-      }
-    },
 
-    // Create group
-    createGroup: async data => {
-      set(state => ({
-        loading: { ...state.loading, creating: true },
-        error: null,
-      }));
+        try {
+          const result = await callInternalDataAction<Group>(
+            'groups.createGroup',
+            {
+              data,
+            }
+          );
 
-      try {
-        const result = await callInternalDataAction<Group>(
-          'groups.createGroup',
-          {
-            data,
+          if (result.success) {
+            // Directly add the new group to the list to avoid reloading
+            const newGroup = { ...result.data, member_count: 0 };
+            set(state => ({
+              groups: [newGroup, ...state.groups],
+              // Immediately update statistics
+              stats: {
+                ...state.stats,
+                totalGroups: state.stats.totalGroups + 1,
+                activeGroups: state.stats.activeGroups + 1,
+              },
+              loading: { ...state.loading, creating: false },
+            }));
+            return true;
+          } else {
+            set(state => ({
+              error: result.error.message,
+              loading: { ...state.loading, creating: false },
+            }));
+            return false;
           }
-        );
-
-        if (result.success) {
-          // Directly add the new group to the list to avoid reloading
-          const newGroup = { ...result.data, member_count: 0 };
+        } catch {
           set(state => ({
-            groups: [newGroup, ...state.groups],
-            // Immediately update statistics
-            stats: {
-              ...state.stats,
-              totalGroups: state.stats.totalGroups + 1,
-              activeGroups: state.stats.activeGroups + 1,
-            },
-            loading: { ...state.loading, creating: false },
-          }));
-          return true;
-        } else {
-          set(state => ({
-            error: result.error.message,
+            error: 'Failed to create group',
             loading: { ...state.loading, creating: false },
           }));
           return false;
         }
-      } catch {
+      },
+
+      // Update group
+      updateGroup: async (groupId, data) => {
         set(state => ({
-          error: 'Failed to create group',
-          loading: { ...state.loading, creating: false },
+          loading: { ...state.loading, updating: true },
+          error: null,
         }));
-        return false;
-      }
-    },
 
-    // Update group
-    updateGroup: async (groupId, data) => {
-      set(state => ({
-        loading: { ...state.loading, updating: true },
-        error: null,
-      }));
+        try {
+          const result = await callInternalDataAction<Group>(
+            'groups.updateGroup',
+            {
+              groupId,
+              data,
+            }
+          );
 
-      try {
-        const result = await callInternalDataAction<Group>(
-          'groups.updateGroup',
-          {
-            groupId,
-            data,
+          if (result.success) {
+            // Update local state
+            set(state => ({
+              groups: state.groups.map(group =>
+                group.id === groupId
+                  ? {
+                      ...group,
+                      ...result.data,
+                      member_count: group.member_count,
+                    }
+                  : group
+              ),
+              currentGroup:
+                state.currentGroup?.id === groupId
+                  ? {
+                      ...state.currentGroup,
+                      ...result.data,
+                      member_count: state.currentGroup.member_count,
+                    }
+                  : state.currentGroup,
+              loading: { ...state.loading, updating: false },
+            }));
+            return true;
+          } else {
+            set(state => ({
+              error: result.error.message,
+              loading: { ...state.loading, updating: false },
+            }));
+            return false;
           }
-        );
-
-        if (result.success) {
-          // Update local state
+        } catch {
           set(state => ({
-            groups: state.groups.map(group =>
-              group.id === groupId ? { ...group, ...data } : group
-            ),
-            currentGroup:
-              state.currentGroup?.id === groupId
-                ? { ...state.currentGroup, ...data }
-                : state.currentGroup,
+            error: 'Failed to update group',
             loading: { ...state.loading, updating: false },
           }));
-          return true;
-        } else {
-          set(state => ({
-            error: result.error.message,
-            loading: { ...state.loading, updating: false },
-          }));
           return false;
         }
-      } catch {
+      },
+
+      // Delete group
+      deleteGroup: async groupId => {
         set(state => ({
-          error: 'Failed to update group',
-          loading: { ...state.loading, updating: false },
+          loading: { ...state.loading, deleting: true },
+          error: null,
         }));
-        return false;
-      }
-    },
 
-    // Delete group
-    deleteGroup: async groupId => {
-      set(state => ({
-        loading: { ...state.loading, deleting: true },
-        error: null,
-      }));
+        try {
+          const result = await callInternalDataAction<void>(
+            'groups.deleteGroup',
+            {
+              groupId,
+            }
+          );
 
-      try {
-        const result = await callInternalDataAction<void>(
-          'groups.deleteGroup',
-          {
-            groupId,
+          if (result.success) {
+            // Get the member count of the deleted group for updating statistics
+            const deletedGroup = get().groups.find(g => g.id === groupId);
+            const memberCount = deletedGroup?.member_count || 0;
+
+            // Update local state
+            set(state => ({
+              groups: state.groups.filter(group => group.id !== groupId),
+              currentGroup:
+                state.currentGroup?.id === groupId ? null : state.currentGroup,
+              groupMembers: Object.fromEntries(
+                Object.entries(state.groupMembers).filter(
+                  ([id]) => id !== groupId
+                )
+              ),
+              // Immediately update statistics
+              stats: {
+                ...state.stats,
+                totalGroups: state.stats.totalGroups - 1,
+                totalMembers: state.stats.totalMembers - memberCount,
+                activeGroups: state.stats.activeGroups - 1,
+              },
+              loading: { ...state.loading, deleting: false },
+            }));
+
+            return true;
+          } else {
+            set(state => ({
+              error: result.error.message,
+              loading: { ...state.loading, deleting: false },
+            }));
+            return false;
           }
-        );
-
-        if (result.success) {
-          // Get the member count of the deleted group for updating statistics
-          const deletedGroup = get().groups.find(g => g.id === groupId);
-          const memberCount = deletedGroup?.member_count || 0;
-
-          // Update local state
+        } catch {
           set(state => ({
-            groups: state.groups.filter(group => group.id !== groupId),
-            currentGroup:
-              state.currentGroup?.id === groupId ? null : state.currentGroup,
-            groupMembers: Object.fromEntries(
-              Object.entries(state.groupMembers).filter(
-                ([id]) => id !== groupId
-              )
-            ),
-            // Immediately update statistics
-            stats: {
-              ...state.stats,
-              totalGroups: state.stats.totalGroups - 1,
-              totalMembers: state.stats.totalMembers - memberCount,
-              activeGroups: state.stats.activeGroups - 1,
-            },
-            loading: { ...state.loading, deleting: false },
-          }));
-
-          return true;
-        } else {
-          set(state => ({
-            error: result.error.message,
+            error: 'Failed to delete group',
             loading: { ...state.loading, deleting: false },
           }));
           return false;
         }
-      } catch {
-        set(state => ({
-          error: 'Failed to delete group',
-          loading: { ...state.loading, deleting: false },
-        }));
-        return false;
-      }
-    },
+      },
 
-    // Add member
-    addMember: async (groupId, userId) => {
-      try {
-        const result = await callInternalDataAction<GroupMember>(
-          'groups.addGroupMember',
-          { groupId, userId }
-        );
+      // Add member
+      addMember: async (groupId, userId) => {
+        try {
+          const result = await callInternalDataAction<GroupMember>(
+            'groups.addGroupMember',
+            { groupId, userId }
+          );
 
-        if (result.success) {
-          // Reload the member list for this group
-          await get().loadGroupMembers(groupId);
-          // Update the member count in the group list and statistics
-          set(state => ({
-            groups: state.groups.map(group =>
-              group.id === groupId
-                ? { ...group, member_count: (group.member_count || 0) + 1 }
-                : group
-            ),
-            stats: {
-              ...state.stats,
-              totalMembers: state.stats.totalMembers + 1,
-            },
-          }));
-          return true;
-        } else {
-          set({ error: result.error.message });
+          if (result.success) {
+            const refreshed = await get().loadGroupMembers(groupId);
+            if (!refreshed) {
+              set({
+                error:
+                  'Member added, but failed to refresh group members and counts. Refresh before making further changes.',
+              });
+            }
+            return true;
+          } else {
+            set({ error: result.error.message });
+            return false;
+          }
+        } catch {
+          set({ error: 'Failed to add member' });
           return false;
         }
-      } catch {
-        set({ error: 'Failed to add member' });
-        return false;
-      }
-    },
+      },
 
-    // Remove member
-    removeMember: async (groupId, userId) => {
-      try {
-        const result = await callInternalDataAction<void>(
-          'groups.removeGroupMember',
-          { groupId, userId }
-        );
+      // Remove member
+      removeMember: async (groupId, userId) => {
+        try {
+          const result = await callInternalDataAction<void>(
+            'groups.removeGroupMember',
+            { groupId, userId }
+          );
 
-        if (result.success) {
-          // Reload the member list for this group
-          await get().loadGroupMembers(groupId);
-          // Update the member count in the group list and statistics
-          set(state => ({
-            groups: state.groups.map(group =>
-              group.id === groupId
-                ? {
-                    ...group,
-                    member_count: Math.max((group.member_count || 0) - 1, 0),
-                  }
-                : group
-            ),
-            stats: {
-              ...state.stats,
-              totalMembers: Math.max(state.stats.totalMembers - 1, 0),
-            },
-          }));
-          return true;
-        } else {
-          set({ error: result.error.message });
+          if (result.success) {
+            const refreshed = await get().loadGroupMembers(groupId);
+            if (!refreshed) {
+              set({
+                error:
+                  'Member removed, but failed to refresh group members and counts. Refresh before making further changes.',
+              });
+            }
+            return true;
+          } else {
+            set({ error: result.error.message });
+            return false;
+          }
+        } catch {
+          set({ error: 'Failed to remove member' });
           return false;
         }
-      } catch {
-        set({ error: 'Failed to remove member' });
-        return false;
-      }
-    },
+      },
 
-    // Set current group
-    setCurrentGroup: group => {
-      set({ currentGroup: group });
-    },
+      // Set current group
+      setCurrentGroup: group => {
+        set({ currentGroup: group });
+      },
 
-    // Set search term
-    setSearchTerm: term => {
-      set({ searchTerm: term });
-    },
+      // Set search term
+      setSearchTerm: term => {
+        set({ searchTerm: term });
+      },
 
-    // Clear error
-    clearError: () => {
-      set({ error: null });
-    },
-  })
+      // Clear error
+      clearError: () => {
+        set({ error: null });
+      },
+    };
+  }
 );

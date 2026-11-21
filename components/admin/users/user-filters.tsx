@@ -85,10 +85,9 @@ export const UserFiltersComponent: React.FC<UserFiltersProps> = ({
     },
   ];
 
-  // Authentication source options (directly corresponding to the provider value of Supabase)
   const authSourceOptions = [
     { value: '', label: t('authSourceOptions.all') },
-    { value: 'email', label: t('authSourceOptions.email') },
+    { value: 'better-auth', label: t('authSourceOptions.email') },
     { value: 'github', label: '🐙 GitHub' },
     { value: 'phone', label: t('authSourceOptions.phone') },
     { value: 'google', label: '🔍 Google' },

@@ -22,6 +22,8 @@ interface UserEditModalProps {
   isLoading: boolean;
   isSubmitting: boolean;
   canEditRoleStatus: boolean;
+  currentUserId?: string | null;
+  readOnly?: boolean;
   onClose: () => void;
   onSave: (updates: Record<string, unknown>) => Promise<boolean>;
 }
@@ -94,13 +96,13 @@ function buildEditableFieldSet(user: EnhancedUser | null): Set<string> {
   if (!user) {
     return new Set();
   }
-  if (Array.isArray(user.editable_fields) && user.editable_fields.length > 0) {
+  if (Array.isArray(user.editable_fields)) {
     return new Set(user.editable_fields);
   }
 
   const normalizedSource = normalizeAuthSource(user.auth_source);
   if (LOCAL_PROFILE_AUTH_SOURCES.has(normalizedSource)) {
-    return new Set(['full_name', 'username', 'email', 'phone', 'avatar_url']);
+    return new Set(['full_name', 'username', 'phone', 'avatar_url']);
   }
   return new Set(['username', 'avatar_url']);
 }
@@ -111,10 +113,13 @@ export function UserEditModal({
   isLoading,
   isSubmitting,
   canEditRoleStatus,
+  currentUserId,
+  readOnly = false,
   onClose,
   onSave,
 }: UserEditModalProps) {
   const t = useTranslations('pages.admin.users.editModal');
+  const usersT = useTranslations('pages.admin.users');
   const [baselineState, setBaselineState] = React.useState<UserEditFormState>(
     buildInitialState(user)
   );
@@ -137,12 +142,17 @@ export function UserEditModal({
 
   const isIdpManaged = Boolean(
     user?.is_idp_managed ??
-      (user
-        ? !LOCAL_PROFILE_AUTH_SOURCES.has(normalizeAuthSource(user.auth_source))
-        : false)
+    (user
+      ? !LOCAL_PROFILE_AUTH_SOURCES.has(normalizeAuthSource(user.auth_source))
+      : false)
   );
 
-  const isFieldEditable = (field: string) => editableFields.has(field);
+  const isFieldEditable = (field: string) =>
+    !readOnly && field !== 'email' && editableFields.has(field);
+  const isSelf = user?.id === currentUserId;
+  const canEditRole =
+    !readOnly && canEditRoleStatus && !isSelf && user?.role !== 'admin';
+  const canEditStatus = !readOnly && canEditRoleStatus;
 
   const handleFieldChange = (
     field: keyof UserEditFormState,
@@ -153,7 +163,7 @@ export function UserEditModal({
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!user) {
+    if (!user || readOnly || isSubmitting || isLoading) {
       return;
     }
 
@@ -168,10 +178,14 @@ export function UserEditModal({
       }
     }
 
-    if (canEditRoleStatus && formState.role !== baselineState.role) {
+    if (canEditRole && formState.role !== baselineState.role) {
       updates.role = formState.role;
     }
-    if (canEditRoleStatus && formState.status !== baselineState.status) {
+    if (
+      canEditStatus &&
+      formState.status !== baselineState.status &&
+      (!isSelf || formState.status === 'active')
+    ) {
       updates.status = formState.status;
     }
 
@@ -237,11 +251,17 @@ export function UserEditModal({
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>
-            {t('title', {
-              name: user?.full_name || user?.email || user?.id || '-',
-            })}
+            {readOnly
+              ? usersT('actions.viewUser', {
+                  name: user?.full_name || user?.email || user?.id || '-',
+                })
+              : t('title', {
+                  name: user?.full_name || user?.email || user?.id || '-',
+                })}
           </DialogTitle>
-          <DialogDescription>{t('description')}</DialogDescription>
+          <DialogDescription>
+            {readOnly ? usersT('actions.viewDetails') : t('description')}
+          </DialogDescription>
         </DialogHeader>
 
         {isLoading ? (
@@ -258,7 +278,9 @@ export function UserEditModal({
             <section className="space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="font-semibold text-stone-900 dark:text-stone-100">
-                  {t('sections.profile')}
+                  {readOnly
+                    ? usersT('table.headers.userInfo')
+                    : t('sections.profile')}
                 </h3>
                 {isIdpManaged ? (
                   <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs text-amber-700 dark:border-amber-600 dark:bg-amber-900/30 dark:text-amber-300">
@@ -289,7 +311,7 @@ export function UserEditModal({
                         'cursor-not-allowed bg-stone-100 text-stone-500 dark:bg-stone-800 dark:text-stone-400'
                     )}
                   />
-                  {!isFieldEditable('full_name') && (
+                  {!readOnly && !isFieldEditable('full_name') && (
                     <p className="text-xs text-stone-500">
                       {t('readonly.idpHint')}
                     </p>
@@ -330,11 +352,9 @@ export function UserEditModal({
                         'cursor-not-allowed bg-stone-100 text-stone-500 dark:bg-stone-800 dark:text-stone-400'
                     )}
                   />
-                  {!isFieldEditable('email') && (
-                    <p className="text-xs text-stone-500">
-                      {t('readonly.idpHint')}
-                    </p>
-                  )}
+                  <p className="text-xs text-stone-500">
+                    {t('readonly.emailHint')}
+                  </p>
                 </label>
 
                 <label className="space-y-1.5">
@@ -379,7 +399,7 @@ export function UserEditModal({
                   </span>
                   <select
                     value={formState.role}
-                    disabled={!canEditRoleStatus || isSubmitting}
+                    disabled={!canEditRole || isSubmitting}
                     onChange={event =>
                       handleFieldChange(
                         'role',
@@ -388,7 +408,7 @@ export function UserEditModal({
                     }
                     className={cn(
                       'w-full rounded-lg border px-3 py-2 text-sm',
-                      !canEditRoleStatus &&
+                      !canEditRole &&
                         'cursor-not-allowed bg-stone-100 text-stone-500 dark:bg-stone-800 dark:text-stone-400'
                     )}
                   >
@@ -404,7 +424,7 @@ export function UserEditModal({
                   </span>
                   <select
                     value={formState.status}
-                    disabled={!canEditRoleStatus || isSubmitting}
+                    disabled={!canEditStatus || isSubmitting}
                     onChange={event =>
                       handleFieldChange(
                         'status',
@@ -413,15 +433,21 @@ export function UserEditModal({
                     }
                     className={cn(
                       'w-full rounded-lg border px-3 py-2 text-sm',
-                      !canEditRoleStatus &&
+                      !canEditStatus &&
                         'cursor-not-allowed bg-stone-100 text-stone-500 dark:bg-stone-800 dark:text-stone-400'
                     )}
                   >
                     <option value="active">{t('options.status.active')}</option>
-                    <option value="suspended">
+                    <option
+                      value="suspended"
+                      disabled={isSelf && user.status !== 'suspended'}
+                    >
                       {t('options.status.suspended')}
                     </option>
-                    <option value="pending">
+                    <option
+                      value="pending"
+                      disabled={isSelf && user.status !== 'pending'}
+                    >
                       {t('options.status.pending')}
                     </option>
                   </select>
@@ -457,20 +483,22 @@ export function UserEditModal({
               >
                 {t('actions.cancel')}
               </button>
-              <button
-                type="submit"
-                disabled={isSubmitting || isLoading || !user}
-                className="inline-flex items-center justify-center rounded-lg bg-stone-900 px-4 py-2 text-sm text-white transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-stone-100 dark:text-stone-900 dark:hover:bg-stone-200"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {t('actions.saving')}
-                  </>
-                ) : (
-                  t('actions.save')
-                )}
-              </button>
+              {!readOnly && (
+                <button
+                  type="submit"
+                  disabled={isSubmitting || isLoading || !user}
+                  className="inline-flex items-center justify-center rounded-lg bg-stone-900 px-4 py-2 text-sm text-white transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-stone-100 dark:text-stone-900 dark:hover:bg-stone-200"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      {t('actions.saving')}
+                    </>
+                  ) : (
+                    t('actions.save')
+                  )}
+                </button>
+              )}
             </DialogFooter>
           </form>
         )}

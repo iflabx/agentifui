@@ -19,7 +19,7 @@ describe('users query helpers', () => {
         search: 'alice_100%',
       })
     ).toEqual({
-      sql: "WHERE p.role = $1 AND p.status = $2 AND p.auth_source = $3 AND (p.full_name ILIKE $4 ESCAPE '\\' OR p.username ILIKE $4 ESCAPE '\\')",
+      sql: "WHERE p.role = $1 AND p.status = $2 AND p.auth_source = $3 AND (p.full_name ILIKE $4 ESCAPE '\\' OR p.username ILIKE $4 ESCAPE '\\' OR p.email ILIKE $4 ESCAPE '\\')",
       params: ['admin', 'active', 'sso', '%alice\\_100\\%%'],
     });
   });

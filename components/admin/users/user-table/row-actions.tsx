@@ -9,6 +9,7 @@ import { useTranslations } from 'next-intl';
 import {
   type UserTableTranslations,
   canChangeUserRole,
+  canChangeUserStatus,
   canDeleteUser,
   canEditUser,
   getRoleInfo,
@@ -156,15 +157,16 @@ export function UserRowActions({
         {(['active', 'suspended', 'pending'] as const).map(status => {
           const statusInfo = getStatusInfo(t, status);
           const isCurrent = user.status === status;
+          const canChange = canChangeUserStatus(currentUser, user, status);
 
           return (
             <button
               key={status}
               onClick={() => onRequestStatusChange(user, status)}
-              disabled={isCurrent}
+              disabled={isCurrent || !canChange}
               className={cn(
                 'flex w-full items-center gap-3 px-4 py-2 font-serif text-sm transition-colors',
-                isCurrent
+                isCurrent || !canChange
                   ? 'cursor-not-allowed text-stone-400 dark:cursor-not-allowed dark:text-stone-600'
                   : 'text-stone-700 hover:bg-stone-100 hover:text-stone-900 dark:text-stone-300 dark:hover:bg-stone-700 dark:hover:text-stone-100'
               )}

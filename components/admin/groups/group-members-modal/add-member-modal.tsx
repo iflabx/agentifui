@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 
@@ -40,97 +40,135 @@ export function AddMemberModal({
   onClose,
 }: AddMemberModalProps) {
   const { isDark } = useTheme();
-  const { addMember, groupMembers } = useGroupManagementStore();
+  const { addMember } = useGroupManagementStore();
   const t = useTranslations('pages.admin.groups.addMembersModal');
+  const tCommon = useTranslations('common.ui');
 
   const [users, setUsers] = useState<SearchableUser[]>([]);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState<
+    'loadError' | 'refreshError' | null
+  >(null);
   const [isAdding, setIsAdding] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [requestedPage, setRequestedPage] = useState(1);
   const [pagination, setPagination] = useState(createGroupUserPagination());
-
-  const currentMembers = groupMembers[group.id] || [];
-  const excludeUserIds = currentMembers.map(member => member.user_id);
+  const requestVersion = useRef(0);
+  const sessionVersion = useRef(0);
 
   useEffect(() => {
-    if (!isOpen) {
-      setUsers([]);
+    sessionVersion.current++;
+    setUsers([]);
+    setSelectedUserIds([]);
+    setSearchTerm('');
+    setRequestedPage(1);
+    setIsLoading(false);
+    setLoadError(null);
+    setIsAdding(false);
+    setPagination(createGroupUserPagination());
+
+    return () => {
+      requestVersion.current++;
+      sessionVersion.current++;
+    };
+  }, [isOpen, group.id]);
+
+  const loadUsers = useCallback(
+    async (page: number, search: string, refreshMembers = false) => {
+      const version = ++requestVersion.current;
       setSelectedUserIds([]);
-      setSearchTerm('');
-      setIsLoading(false);
-      setIsAdding(false);
-      setPagination(createGroupUserPagination());
-    }
-  }, [isOpen]);
+      setIsLoading(true);
+      setLoadError(null);
+      try {
+        if (refreshMembers) {
+          const refreshed = await useGroupManagementStore
+            .getState()
+            .loadGroupMembers(group.id);
+          if (version !== requestVersion.current) return;
+          if (!refreshed) throw new Error('Group members refresh failed');
+        }
 
-  const loadUsers = async (page: number = 1, search: string = '') => {
-    setIsLoading(true);
-    try {
-      const response = await fetch('/api/admin/users/for-group', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          page,
-          pageSize: pagination.pageSize,
-          search: search.trim() || undefined,
-          excludeUserIds,
-        }),
-      });
+        const currentMembers =
+          useGroupManagementStore.getState().groupMembers[group.id] || [];
+        const response = await fetch('/api/admin/users/for-group', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            page,
+            pageSize: pagination.pageSize,
+            search: search.trim() || undefined,
+            excludeUserIds: currentMembers.map(member => member.user_id),
+          }),
+        });
 
-      if (!response.ok) {
-        setUsers([]);
-        return;
+        if (!response.ok) throw new Error('User list request failed');
+        const data = await response.json();
+        if (version !== requestVersion.current) return;
+        if (data.success === false || !Array.isArray(data.users)) {
+          throw new Error('Invalid user list response');
+        }
+        if (data.totalPages > 0 && page > data.totalPages) {
+          setRequestedPage(data.totalPages);
+          return;
+        }
+        setUsers(data.users);
+        setPagination({
+          page: data.total === 0 ? 1 : data.page || 1,
+          pageSize: data.pageSize || 10,
+          total: data.total || 0,
+          totalPages: data.totalPages || 0,
+        });
+      } catch {
+        if (version === requestVersion.current) {
+          setLoadError(refreshMembers ? 'refreshError' : 'loadError');
+        }
+      } finally {
+        if (version === requestVersion.current) setIsLoading(false);
       }
+    },
+    [group.id, pagination.pageSize]
+  );
 
-      const data = await response.json();
-      setUsers(data.users || []);
-      setPagination({
-        page: data.page || 1,
-        pageSize: data.pageSize || 10,
-        total: data.total || 0,
-        totalPages: data.totalPages || 0,
-      });
-    } catch (error) {
-      console.error('Load user list error:', error);
-      setUsers([]);
-    } finally {
-      setIsLoading(false);
-    }
+  useEffect(() => {
+    if (!isOpen) return;
+    void loadUsers(requestedPage, searchTerm);
+    return () => {
+      requestVersion.current++;
+    };
+  }, [isOpen, loadUsers, requestedPage, searchTerm]);
+
+  const handleClose = () => {
+    requestVersion.current++;
+    sessionVersion.current++;
+    onClose();
   };
 
-  useEffect(() => {
-    if (isOpen) {
-      loadUsers(1, searchTerm);
-    }
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      loadUsers(1, searchTerm);
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [isOpen, searchTerm]);
+  const changePage = (page: number) => {
+    requestVersion.current++;
+    setSelectedUserIds([]);
+    setIsLoading(true);
+    setRequestedPage(page);
+  };
 
   const handleBatchAddMembers = async () => {
-    if (selectedUserIds.length === 0) {
+    if (selectedUserIds.length === 0 || isLoading || loadError || isAdding) {
       return;
     }
 
+    const session = sessionVersion.current;
     setIsAdding(true);
     try {
       let successCount = 0;
       let errorCount = 0;
 
-      for (const userId of selectedUserIds) {
+      for (const userId of selectedUserIds.filter(id =>
+        users.some(user => user.id === id)
+      )) {
         const success = await addMember(group.id, userId);
+        if (session !== sessionVersion.current) return;
         if (success) {
           successCount++;
         } else {
@@ -141,20 +179,24 @@ export function AddMemberModal({
       if (successCount > 0) {
         toast.success(t('addSuccess', { count: successCount }));
         setSelectedUserIds([]);
-        loadUsers(pagination.page, searchTerm);
       }
 
       if (errorCount > 0) {
         toast.error(t('addPartialSuccess', { errorCount }));
       }
+
+      if (successCount > 0) {
+        await loadUsers(requestedPage, searchTerm, true);
+      }
     } finally {
-      setIsAdding(false);
+      if (session === sessionVersion.current) setIsAdding(false);
     }
   };
 
   const isAllSelected =
-    users.length > 0 && selectedUserIds.length === users.length;
-  const isPartiallySelected = selectedUserIds.length > 0 && !isAllSelected;
+    users.length > 0 && users.every(user => selectedUserIds.includes(user.id));
+  const isPartiallySelected =
+    users.some(user => selectedUserIds.includes(user.id)) && !isAllSelected;
 
   if (!isOpen) {
     return null;
@@ -164,7 +206,7 @@ export function AddMemberModal({
     <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={onClose}
+        onClick={handleClose}
       />
 
       <div
@@ -199,7 +241,8 @@ export function AddMemberModal({
           </div>
 
           <button
-            onClick={onClose}
+            onClick={handleClose}
+            aria-label={tCommon('dismiss')}
             className={cn(
               'flex h-10 w-10 items-center justify-center rounded-xl transition-colors',
               isDark
@@ -224,7 +267,15 @@ export function AddMemberModal({
                 type="text"
                 placeholder={t('searchPlaceholder')}
                 value={searchTerm}
-                onChange={event => setSearchTerm(event.target.value)}
+                disabled={isAdding}
+                onChange={event => {
+                  requestVersion.current++;
+                  setSelectedUserIds([]);
+                  setIsLoading(true);
+                  setLoadError(null);
+                  setRequestedPage(1);
+                  setSearchTerm(event.target.value);
+                }}
                 className={cn(
                   'w-full rounded-xl border py-3 pr-4 pl-10 font-serif transition-all duration-200',
                   'focus:ring-2 focus:ring-offset-2 focus:outline-none',
@@ -238,7 +289,7 @@ export function AddMemberModal({
             {selectedUserIds.length > 0 && (
               <button
                 onClick={handleBatchAddMembers}
-                disabled={isAdding}
+                disabled={isAdding || isLoading || !!loadError}
                 className={cn(
                   'flex items-center gap-2 rounded-xl px-4 py-3 font-serif text-sm transition-all duration-200',
                   'disabled:cursor-not-allowed disabled:opacity-50',
@@ -256,6 +307,9 @@ export function AddMemberModal({
               </button>
             )}
           </div>
+          <p className="mt-2 font-serif text-xs text-stone-500">
+            {t('currentPageSelection')}
+          </p>
         </div>
 
         <div className="flex-1 overflow-hidden">
@@ -272,6 +326,17 @@ export function AddMemberModal({
                   {t('loading')}
                 </span>
               </div>
+            </div>
+          ) : loadError ? (
+            <div role="alert" className="space-y-3 py-12 text-center">
+              <p>{t(loadError)}</p>
+              <button
+                onClick={() => void loadUsers(requestedPage, searchTerm, true)}
+                disabled={isAdding}
+                className="rounded-lg border px-3 py-1.5 font-serif text-sm"
+              >
+                {tCommon('retry')}
+              </button>
             </div>
           ) : users.length === 0 ? (
             <div
@@ -298,6 +363,11 @@ export function AddMemberModal({
                 <div className="flex items-center px-6 py-3">
                   <div className="w-12">
                     <button
+                      aria-label={
+                        isAllSelected ? t('deselectAll') : t('selectAll')
+                      }
+                      aria-pressed={isAllSelected}
+                      disabled={isAdding}
                       onClick={() =>
                         setSelectedUserIds(
                           selectAllVisibleUsers(users, !isAllSelected)
@@ -361,6 +431,11 @@ export function AddMemberModal({
                     >
                       <div className="w-12">
                         <button
+                          aria-label={
+                            user.full_name || user.username || t('unknownUser')
+                          }
+                          aria-pressed={isSelected}
+                          disabled={isAdding}
                           onClick={() =>
                             setSelectedUserIds(prev =>
                               toggleSelectedUserIds(prev, user.id)
@@ -488,8 +563,8 @@ export function AddMemberModal({
 
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => loadUsers(pagination.page - 1, searchTerm)}
-                  disabled={pagination.page <= 1 || isLoading}
+                  onClick={() => changePage(pagination.page - 1)}
+                  disabled={pagination.page <= 1 || isLoading || isAdding}
                   className={cn(
                     'rounded-lg border px-3 py-1.5 font-serif text-sm transition-colors',
                     pagination.page <= 1 || isLoading
@@ -512,9 +587,11 @@ export function AddMemberModal({
                 </span>
 
                 <button
-                  onClick={() => loadUsers(pagination.page + 1, searchTerm)}
+                  onClick={() => changePage(pagination.page + 1)}
                   disabled={
-                    pagination.page >= pagination.totalPages || isLoading
+                    pagination.page >= pagination.totalPages ||
+                    isLoading ||
+                    isAdding
                   }
                   className={cn(
                     'rounded-lg border px-3 py-1.5 font-serif text-sm transition-colors',

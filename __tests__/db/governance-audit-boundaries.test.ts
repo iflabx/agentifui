@@ -208,6 +208,211 @@ afterAll(async () => {
   }
 });
 
+test.each([
+  ['users.updateUserProfile', { userId: actorId, updates: { role: 'user' } }],
+  [
+    'users.updateUserProfile',
+    { userId: actorId, updates: { status: 'suspended' } },
+  ],
+  ['users.batchUpdateUserRole', { userIds: [targetId, actorId], role: 'user' }],
+  [
+    'users.batchUpdateUserStatus',
+    { userIds: [targetId, actorId], status: 'suspended' },
+  ],
+] as const)(
+  'protects administrator self access through %s without partial writes',
+  async (action, payload) => {
+    const before = (
+      await fixtureDatabase().query(
+        'SELECT id,role,status FROM profiles WHERE id=ANY($1::uuid[]) ORDER BY id',
+        [[actorId, targetId]]
+      )
+    ).rows;
+    const response = await call(action, payload);
+    expect(response.statusCode).toBe(403);
+    expect(
+      (
+        await fixtureDatabase().query(
+          'SELECT id,role,status FROM profiles WHERE id=ANY($1::uuid[]) ORDER BY id',
+          [[actorId, targetId]]
+        )
+      ).rows
+    ).toEqual(before);
+    expect(await auditFor(response.json().operationId)).toMatchObject({
+      outcome: 'failed',
+    });
+  }
+);
+
+test('protects other administrators from downgrade or deletion while allowing unchanged self role', async () => {
+  await fixtureDatabase().query(
+    "UPDATE profiles SET role='admin' WHERE id=$1",
+    [targetId]
+  );
+  for (const [action, payload] of [
+    [
+      'users.updateUserProfile',
+      { userId: targetId, updates: { role: 'user' } },
+    ],
+    ['users.batchUpdateUserRole', { userIds: [targetId], role: 'user' }],
+    ['users.deleteUser', { userId: targetId }],
+  ] as const) {
+    const response = await call(action, payload);
+    expect(response.statusCode).toBe(403);
+    expect(
+      (
+        await fixtureDatabase().query('SELECT role FROM profiles WHERE id=$1', [
+          targetId,
+        ])
+      ).rows
+    ).toEqual([{ role: 'admin' }]);
+  }
+  expect(
+    (
+      await call('users.updateUserProfile', {
+        userId: actorId,
+        updates: { role: 'admin', username: 'unchanged-role' },
+      })
+    ).statusCode
+  ).toBe(200);
+});
+
+test.each([0, 10, null])(
+  'retains quota %s and usage through toggles and visibility changes',
+  async quota => {
+    const groupId = await createGroup();
+    try {
+      const grantId = await createGrant(groupId, movingAppId);
+      await fixtureDatabase().query(
+        'UPDATE group_app_permissions SET usage_quota=$2,used_count=3 WHERE id=$1',
+        [grantId, quota]
+      );
+      for (const enabled of [false, true]) {
+        expect(
+          (
+            await call('groups.setGroupAppPermission', {
+              groupId,
+              serviceInstanceId: movingAppId,
+              data: { is_enabled: enabled },
+            })
+          ).statusCode
+        ).toBe(200);
+        expect(
+          (
+            await fixtureDatabase().query(
+              'SELECT is_enabled,usage_quota,used_count FROM group_app_permissions WHERE id=$1',
+              [grantId]
+            )
+          ).rows
+        ).toEqual([{ is_enabled: enabled, usage_quota: quota, used_count: 3 }]);
+      }
+      for (const visibility of ['private', 'public', 'group_only']) {
+        const response = await server!.inject({
+          method: 'PATCH',
+          url: '/api/internal/apps',
+          headers: { cookie: `session_token=${actorToken}` },
+          payload: { id: movingAppId, visibility },
+        });
+        expect(response.statusCode).toBe(200);
+        expect(
+          (
+            await fixtureDatabase().query(
+              'SELECT usage_quota,used_count FROM group_app_permissions WHERE id=$1',
+              [grantId]
+            )
+          ).rows
+        ).toEqual([{ usage_quota: quota, used_count: 3 }]);
+      }
+      expect(
+        (
+          await call('groups.setGroupAppPermission', {
+            groupId,
+            serviceInstanceId: movingAppId,
+            data: { is_enabled: true, usage_quota: null },
+          })
+        ).statusCode
+      ).toBe(200);
+      expect(
+        (
+          await fixtureDatabase().query(
+            'SELECT usage_quota,used_count FROM group_app_permissions WHERE id=$1',
+            [grantId]
+          )
+        ).rows
+      ).toEqual([{ usage_quota: null, used_count: 3 }]);
+    } finally {
+      await fixtureDatabase().query('DELETE FROM groups WHERE id=$1', [
+        groupId,
+      ]);
+    }
+  }
+);
+
+test('rejects authentication email edits without changing either profile or account', async () => {
+  const response = await call('users.updateUserProfile', {
+    userId: targetId,
+    updates: { email: 'changed@example.invalid' },
+  });
+  expect(response.statusCode).toBe(400);
+  const result = await fixtureDatabase().query(
+    'SELECT p.email AS profile_email,a.email AS auth_email FROM profiles p JOIN auth_users a ON a.id=p.id WHERE p.id=$1',
+    [targetId]
+  );
+  expect(result.rows[0]).toEqual({
+    profile_email: `${targetId}@example.invalid`,
+    auth_email: `${targetId}@example.invalid`,
+  });
+});
+
+test.each(['_', '%', '\\'])(
+  'matches literal %s in the actual member candidate endpoint',
+  async character => {
+    const prefix = randomUUID();
+    const username = `${prefix}${character}member`;
+    await fixtureDatabase().query(
+      'UPDATE profiles SET username=$2 WHERE id=$1',
+      [targetId, username]
+    );
+    await fixtureDatabase().query(
+      'UPDATE profiles SET username=$2 WHERE id=$1',
+      [actorId, `${prefix}Xmember`]
+    );
+    const response = await server!.inject({
+      method: 'POST',
+      url: '/api/admin/users/for-group',
+      headers: { cookie: `session_token=${actorToken}` },
+      payload: { search: username },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      success: true,
+      total: 1,
+      users: [{ id: targetId, username }],
+    });
+  }
+);
+
+test.each(['better-auth', 'email', 'password', 'credentials', 'native'])(
+  'finds a %s local account by email-only search',
+  async source => {
+    await fixtureDatabase().query(
+      "UPDATE profiles SET auth_source=$2,username='different-name',full_name=NULL WHERE id=$1",
+      [targetId, source]
+    );
+    const response = await call('users.getUserList', {
+      filters: {
+        auth_source: 'better-auth',
+        search: `${targetId}@example.invalid`,
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toMatchObject({
+      total: 1,
+      users: [{ id: targetId }],
+    });
+  }
+);
+
 test.each([{ userIds: [] }, { userIds: [actorId] }])(
   'single-user auditing ignores unrelated userIds=$userIds',
   async ({ userIds }) => {

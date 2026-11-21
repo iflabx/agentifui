@@ -47,9 +47,10 @@ export interface UserManagementState {
   error: string | null;
   showUserDetail: boolean;
   showBatchActions: boolean;
-  loadUsers: () => Promise<void>;
+  readRequestIds: Record<'users' | 'stats' | 'userDetail', number>;
+  loadUsers: () => Promise<boolean>;
   loadStats: () => Promise<void>;
-  loadUserDetail: (userId: string) => Promise<void>;
+  loadUserDetail: (userId: string) => Promise<boolean>;
   loadFilterOptions: () => Promise<void>;
   loadDepartmentsByOrganization: (organizationName: string) => Promise<void>;
   updateFilters: (filters: Partial<UserFilters>) => void;

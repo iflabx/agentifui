@@ -1715,7 +1715,8 @@
           "setAsManager": "Als Manager setzen",
           "setAsUser": "Als normalen Benutzer setzen",
           "activate": "Aktivieren",
-          "suspend": "Sperren"
+          "suspend": "Sperren",
+          "currentPageOnly": "Die Auswahl gilt nur für die aktuelle Seite. Seiten-, Filter- oder Seitengrößenänderungen heben sie auf."
         },
         "actions": {
           "refreshData": "Daten aktualisieren",
@@ -1773,7 +1774,8 @@
           "roleChangeConfirm": "Die Rolle von {name} in {role} ändern?",
           "statusChangeConfirm": "Den Status von {name} in {status} ändern?",
           "batchRoleChangeConfirm": "{count} Benutzerrollen in {role} ändern?",
-          "batchStatusChangeConfirm": "Den Status von {count} Benutzern in {status} ändern?"
+          "batchStatusChangeConfirm": "Den Status von {count} Benutzern in {status} ändern?",
+          "cannotDeactivateSelf": "Sie können Ihr eigenes Konto nicht deaktivieren."
         },
         "editModal": {
           "title": "Benutzer bearbeiten: {name}",
@@ -1818,7 +1820,8 @@
             "jobTitle": "Position",
             "managerName": "Vorgesetzte/r",
             "syncedAt": "Synchronisiert am",
-            "lastSeenAt": "Zuletzt gesehen am"
+            "lastSeenAt": "Zuletzt gesehen am",
+            "emailHint": "Die Anmelde-E-Mail ist schreibgeschützt. Ändern Sie sie über den vorgesehenen Authentifizierungsprozess."
           },
           "actions": {
             "cancel": "Abbrechen",
@@ -2090,7 +2093,10 @@
             "next": "Nächste"
           },
           "addSuccess": "Erfolgreich {count} Mitglieder zur Gruppe hinzugefügt",
-          "addPartialSuccess": "{errorCount} Mitglieder konnten nicht hinzugefügt werden"
+          "addPartialSuccess": "{errorCount} Mitglieder konnten nicht hinzugefügt werden",
+          "currentPageSelection": "Die Auswahl gilt nur für die aktuelle Seite. Seiten- oder Suchänderungen heben sie auf.",
+          "loadError": "Verfügbare Mitglieder konnten nicht geladen werden. Bitte erneut versuchen.",
+          "refreshError": "Mitglieder oder verfügbare Benutzer konnten nicht aktualisiert werden. Listen und Zahlen sind möglicherweise veraltet. Aktualisieren Sie erneut, statt Mitglieder nochmals hinzuzufügen."
         },
         "messages": {
           "deleteConfirm": "Sind Sie sicher, dass Sie die Gruppe \"{name}\" löschen möchten? Diese Aktion kann nicht rückgängig gemacht werden.",
@@ -2142,6 +2148,7 @@
             "description": "Wählen Sie eine Anwendung aus der linken Liste aus, um Berechtigungen zu konfigurieren"
           },
           "visibilitySettings": {
+            "retainedGroups": "Gruppenrechte, Kontingente und Nutzung bleiben beim Sichtbarkeitswechsel erhalten und gelten wieder im Gruppenmodus.",
             "title": "Sichtbarkeitseinstellungen",
             "currentSetting": "Aktuell",
             "options": {
@@ -2160,6 +2167,9 @@
             }
           },
           "groupPermissions": {
+            "loading": "Gruppenberechtigungen werden geladen...",
+            "loadFailed": "Gruppenberechtigungen konnten nicht geladen werden. Der Zugriffsstatus ist unbekannt.",
+            "retry": "Erneut versuchen",
             "title": "Gruppenberechtigungen",
             "description": "Auswählen, welche Gruppen auf diese Anwendung zugreifen können",
             "noGroups": {
@@ -2184,6 +2194,7 @@
           }
         },
         "messages": {
+          "permissionRefreshFailed": "Berechtigung gespeichert, aber Aktualisierung fehlgeschlagen. Vor weiteren Änderungen erneut laden.",
           "visibilityUpdateSuccess": "Anwendungssichtbarkeit auf \"{visibility}\" aktualisiert",
           "groupPermissionEnabled": "{groupName} Zugriff auf diese Anwendung aktiviert",
           "groupPermissionDisabled": "{groupName} Zugriff auf diese Anwendung deaktiviert",
