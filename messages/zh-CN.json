@@ -2167,6 +2167,17 @@
             }
           },
           "groupPermissions": {
+            "summary": "共 {total} 个群组，已授权 {enabled} 个",
+            "matchingCount": "匹配 {count} 个",
+            "searchPlaceholder": "搜索群组名称或描述",
+            "filterLabel": "按授权状态筛选",
+            "filters": {
+              "all": "全部群组",
+              "enabled": "已授权",
+              "disabled": "未授权"
+            },
+            "noMatches": "没有匹配的群组",
+            "saving": "保存中…",
             "loading": "正在加载群组权限…",
             "loadFailed": "群组权限加载失败，当前访问状态尚未确认。",
             "retry": "重试",

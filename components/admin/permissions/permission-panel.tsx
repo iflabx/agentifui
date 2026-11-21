@@ -120,7 +120,7 @@ export function PermissionPanel() {
             >
               {t('groupPermissions.description')}
             </p>
-            <GroupPermissionList app={selectedApp} />
+            <GroupPermissionList key={selectedApp.id} app={selectedApp} />
           </div>
         )}
 

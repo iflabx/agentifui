@@ -2167,6 +2167,17 @@
             }
           },
           "groupPermissions": {
+            "summary": "{total} groups · {enabled} authorized",
+            "matchingCount": "{count} matching",
+            "searchPlaceholder": "Search group name or description",
+            "filterLabel": "Filter by access",
+            "filters": {
+              "all": "All groups",
+              "enabled": "Authorized",
+              "disabled": "Not authorized"
+            },
+            "noMatches": "No matching groups",
+            "saving": "Saving…",
             "loading": "Loading group permissions...",
             "loadFailed": "Could not load group permissions. Access status is unknown.",
             "retry": "Retry",

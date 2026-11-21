@@ -2167,6 +2167,17 @@
             }
           },
           "groupPermissions": {
+            "summary": "{total} groupes · {enabled} autorisés",
+            "matchingCount": "{count} résultats",
+            "searchPlaceholder": "Rechercher un nom ou une description de groupe",
+            "filterLabel": "Filtrer par accès",
+            "filters": {
+              "all": "Tous les groupes",
+              "enabled": "Autorisés",
+              "disabled": "Non autorisés"
+            },
+            "noMatches": "Aucun groupe correspondant",
+            "saving": "Enregistrement…",
             "loading": "Chargement des autorisations de groupe...",
             "loadFailed": "Impossible de charger les autorisations de groupe. L'état d'accès est inconnu.",
             "retry": "Réessayer",

@@ -2167,6 +2167,17 @@
             }
           },
           "groupPermissions": {
+            "summary": "共 {total} 個群組，已授權 {enabled} 個",
+            "matchingCount": "符合 {count} 個",
+            "searchPlaceholder": "搜尋群組名稱或描述",
+            "filterLabel": "依授權狀態篩選",
+            "filters": {
+              "all": "全部群組",
+              "enabled": "已授權",
+              "disabled": "未授權"
+            },
+            "noMatches": "沒有符合的群組",
+            "saving": "儲存中…",
             "loading": "正在載入群組權限…",
             "loadFailed": "群組權限載入失敗，目前存取狀態尚未確認。",
             "retry": "重試",

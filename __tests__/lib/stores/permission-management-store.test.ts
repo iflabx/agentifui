@@ -368,10 +368,97 @@ it('does not let a pre-reset write release a new pending write or overwrite its 
   oldWrite.resolve({ success: false, error: new Error('Old request failed') });
   expect(await oldOperation).toBe(false);
   expect(store.getState().loading.updating).toBe(true);
-  expect(store.getState().permissionStatus).toBe('loading');
+  expect(store.getState().permissionStatus).toBe('ready');
   call.mockResolvedValueOnce({ success: true, data: [grant] });
   newWrite.resolve({ success: true, data: grant });
   expect(await newOperation).toBe(true);
   expect(store.getState().permissionStatus).toBe('ready');
   expect(store.getState().loading.updating).toBe(false);
+});
+
+it('retains confirmed grants during a write and its refresh, while blocking duplicate writes', async () => {
+  const confirmedApp = {
+    ...application,
+    groupPermissions: [
+      {
+        group_id: group.id,
+        group_name: group.name,
+        is_enabled: true,
+        usage_quota: 10,
+      },
+    ],
+  };
+  const write = deferred<{ success: true; data: typeof grant }>();
+  const refresh = deferred<{ success: true; data: (typeof grant)[] }>();
+  store.setState({
+    apps: [confirmedApp],
+    selectedApp: confirmedApp,
+    groups: [group],
+    groupsLoaded: true,
+    permissionStatus: 'ready',
+  });
+  call.mockReturnValueOnce(write.promise).mockReturnValueOnce(refresh.promise);
+  const operation = store
+    .getState()
+    .setGroupPermission(application.id, group.id, false);
+  expect(store.getState().permissionStatus).toBe('ready');
+  expect(store.getState().selectedApp?.groupPermissions).toBe(
+    confirmedApp.groupPermissions
+  );
+  expect(
+    await store.getState().setGroupPermission(application.id, group.id, false)
+  ).toBe(false);
+  expect(call).toHaveBeenCalledTimes(1);
+
+  write.resolve({ success: true, data: { ...grant, is_enabled: false } });
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(call).toHaveBeenCalledTimes(2);
+  expect(store.getState().permissionStatus).toBe('ready');
+  expect(store.getState().loading.updating).toBe(true);
+  expect(store.getState().selectedApp?.groupPermissions[0].is_enabled).toBe(
+    true
+  );
+  refresh.resolve({ success: true, data: [{ ...grant, is_enabled: false }] });
+  expect(await operation).toBe(true);
+  expect(store.getState().selectedApp?.groupPermissions[0].is_enabled).toBe(
+    false
+  );
+  expect(store.getState().loading.updating).toBe(false);
+});
+
+it('retains confirmed grants and offers retry when a write fails', async () => {
+  const confirmedApp = {
+    ...application,
+    groupPermissions: [
+      {
+        group_id: group.id,
+        group_name: group.name,
+        is_enabled: true,
+        usage_quota: 10,
+      },
+    ],
+  };
+  store.setState({
+    selectedApp: confirmedApp,
+    groups: [group],
+    groupsLoaded: true,
+    permissionStatus: 'ready',
+  });
+  call.mockResolvedValueOnce({
+    success: false,
+    error: new Error('Write failed'),
+  });
+  expect(
+    await store.getState().setGroupPermission(application.id, group.id, false)
+  ).toBe(false);
+  expect(store.getState().permissionStatus).toBe('error');
+  expect(store.getState().permissionError).toBe('Write failed');
+  expect(store.getState().selectedApp?.groupPermissions).toBe(
+    confirmedApp.groupPermissions
+  );
+  expect(store.getState().loading.updating).toBe(false);
+  call.mockResolvedValueOnce({ success: true, data: [grant] });
+  await store.getState().loadAppPermissions(application.id);
+  expect(store.getState().permissionStatus).toBe('ready');
 });

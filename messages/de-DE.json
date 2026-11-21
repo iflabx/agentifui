@@ -2167,6 +2167,17 @@
             }
           },
           "groupPermissions": {
+            "summary": "{total} Gruppen · {enabled} berechtigt",
+            "matchingCount": "{count} Treffer",
+            "searchPlaceholder": "Gruppenname oder Beschreibung suchen",
+            "filterLabel": "Nach Zugriffsstatus filtern",
+            "filters": {
+              "all": "Alle Gruppen",
+              "enabled": "Berechtigt",
+              "disabled": "Nicht berechtigt"
+            },
+            "noMatches": "Keine passenden Gruppen",
+            "saving": "Wird gespeichert…",
             "loading": "Gruppenberechtigungen werden geladen...",
             "loadFailed": "Gruppenberechtigungen konnten nicht geladen werden. Der Zugriffsstatus ist unbekannt.",
             "retry": "Erneut versuchen",

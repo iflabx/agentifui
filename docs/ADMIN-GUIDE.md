@@ -226,6 +226,16 @@ an allowed and a disallowed ordinary account. Switching away from group-only
 visibility retains group grants, quotas and usage. Those grants apply only in
 group-only mode and apply again when switching back. Access toggles preserve
 existing quotas and usage; they do not reset or remove a limit.
+
+For a long group list, search by group name or description and filter by
+**All groups**, **Authorized** or **Not authorized**. The toolbar shows total,
+authorized and matching group counts. Rows show the group name, member count
+and a shortened description; hover over truncated text to read it in full.
+Each access toggle saves immediately. While saving and refreshing that change,
+the list keeps its confirmed values and marks the affected row as saving;
+other access toggles are temporarily disabled. A failed write or refresh shows
+an error with a retry action rather than treating unknown access as disabled.
+
 Disabling an application/provider prevents new use, but
 does not promise cancellation of a task already dispatched to the backend.
 

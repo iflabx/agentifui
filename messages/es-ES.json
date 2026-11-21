@@ -2167,6 +2167,17 @@
             }
           },
           "groupPermissions": {
+            "summary": "{total} grupos · {enabled} autorizados",
+            "matchingCount": "{count} coincidencias",
+            "searchPlaceholder": "Buscar por nombre o descripción del grupo",
+            "filterLabel": "Filtrar por acceso",
+            "filters": {
+              "all": "Todos los grupos",
+              "enabled": "Autorizados",
+              "disabled": "No autorizados"
+            },
+            "noMatches": "No hay grupos coincidentes",
+            "saving": "Guardando…",
             "loading": "Cargando permisos de grupo...",
             "loadFailed": "No se pudieron cargar los permisos de grupo. El estado de acceso es desconocido.",
             "retry": "Reintentar",

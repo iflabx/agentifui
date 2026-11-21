@@ -72,7 +72,10 @@ interface PermissionManagementActions {
   // Data loading
   loadApps: () => Promise<void>;
   loadGroups: () => Promise<void>;
-  loadAppPermissions: (appId: string) => Promise<void>;
+  loadAppPermissions: (
+    appId: string,
+    preserveContent?: boolean
+  ) => Promise<void>;
 
   // App management
   updateAppVisibility: (
@@ -251,7 +254,7 @@ export const usePermissionManagementStore = create<PermissionManagementStore>(
         }
       },
 
-      loadAppPermissions: async (appId: string) => {
+      loadAppPermissions: async (appId: string, preserveContent = false) => {
         if (get().selectedApp?.id !== appId) return;
         const request = ++permissionRequest;
         if (!get().groupsLoaded && !get().loading.groups) {
@@ -264,7 +267,13 @@ export const usePermissionManagementStore = create<PermissionManagementStore>(
           });
           return;
         }
-        set({ permissionStatus: 'loading', permissionError: null });
+        set({
+          permissionStatus:
+            preserveContent && get().permissionStatus === 'ready'
+              ? 'ready'
+              : 'loading',
+          permissionError: null,
+        });
         if (!get().groupsLoaded) return;
         try {
           const { groups } = get();
@@ -424,7 +433,6 @@ export const usePermissionManagementStore = create<PermissionManagementStore>(
         ++permissionRequest;
         set(state => ({
           loading: { ...state.loading, updating: true },
-          permissionStatus: 'loading',
           permissionError: null,
           error: null,
         }));
@@ -448,7 +456,7 @@ export const usePermissionManagementStore = create<PermissionManagementStore>(
               lifecycle === lifecycleVersion &&
               get().selectedApp?.id === appId
             )
-              await get().loadAppPermissions(appId);
+              await get().loadAppPermissions(appId, true);
             return true;
           } else {
             throw new Error(result.error.message);
