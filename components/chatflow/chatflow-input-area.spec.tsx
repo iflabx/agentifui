@@ -1,9 +1,28 @@
 import { AppRequestError } from '@lib/errors/app-error';
+import { uploadDifyFile } from '@lib/services/dify/file-service';
+import { useChatInputStore } from '@lib/stores/chat-input-store';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { ChatflowInputArea } from './chatflow-input-area';
 
 const showNotification = jest.fn();
+const ready = {
+  version: 1,
+  status: 'ready',
+  mode: 'conversation',
+  text: { enabled: true, required: true, target: 'query' },
+  fields: [],
+  attachmentSlots: [],
+};
+jest.mock('@lib/auth/better-auth/react-hooks', () => ({
+  useAuthSession: () => ({
+    session: { user: { id: 'actor' } },
+    loading: false,
+  }),
+}));
+jest.mock('@lib/services/dify/file-service', () => ({
+  uploadDifyFile: jest.fn(),
+}));
 
 jest.mock('next-intl', () => ({
   useTranslations: (namespace?: string) => {
@@ -60,20 +79,30 @@ describe('ChatflowInputArea moderation handling', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    useChatInputStore.getState().setActor('actor');
     global.fetch = mockedFetch;
-    mockedFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        success: true,
-        app: {
-          config: {
-            dify_parameters: {
-              user_input_form: [],
-            },
-          },
-        },
-      }),
-    } as Response);
+    mockedFetch.mockImplementation(async url =>
+      String(url).includes('input-capabilities')
+        ? ({
+            ok: true,
+            json: async () => ready,
+          } as Response)
+        : ({
+            ok: true,
+            json: async () => ({
+              success: true,
+              app: {
+                id: 'uuid-1',
+                instance_id: 'app-1',
+                config: {
+                  dify_parameters: {
+                    user_input_form: [],
+                  },
+                },
+              },
+            }),
+          } as Response)
+    );
   });
 
   afterAll(() => {
@@ -174,6 +203,8 @@ describe('ChatflowInputArea moderation handling', () => {
       json: async () => ({
         success: true,
         app: {
+          id: 'uuid-1',
+          instance_id: 'app-1',
           config: {
             dify_parameters: {
               user_input_form: [
@@ -218,5 +249,80 @@ describe('ChatflowInputArea moderation handling', () => {
     await waitFor(() => {
       expect(onSubmit).toHaveBeenCalledWith('hello', {}, []);
     });
+  });
+
+  it('uses a required live file variable when native file_upload is disabled, without duplicating it in files', async () => {
+    mockedFetch.mockImplementation(
+      async url =>
+        ({
+          ok: true,
+          json: async () =>
+            String(url).includes('input-capabilities')
+              ? {
+                  ...ready,
+                  attachmentSlots: [
+                    {
+                      key: 'Exact_File',
+                      label: 'Required document',
+                      target: 'inputs',
+                      minCount: 1,
+                      maxCount: 1,
+                      methods: ['local_file'],
+                      allowedTypes: ['image', 'document'],
+                      extensions: [],
+                      maxBytesByType: { image: 10, document: 10 },
+                    },
+                  ],
+                }
+              : {
+                  success: true,
+                  app: {
+                    id: 'uuid-1',
+                    instance_id: 'app-1',
+                    config: {
+                      dify_parameters: { file_upload: { enabled: false } },
+                    },
+                  },
+                },
+        }) as Response
+    );
+    jest
+      .mocked(uploadDifyFile)
+      .mockResolvedValue({ id: 'uploaded-md' } as never);
+    const onSubmit = jest.fn().mockResolvedValue({ ok: true });
+    const view = render(
+      <ChatflowInputArea instanceId="app-1" onSubmit={onSubmit} />
+    );
+    const query = await screen.findByPlaceholderText(
+      'form.question.placeholder'
+    );
+    fireEvent.change(query, { target: { value: 'read document' } });
+    expect(screen.getByText('Required document')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'form.startConversation' })
+    ).toBeDisabled();
+    fireEvent.change(view.container.querySelector('input[type="file"]')!, {
+      target: { files: [new File(['doc'], 'doc.md', { type: '' })] },
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'form.startConversation' })
+      ).not.toBeDisabled()
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'form.startConversation' })
+    );
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        'read document',
+        {
+          Exact_File: expect.objectContaining({
+            upload_file_id: 'uploaded-md',
+            type: 'document',
+          }),
+        },
+        []
+      )
+    );
   });
 });

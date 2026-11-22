@@ -7,6 +7,7 @@ import {
   rejectSubmission,
   rejectUnacceptedSubmission,
 } from '../../lib/agent-submissions';
+import { clearDifyInputCapabilitiesCache } from '../../lib/dify-input-capabilities';
 import {
   DifyProxyRequestError,
   fetchWithDifyProxyResilience,
@@ -36,6 +37,7 @@ import {
   normalizeRequestBody,
   resolveDifyProxyTimeoutMs,
 } from './helpers';
+import { validateDifyInputUpload } from './input-capabilities';
 import {
   acceptDifyMessageEdit,
   sanitizeDifyMessageHistory,
@@ -537,6 +539,8 @@ export async function dispatchDifyUpstreamRequest(
   }
 
   if (upstreamPayload instanceof FormData) {
+    if (slugPath === 'files/upload' && !targetConfig.tempConfigUsed)
+      await validateDifyInputUpload(upstreamPayload, targetConfig);
     upstreamHeaders.delete('Content-Type');
   } else if (actualMethod !== 'GET' && actualMethod !== 'HEAD') {
     upstreamHeaders.set('Content-Type', 'application/json');
@@ -661,6 +665,12 @@ export async function dispatchDifyUpstreamRequest(
       [400, 401, 403, 404, 405, 413, 415, 422].includes(
         resilienceResult.response.status
       );
+    if (
+      nativeRefusal &&
+      actualMethod === 'POST' &&
+      (slugPath === 'files/upload' || targetConfig.rootTaskId)
+    )
+      clearDifyInputCapabilitiesCache();
     if (nativeRefusal && targetConfig.rootTaskId)
       await rejectUnacceptedSubmission(targetConfig.rootTaskId);
     await sendUpstreamResponse({

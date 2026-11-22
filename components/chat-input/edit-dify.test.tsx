@@ -24,16 +24,29 @@ jest.mock('@lib/hooks/use-chat-width', () => ({
   useChatWidth: () => ({ widthClass: 'max-w-3xl' }),
 }));
 jest.mock('@lib/hooks/use-chat-input-app', () => ({
-  useChatInputApp: () => ({ instance: null, failed: false }),
+  useChatInputApp: () => ({ instance: { id: 'app' }, failed: false }),
 }));
 jest.mock('@lib/hooks/use-file-types', () => ({
-  useFileTypes: () => ({ uploadConfig: {} }),
+  useFileTypes: () => ({
+    uploadConfig: {},
+    capabilities: {
+      version: 1,
+      status: 'ready',
+      mode: 'conversation',
+      text: { enabled: true, required: true, target: 'query' },
+      fields: [],
+      attachmentSlots: [],
+    },
+  }),
 }));
 jest.mock('@lib/hooks/use-chat-input-route-sync', () => ({
   registerChatInputSubmission: () => () => undefined,
   useChatInputRouteSync: () => ({ ready: true, appId: 'app' }),
 }));
-jest.mock('./use-uploads', () => ({ useChatInputUploads: () => ({}) }));
+jest.mock('./use-uploads', () => ({
+  ...jest.requireActual('./use-uploads'),
+  useChatInputUploads: () => ({}),
+}));
 jest.mock('./model-selector-button', () => ({
   ModelSelectorButton: () => null,
 }));

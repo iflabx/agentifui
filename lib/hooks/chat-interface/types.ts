@@ -51,7 +51,7 @@ export interface ChatStreamCompletionData {
 }
 
 export interface DifyLocalFile {
-  type: 'document';
+  type: 'document' | 'image' | 'audio' | 'video' | 'custom';
   transfer_method: 'local_file';
   upload_file_id: string;
 }

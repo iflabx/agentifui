@@ -34,6 +34,31 @@ for the same conversation.
 
 ## Implementation Boundaries
 
+### Effective Input Requirements
+
+The internal input-capabilities endpoint normalizes live `/parameters` into a
+bounded contract shared by browser controls and API validation. Message `files`
+and `inputs` file variables remain distinct slots. Exact upstream variable names
+are preserved; no lowercase aliases or fabricated fields are sent. File-list
+limits are not interpreted as required counts, and remote-only slots do not
+enable local upload.
+
+Native generation endpoints enforce aggregate slot counts and registered file
+ownership/type/size before admission. Upload validation alone does not authorize
+a later generation request. This does not route Workflow or text generation
+through the text-only shared AG-UI transport; those execution adapters retain
+their existing behavior. See [configuration](CONFIGURATION.md#dify-input-attachment-previews)
+for the additive metadata migration and old-reference compatibility.
+
+When a native Chatflow continuation omits initialization variables, the server
+retrieves the latest inputs through the application's authenticated Dify message
+history with the current user's identity. Recovered file references undergo the
+same ownership, count, type and size checks before forwarding; a conversation ID
+alone never bypasses those checks. Explicitly supplied values are not replaced,
+and current-message attachments remain subject to their own limits. If history
+or an old upload's trusted metadata is unavailable, the request fails rather than
+silently guessing inputs or resending the task.
+
 - The authenticated proxy lives in `apps/api/src/routes/dify-proxy.ts` and
   `apps/api/src/routes/dify-proxy-route/`. The legacy Next.js Dify route is a
   disabled compatibility stub; add proxy behavior in Fastify rather than

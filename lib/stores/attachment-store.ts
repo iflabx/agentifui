@@ -1,5 +1,10 @@
 import { create } from 'zustand';
 
+import {
+  type AgentAttachmentSlot,
+  validateInputFile,
+} from '../../packages/shared/src/agent-input';
+
 export interface AttachmentFile {
   id: string;
   file: File;
@@ -27,6 +32,11 @@ interface AttachmentStoreState {
   migrateScope: (source: string, target: string) => boolean;
   getFiles: (scope: string) => AttachmentFile[];
   addFiles: (files: File[], scope?: string) => void;
+  reserveFiles: (
+    files: File[],
+    slot: AgentAttachmentSlot,
+    scope: string
+  ) => { ids: string[]; error: string | null };
   removeFile: (id: string, scope?: string) => void;
   updateFileStatus: (
     id: string,
@@ -104,6 +114,47 @@ export const useAttachmentStore = create<AttachmentStoreState>((set, get) => ({
         status: 'pending' as const,
       }));
     get().setFiles([...current, ...additions], scope);
+  },
+  reserveFiles: (files, slot, scope) => {
+    const resolved = get().resolveScope(scope);
+    let result: { ids: string[]; error: string | null } = {
+      ids: [],
+      error: null,
+    };
+    set(state => {
+      const current =
+        resolved === state.currentScope
+          ? state.files
+          : state.filesByScope[resolved] || [];
+      const additions = [...new Set(files)].filter(
+        file => !current.some(entry => entry.file === file)
+      );
+      const error =
+        current.length + additions.length > slot.maxCount
+          ? 'INPUT_TOO_MANY_FILES'
+          : (additions
+              .map(file => validateInputFile(slot, file))
+              .find(Boolean) ?? null);
+      if (error) {
+        result = { ids: [], error };
+        return state;
+      }
+      const entries = additions.map(file => ({
+        id: crypto.randomUUID(),
+        file,
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        status: 'pending' as const,
+      }));
+      const next = [...current, ...entries];
+      result = { ids: entries.map(entry => entry.id), error: null };
+      return {
+        filesByScope: { ...state.filesByScope, [resolved]: next },
+        ...(resolved === state.currentScope ? { files: next } : {}),
+      };
+    });
+    return result;
   },
   removeFile: (id, scope = get().currentScope) =>
     get().setFiles(

@@ -1,30 +1,14 @@
 import type { ChatUploadFile } from '@lib/services/dify/types';
 import type { AttachmentFile } from '@lib/stores/attachment-store';
 
+import { inputFileType } from '../../packages/shared/src/agent-input';
+
 export type ChatInputTranslations = (key: string) => string;
 
 export function getDifyFileType(
   file: AttachmentFile
 ): 'image' | 'document' | 'audio' | 'video' | 'custom' {
-  const mime = file.type.toLowerCase();
-  if (mime.startsWith('image/')) return 'image';
-  if (mime.startsWith('audio/')) return 'audio';
-  if (mime.startsWith('video/')) return 'video';
-  if (
-    mime === 'application/pdf' ||
-    mime.includes('word') ||
-    mime.includes('excel') ||
-    mime.includes('csv') ||
-    mime.includes('text') ||
-    mime.includes('html') ||
-    mime.includes('xml') ||
-    mime.includes('epub') ||
-    mime.includes('powerpoint')
-  ) {
-    return 'document';
-  }
-
-  return 'custom';
+  return inputFileType(file.name, file.type);
 }
 
 export function buildSubmitFiles(

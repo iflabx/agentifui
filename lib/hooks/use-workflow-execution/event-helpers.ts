@@ -14,11 +14,6 @@ export function buildNormalizedWorkflowInputs(
     }
 
     normalized[key] = value;
-
-    const lowerKey = key.toLowerCase();
-    if (lowerKey !== key && !(lowerKey in normalized)) {
-      normalized[lowerKey] = value;
-    }
   });
 
   return normalized;

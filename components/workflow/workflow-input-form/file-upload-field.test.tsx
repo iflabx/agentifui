@@ -2,7 +2,20 @@ import { uploadDifyFile } from '@lib/services/dify/file-service';
 import { useChatInputStore } from '@lib/stores/chat-input-store';
 import { act, fireEvent, render } from '@testing-library/react';
 
+import type { AgentAttachmentSlot } from '../../../packages/shared/src/agent-input';
 import { FileUploadField } from './file-upload-field';
+
+const slot: AgentAttachmentSlot = {
+  key: 'docs',
+  label: 'Docs',
+  target: 'inputs',
+  minCount: 1,
+  maxCount: 3,
+  methods: ['local_file'],
+  allowedTypes: ['document'],
+  extensions: ['txt'],
+  maxBytesByType: { document: 100 },
+};
 
 const mockAuth = { session: { user: { id: 'actor' } }, loading: false };
 jest.mock('@lib/auth/better-auth/react-hooks', () => ({
@@ -35,6 +48,7 @@ describe('form upload ownership', () => {
     const onChange = jest.fn();
     const view = render(
       <FileUploadField
+        slot={slot}
         config={{ max_length: 3 }}
         instanceId="app-B"
         value={null}
@@ -94,6 +108,7 @@ describe('form upload ownership', () => {
       if (change === 'app' || change === 'app-round-trip')
         view.rerender(
           <FileUploadField
+            slot={slot}
             config={{ max_length: 3 }}
             instanceId="app-C"
             value={null}
@@ -104,6 +119,7 @@ describe('form upload ownership', () => {
       if (change === 'app-round-trip')
         view.rerender(
           <FileUploadField
+            slot={slot}
             config={{ max_length: 3 }}
             instanceId="app-B"
             value={null}
@@ -135,6 +151,7 @@ describe('form upload ownership', () => {
     });
     view.rerender(
       <FileUploadField
+        slot={slot}
         config={{ max_length: 3 }}
         instanceId="app-B"
         value={oldPayload}
@@ -176,6 +193,7 @@ describe('form upload ownership', () => {
       mockAuth.loading = loading;
       view.rerender(
         <FileUploadField
+          slot={slot}
           config={{ max_length: 3 }}
           instanceId="app-B"
           value={null}
@@ -217,6 +235,7 @@ describe('form upload ownership', () => {
     const refresh = () =>
       view.rerender(
         <FileUploadField
+          slot={slot}
           config={{ max_length: 3 }}
           instanceId="app-B"
           value={null}
@@ -257,6 +276,7 @@ describe('form upload ownership', () => {
       mockAuth.loading = loading;
       view.rerender(
         <FileUploadField
+          slot={slot}
           config={{ max_length: 3 }}
           instanceId="app-B"
           value={null}
@@ -301,6 +321,7 @@ describe('form upload ownership', () => {
       if (change !== 'unmount')
         view.rerender(
           <FileUploadField
+            slot={slot}
             config={{ max_length: 3 }}
             instanceId={change === 'app' ? 'app-C' : 'app-B'}
             value={null}

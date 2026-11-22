@@ -44,7 +44,12 @@ export const FileTypeSelector = ({
 
   // Logic to check if files can be uploaded
   // Considers admin interface configuration and current uploaded file count
-  const canUpload = uploadConfig.enabled && uploadConfig.maxFiles > 0;
+  const canUpload =
+    !isLoading &&
+    !error &&
+    uploadConfig.enabled &&
+    uploadConfig.maxFiles > 0 &&
+    uploadConfig.supportedMethods.includes('local_file');
   const hasReachedLimit = attachmentCount >= uploadConfig.maxFiles;
   const isDisabled = disabled || !canUpload || hasReachedLimit;
 
@@ -54,7 +59,7 @@ export const FileTypeSelector = ({
       return t('fileTypeSelector.notSupported');
     }
     if (uploadConfig.maxFiles === 0) {
-      return t('fileTypeSelector.noLimit');
+      return t('fileTypeSelector.notSupported');
     }
     if (!uploadConfig.hasFileTypes) {
       return t('fileTypeSelector.noTypesConfigured');
@@ -76,8 +81,6 @@ export const FileTypeSelector = ({
       if (fileInput) {
         // Set accepted file type
         fileInput.accept = accept;
-        // Trigger file selection dialog
-        fileInput.click();
         // Listen for file selection completion event
         const handleChange = () => {
           onFileSelect(fileInput.files, accept);
@@ -87,6 +90,7 @@ export const FileTypeSelector = ({
           fileInput.removeEventListener('change', handleChange);
         };
         fileInput.addEventListener('change', handleChange);
+        fileInput.click();
       }
     },
     [onFileSelect]
@@ -102,7 +106,7 @@ export const FileTypeSelector = ({
     // Create temporary file input box
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
-    fileInput.multiple = true; // Allow multiple selection
+    fileInput.multiple = uploadConfig.maxFiles - attachmentCount > 1;
 
     // Use callback to handle file selection
     fileInputCallback(fileInput, accept);
@@ -235,7 +239,11 @@ export const FileTypeSelector = ({
                 )}
               >
                 <div className="flex flex-col">
-                  <span>{type.title}</span>
+                  <span>
+                    {t(
+                      `fileUpload.${type.title === 'other' ? 'custom' : type.title}`
+                    )}
+                  </span>
                   <span
                     className={cn(
                       'font-serif text-xs',

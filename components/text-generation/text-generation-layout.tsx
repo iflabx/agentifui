@@ -147,9 +147,10 @@ export function TextGenerationLayout({
         handledExecutionIdRef.current = null;
         clearHistoricalExecutionState();
         clearRequestedExecutionId();
-        await executeTextGeneration(formData);
+        return await executeTextGeneration(formData);
       } catch (error: unknown) {
         console.error('[Text generation layout] Execution failed:', error);
+        return false;
       }
     },
     [
