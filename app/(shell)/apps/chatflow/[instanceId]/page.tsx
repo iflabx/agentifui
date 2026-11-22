@@ -6,6 +6,7 @@ import {
   ScrollToBottomButton,
 } from '@components/chat';
 import { ChatInput } from '@components/chat-input';
+import { DifyEditProvider } from '@components/chat-input/edit-resend';
 import { ChatflowFloatingController } from '@components/chatflow/chatflow-floating-controller';
 import { ChatflowInputArea } from '@components/chatflow/chatflow-input-area';
 import { ChatflowNodeTracker } from '@components/chatflow/chatflow-node-tracker';
@@ -393,95 +394,97 @@ export default function AppDetailPage() {
   }
 
   return (
-    <div
-      className={cn(
-        'relative flex h-full w-full flex-col',
-        'bg-stone-100 dark:bg-stone-800',
-        'text-stone-900 dark:text-gray-100'
-      )}
-    >
+    <DifyEditProvider>
       <div
         className={cn(
-          'relative flex min-h-0 flex-1 flex-col overflow-hidden',
-          'pt-10'
+          'relative flex h-full w-full flex-col',
+          'bg-stone-100 dark:bg-stone-800',
+          'text-stone-900 dark:text-gray-100'
         )}
-        style={
-          { '--chat-input-height': chatInputHeightVar } as React.CSSProperties
-        }
       >
-        <div className="min-h-0 flex-1">
-          {isWelcomeScreen && messages.length === 0 ? (
-            <div
-              className={cn(
-                'h-full overflow-y-auto scroll-smooth',
-                'mx-auto w-full'
-              )}
-            >
-              <div className="py-8">
-                <ChatflowInputArea
-                  key={formIdentity}
-                  instanceId={instanceId}
-                  onSubmit={handleChatflowSubmit}
-                  isProcessing={isProcessing}
-                  isWaiting={isWaitingForResponse}
-                  onFormConfigChange={setHasFormConfig}
+        <div
+          className={cn(
+            'relative flex min-h-0 flex-1 flex-col overflow-hidden',
+            'pt-10'
+          )}
+          style={
+            { '--chat-input-height': chatInputHeightVar } as React.CSSProperties
+          }
+        >
+          <div className="min-h-0 flex-1">
+            {isWelcomeScreen && messages.length === 0 ? (
+              <div
+                className={cn(
+                  'h-full overflow-y-auto scroll-smooth',
+                  'mx-auto w-full'
+                )}
+              >
+                <div className="py-8">
+                  <ChatflowInputArea
+                    key={formIdentity}
+                    instanceId={instanceId}
+                    onSubmit={handleChatflowSubmit}
+                    isProcessing={isProcessing}
+                    isWaiting={isWaitingForResponse}
+                    onFormConfigChange={setHasFormConfig}
+                  />
+                </div>
+              </div>
+            ) : (
+              <div
+                ref={scrollRef}
+                className="chat-scroll-container h-full overflow-y-auto scroll-smooth"
+              >
+                <ChatLoader
+                  messages={messages}
+                  isWaitingForResponse={isWaitingForResponse}
+                  isLoadingInitial={false}
+                />
+
+                <ChatflowNodeTracker
+                  isVisible={showNodeTracker}
+                  scope={JSON.stringify([instanceId, formIdentity])}
+                  onClose={() => {
+                    setShowNodeTracker(false);
+                    trackerButtonRef.current?.focus();
+                  }}
+                  className={cn(
+                    'fixed right-4 bottom-40 z-30 max-w-sm',
+                    'transition-all duration-300'
+                  )}
                 />
               </div>
-            </div>
-          ) : (
-            <div
-              ref={scrollRef}
-              className="chat-scroll-container h-full overflow-y-auto scroll-smooth"
-            >
-              <ChatLoader
-                messages={messages}
-                isWaitingForResponse={isWaitingForResponse}
-                isLoadingInitial={false}
-              />
+            )}
+          </div>
 
-              <ChatflowNodeTracker
-                isVisible={showNodeTracker}
-                scope={JSON.stringify([instanceId, formIdentity])}
-                onClose={() => {
-                  setShowNodeTracker(false);
-                  trackerButtonRef.current?.focus();
-                }}
-                className={cn(
-                  'fixed right-4 bottom-40 z-30 max-w-sm',
-                  'transition-all duration-300'
-                )}
+          <ScrollToBottomButton />
+
+          <ChatflowFloatingController
+            buttonRef={trackerButtonRef}
+            isVisible={showFloatingController}
+            isTrackerVisible={showNodeTracker}
+            onToggleTracker={() => setShowNodeTracker(!showNodeTracker)}
+          />
+
+          {!isWelcomeScreen && (
+            <>
+              <ChatInputBackdrop />
+
+              <ChatInput
+                onSubmit={handleSubmit}
+                placeholder={t('continueChatWith', {
+                  appName: currentApp.display_name || t('defaultApp'),
+                })}
+                isProcessing={isProcessing}
+                isWaiting={isWaitingForResponse}
+                onStop={handleStopProcessing}
+                showModelSelector={false}
+                requireModelValidation={false}
               />
-            </div>
+            </>
           )}
         </div>
-
-        <ScrollToBottomButton />
-
-        <ChatflowFloatingController
-          buttonRef={trackerButtonRef}
-          isVisible={showFloatingController}
-          isTrackerVisible={showNodeTracker}
-          onToggleTracker={() => setShowNodeTracker(!showNodeTracker)}
-        />
-
-        {!isWelcomeScreen && (
-          <>
-            <ChatInputBackdrop />
-
-            <ChatInput
-              onSubmit={handleSubmit}
-              placeholder={t('continueChatWith', {
-                appName: currentApp.display_name || t('defaultApp'),
-              })}
-              isProcessing={isProcessing}
-              isWaiting={isWaitingForResponse}
-              onStop={handleStopProcessing}
-              showModelSelector={false}
-              requireModelValidation={false}
-            />
-          </>
-        )}
       </div>
-    </div>
+    </DifyEditProvider>
   );
 }

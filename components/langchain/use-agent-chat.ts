@@ -4,6 +4,7 @@ import { conversationEvents } from '@lib/hooks/use-combined-conversations';
 import { consumeAguiStream } from '@lib/services/client/agui-stream';
 import {
   AgentRequestError,
+  agentMessageFitsRequest,
   agentPath,
   agentRequest,
   agentRunSettled,
@@ -440,6 +441,7 @@ export function useAgentChat(
   ) => {
     if (
       !ready ||
+      (singleTask && Boolean(view.conversationId)) ||
       (!view.conversationId && !newConversationsEnabled) ||
       busy ||
       sending.current ||
@@ -452,6 +454,20 @@ export function useAgentChat(
       !content.trim()
     )
       return;
+    if (!agentMessageFitsRequest(content, view.conversationId)) {
+      setError(
+        new AgentRequestError(413, {
+          code: 'AGENT_MESSAGE_TOO_LONG',
+          source: 'frontend',
+          severity: 'warn',
+          retryable: false,
+          userMessage: 'AGENT_MESSAGE_TOO_LONG',
+          requestId: '',
+          occurredAt: new Date().toISOString(),
+        })
+      );
+      return false;
+    }
     sending.current = true;
     const currentGeneration = generation.current;
     const version = navigationVersion.current;

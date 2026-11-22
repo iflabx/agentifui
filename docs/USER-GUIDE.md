@@ -135,9 +135,23 @@ Use the actions actually present on a message:
 
 - **Copy** copies available message text. Browser clipboard permission and a
   secure context can affect whether copying succeeds.
-- **Edit** and **Regenerate**, where offered by the conversation path, prepare or
-  request another answer. They are not a way to repair an incompletely saved run.
-  Review what will be sent and any new usage before proceeding.
+- **Edit and send** on a historical user text message prepares an editable correction
+  in the existing composer. Review the quoted old request and edit the new requirements,
+  then use the normal send button. This appends a new user message and answer to the
+  same conversation; it does not change the original message, remove later messages,
+  create a branch or reset the Agent's memory or previous tool effects.
+  You can change or delete all correction wording. Only the visible final text is sent.
+  The correction asks the model to prefer the new requirements, but cannot guarantee
+  that it ignores all old context. The full text counts toward normal request limits.
+  Replacing an existing draft or selected attachments requires confirmation; cancelling
+  keeps them. **Exit editing** dismisses the notice but keeps the prepared text.
+  Historical attachments are not copied: attach files again if needed and supported.
+  Existing application parameters remain in effect. Single-task applications, workflow
+  records, attachment-only messages and non-user messages do not offer this operation.
+  Running tasks, unresolved saves and pending human input retain their normal limits.
+- **Regenerate**, where offered, requests another answer. Neither action repairs an
+  incompletely saved run. Each accepted new request follows normal usage and permission
+  rules. Refresh or reopen history to check that the original and appended turns persist.
 - **Useful/Not useful** feedback is offered only on paths wired to feedback.
   Selecting feedback does not modify the answer or guarantee an upstream model
   will be retrained.

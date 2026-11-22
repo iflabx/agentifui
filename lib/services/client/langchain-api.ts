@@ -122,6 +122,23 @@ export function agentPath(appId: string, suffix = ''): string {
   return `/api/internal/apps/${encodeURIComponent(appId)}/agent${suffix}`;
 }
 
+export function agentMessageFitsRequest(
+  content: string,
+  conversationId?: string | null
+) {
+  const upstreamEnvelopeReserveBytes = 1024;
+  const body = {
+    submissionId: '00000000-0000-0000-0000-000000000000',
+    content: content.trim(),
+    ...(conversationId ? { conversationId } : {}),
+  };
+  return (
+    body.content.length <= 16000 &&
+    new TextEncoder().encode(JSON.stringify(body)).length <=
+      64 * 1024 - upstreamEnvelopeReserveBytes
+  );
+}
+
 export async function agentRequest<T>(
   appId: string,
   suffix: string,

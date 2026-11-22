@@ -2394,6 +2394,19 @@
   },
   "components": {
     "chat": {
+      "editResend": {
+        "action": "Modifier et envoyer",
+        "original": "Je corrige cette demande précédente :",
+        "replacement": "Veuillez utiliser ces nouvelles exigences :",
+        "guidance": "Ne fondez pas cette réponse sur la réponse à la demande précédente ni sur les conclusions qui en découlent. Conservez le contexte inchangé. Si des informations nécessaires aux nouvelles exigences manquent, indiquez-le explicitement.",
+        "notice": "Une correction modifiable a été ajoutée. L’envoi ajoute un message à cette conversation ; les messages originaux et suivants sont conservés.",
+        "textOnly": "Texte uniquement : les pièces jointes originales ne sont pas ajoutées.",
+        "exit": "Quitter la modification",
+        "replaceTitle": "Remplacer le brouillon actuel ?",
+        "replaceMessage": "Le texte et les pièces jointes sélectionnées seront remplacés. Les messages historiques et les fichiers stockés ne seront pas supprimés.",
+        "replaceConfirm": "Remplacer le brouillon",
+        "tooLong": "Le message complet est trop long. Raccourcissez-le puis réessayez ; votre brouillon est conservé."
+      },
       "messageActions": {
         "copy": "Copier",
         "copied": "Copié",

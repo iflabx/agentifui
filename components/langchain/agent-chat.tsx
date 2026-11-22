@@ -1,5 +1,6 @@
 'use client';
 
+import { useEditResend } from '@components/chat-input/edit-resend';
 import { ChatInputView } from '@components/chat-input/view';
 import { ChatInputBackdrop } from '@components/chat/chat-input-backdrop';
 import { AssistantMessage } from '@components/chat/messages/assistant-message/assistant-message';
@@ -62,6 +63,7 @@ function AgentChatSession({
 }: AgentChatProps & { actorId: string; authLoading: boolean }) {
   const t = useTranslations('langchain');
   const chat = useAgentChat(appId, conversationId, actorId);
+  const editT = useTranslations('components.chat.editResend');
   const [liveResultRunId, setLiveResultRunId] = useState<string>();
   useEffect(() => {
     if (chat.historyLoading || !chat.view.runId) setLiveResultRunId(undefined);
@@ -87,22 +89,24 @@ function AgentChatSession({
     : null;
   const errorMessage = !activeError
     ? null
-    : activeError.status === 401
-      ? t('loginRequired')
-      : [403, 404].includes(activeError.status)
-        ? t('unavailable')
-        : uiError
-          ? localizeChatModerationMessage(uiError, moderationT) ||
-            formatUiErrorMessage({
-              ...uiError,
-              message:
-                activeError.detail?.code === 'AGENT_RESULT_PROFILE_DISABLED'
-                  ? t('resultProfilePaused')
-                  : uiError.message === uiError.code
-                    ? t('requestFailed')
-                    : uiError.message,
-            })
-          : t('requestFailed');
+    : activeError.detail?.code === 'AGENT_MESSAGE_TOO_LONG'
+      ? editT('tooLong')
+      : activeError.status === 401
+        ? t('loginRequired')
+        : [403, 404].includes(activeError.status)
+          ? t('unavailable')
+          : uiError
+            ? localizeChatModerationMessage(uiError, moderationT) ||
+              formatUiErrorMessage({
+                ...uiError,
+                message:
+                  activeError.detail?.code === 'AGENT_RESULT_PROFILE_DISABLED'
+                    ? t('resultProfilePaused')
+                    : uiError.message === uiError.code
+                      ? t('requestFailed')
+                      : uiError.message,
+              })
+            : t('requestFailed');
   const { widthClass, paddingClass } = useChatWidth();
   const actorEpoch = useLangchainDraftStore(state =>
     state.actorId === actorId ? state.actorEpoch : null
@@ -136,6 +140,25 @@ function AgentChatSession({
     (chat.humanInput && interactions.blocked) ||
     (chat.singleTask && Boolean(chat.view.conversationId));
   const run = chat.view.run;
+  const edit = useEditResend({
+    scope:
+      scope && chat.view.conversationId
+        ? JSON.stringify([scope, chat.view.conversationId])
+        : null,
+    value: content,
+    blocked: disabled,
+    replace: text => {
+      const current = useLangchainDraftStore.getState();
+      if (
+        !scope ||
+        current.actorId !== actorId ||
+        current.actorEpoch !== actorEpoch
+      )
+        return false;
+      current.setText(scope, text);
+      return true;
+    },
+  });
   const lastUserIndex = chat.view.messages.findLastIndex(
     message => message.role === 'user'
   );
@@ -331,6 +354,18 @@ function AgentChatSession({
                 id={message.id}
                 content={message.content}
                 conversationAppId={appId}
+                onEdit={
+                  chat.view.conversationId &&
+                  !chat.singleTask &&
+                  message.content.trim()
+                    ? () =>
+                        edit.controls.start({
+                          id: message.id,
+                          text: message.content,
+                        })
+                    : undefined
+                }
+                editDisabled={disabled}
               />
             ) : message.role === 'assistant' && message.content ? (
               <Fragment key={message.id}>
@@ -472,6 +507,7 @@ function AgentChatSession({
         </div>
       </div>
       <ChatInputBackdrop />
+      {edit.confirmation}
       <ChatInputView
         key={chat.draftScope}
         value={content}
@@ -485,6 +521,8 @@ function AgentChatSession({
         sendButtonAriaLabel={t('send')}
         widthClass={widthClass}
         onHeightChange={setInputHeight}
+        onInputRef={edit.onInputRef}
+        editNotice={edit.notice}
       />
     </main>
   );

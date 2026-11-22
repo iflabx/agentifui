@@ -1,5 +1,6 @@
 'use client';
 
+import { useDifyEditControls } from '@components/chat-input/edit-resend';
 import { TypingDots } from '@components/ui/typing-dots';
 import { useChatBottomSpacing, useChatWidth } from '@lib/hooks';
 import { useChatScrollStore } from '@lib/stores/chat-scroll-store';
@@ -56,6 +57,7 @@ export const ChatLoader = ({
   className,
 }: ChatLoaderProps) => {
   const { widthClass, paddingClass } = useChatWidth();
+  const edit = useDifyEditControls();
   const { paddingBottomStyle } = useChatBottomSpacing();
 
   // Ref for the bottom of the message container, used for scroll-to-bottom
@@ -160,6 +162,19 @@ export const ChatLoader = ({
                   attachments={msg.attachments}
                   conversationAppId={conversationAppId}
                   id={msg.id}
+                  onEdit={
+                    edit && msg.text.trim()
+                      ? () =>
+                          edit.start({
+                            id: msg.id,
+                            text: msg.text,
+                            hasAttachments: Boolean(msg.attachments?.length),
+                          })
+                      : undefined
+                  }
+                  editDisabled={
+                    edit?.disabled || isLoadingInitial || isWaitingForResponse
+                  }
                 />
               ) : (
                 <AssistantMessage

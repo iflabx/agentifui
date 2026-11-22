@@ -32,6 +32,7 @@ import { useTranslations } from 'next-intl';
 
 import { AttachmentPreviewBar } from './attachment-preview-bar';
 import { ChatButton } from './button';
+import { useEditResend, useRegisterDifyEdit } from './edit-resend';
 import { FileTypeSelector } from './file-type-selector';
 import { useFocusManager } from './focus-manager';
 import { buildSubmitFiles } from './helpers';
@@ -142,6 +143,39 @@ export const ChatInput = ({
     !validModel ||
     isValidatingForMessage;
   const waiting = isWaiting || isWaitingForResponse || localSubmitting;
+  const editScope =
+    route.ready &&
+    currentRoute !== 'default' &&
+    JSON.parse(currentRoute)[3]?.startsWith('conversation:')
+      ? currentRoute
+      : null;
+  const edit = useEditResend({
+    scope: editScope,
+    value: message,
+    blocked: disabled || waiting || isProcessing,
+    hasDraftAttachments: attachments.length > 0,
+    replace: text => {
+      const current = useChatInputStore.getState();
+      if (
+        !editScope ||
+        current.currentRoute !== editScope ||
+        current.actorId !== session?.user.id ||
+        locks.current.has(editScope)
+      )
+        return false;
+      current.setMessage(text);
+      useAttachmentStore.getState().setFiles([], editScope);
+      return true;
+    },
+  });
+  useRegisterDifyEdit(editScope ? edit.controls : null);
+  const editInputRef = useCallback(
+    (node: HTMLTextAreaElement | null) => {
+      inputRef(node);
+      edit.onInputRef(node);
+    },
+    [inputRef, edit.onInputRef]
+  );
   const { handleFileSelect, handleRetryUpload } = useChatInputUploads({
     scope: route.ready ? currentRoute : null,
     currentAppId: inputApp ? route.appId : null,
@@ -238,55 +272,59 @@ export const ChatInput = ({
   };
 
   return (
-    <ChatInputView
-      key={route.ready ? currentRoute : 'loading'}
-      value={route.ready ? message : ''}
-      onValueChange={setMessage}
-      onSubmit={handleLocalSubmit}
-      disabled={disabled}
-      isProcessing={isProcessing}
-      onStop={onStop}
-      isWaiting={waiting || blockedAttachments}
-      className={className}
-      placeholder={placeholder}
-      maxHeight={maxHeight}
-      isWelcomeScreen={externalIsWelcomeScreen || isWelcomeScreen}
-      widthClass={widthClass}
-      isTransitioningToWelcome={isTransitioningToWelcome}
-      onHeightChange={updateTextHeight}
-      onInputRef={inputRef}
-      attachmentPreview={
-        route.ready ? (
-          <AttachmentPreviewBar
-            files={attachments}
-            uploadConfig={fileConfig.uploadConfig}
-            onRemove={id =>
-              useAttachmentStore.getState().removeFile(id, currentRoute)
-            }
-            onHeightChange={updateBarHeight}
-            onRetryUpload={handleRetryUpload}
-          />
-        ) : undefined
-      }
-      attachmentAction={
-        inputAppFailed ? (
-          <ChatButton
-            onClick={retryInputApp}
-            ariaLabel={`${tCommon('ui.retry')}: ${t('input.uploadFailed')}`}
-            icon={<RotateCcw className="h-4 w-4" />}
-          />
-        ) : route.ready && inputApp ? (
-          <FileTypeSelector
-            config={fileConfig}
-            attachmentCount={attachments.length}
-            onFileSelect={handleFileSelect}
-            disabled={disabled || waiting || isProcessing}
-            ariaLabel={t('input.addAttachment')}
-          />
-        ) : undefined
-      }
-      modelSelector={showModelSelector ? <ModelSelectorButton /> : undefined}
-    />
+    <>
+      {edit.confirmation}
+      <ChatInputView
+        key={route.ready ? currentRoute : 'loading'}
+        value={route.ready ? message : ''}
+        onValueChange={setMessage}
+        onSubmit={handleLocalSubmit}
+        disabled={disabled}
+        isProcessing={isProcessing}
+        onStop={onStop}
+        isWaiting={waiting || blockedAttachments}
+        className={className}
+        placeholder={placeholder}
+        maxHeight={maxHeight}
+        isWelcomeScreen={externalIsWelcomeScreen || isWelcomeScreen}
+        widthClass={widthClass}
+        isTransitioningToWelcome={isTransitioningToWelcome}
+        onHeightChange={updateTextHeight}
+        onInputRef={editInputRef}
+        editNotice={edit.notice}
+        attachmentPreview={
+          route.ready ? (
+            <AttachmentPreviewBar
+              files={attachments}
+              uploadConfig={fileConfig.uploadConfig}
+              onRemove={id =>
+                useAttachmentStore.getState().removeFile(id, currentRoute)
+              }
+              onHeightChange={updateBarHeight}
+              onRetryUpload={handleRetryUpload}
+            />
+          ) : undefined
+        }
+        attachmentAction={
+          inputAppFailed ? (
+            <ChatButton
+              onClick={retryInputApp}
+              ariaLabel={`${tCommon('ui.retry')}: ${t('input.uploadFailed')}`}
+              icon={<RotateCcw className="h-4 w-4" />}
+            />
+          ) : route.ready && inputApp ? (
+            <FileTypeSelector
+              config={fileConfig}
+              attachmentCount={attachments.length}
+              onFileSelect={handleFileSelect}
+              disabled={disabled || waiting || isProcessing}
+              ariaLabel={t('input.addAttachment')}
+            />
+          ) : undefined
+        }
+        modelSelector={showModelSelector ? <ModelSelectorButton /> : undefined}
+      />
+    </>
   );
 };
 

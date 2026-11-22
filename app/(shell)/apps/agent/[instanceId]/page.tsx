@@ -7,6 +7,7 @@ import {
   WelcomeScreen,
 } from '@components/chat';
 import { ChatInput } from '@components/chat-input';
+import { DifyEditProvider } from '@components/chat-input/edit-resend';
 import { DynamicSuggestedQuestions } from '@components/chat/dynamic-suggested-questions';
 import {
   useChatInterface,
@@ -450,73 +451,75 @@ export default function AppDetailPage() {
   }
 
   return (
-    <div
-      className={cn(
-        'relative flex h-full w-full flex-col',
-        'bg-stone-100 dark:bg-stone-800',
-        'text-stone-900 dark:text-gray-100'
-      )}
-    >
+    <DifyEditProvider>
       <div
         className={cn(
-          'relative flex min-h-0 flex-1 flex-col overflow-hidden',
-          'pt-10'
+          'relative flex h-full w-full flex-col',
+          'bg-stone-100 dark:bg-stone-800',
+          'text-stone-900 dark:text-gray-100'
         )}
-        style={
-          { '--chat-input-height': chatInputHeightVar } as React.CSSProperties
-        }
       >
-        <div className="min-h-0 flex-1">
-          {isWelcomeScreen && messages.length === 0 ? (
-            <div
-              className={cn(
-                'h-full overflow-y-auto scroll-smooth',
-                'mx-auto w-full',
-                widthClass,
-                paddingClass
-              )}
-            >
-              <div className="py-8">
-                <div className="mb-8">
-                  <WelcomeScreen username={profile?.username} />
+        <div
+          className={cn(
+            'relative flex min-h-0 flex-1 flex-col overflow-hidden',
+            'pt-10'
+          )}
+          style={
+            { '--chat-input-height': chatInputHeightVar } as React.CSSProperties
+          }
+        >
+          <div className="min-h-0 flex-1">
+            {isWelcomeScreen && messages.length === 0 ? (
+              <div
+                className={cn(
+                  'h-full overflow-y-auto scroll-smooth',
+                  'mx-auto w-full',
+                  widthClass,
+                  paddingClass
+                )}
+              >
+                <div className="py-8">
+                  <div className="mb-8">
+                    <WelcomeScreen username={profile?.username} />
+                  </div>
                 </div>
               </div>
-            </div>
-          ) : (
-            <div
-              ref={scrollRef}
-              className="chat-scroll-container h-full overflow-y-auto scroll-smooth"
-            >
-              <ChatLoader
-                messages={messages}
-                conversationAppId={conversationAppId}
-                isWaitingForResponse={isWaitingForResponse}
-                isLoadingInitial={false}
-              />
-            </div>
+            ) : (
+              <div
+                ref={scrollRef}
+                className="chat-scroll-container h-full overflow-y-auto scroll-smooth"
+              >
+                <ChatLoader
+                  messages={messages}
+                  conversationAppId={conversationAppId}
+                  isWaitingForResponse={isWaitingForResponse}
+                  isLoadingInitial={false}
+                />
+              </div>
+            )}
+          </div>
+
+          <ScrollToBottomButton />
+
+          <ChatInputBackdrop />
+
+          <ChatInput
+            onSubmit={handleSubmit}
+            placeholder={t('startChatWith', {
+              appName: currentApp.display_name || t('defaultApp'),
+            })}
+            isProcessing={isProcessing}
+            isWaiting={isWaitingForResponse}
+            onStop={handleStopProcessing}
+            showModelSelector={false}
+            requireModelValidation={false}
+          />
+
+          {isWelcomeScreen && messages.length === 0 && (
+            <DynamicSuggestedQuestions onQuestionClick={sendDirectMessage} />
           )}
         </div>
-
-        <ScrollToBottomButton />
-
-        <ChatInputBackdrop />
-
-        <ChatInput
-          onSubmit={handleSubmit}
-          placeholder={t('startChatWith', {
-            appName: currentApp.display_name || t('defaultApp'),
-          })}
-          isProcessing={isProcessing}
-          isWaiting={isWaitingForResponse}
-          onStop={handleStopProcessing}
-          showModelSelector={false}
-          requireModelValidation={false}
-        />
-
-        {isWelcomeScreen && messages.length === 0 && (
-          <DynamicSuggestedQuestions onQuestionClick={sendDirectMessage} />
-        )}
       </div>
-    </div>
+    </DifyEditProvider>
   );
 }

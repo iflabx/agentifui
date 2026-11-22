@@ -48,13 +48,16 @@ jest.mock('@components/chat-input/view', () => ({
     onValueChange,
     onSubmit,
     disabled,
+    editNotice,
   }: {
     value: string;
     onValueChange: (text: string) => void;
     onSubmit: () => void;
     disabled?: boolean;
+    editNotice?: React.ReactNode;
   }) => (
     <div data-testid="shared-input">
+      {editNotice}
       <textarea
         value={value}
         onChange={event => onValueChange(event.target.value)}
@@ -67,9 +70,24 @@ jest.mock('@components/chat-input/view', () => ({
   ),
 }));
 jest.mock('@components/chat/messages/user-message/user-message', () => ({
-  UserMessage: ({ id, content }: { id: string; content: string }) => (
+  UserMessage: ({
+    id,
+    content,
+    onEdit,
+    editDisabled,
+  }: {
+    id: string;
+    content: string;
+    onEdit?: () => void;
+    editDisabled?: boolean;
+  }) => (
     <div data-testid="shared-user" data-message-id={id}>
       {content}
+      {onEdit && (
+        <button disabled={editDisabled} onClick={onEdit}>
+          edit-{id}
+        </button>
+      )}
     </div>
   ),
 }));
@@ -147,6 +165,82 @@ describe('Agent chat draft', () => {
   it('reserves space for fixed desktop and mobile shell navigation', () => {
     render(<AgentChat appId="app" conversationId={null} />);
     expect(screen.getByRole('main')).toHaveClass('pt-16', 'md:pt-12');
+  });
+
+  it('prepares a correction without sending and submits the visible text through the existing snapshot', async () => {
+    const base = useAgentChat('app', null, 'user');
+    const messages = [
+      { id: 'old', role: 'user' as const, content: 'old request' },
+      { id: 'reply', role: 'assistant' as const, content: 'old answer' },
+    ];
+    jest.mocked(useAgentChat).mockReturnValue({
+      ...base,
+      draftScope: 'thread',
+      view: { ...base.view, conversationId: 'thread', messages },
+    });
+    render(<AgentChat appId="app" conversationId="thread" />);
+    fireEvent.click(screen.getByText('edit-old'));
+    expect(send).not.toHaveBeenCalled();
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement;
+    expect(input.value).toContain('old request');
+    fireEvent.change(input, { target: { value: 'my visible correction' } });
+    send.mockResolvedValueOnce(false);
+    await act(async () => {
+      fireEvent.click(screen.getByText('send'));
+    });
+    expect(send).toHaveBeenLastCalledWith(
+      'my visible correction',
+      expect.objectContaining({ text: 'my visible correction' })
+    );
+    expect(input).toHaveValue('my visible correction');
+    expect(screen.getByTestId('shared-user')).toHaveTextContent('old request');
+    expect(screen.getByTestId('shared-assistant')).toHaveTextContent(
+      'old answer'
+    );
+    send.mockResolvedValueOnce(true);
+    await act(async () => {
+      fireEvent.click(screen.getByText('send'));
+    });
+    expect(input).toHaveValue('');
+    expect(screen.queryByText('exit')).not.toBeInTheDocument();
+  });
+
+  it.each(['busy', 'historyLoading', 'historyFailed', 'unconfirmed'] as const)(
+    'blocks message editing when %s',
+    state => {
+      const base = useAgentChat('app', null, 'user');
+      jest.mocked(useAgentChat).mockReturnValue({
+        ...base,
+        [state]: true,
+        draftScope: 'thread',
+        view: {
+          ...base.view,
+          conversationId: 'thread',
+          messages: [{ id: 'old', role: 'user', content: 'old request' }],
+        },
+      });
+      render(<AgentChat appId="app" conversationId="thread" />);
+      expect(screen.getByText('edit-old')).toBeDisabled();
+      fireEvent.click(screen.getByText('edit-old'));
+      expect(screen.getByRole('textbox')).toHaveValue('');
+      expect(send).not.toHaveBeenCalled();
+    }
+  );
+
+  it('does not offer editing for single-task history or attachment-only text', () => {
+    const base = useAgentChat('app', null, 'user');
+    jest.mocked(useAgentChat).mockReturnValue({
+      ...base,
+      singleTask: true,
+      draftScope: 'thread',
+      view: {
+        ...base.view,
+        conversationId: 'thread',
+        messages: [{ id: 'old', role: 'user', content: 'old request' }],
+      },
+    });
+    render(<AgentChat appId="app" conversationId="thread" />);
+    expect(screen.queryByText('edit-old')).not.toBeInTheDocument();
   });
 
   it.each(['failed', 'unknown', 'cancelled', 'interrupted'] as const)(

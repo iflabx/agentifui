@@ -8,6 +8,7 @@ import {
 } from '@lib/services/client/langchain-api';
 import { useLangchainDraftStore } from '@lib/stores/langchain-draft-store';
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { TextEncoder } from 'node:util';
 
 import { useAgentChat } from './use-agent-chat';
 
@@ -26,6 +27,13 @@ jest.mock('@lib/services/client/agui-stream', () => ({
 }));
 
 describe('independent agent chat lifecycle', () => {
+  const originalEncoder = globalThis.TextEncoder;
+  beforeAll(() => {
+    globalThis.TextEncoder = TextEncoder;
+  });
+  afterAll(() => {
+    globalThis.TextEncoder = originalEncoder;
+  });
   const originalFetch = global.fetch;
   beforeEach(() => {
     jest.clearAllMocks();
@@ -51,6 +59,24 @@ describe('independent agent chat lifecycle', () => {
   afterEach(() => {
     global.fetch = originalFetch;
     jest.useRealTimers();
+  });
+
+  it('rejects overlong correction text before creating optimistic messages or submissions', async () => {
+    const hook = renderHook(() =>
+      useAgentChat('app-uuid', 'local', 'test-actor')
+    );
+    await waitFor(() => expect(hook.result.current.ready).toBe(true));
+    await waitFor(() => expect(hook.result.current.historyLoading).toBe(false));
+    const original = hook.result.current.view.messages;
+    await act(async () => {
+      expect(await hook.result.current.send('a'.repeat(16001))).toBe(false);
+    });
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(hook.result.current.view.messages).toEqual(original);
+    expect(hook.result.current.error?.detail?.code).toBe(
+      'AGENT_MESSAGE_TOO_LONG'
+    );
+    expect(useLangchainDraftStore.getState().pendingSubmissions).toEqual({});
   });
 
   it.each(['legacy', 'ag-ui', 'failure'])(

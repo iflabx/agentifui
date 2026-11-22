@@ -2394,6 +2394,19 @@
   },
   "components": {
     "chat": {
+      "editResend": {
+        "action": "Bearbeiten und senden",
+        "original": "Ich korrigiere diese frühere Anfrage:",
+        "replacement": "Bitte verwende diese neuen Anforderungen:",
+        "guidance": "Verwende die vorherige Antwort auf die alte Anfrage und daraus abgeleitete Schlussfolgerungen nicht als Grundlage dieser Antwort. Behalte den übrigen unveränderten Kontext bei. Falls Informationen für die neuen Anforderungen fehlen, weise ausdrücklich darauf hin.",
+        "notice": "Eine bearbeitbare Korrektur wurde eingefügt. Beim Senden wird eine neue Nachricht angehängt; die ursprünglichen und späteren Nachrichten bleiben erhalten.",
+        "textOnly": "Nur Text: ursprüngliche Anhänge werden nicht erneut angefügt.",
+        "exit": "Bearbeitung beenden",
+        "replaceTitle": "Aktuellen Entwurf ersetzen?",
+        "replaceMessage": "Der aktuelle Text und ausgewählte Anhänge werden ersetzt. Gespeicherte Nachrichten und Dateien werden nicht gelöscht.",
+        "replaceConfirm": "Entwurf ersetzen",
+        "tooLong": "Die vollständige Nachricht ist zu lang. Bitte kürzen und erneut versuchen. Der Entwurf bleibt erhalten."
+      },
       "messageActions": {
         "copy": "Kopieren",
         "copied": "Kopiert",

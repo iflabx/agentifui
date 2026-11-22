@@ -11,6 +11,7 @@ interface UserMessageActionsProps {
   messageId: string;
   content: string;
   onEdit?: () => void;
+  editDisabled?: boolean;
   className?: string;
   // Tooltip configuration
   tooltipSize?: 'sm' | 'md';
@@ -25,6 +26,7 @@ interface UserMessageActionsProps {
 export const UserMessageActions: React.FC<UserMessageActionsProps> = ({
   content,
   onEdit,
+  editDisabled,
   className,
   tooltipSize = 'sm',
   showTooltipArrow = false,
@@ -39,6 +41,7 @@ export const UserMessageActions: React.FC<UserMessageActionsProps> = ({
       {onEdit && (
         <EditButton
           onEdit={onEdit}
+          disabled={editDisabled}
           tooltipSize={tooltipSize}
           showTooltipArrow={showTooltipArrow}
         />

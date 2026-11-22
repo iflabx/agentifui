@@ -17,6 +17,7 @@ interface UserMessageProps {
   className?: string;
   onCopy?: () => void;
   onEdit?: () => void;
+  editDisabled?: boolean;
 }
 
 export const UserMessage: React.FC<UserMessageProps> = ({
@@ -26,6 +27,7 @@ export const UserMessage: React.FC<UserMessageProps> = ({
   id,
   className,
   onEdit,
+  editDisabled,
 }) => {
   const isMobile = useMobile();
   const isMounted = useMounted();
@@ -67,7 +69,12 @@ export const UserMessage: React.FC<UserMessageProps> = ({
         </div>
 
         {/* Message action buttons */}
-        <UserMessageActions messageId={id} content={content} onEdit={onEdit} />
+        <UserMessageActions
+          messageId={id}
+          content={content}
+          onEdit={onEdit}
+          editDisabled={editDisabled}
+        />
       </div>
     </div>
   );

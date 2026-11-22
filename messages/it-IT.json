@@ -2394,6 +2394,19 @@
   },
   "components": {
     "chat": {
+      "editResend": {
+        "action": "Modifica e invia",
+        "original": "Correggo questa richiesta precedente:",
+        "replacement": "Usa questi nuovi requisiti:",
+        "guidance": "Non usare la risposta alla vecchia richiesta né le conclusioni che ne derivano come base di questa risposta. Mantieni il contesto invariato. Se mancano informazioni per i nuovi requisiti, segnalalo esplicitamente.",
+        "notice": "È stata aggiunta una correzione modificabile. L’invio aggiunge un messaggio alla conversazione; i messaggi originali e successivi restano.",
+        "textOnly": "Solo testo: gli allegati originali non vengono aggiunti di nuovo.",
+        "exit": "Esci dalla modifica",
+        "replaceTitle": "Sostituire la bozza attuale?",
+        "replaceMessage": "Il testo e gli allegati selezionati verranno sostituiti. I messaggi storici e i file archiviati non saranno eliminati.",
+        "replaceConfirm": "Sostituisci bozza",
+        "tooLong": "Il messaggio completo è troppo lungo. Accorcialo e riprova; la bozza è conservata."
+      },
       "messageActions": {
         "copy": "Copia",
         "copied": "Copiato",
