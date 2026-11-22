@@ -24,6 +24,7 @@ import ChatPage from '../../../app/(shell)/chat/[conversationId]/page';
 let mockId = 'temp-one';
 let mockLoaderMounts = 0;
 let mockActor = 'actor';
+const mockChatflowSubmit = jest.fn();
 
 function useMockInterface() {
   const messages = useChatStore(state => state.messages);
@@ -33,6 +34,7 @@ function useMockInterface() {
     conversationAppId: 'app',
     isProcessing: false,
     handleSubmit: jest.fn(),
+    handleChatflowSubmit: mockChatflowSubmit,
     handleStopProcessing: jest.fn(),
     sendDirectMessage: jest.fn(),
     nodeTracker: execution,
@@ -57,7 +59,10 @@ jest.mock('@lib/hooks/use-chatflow-interface', () => ({
   useChatflowInterface: () => useMockInterface(),
 }));
 jest.mock('@lib/hooks/use-chatflow-detection', () => ({
-  useChatflowDetection: () => ({ isChatflowApp: true }),
+  useChatflowDetection: () => ({
+    isChatflowApp: true,
+    currentConversationApp: { instance_id: 'app' },
+  }),
 }));
 jest.mock('@lib/hooks/use-chat-page-state', () => ({
   useChatPageState: () => ({
@@ -99,6 +104,19 @@ jest.mock('@components/chat', () => ({
   WelcomeScreen: () => null,
 }));
 jest.mock('@components/chat-input', () => ({ ChatInput: () => null }));
+jest.mock('@components/chatflow/chatflow-input-area', () => ({
+  ChatflowInputArea: ({
+    instanceId,
+    onSubmit,
+  }: {
+    instanceId: string;
+    onSubmit: (query: string, inputs: Record<string, unknown>) => void;
+  }) => (
+    <button onClick={() => onSubmit('continue', {})}>
+      Continue Chatflow {instanceId}
+    </button>
+  ),
+}));
 jest.mock('@components/chat/dynamic-suggested-questions', () => ({
   DynamicSuggestedQuestions: () => null,
 }));

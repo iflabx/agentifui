@@ -111,7 +111,12 @@ describe('trusted backend conversation boundary', () => {
     expect(sql).toContain("conversations.metadata ->> 'runtime' = 'dify-task'");
   });
 
-  it.each(['messages.getLatest', 'messages.getPage', 'messages.findDuplicate'])(
+  it.each([
+    'messages.getLatest',
+    'messages.getPage',
+    'messages.findDuplicate',
+    'messages.getChatflowInitialInputs',
+  ])(
     'does not read %s after ownership or current app permission is lost',
     async action => {
       const response = await handleMessageAction(

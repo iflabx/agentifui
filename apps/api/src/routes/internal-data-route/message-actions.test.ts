@@ -91,6 +91,70 @@ describe('conversation message pages', () => {
     jest.mocked(queryRowsWithPgSystemContext).mockResolvedValue([]);
   });
 
+  it('reads the original scalar initialization summary independently of pagination and hidden edited messages', async () => {
+    jest.mocked(queryRowsWithPgSystemContext).mockResolvedValue([
+      {
+        inputs: {
+          topic: 'original',
+          count: 0,
+          file: { upload_file_id: 'private-internal' },
+        },
+      },
+    ] as never);
+    const response = await handleMessageAction(
+      'messages.getChatflowInitialInputs',
+      { conversationId },
+      'actor'
+    );
+    expect(response?.payload).toEqual({
+      success: true,
+      data: { topic: 'original', count: 0 },
+    });
+    const [sql, values] = jest.mocked(queryRowsWithPgSystemContext).mock
+      .calls[0];
+    expect(values).toEqual([conversationId]);
+    expect(sql).toContain('ORDER BY created_at ASC');
+    expect(sql).toContain('LIMIT 1');
+    expect(sql).not.toContain('edit_hidden');
+    expect(sql).toContain('edit_pending');
+    expect(sql).not.toMatch(/SELECT\s+\*|\bcontent\b/);
+  });
+
+  it('does not query initial inputs without current ownership and access', async () => {
+    expect(
+      (
+        await handleMessageAction(
+          'messages.getChatflowInitialInputs',
+          { conversationId },
+          undefined
+        )
+      )?.statusCode
+    ).toBe(401);
+    jest.mocked(loadConversationOwnedByActor).mockResolvedValue(false);
+    expect(
+      (
+        await handleMessageAction(
+          'messages.getChatflowInitialInputs',
+          { conversationId },
+          'other'
+        )
+      )?.statusCode
+    ).toBe(404);
+    expect(queryRowsWithPgSystemContext).not.toHaveBeenCalled();
+  });
+
+  it('returns a real missing summary instead of inventing settings for old history', async () => {
+    expect(
+      (
+        await handleMessageAction(
+          'messages.getChatflowInitialInputs',
+          { conversationId },
+          'actor'
+        )
+      )?.payload
+    ).toEqual({ success: true, data: null });
+  });
+
   it('selects the newest window while retaining the legacy array response', async () => {
     jest
       .mocked(queryRowsWithPgSystemContext)

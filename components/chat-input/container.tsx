@@ -6,6 +6,7 @@ import { cn } from '@lib/utils';
 // Container component - uses intelligent layout system
 interface ChatContainerProps {
   children: React.ReactNode;
+  beforeInput?: React.ReactNode;
   isWelcomeScreen?: boolean;
   className?: string;
   widthClass: string;
@@ -21,6 +22,7 @@ const INPUT_BOTTOM_MARGIN = '1rem';
 
 export const ChatContainer = ({
   children,
+  beforeInput,
   isWelcomeScreen = false,
   className,
   widthClass,
@@ -60,7 +62,12 @@ export const ChatContainer = ({
       };
 
   return (
-    <div className={baseClasses} style={embedded ? undefined : dynamicStyles}>
+    <div
+      data-chat-input-container
+      className={baseClasses}
+      style={embedded ? undefined : dynamicStyles}
+    >
+      {beforeInput}
       <div
         className={cn(
           'flex flex-col rounded-2xl',

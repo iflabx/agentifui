@@ -204,6 +204,7 @@
         "capabilitiesUnsupported": "Requisiti di input non supportati. Controlla la configurazione dell'app.",
         "filesRequired": "Aggiungi gli allegati richiesti.",
         "uploadPending": "Attendi i caricamenti o rimuovi i file non riusciti.",
+        "localUploadUnavailable": "Questo uso non supporta i caricamenti locali.",
         "retryUpload": "Riprova caricamento",
         "removeFile": "Rimuovi file",
         "fileUploadError": "Errore nel caricamento del file",
@@ -273,6 +274,13 @@
       }
     },
     "chatflow": {
+      "composer": {
+        "parameters": "Impostazioni conversazione",
+        "requiredRemaining": "Mancano {count} campi obbligatori",
+        "initialized": "Queste impostazioni valgono per questa conversazione. Avviane una nuova per modificarle.",
+        "initialMissing": "Le impostazioni iniziali di questa vecchia conversazione non sono state salvate.",
+        "initialFiles": "I file iniziali restano disponibili nei messaggi."
+      },
       "loading": {
         "inputConfig": "Caricamento configurazione di input..."
       },

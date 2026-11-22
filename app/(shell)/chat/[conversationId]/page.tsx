@@ -12,6 +12,7 @@ import { ChatInput } from '@components/chat-input';
 import { DifyEditProvider } from '@components/chat-input/edit-resend';
 import { DynamicSuggestedQuestions } from '@components/chat/dynamic-suggested-questions';
 import { ChatflowFloatingController } from '@components/chatflow/chatflow-floating-controller';
+import { ChatflowInputArea } from '@components/chatflow/chatflow-input-area';
 import { ChatflowNodeTracker } from '@components/chatflow/chatflow-node-tracker';
 import { FilePreviewCanvas } from '@components/file-preview/file-preview-canvas';
 import { AgentChat } from '@components/langchain/agent-chat';
@@ -160,13 +161,15 @@ function LegacyChatPage({
   const { inputHeight } = useChatLayoutStore();
   const isPreviewOpen = useFilePreviewStore(state => state.isPreviewOpen);
   const trackerButtonRef = React.useRef<HTMLButtonElement>(null);
-  const chatflowInterface = useChatflowInterface();
   const regularInterface = useChatInterface();
   const { conversationAppId } = regularInterface;
   const storedMessages = useChatStore(state => state.messages);
 
   // Use the wrapped hook to detect chatflow apps
-  const { isChatflowApp } = useChatflowDetection();
+  const { isChatflowApp, currentConversationApp } = useChatflowDetection();
+  const chatflowInterface = useChatflowInterface(
+    isChatflowApp ? currentConversationApp?.instance_id : null
+  );
 
   const persistedChatflowExecution = React.useMemo(() => {
     if (!isChatflowApp) return null;
@@ -375,16 +378,27 @@ function LegacyChatPage({
 
           <ChatInputBackdrop />
 
-          <ChatInput
-            onSubmit={handleSubmit}
-            placeholder={t('placeholder')}
-            isProcessing={isProcessing}
-            isWaiting={isWaitingForResponse}
-            onStop={handleStopProcessing}
-            isWelcomeScreen={isWelcomeScreen}
-            isTransitioningToWelcome={isTransitioningToWelcome}
-            showModelSelector={isNewChat && messages.length === 0}
-          />
+          {isChatflowApp && currentConversationApp ? (
+            <ChatflowInputArea
+              instanceId={currentConversationApp.instance_id}
+              onSubmit={chatflowInterface.handleChatflowSubmit}
+              isProcessing={isProcessing}
+              isWaiting={isWaitingForResponse}
+              onStop={handleStopProcessing}
+              isWelcomeScreen={isWelcomeScreen && messages.length === 0}
+            />
+          ) : (
+            <ChatInput
+              onSubmit={handleSubmit}
+              placeholder={t('placeholder')}
+              isProcessing={isProcessing}
+              isWaiting={isWaitingForResponse}
+              onStop={handleStopProcessing}
+              isWelcomeScreen={isWelcomeScreen}
+              isTransitioningToWelcome={isTransitioningToWelcome}
+              showModelSelector={isNewChat && messages.length === 0}
+            />
+          )}
 
           {/* Conditions for showing dynamic suggested questions:
              1. New chat page with no messages

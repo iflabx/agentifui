@@ -229,6 +229,7 @@ export const LOCAL_CONVERSATION_ACTIONS = new Set([
 ]);
 
 export const LOCAL_MESSAGE_ACTIONS = new Set([
+  'messages.getChatflowInitialInputs',
   'messages.getLatest',
   'messages.getPage',
   'messages.findDuplicate',
@@ -373,6 +374,7 @@ export const ADMIN_ACTIONS = new Set([
 ]);
 
 export const AUTH_ACTIONS = new Set([
+  'messages.getChatflowInitialInputs',
   'appExecutions.reserveTask',
   'appExecutions.getByConversation',
   'groups.getUserAccessibleApps',

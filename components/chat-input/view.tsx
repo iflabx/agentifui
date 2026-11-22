@@ -33,6 +33,7 @@ export interface ChatInputViewProps {
   isWelcomeScreen?: boolean;
   widthClass?: string;
   attachmentPreview?: ReactNode;
+  beforeInput?: ReactNode;
   editNotice?: ReactNode;
   attachmentAction?: ReactNode;
   modelSelector?: ReactNode;
@@ -60,6 +61,7 @@ export function ChatInputView({
   isWelcomeScreen = false,
   widthClass = 'max-w-3xl',
   attachmentPreview,
+  beforeInput,
   editNotice,
   attachmentAction,
   modelSelector,
@@ -117,6 +119,7 @@ export function ChatInputView({
   return (
     <ChatContainer
       embedded={embedded}
+      beforeInput={beforeInput}
       className={className}
       widthClass={widthClass}
       isWelcomeScreen={isWelcomeScreen}

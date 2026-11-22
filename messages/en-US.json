@@ -204,6 +204,7 @@
         "capabilitiesUnsupported": "Input requirements are not supported. Check the app configuration.",
         "filesRequired": "Add the required attachments.",
         "uploadPending": "Wait for uploads or remove failed files.",
+        "localUploadUnavailable": "This attachment purpose does not support local uploads.",
         "retryUpload": "Retry upload",
         "removeFile": "Remove file",
         "fileUploadError": "File upload error",
@@ -273,6 +274,13 @@
       }
     },
     "chatflow": {
+      "composer": {
+        "parameters": "Conversation settings",
+        "requiredRemaining": "{count} required fields remaining",
+        "initialized": "These settings apply to this conversation. Start a new chat to change them.",
+        "initialMissing": "Initial settings were not saved for this older conversation.",
+        "initialFiles": "Initial files remain available in the conversation messages."
+      },
       "loading": {
         "inputConfig": "Loading input configuration..."
       },

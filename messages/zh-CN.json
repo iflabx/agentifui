@@ -204,6 +204,7 @@
         "capabilitiesUnsupported": "暂不支持此应用的输入要求，请检查应用配置。",
         "filesRequired": "请添加必需的附件。",
         "uploadPending": "请等待上传完成，或删除上传失败的文件。",
+        "localUploadUnavailable": "此用途暂不支持本地上传。",
         "retryUpload": "重试上传",
         "removeFile": "移除文件",
         "fileUploadError": "文件上传错误",
@@ -273,6 +274,13 @@
       }
     },
     "chatflow": {
+      "composer": {
+        "parameters": "会话设置",
+        "requiredRemaining": "还有 {count} 个必填项",
+        "initialized": "这些设置用于当前会话，如需更改请新建对话。",
+        "initialMissing": "此历史会话未保存初始化设置摘要。",
+        "initialFiles": "初始化文件仍可在会话消息中查看。"
+      },
       "loading": {
         "inputConfig": "正在加载输入配置..."
       },

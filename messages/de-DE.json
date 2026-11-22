@@ -204,6 +204,7 @@
         "capabilitiesUnsupported": "Diese Eingabeanforderungen werden nicht unterstützt. App-Konfiguration prüfen.",
         "filesRequired": "Fügen Sie die erforderlichen Anhänge hinzu.",
         "uploadPending": "Warten Sie auf Uploads oder entfernen Sie fehlgeschlagene Dateien.",
+        "localUploadUnavailable": "Für diesen Zweck sind lokale Uploads nicht verfügbar.",
         "retryUpload": "Upload wiederholen",
         "removeFile": "Datei entfernen",
         "fileUploadError": "Datei-Upload-Fehler",
@@ -273,6 +274,13 @@
       }
     },
     "chatflow": {
+      "composer": {
+        "parameters": "Gesprächseinstellungen",
+        "requiredRemaining": "{count} Pflichtfelder fehlen",
+        "initialized": "Diese Einstellungen gelten für dieses Gespräch. Für Änderungen ein neues Gespräch starten.",
+        "initialMissing": "Keine Anfangseinstellungen für dieses ältere Gespräch gespeichert.",
+        "initialFiles": "Anfängliche Dateien bleiben in den Gesprächsnachrichten verfügbar."
+      },
       "loading": {
         "inputConfig": "Eingabekonfiguration wird geladen..."
       },

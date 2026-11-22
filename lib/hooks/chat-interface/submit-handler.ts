@@ -210,7 +210,8 @@ export function useChatSubmitHandler({
       message: string,
       files?: unknown[],
       inputs?: Record<string, unknown>,
-      editSourceId?: string
+      editSourceId?: string,
+      onInputAccepted?: () => void
     ) => {
       if (isSubmittingRef.current) {
         console.warn('[handleSubmit] Submission blocked: already submitting.');
@@ -363,7 +364,10 @@ export function useChatSubmitHandler({
         });
         return await executeChatSubmit({
           editSourceId,
-          onAccepted: accepted => acceptInput(appConfig.appId, accepted),
+          onAccepted: accepted => {
+            acceptInput(appConfig.appId, accepted);
+            onInputAccepted?.();
+          },
           viewScope,
           message,
           files: submittedFiles,

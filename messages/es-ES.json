@@ -204,6 +204,7 @@
         "capabilitiesUnsupported": "Los requisitos de entrada no son compatibles. Revisa la configuración de la aplicación.",
         "filesRequired": "Añade los archivos adjuntos necesarios.",
         "uploadPending": "Espera a que terminen las cargas o elimina los archivos fallidos.",
+        "localUploadUnavailable": "Este uso no admite archivos locales.",
         "retryUpload": "Reintentar subida",
         "removeFile": "Eliminar archivo",
         "fileUploadError": "Error al subir archivo",
@@ -273,6 +274,13 @@
       }
     },
     "chatflow": {
+      "composer": {
+        "parameters": "Ajustes de conversación",
+        "requiredRemaining": "Faltan {count} campos obligatorios",
+        "initialized": "Estos ajustes se aplican a esta conversación. Inicia otra para cambiarlos.",
+        "initialMissing": "Esta conversación antigua no tiene ajustes iniciales guardados.",
+        "initialFiles": "Los archivos iniciales siguen disponibles en los mensajes."
+      },
       "loading": {
         "inputConfig": "Cargando configuración de entrada..."
       },

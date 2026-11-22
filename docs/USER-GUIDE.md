@@ -125,6 +125,23 @@ prove the upstream task was cancelled.
 
 ### Input And Message Actions
 
+Chatflow uses the standard chat composer on its first screen, during a
+conversation and when reopening history. Attach files with the button inside
+the input box; selected files appear as cards there, with upload status, remove
+and retry actions. A single available purpose opens the file picker directly.
+When several purposes are available, choose the purpose first; each has its own
+file count and limit. Unsupported local-upload purposes are explained instead of
+opening a picker that cannot work.
+
+Required non-file Chatflow settings appear in an expandable **Conversation
+settings** area above the composer. Once the conversation starts, initialization
+settings are fixed for that conversation; start another to change them. You do
+not need to reattach initialization files for each follow-up. Applications that
+also support per-message attachments still allow those on later messages.
+Reopened conversations show a saved initial-settings summary when available;
+older conversations without one do not require refilling it. Initial files remain
+accessible from their original messages.
+
 In the shared chat input, **Enter** submits when sending is available and
 **Shift+Enter** inserts a newline. Composition with an input method is not a
 request to submit. You can also use the send button. Empty input, an unfinished
@@ -344,8 +361,9 @@ count; iteration and branch summaries are not counted again as extra steps.
 - In Chatflow, use the process toggle to open or hide the floating list. Its close
   button returns focus to the toggle. The list is scrollable on narrow screens.
   Supported live iteration, loop and parallel details can be expanded with their
-  step buttons. Chatflow process data is transient: reloading a saved conversation
-  does not recreate a missing process record.
+  step buttons. Saved per-response process snapshots remain available when
+  reopening a conversation. Older messages without a saved snapshot do not
+  recreate a missing process record.
 - In Workflow, the execution area shows live steps and supported nested details.
   Selecting a saved execution displays only that execution's saved step summary,
   never another live task's nodes. Close the result viewer to see the summary;

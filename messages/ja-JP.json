@@ -204,6 +204,7 @@
         "capabilitiesUnsupported": "この入力要件には対応していません。アプリの設定を確認してください。",
         "filesRequired": "必要な添付ファイルを追加してください。",
         "uploadPending": "アップロードを待つか、失敗したファイルを削除してください。",
+        "localUploadUnavailable": "この用途はローカルファイルのアップロードに対応していません。",
         "retryUpload": "アップロードを再試行",
         "removeFile": "ファイルを削除",
         "fileUploadError": "ファイルアップロードエラー",
@@ -273,6 +274,13 @@
       }
     },
     "chatflow": {
+      "composer": {
+        "parameters": "会話の設定",
+        "requiredRemaining": "必須項目があと {count} 個あります",
+        "initialized": "この会話の設定は固定です。変更するには新しい会話を開始してください。",
+        "initialMissing": "この過去の会話には初期設定の概要が保存されていません。",
+        "initialFiles": "初期ファイルは会話のメッセージから確認できます。"
+      },
       "loading": {
         "inputConfig": "入力設定を読み込み中..."
       },

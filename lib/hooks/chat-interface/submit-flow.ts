@@ -247,6 +247,22 @@ export async function executeChatSubmit(
   const userMessageData: Omit<ChatMessage, 'id'> = {
     text: input.message,
     isUser: true,
+    ...(input.inputs !== undefined &&
+    !input.difyConversationId &&
+    input.appConfig.instance.config?.app_metadata?.dify_apptype === 'chatflow'
+      ? {
+          metadata: {
+            chatflow_initial_inputs: Object.fromEntries(
+              Object.entries(input.inputs).filter(
+                ([, value]) =>
+                  typeof value === 'string' ||
+                  typeof value === 'number' ||
+                  typeof value === 'boolean'
+              )
+            ),
+          },
+        }
+      : {}),
     attachments: messageAttachments,
     persistenceStatus: 'pending',
     sequence_index: 0,

@@ -204,6 +204,7 @@
         "capabilitiesUnsupported": "Ces exigences ne sont pas prises en charge. Vérifiez la configuration de l'application.",
         "filesRequired": "Ajoutez les pièces jointes requises.",
         "uploadPending": "Attendez la fin des envois ou supprimez les fichiers en échec.",
+        "localUploadUnavailable": "Cet usage ne permet pas les fichiers locaux.",
         "retryUpload": "Réessayer le téléversement",
         "removeFile": "Supprimer le fichier",
         "fileUploadError": "Erreur de téléversement de fichier",
@@ -273,6 +274,13 @@
       }
     },
     "chatflow": {
+      "composer": {
+        "parameters": "Paramètres de conversation",
+        "requiredRemaining": "{count} champs requis restants",
+        "initialized": "Ces paramètres restent fixes pour cette conversation. Créez-en une autre pour les modifier.",
+        "initialMissing": "Les paramètres initiaux de cette ancienne conversation ne sont pas enregistrés.",
+        "initialFiles": "Les fichiers initiaux restent disponibles dans les messages."
+      },
       "loading": {
         "inputConfig": "Chargement de la configuration d'entrée..."
       },

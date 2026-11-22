@@ -55,6 +55,13 @@ export function FormField({
   instanceId,
 }: FormFieldProps) {
   const t = useTranslations('pages.workflow.form');
+  const inputId = React.useId();
+  const accessibility = {
+    id: inputId,
+    name: config.variable,
+    'aria-invalid': Boolean(error),
+    'aria-describedby': error ? `${inputId}-error` : undefined,
+  };
 
   const baseInputClasses = cn(
     'w-full rounded-xl border-2 px-4 py-3 font-serif transition-all duration-300',
@@ -81,6 +88,7 @@ export function FormField({
         const textConfig = config as DifyTextInputControl;
         return (
           <input
+            {...accessibility}
             type="text"
             value={value as string}
             onChange={e => onChange(e.target.value)}
@@ -94,6 +102,7 @@ export function FormField({
         const numberConfig = config as DifyNumberInputControl;
         return (
           <input
+            {...accessibility}
             type="number"
             value={value as string | number}
             onChange={e => {
@@ -130,6 +139,7 @@ export function FormField({
         ).max_length;
         return (
           <textarea
+            {...accessibility}
             value={value as string}
             onChange={e => onChange(e.target.value)}
             placeholder={t('inputPlaceholder', { label: config.label })}
@@ -147,6 +157,8 @@ export function FormField({
         const selectConfig = config as DifySelectControl;
         return (
           <CustomSelect
+            id={inputId}
+            labelId={`${inputId}-label`}
             value={value as string}
             onChange={onChange}
             options={selectConfig.options}
@@ -234,7 +246,7 @@ export function FormField({
 
   return (
     <div className="space-y-1">
-      <label className={labelClasses}>
+      <label id={`${inputId}-label`} htmlFor={inputId} className={labelClasses}>
         <div
           className={cn(
             'h-1.5 w-1.5 rounded-full',
@@ -288,7 +300,7 @@ export function FormField({
 
       {/* Error hint */}
       {error && (
-        <div className={errorClasses}>
+        <div id={`${inputId}-error`} className={errorClasses}>
           <div className="h-1 w-1 rounded-full bg-red-500" />
           <span className="font-serif text-sm">{error}</span>
         </div>

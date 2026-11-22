@@ -68,6 +68,16 @@ and current-message attachments remain subject to their own limits. If history
 or an old upload's trusted metadata is unavailable, the request fails rather than
 silently guessing inputs or resending the task.
 
+The Chatflow browser adapter uses the same composer for first sends, follow-ups
+and reopened native history. Initialization `inputs` slots are only editable
+before the first accepted request; message `files` slots are offered per turn.
+Multiple slots require explicit purpose selection. Single-file variables remain
+objects and file-list variables remain arrays, preserving exact keys without
+duplicating input files in message `files`. Scalar initialization summaries use
+existing user-message metadata; upload references and execution snapshots retain
+their existing persistence paths. This does not convert Chatflow into a new task
+backend or alter its native conversation memory.
+
 - The authenticated proxy lives in `apps/api/src/routes/dify-proxy.ts` and
   `apps/api/src/routes/dify-proxy-route/`. The legacy Next.js Dify route is a
   disabled compatibility stub; add proxy behavior in Fastify rather than

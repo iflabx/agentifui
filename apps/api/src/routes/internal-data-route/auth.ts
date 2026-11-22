@@ -100,7 +100,7 @@ export async function ensureActionPermission(
 export async function loadConversationOwnedByActor(
   conversationId: string,
   actorUserId: string,
-  access: 'read' | 'write' = 'read'
+  access: 'read' | 'write' | 'chatflow-inputs' = 'read'
 ): Promise<boolean> {
   const rows = await queryRowsWithPgSystemContext<{ id: string }>(
     `
@@ -108,7 +108,23 @@ export async function loadConversationOwnedByActor(
       FROM conversations
       WHERE id = $1::uuid
         AND user_id = $2::uuid
-        AND ${access === 'write' ? unboundConversationSql : boundConversationAccessSql('$2')}
+        AND ${
+          access === 'chatflow-inputs'
+            ? `
+          ${unboundConversationSql}
+          AND conversations.status = 'active'
+          AND ${appAccessSql(
+            `(SELECT initial_instance.id FROM service_instances initial_instance
+            WHERE initial_instance.id::text = conversations.app_id
+              OR initial_instance.instance_id = conversations.app_id
+            ORDER BY (initial_instance.id::text = conversations.app_id) DESC LIMIT 1)`,
+            '$2::uuid'
+          )}
+        `
+            : access === 'write'
+              ? unboundConversationSql
+              : boundConversationAccessSql('$2')
+        }
       LIMIT 1
     `,
     [conversationId, actorUserId],

@@ -204,6 +204,7 @@
         "capabilitiesUnsupported": "暫不支援此應用的輸入要求，請檢查應用設定。",
         "filesRequired": "請新增必要的附件。",
         "uploadPending": "請等待上傳完成，或移除上傳失敗的檔案。",
+        "localUploadUnavailable": "此用途暫不支援本機上傳。",
         "retryUpload": "重試上傳",
         "removeFile": "移除檔案",
         "fileUploadError": "檔案上傳錯誤",
@@ -273,6 +274,13 @@
       }
     },
     "chatflow": {
+      "composer": {
+        "parameters": "對話設定",
+        "requiredRemaining": "尚有 {count} 個必填項目",
+        "initialized": "這些設定適用於目前對話，如需變更請建立新對話。",
+        "initialMissing": "此歷史對話未儲存初始設定摘要。",
+        "initialFiles": "初始檔案仍可在對話訊息中查看。"
+      },
       "loading": {
         "inputConfig": "正在載入輸入設定..."
       },

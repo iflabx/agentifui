@@ -383,6 +383,32 @@ describe('executeChatSubmit', () => {
     expect(input.setIsWelcomeScreen).toHaveBeenCalledWith(false);
   });
 
+  it('saves only initial scalar Chatflow settings in message metadata, not upload internals', async () => {
+    const { input } = createInput();
+    await executeChatSubmit({
+      ...input,
+      appConfig: {
+        ...appConfig,
+        instance: {
+          ...appConfig.instance,
+          config: { app_metadata: { dify_apptype: 'chatflow' } },
+        },
+      } as ChatResolvedAppConfig,
+      inputs: {
+        topic: 'Saved topic',
+        count: 0,
+        document: { upload_file_id: 'upload', actor_epoch: 7 },
+      },
+    });
+    expect(input.addMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: {
+          chatflow_initial_inputs: { topic: 'Saved topic', count: 0 },
+        },
+      })
+    );
+  });
+
   it('passes an assistant fallback snapshot into persistence', async () => {
     const { input } = createInput();
 

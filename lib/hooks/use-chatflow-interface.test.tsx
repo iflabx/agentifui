@@ -110,7 +110,30 @@ describe('Chatflow form and stop ownership', () => {
     expect(mockSubmit).toHaveBeenCalledWith(
       'B',
       [expect.objectContaining(file)],
-      { document: file }
+      { document: file },
+      undefined,
+      undefined
+    );
+  });
+
+  it('forwards the existing message edit source and definite-acceptance callback without changing initialization inputs', async () => {
+    const { result } = renderHook(() => useChatflowInterface('app-B'));
+    const accepted = jest.fn();
+    await act(async () => {
+      await result.current.handleChatflowSubmit(
+        'revision',
+        {},
+        undefined,
+        'source-db-id',
+        accepted
+      );
+    });
+    expect(mockSubmit).toHaveBeenCalledWith(
+      'revision',
+      undefined,
+      {},
+      'source-db-id',
+      accepted
     );
   });
 
