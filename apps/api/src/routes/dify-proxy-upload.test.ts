@@ -20,6 +20,28 @@ jest.mock('./dify-proxy-route/ops-route', () => ({
 jest.mock('../lib/dify-config', () => ({
   resolveDifyConfig: jest.fn(),
 }));
+jest.mock('../lib/dify-input-capabilities', () => ({
+  resolveDifyInputCapabilities: jest.fn(async () => ({
+    version: 1,
+    status: 'ready',
+    mode: 'task',
+    text: { enabled: false, required: false, target: 'query' },
+    fields: [],
+    attachmentSlots: [
+      {
+        key: 'source',
+        target: 'inputs',
+        label: 'Source',
+        minCount: 0,
+        maxCount: 3,
+        methods: ['local_file'],
+        allowedTypes: ['custom'],
+        extensions: ['bin'],
+        maxBytesByType: { custom: 15 * 1024 * 1024 },
+      },
+    ],
+  })),
+}));
 
 jest.mock('../lib/dify-upload-archive', () => ({
   assertDifyUploadStorage: jest.fn(),

@@ -34,6 +34,7 @@ export interface DifyAppConfig {
 interface ResolveDifyConfigOptions {
   actorUserId?: string | null;
   actorRole?: string | null;
+  serviceInstanceId?: string;
 }
 
 function normalizeActorUserId(
@@ -100,7 +101,8 @@ function readDifyAppType(
 async function resolveScopedServiceInstance(
   appId: string,
   actorUserId: string,
-  actorRole: string
+  actorRole: string,
+  serviceInstanceId?: string
 ): Promise<ServiceInstanceSummaryRow | null> {
   const directRows =
     await queryRowsWithPgUserContext<ServiceInstanceSummaryRow>(
@@ -111,10 +113,10 @@ async function resolveScopedServiceInstance(
         si.id::text AS id,
         si.instance_id
       FROM service_instances si
-      WHERE si.instance_id = $1
+      WHERE ${serviceInstanceId ? 'si.id = $1::uuid' : 'si.instance_id = $1'}
       LIMIT 1
     `,
-      [appId],
+      [serviceInstanceId || appId],
       { statementTimeoutMs: 5000 }
     );
 
@@ -124,13 +126,15 @@ async function resolveScopedServiceInstance(
 async function resolveServiceInstanceWithProvider(
   appId: string,
   actorUserId: string | null,
-  actorRole: string
+  actorRole: string,
+  serviceInstanceId?: string
 ): Promise<ServiceInstanceWithProviderRow | null> {
   if (actorUserId) {
     const scoped = await resolveScopedServiceInstance(
       appId,
       actorUserId,
-      actorRole
+      actorRole,
+      serviceInstanceId
     );
     if (!scoped) {
       return null;
@@ -225,7 +229,8 @@ export async function resolveDifyConfig(
   const serviceInstance = await resolveServiceInstanceWithProvider(
     trimmedAppId,
     actorUserId,
-    actorRole
+    actorRole,
+    options.serviceInstanceId
   );
   if (
     !serviceInstance ||

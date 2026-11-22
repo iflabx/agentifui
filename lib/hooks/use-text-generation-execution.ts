@@ -77,7 +77,7 @@ export function useTextGenerationExecution(instanceId: string) {
     async (nextFormData: Record<string, unknown>) => {
       if (!userId) {
         getActions().setError('User not logged in, please log in first');
-        return;
+        return false;
       }
 
       console.log(
@@ -146,9 +146,8 @@ export function useTextGenerationExecution(instanceId: string) {
           user: userId,
         };
 
-        const { streamDifyCompletion } = await import(
-          '@lib/services/dify/completion-service'
-        );
+        const { streamDifyCompletion } =
+          await import('@lib/services/dify/completion-service');
 
         abortControllerRef.current = new AbortController();
         streamResponse = await streamDifyCompletion(
@@ -247,6 +246,7 @@ export function useTextGenerationExecution(instanceId: string) {
         console.log(
           '[Text Generation] ✅ Execution completed, status transitioned correctly'
         );
+        return true;
       } catch (error) {
         console.error('[Text Generation] ❌ Execution failed:', error);
         setIsStreaming(false);
@@ -291,6 +291,7 @@ export function useTextGenerationExecution(instanceId: string) {
             );
           }
         }
+        return false;
       } finally {
         cleanupTextGenerationResources(abortControllerRef, false);
       }
@@ -317,9 +318,8 @@ export function useTextGenerationExecution(instanceId: string) {
             'stop'
           );
           if (targetApp) {
-            const { stopDifyCompletion } = await import(
-              '@lib/services/dify/completion-service'
-            );
+            const { stopDifyCompletion } =
+              await import('@lib/services/dify/completion-service');
             await stopDifyCompletion(
               targetApp.instance_id,
               state.difyTaskId,

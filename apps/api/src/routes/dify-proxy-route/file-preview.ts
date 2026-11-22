@@ -35,7 +35,11 @@ export async function archiveDifyUploadResponse(
       fileId: data.id,
     };
     if (workflow) await saveDifyUpload(scope, file);
-    await registerDifyUpload(scope);
+    await registerDifyUpload(scope, false, {
+      name: file instanceof File ? file.name : String(data.name || ''),
+      size: file.size,
+      type: file.type,
+    });
   } catch {
     throw new AgentPolicyError(503, 'DIFY_UPLOAD_STORAGE_UNAVAILABLE');
   }

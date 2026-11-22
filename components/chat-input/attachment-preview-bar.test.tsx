@@ -47,6 +47,17 @@ describe('controlled attachment leaves', () => {
         currentAppId: 'app-A',
         sessionUserId: 'actor',
         t: key => key,
+        slot: {
+          key: 'files',
+          label: 'Files',
+          target: 'files',
+          minCount: 0,
+          maxCount: 1,
+          methods: ['local_file'],
+          allowedTypes: ['document'],
+          extensions: ['txt'],
+          maxBytesByType: { document: 1024 },
+        },
       })
     );
     render(

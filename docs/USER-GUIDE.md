@@ -263,9 +263,16 @@ network interruption and confirmed upstream cancellation are different states.
 
 1. Open an application that exposes an attachment control or a file input field.
    Its configuration determines accepted file types, count and size.
+   Requirements are read from the application service. A file field has its own
+   purpose and limit; attachments in older messages do not consume the current
+   draft's capacity. If requirements cannot be loaded, retry rather than assuming
+   uploads are unrestricted.
 2. Select the file and wait for upload to finish. Inspect the attachment preview
    and remove an incorrect selection before submitting. A selected local file is
    not yet a completed upload.
+   A selection that exceeds the remaining capacity is rejected as a whole. Pending
+   uploads and failed items still occupy a place; retry the same item or remove it
+   before selecting another file. Existing draft files are not silently discarded.
 3. Submit the message/form only after required uploads and other fields are ready.
 4. Use the response's available attachment controls to view or download results.
    If preview is denied, do not try another user's file ID or assume you can

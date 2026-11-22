@@ -10,6 +10,7 @@ import {
 } from '../../lib/agent-submissions';
 import { handleOwnedDifyFilePreview } from './file-preview';
 import { handleDifyProxy } from './handler';
+import { validateDifyGenerationInput } from './input-capabilities';
 import { runInputModeration } from './input-moderation';
 import { resolveDifyMessageEdit, stageDifyMessageEdit } from './message-edits';
 import { resolveProxyRequestContext } from './request-context';
@@ -38,6 +39,9 @@ jest.mock('./target-config', () => ({
 
 jest.mock('./input-moderation', () => ({
   runInputModeration: jest.fn(),
+}));
+jest.mock('./input-capabilities', () => ({
+  validateDifyGenerationInput: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('./upstream', () => ({
@@ -128,6 +132,7 @@ describe('handleDifyProxy input moderation integration', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.mocked(validateDifyGenerationInput).mockResolvedValue(undefined);
     jest.mocked(resolveDifyMessageEdit).mockResolvedValue(undefined);
     jest.mocked(handleOwnedDifyFilePreview).mockResolvedValue(false);
     jest.mocked(registerSubmission).mockResolvedValue({
@@ -161,6 +166,17 @@ describe('handleDifyProxy input moderation integration', () => {
       outcome: 'skip',
     });
     mockedDispatchDifyUpstreamRequest.mockResolvedValue(undefined);
+  });
+
+  it('rejects invalid aggregate input before quota admission or upstream dispatch', async () => {
+    jest
+      .mocked(validateDifyGenerationInput)
+      .mockRejectedValueOnce(new AgentPolicyError(400, 'INPUT_TOO_MANY_FILES'));
+    const reply = createReply();
+    await handleDifyProxy(createRequest(), reply, createConfig());
+    expect(reply.status).toHaveBeenCalledWith(400);
+    expect(registerSubmission).not.toHaveBeenCalled();
+    expect(mockedDispatchDifyUpstreamRequest).not.toHaveBeenCalled();
   });
 
   it('serves an owned preview before the admin-only upstream gate', async () => {

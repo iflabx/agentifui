@@ -129,7 +129,9 @@ describe('useTextGenerationExecution', () => {
     );
 
     await act(async () => {
-      await result.current.executeTextGeneration({ prompt: 'hello' });
+      expect(
+        await result.current.executeTextGeneration({ prompt: 'hello' })
+      ).toBe(false);
     });
 
     expect(mockUpdateExecutionStatus).toHaveBeenNthCalledWith(

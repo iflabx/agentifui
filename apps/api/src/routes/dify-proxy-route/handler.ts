@@ -22,6 +22,7 @@ import {
   extractRawQuery,
   isObjectRecord,
 } from './helpers';
+import { validateDifyGenerationInput } from './input-capabilities';
 import { runInputModeration } from './input-moderation';
 import { resolveDifyMessageEdit, stageDifyMessageEdit } from './message-edits';
 import { resolveProxyRequestContext } from './request-context';
@@ -131,6 +132,7 @@ async function handleDifyProxyRequest(
       throw new AgentPolicyError(503, 'AGENT_GOVERNANCE_UNAVAILABLE');
     if (!isObjectRecord(target.rawBody))
       throw new AgentPolicyError(400, 'DIFY_PROXY_GENERATION_BODY_INVALID');
+    await validateDifyGenerationInput(target.rawBody, context, target);
     const registration = await registerSubmission({
       userId: context.actor.userId,
       serviceInstanceId: target.serviceInstanceId,

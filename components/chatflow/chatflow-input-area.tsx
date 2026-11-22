@@ -1,5 +1,11 @@
 'use client';
 
+import { FileUploadField } from '@components/workflow/workflow-input-form/file-upload-field';
+import { FormField } from '@components/workflow/workflow-input-form/form-field';
+import {
+  capabilityFormFields,
+  validateFormData,
+} from '@components/workflow/workflow-input-form/validation';
 import {
   formatChatUiError,
   isContentModerationBlocked,
@@ -7,22 +13,25 @@ import {
   reportTraceableClientError,
 } from '@lib/hooks/chat-interface/error-utils';
 import { isChatSubmitResult } from '@lib/hooks/chat-interface/guards';
+import {
+  useAgentInputCapabilities,
+  useRetainedInputCapabilities,
+} from '@lib/hooks/use-agent-input-capabilities';
+import { useChatInputApp } from '@lib/hooks/use-chat-input-app';
 import { useChatWidth } from '@lib/hooks/use-chat-width';
-import { useCurrentApp } from '@lib/hooks/use-current-app';
-import type { DifyUserInputFormItem } from '@lib/services/dify/types';
+import { getDifyUserInputFormEntry } from '@lib/services/dify/user-input-form';
+import { useChatInputStore } from '@lib/stores/chat-input-store';
 import { useNotificationStore } from '@lib/stores/ui/notification-store';
 import { cn } from '@lib/utils';
 import { Workflow } from 'lucide-react';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 
-import { ChatflowDynamicFields } from './chatflow-input-area/dynamic-fields';
 import { ChatflowFormActions } from './chatflow-input-area/form-actions';
 import {
   buildChatflowFormConfig,
-  extractFilesFromFormData,
   isChatflowFormPristine,
   validateChatflowSubmission,
 } from './chatflow-input-area/helpers';
@@ -46,7 +55,17 @@ interface ChatflowInputAreaProps {
   onFormConfigChange?: (hasFormConfig: boolean) => void;
 }
 
-export function ChatflowInputArea({
+export function ChatflowInputArea(props: ChatflowInputAreaProps) {
+  const actorEpoch = useChatInputStore(state => state.actorEpoch);
+  return (
+    <ScopedChatflowInputArea
+      key={JSON.stringify([props.instanceId, actorEpoch])}
+      {...props}
+    />
+  );
+}
+
+function ScopedChatflowInputArea({
   instanceId,
   onSubmit,
   isProcessing = false,
@@ -55,81 +74,43 @@ export function ChatflowInputArea({
   onFormConfigChange,
 }: ChatflowInputAreaProps) {
   const { widthClass, paddingClass } = useChatWidth();
-  const { currentAppInstance } = useCurrentApp();
+  const app = useChatInputApp(instanceId, true);
+  const currentAppInstance = app.instance;
+  const live = useAgentInputCapabilities(currentAppInstance?.id ?? null);
+  const ready = live.capabilities?.status === 'ready';
+  const displayedCapabilities = useRetainedInputCapabilities(live.capabilities);
+  const configResult = useMemo(
+    () => buildChatflowFormConfig(capabilityFormFields(displayedCapabilities)),
+    [displayedCapabilities]
+  );
+  const { userInputForm, hasFormConfig, initialFormData } = configResult;
+  const isLoading =
+    !displayedCapabilities &&
+    !ready &&
+    !app.failed &&
+    !live.error &&
+    !live.capabilities;
+  const [uploadBlocked, setUploadBlocked] = useState<Record<string, boolean>>(
+    {}
+  );
   const t = useTranslations('pages.chatflow');
   const tModeration = useTranslations('errors.system.moderation');
   const tWorkflow = useTranslations('pages.workflow.form');
+  const tChat = useTranslations('pages.chat');
+  const tCommon = useTranslations('common');
 
   const [query, setQuery] = useState('');
-  const [formData, setFormData] = useState<ChatflowFormData>({});
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [initialFormData, setInitialFormData] = useState<ChatflowFormData>({});
-  const [isLoading, setIsLoading] = useState(true);
-  const [userInputForm, setUserInputForm] = useState<DifyUserInputFormItem[]>(
-    []
+  const [draftFields, setFormData] = useState<ChatflowFormData>({});
+  const formData = useMemo(
+    () => ({ ...initialFormData, ...draftFields }),
+    [initialFormData, draftFields]
   );
-  const [hasFormConfig, setHasFormConfig] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [isComposing, setIsComposing] = useState(false);
 
   useEffect(() => {
-    const initializeFormConfig = async () => {
-      try {
-        setIsLoading(true);
-
-        const response = await fetch(
-          `/api/internal/apps?instanceId=${encodeURIComponent(instanceId)}`,
-          {
-            method: 'GET',
-            credentials: 'include',
-          }
-        );
-
-        if (!response.ok) {
-          setHasFormConfig(false);
-          setUserInputForm([]);
-          setFormData({});
-          setInitialFormData({});
-          onFormConfigChange?.(false);
-          return;
-        }
-
-        const payload = (await response.json()) as {
-          success: boolean;
-          app?: {
-            config?: {
-              dify_parameters?: {
-                user_input_form?: DifyUserInputFormItem[];
-              };
-            };
-          };
-        };
-
-        const formItems = payload.app?.config?.dify_parameters?.user_input_form;
-        const configResult = buildChatflowFormConfig(
-          payload.success ? formItems : undefined
-        );
-
-        setUserInputForm(configResult.userInputForm);
-        setHasFormConfig(configResult.hasFormConfig);
-        setFormData(configResult.initialFormData);
-        setInitialFormData(configResult.initialFormData);
-        onFormConfigChange?.(configResult.hasFormConfig);
-      } catch (error) {
-        console.error('[ChatflowInputArea] Initialization failed:', error);
-        setHasFormConfig(false);
-        setUserInputForm([]);
-        setFormData({});
-        setInitialFormData({});
-        onFormConfigChange?.(false);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    if (instanceId) {
-      void initializeFormConfig();
-    }
-  }, [instanceId, onFormConfigChange]);
+    onFormConfigChange?.(ready ? hasFormConfig : true);
+  }, [ready, hasFormConfig, onFormConfigChange]);
 
   const handleFieldChange = useCallback(
     (variable: string, value: unknown) => {
@@ -166,52 +147,97 @@ export function ChatflowInputArea({
 
   const handleReset = useCallback(() => {
     setQuery('');
-    setFormData({ ...initialFormData });
+    setFormData(
+      Object.fromEntries(
+        Object.entries(initialFormData).map(([key, value]) => [
+          key,
+          Array.isArray(value) ? [...value] : value,
+        ])
+      )
+    );
     setErrors({});
   }, [initialFormData]);
 
   const canSubmit = useCallback(() => {
+    if (!ready || Object.values(uploadBlocked).some(Boolean)) return false;
     const validationErrors = validateChatflowSubmission({
       formData,
-      hasFormConfig,
+      hasFormConfig: false,
       query,
       t,
       tWorkflow,
       userInputForm,
     });
+    Object.assign(
+      validationErrors,
+      validateFormData(formData, userInputForm, tWorkflow, live.capabilities)
+    );
 
     return Object.keys(validationErrors).length === 0;
-  }, [formData, hasFormConfig, query, t, tWorkflow, userInputForm]);
+  }, [
+    formData,
+    query,
+    t,
+    tWorkflow,
+    userInputForm,
+    ready,
+    uploadBlocked,
+    live.capabilities,
+  ]);
 
   const handleSubmit = useCallback(
     async (event: React.FormEvent) => {
       event.preventDefault();
 
-      if (isProcessing || isWaiting) {
+      if (
+        isProcessing ||
+        isWaiting ||
+        !ready ||
+        Object.values(uploadBlocked).some(Boolean)
+      ) {
         return;
       }
 
       const nextErrors = validateChatflowSubmission({
         formData,
-        hasFormConfig,
+        hasFormConfig: false,
         query,
         t,
         tWorkflow,
         userInputForm,
       });
+      Object.assign(
+        nextErrors,
+        validateFormData(formData, userInputForm, tWorkflow, live.capabilities)
+      );
 
       if (Object.keys(nextErrors).length > 0) {
         setErrors(nextErrors);
         return;
       }
 
-      const files = extractFilesFromFormData(formData);
+      const files: UploadPayloadFile[] = [];
       setErrors({});
 
       try {
-        const submitResult = await onSubmit(query.trim(), formData, files);
+        const keys = new Set([
+          ...live.capabilities!.fields.map(field => field.key),
+          ...live
+            .capabilities!.attachmentSlots.filter(
+              slot => slot.target === 'inputs'
+            )
+            .map(slot => slot.key),
+        ]);
+        const submitResult = await onSubmit(
+          query.trim(),
+          Object.fromEntries(
+            Object.entries(formData).filter(([key]) => keys.has(key))
+          ),
+          files
+        );
 
         if (isChatSubmitResult(submitResult) && !submitResult.ok) {
+          live.retry();
           const submitFailureMessage =
             localizeChatModerationMessage(
               {
@@ -261,6 +287,7 @@ export function ChatflowInputArea({
         setQuery('');
         setFormData({ ...initialFormData });
       } catch (error) {
+        live.retry();
         console.error('[ChatflowInputArea] Submission failed:', error);
         const { errorMessage, errorCode, requestId } = formatChatUiError(
           error,
@@ -301,9 +328,8 @@ export function ChatflowInputArea({
       }
     },
     [
-      currentAppInstance?.instance_id,
+      currentAppInstance,
       formData,
-      hasFormConfig,
       initialFormData,
       instanceId,
       isProcessing,
@@ -314,6 +340,9 @@ export function ChatflowInputArea({
       tModeration,
       tWorkflow,
       userInputForm,
+      ready,
+      uploadBlocked,
+      live,
     ]
   );
 
@@ -414,6 +443,25 @@ export function ChatflowInputArea({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-8 p-8">
+          {!ready && (
+            <div
+              role="alert"
+              className="text-sm text-amber-700 dark:text-amber-300"
+            >
+              {tChat(
+                live.capabilities?.status === 'unsupported'
+                  ? 'input.capabilitiesUnsupported'
+                  : 'input.capabilitiesUnavailable'
+              )}
+              <button
+                type="button"
+                className="ml-3 underline"
+                onClick={app.failed ? app.retry : live.retry}
+              >
+                {tCommon('ui.retry')}
+              </button>
+            </div>
+          )}
           <ChatflowQueryField
             disabled={isProcessing || isWaiting}
             error={errors.query}
@@ -426,15 +474,63 @@ export function ChatflowInputArea({
             requiredLabel={t('form.question.label')}
           />
 
-          <ChatflowDynamicFields
-            errors={errors}
-            formData={formData}
-            hasFormConfig={hasFormConfig}
-            instanceId={instanceId}
-            onFieldChange={handleFieldChange}
-            sectionTitle={t('form.additionalInfo')}
-            userInputForm={userInputForm}
-          />
+          {hasFormConfig && (
+            <div className="space-y-6">
+              <h2 className="font-serif text-sm text-stone-600 dark:text-stone-400">
+                {t('form.additionalInfo')}
+              </h2>
+              {userInputForm.map(item => {
+                const { fieldType, fieldConfig } =
+                  getDifyUserInputFormEntry(item);
+                if (!fieldConfig) return null;
+                const variable = fieldConfig.variable;
+                if (fieldType === 'file' || fieldType === 'file-list')
+                  return (
+                    <FileUploadField
+                      key={variable}
+                      config={{}}
+                      slot={
+                        ready
+                          ? live.capabilities?.attachmentSlots.find(
+                              slot =>
+                                slot.target === 'inputs' &&
+                                slot.key === variable
+                            )
+                          : undefined
+                      }
+                      value={formData[variable]}
+                      onChange={value => handleFieldChange(variable, value)}
+                      error={errors[variable]}
+                      label={fieldConfig.label}
+                      required={fieldConfig.required}
+                      instanceId={instanceId}
+                      isSingleFileMode={fieldType === 'file'}
+                      onRequirementsChanged={live.retry}
+                      onBlockedChange={blocked =>
+                        setUploadBlocked(prev =>
+                          prev[variable] === blocked
+                            ? prev
+                            : { ...prev, [variable]: blocked }
+                        )
+                      }
+                    />
+                  );
+                return (
+                  <FormField
+                    key={variable}
+                    type={
+                      fieldType as
+                        'text-input' | 'number' | 'paragraph' | 'select'
+                    }
+                    config={fieldConfig}
+                    value={formData[variable] as string | number}
+                    onChange={value => handleFieldChange(variable, value)}
+                    error={errors[variable]}
+                  />
+                );
+              })}
+            </div>
+          )}
 
           <ChatflowFormActions
             canSubmit={canSubmit()}

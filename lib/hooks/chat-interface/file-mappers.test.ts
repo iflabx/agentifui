@@ -1,4 +1,8 @@
-import { mapChatUploadFilesToMessageAttachments } from './file-mappers';
+import {
+  collectChatDisplayFiles,
+  mapChatUploadFilesToDifyFiles,
+  mapChatUploadFilesToMessageAttachments,
+} from './file-mappers';
 
 describe('mapChatUploadFilesToMessageAttachments', () => {
   it('persists the resolved appId on each attachment', () => {
@@ -29,4 +33,38 @@ describe('mapChatUploadFilesToMessageAttachments', () => {
       },
     ]);
   });
+});
+
+it('keeps field attachments in display/history without turning them into native files', () => {
+  const source = {
+    upload_file_id: 'source',
+    name: 'brief.md',
+    size: 12,
+    mime_type: '',
+  };
+  const inputs = {
+    SourceFile: source,
+    ReferenceFiles: [source],
+    Prompt: 'summarize',
+  };
+  const displayFiles = collectChatDisplayFiles([], inputs);
+  expect(mapChatUploadFilesToMessageAttachments(displayFiles, 'app')).toEqual([
+    expect.objectContaining({
+      upload_file_id: 'source',
+      name: 'brief.md',
+      app_id: 'app',
+    }),
+  ]);
+  expect(mapChatUploadFilesToDifyFiles([])).toBeUndefined();
+  expect(inputs.SourceFile).toBe(source);
+});
+
+it('preserves native image types instead of labeling every upload a document', () => {
+  expect(
+    mapChatUploadFilesToDifyFiles([
+      { name: 'photo.png', mime_type: '', upload_file_id: 'image' },
+    ])
+  ).toEqual([
+    { type: 'image', transfer_method: 'local_file', upload_file_id: 'image' },
+  ]);
 });

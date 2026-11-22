@@ -4,9 +4,15 @@ import { Pool } from 'pg';
 
 import type { ApiRuntimeConfig } from '../../apps/api/src/config';
 import { runAuditedAdminMutation } from '../../apps/api/src/lib/admin-audit';
+import { resolveDifyConfig } from '../../apps/api/src/lib/dify-config';
+import {
+  clearDifyInputCapabilitiesCache,
+  resolveDifyInputCapabilities,
+} from '../../apps/api/src/lib/dify-input-capabilities';
 import {
   canReadDifyUpload,
   hasDifyUploadReference,
+  loadDifyUploadMetadata,
   registerDifyUpload,
 } from '../../apps/api/src/lib/dify-upload-access';
 import {
@@ -436,6 +442,100 @@ test('legacy references alone grant no ownership, while trusted registration rem
   expect(await hasDifyUploadReference(scope)).toBe(false);
   await registerDifyUpload(scope);
   expect(await canReadDifyUpload(scope)).toBe(false);
+});
+
+test('upload metadata is trusted-registration scoped, nullable for old history and immutable on re-registration', async () => {
+  const scope = {
+    userId: user,
+    serviceInstanceId: appId,
+    fileId: randomUUID(),
+  };
+  await registerDifyUpload(scope);
+  expect(await loadDifyUploadMetadata(scope)).toBeNull();
+  const metadata = { name: 'source.txt', size: 12, type: 'text/plain' };
+  await registerDifyUpload(scope, false, metadata);
+  expect(await loadDifyUploadMetadata(scope)).toEqual(metadata);
+  await registerDifyUpload(scope, false, {
+    name: 'forged.txt',
+    size: 1,
+    type: 'image/png',
+  });
+  expect(await loadDifyUploadMetadata(scope)).toEqual(metadata);
+  expect(await loadDifyUploadMetadata({ ...scope, userId: actor })).toBeNull();
+  expect(
+    await loadDifyUploadMetadata({ ...scope, serviceInstanceId: randomUUID() })
+  ).toBeNull();
+  await database.query("UPDATE profiles SET status='suspended' WHERE id=$1", [
+    user,
+  ]);
+  expect(await loadDifyUploadMetadata(scope)).toBeNull();
+});
+
+test('capability configuration stays bound to the authorized UUID when provider aliases overlap', async () => {
+  const secondProvider = randomUUID(),
+    secondApp = randomUUID();
+  try {
+    await database.query(
+      "INSERT INTO providers(id,name,type,base_url,auth_type) VALUES($1,$2,'dify','https://second.example.invalid/v1','bearer')",
+      [secondProvider, marker + '-second']
+    );
+    await database.query(
+      "INSERT INTO service_instances(id,provider_id,instance_id,visibility,config) VALUES($1,$2,$3,'public','{}')",
+      [secondApp, secondProvider, marker]
+    );
+    for (const [providerId, serviceId] of [
+      [provider, appId],
+      [secondProvider, secondApp],
+    ])
+      await database.query(
+        'INSERT INTO api_keys(provider_id,service_instance_id,key_value,is_default) VALUES($1,$2,$3,TRUE)',
+        [providerId, serviceId, 'synthetic-input-key']
+      );
+    for (const serviceInstanceId of [appId, secondApp]) {
+      const resolved = await resolveDifyConfig(marker, {
+        actorUserId: user,
+        actorRole: 'user',
+        serviceInstanceId,
+      });
+      expect(resolved?.serviceInstanceId).toBe(serviceInstanceId);
+    }
+  } finally {
+    await database.query(
+      'DELETE FROM api_keys WHERE service_instance_id=ANY($1::uuid[])',
+      [[appId, secondApp]]
+    );
+    await database.query('DELETE FROM service_instances WHERE id=$1', [
+      secondApp,
+    ]);
+    await database.query('DELETE FROM providers WHERE id=$1', [secondProvider]);
+  }
+});
+
+test('committed instance updates invalidate cached capabilities in the current API process', async () => {
+  const originalFetch = global.fetch;
+  clearDifyInputCapabilitiesCache();
+  const fetchMock = jest.fn(async () => new Response('{}'));
+  global.fetch = fetchMock;
+  const target = {
+    serviceInstanceId: appId,
+    difyApiUrl: 'https://upstream.example.invalid/v1',
+    difyApiKey: 'synthetic-cache',
+  };
+  try {
+    await resolveDifyInputCapabilities(target);
+    await resolveDifyInputCapabilities(target);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const response = await call('serviceInstances.update', {
+      id: appId,
+      updates: { display_name: 'Synthetic updated input settings' },
+    });
+    expect(response.statusCode).toBe(200);
+    await resolveDifyInputCapabilities(target);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  } finally {
+    global.fetch = originalFetch;
+    clearDifyInputCapabilitiesCache();
+  }
 });
 
 test('task lookup is safe, bounded and read-only; it preserves unknown tasks and reservations', async () => {

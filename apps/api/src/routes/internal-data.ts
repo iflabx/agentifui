@@ -9,6 +9,7 @@ import {
   recordAdminFailure,
   runAuditedAdminMutation,
 } from '../lib/admin-audit';
+import { clearDifyInputCapabilitiesCache } from '../lib/dify-input-capabilities';
 import { isAllowedMutationOrigin } from '../lib/request-origin';
 import { extractCandidateSessionTokens } from '../lib/session-identity/helpers';
 import {
@@ -366,6 +367,13 @@ export const internalDataRoutes: FastifyPluginAsync<
       }
 
       if (localHandled) {
+        if (
+          localHandled.statusCode < 400 &&
+          /^(?:providers|serviceInstances|apiKeys)\.(?:create|update|delete|setDefault)/.test(
+            action
+          )
+        )
+          clearDifyInputCapabilitiesCache();
         logActionOutcome({
           request: request.log,
           actionContext,

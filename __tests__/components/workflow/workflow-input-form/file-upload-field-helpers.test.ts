@@ -11,6 +11,17 @@ import {
 
 const t = (key: string, params?: Record<string, string | number>) =>
   params ? `${key}:${JSON.stringify(params)}` : key;
+const slot = {
+  key: 'docs',
+  label: 'Docs',
+  target: 'inputs' as const,
+  minCount: 0,
+  maxCount: 3,
+  methods: ['local_file' as const],
+  allowedTypes: ['image' as const, 'audio' as const],
+  extensions: [],
+  maxBytesByType: { image: 10, audio: 12 },
+};
 
 describe('file upload field helpers', () => {
   it('detects processed files and creates upload file state', () => {
@@ -61,14 +72,16 @@ describe('file upload field helpers', () => {
   });
 
   it('builds upload limits and type hints', () => {
-    expect(getMaxFiles({ max_length: 3 }, false)).toBe(3);
-    expect(getMaxFiles({}, true)).toBe(1);
+    expect(getMaxFiles(slot, false)).toBe(3);
+    expect(getMaxFiles(slot, true)).toBe(1);
+    expect(getMaxFiles(undefined, true)).toBe(0);
+    expect(getMaxFiles({ ...slot, maxCount: 0 }, true)).toBe(0);
 
-    const info = getFileTypeInfo({ allowed_file_types: ['image', 'audio'] }, t);
+    const info = getFileTypeInfo(slot, t);
     expect(info.hint).toContain('supportTypes');
-    expect(info.accept).toContain('image/*');
-    expect(getFileSizeHint({ max_file_size_mb: 10 }, t)).toContain(
-      'maxFileSize'
-    );
+    expect(info.accept).toContain('.png');
+    expect(info.accept).not.toContain('*');
+    expect(getFileSizeHint(slot, t)).toContain('10 Bytes');
+    expect(getFileSizeHint(undefined, t)).toBe('');
   });
 });

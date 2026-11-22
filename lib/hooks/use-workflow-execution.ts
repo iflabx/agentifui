@@ -80,7 +80,7 @@ export function useWorkflowExecution(instanceId: string) {
     async (nextFormData: Record<string, unknown>) => {
       if (!userId) {
         getActions().setError('User not logged in, please log in first');
-        return;
+        return false;
       }
 
       console.log(
@@ -248,6 +248,7 @@ export function useWorkflowExecution(instanceId: string) {
         console.log(
           '[Workflow Execution] ✅ Execution process completed, all data fully saved'
         );
+        return true;
       } catch (caughtError) {
         console.error('[Workflow Execution] ❌ Execution failed:', caughtError);
 
@@ -310,6 +311,7 @@ export function useWorkflowExecution(instanceId: string) {
             }
           }
         }
+        return false;
       } finally {
         cleanupWorkflowExecutionResources(
           sseConnectionRef,

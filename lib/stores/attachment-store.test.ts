@@ -1,4 +1,17 @@
+import type { AgentAttachmentSlot } from '../../packages/shared/src/agent-input';
 import { useAttachmentStore } from './attachment-store';
+
+const slot: AgentAttachmentSlot = {
+  key: 'files',
+  label: 'Files',
+  target: 'files',
+  minCount: 0,
+  maxCount: 3,
+  methods: ['local_file'],
+  allowedTypes: ['document'],
+  extensions: ['txt'],
+  maxBytesByType: { document: 9 },
+};
 
 describe('scoped attachments and upload attempts', () => {
   const file = () =>
@@ -9,6 +22,59 @@ describe('scoped attachments and upload attempts', () => {
   beforeEach(() => {
     useAttachmentStore.getState().resetAll();
     useAttachmentStore.getState().setScope('A');
+  });
+
+  it('reserves batches atomically across concurrent selections and all statuses', async () => {
+    const store = useAttachmentStore.getState();
+    const select = () => store.reserveFiles([file(), file()], slot, 'A');
+    const results = await Promise.all([
+      Promise.resolve().then(select),
+      Promise.resolve().then(select),
+    ]);
+    expect(results.map(result => result.error)).toEqual([
+      null,
+      'INPUT_TOO_MANY_FILES',
+    ]);
+    expect(store.getFiles('A')).toHaveLength(2);
+    const [first, second] = store.getFiles('A');
+    const attempt = store.beginUpload('A', first.id)!;
+    store.finishUpload('A', first.id, attempt, { error: 'failed' });
+    const secondAttempt = store.beginUpload('A', second.id)!;
+    store.finishUpload('A', second.id, secondAttempt, { uploadedId: 'done' });
+    expect(store.reserveFiles([file(), file()], slot, 'A').error).toBe(
+      'INPUT_TOO_MANY_FILES'
+    );
+    store.beginUpload('A', first.id);
+    expect(store.getFiles('A')).toHaveLength(2);
+    expect(store.reserveFiles([file()], slot, 'A').error).toBeNull();
+    expect(store.reserveFiles([file()], slot, 'A').error).toBe(
+      'INPUT_TOO_MANY_FILES'
+    );
+    store.removeFile(second.id, 'A');
+    expect(store.reserveFiles([file()], slot, 'A').error).toBeNull();
+  });
+
+  it('validates every selected file at the boundary and rejects a whole invalid batch', () => {
+    const store = useAttachmentStore.getState();
+    expect(store.reserveFiles([file()], slot, 'A').error).toBeNull();
+    const old = store.getFiles('A');
+    expect(
+      store.reserveFiles([file(), new File(['bad'], 'bad.png')], slot, 'A')
+        .error
+    ).toBe('INPUT_FILE_TYPE');
+    expect(store.getFiles('A')).toBe(old);
+    expect(
+      store.reserveFiles([new File(['0123456789'], 'large.txt')], slot, 'A')
+        .error
+    ).toBe('INPUT_FILE_SIZE');
+    expect(
+      store.reserveFiles([file()], { ...slot, maxCount: 0 }, 'B').error
+    ).toBe('INPUT_TOO_MANY_FILES');
+    expect(
+      store.reserveFiles([file()], { ...slot, methods: ['remote_url'] }, 'B')
+        .error
+    ).toBe('INPUT_UPLOAD_DISABLED');
+    expect(store.getFiles('B')).toEqual([]);
   });
 
   it('updates the original bucket when another application has the same file', () => {
