@@ -82,7 +82,7 @@ describe('useChatSubmitHandler', () => {
       appId: 'app-1',
       instance: { id: 'instance-1' },
     });
-    (executeChatSubmit as jest.Mock).mockResolvedValue(undefined);
+    (executeChatSubmit as jest.Mock).mockResolvedValue({ ok: true });
     useCurrentAppStore.setState({ currentAppId: 'app-1' });
     useChatInputStore.getState().setActor('user-1');
     mockInputPath = '/apps/chatflow/app-1';
@@ -97,6 +97,7 @@ describe('useChatSubmitHandler', () => {
       ]);
       submission.viewScope?.onRouteAdopted('/chat/temp-owned');
       submission.viewScope?.onRouteAdopted('/chat/real-owned');
+      return { ok: true };
     });
     const { result } = renderHook(() => useChatSubmitHandler(input));
     await act(async () => {
@@ -119,7 +120,7 @@ describe('useChatSubmitHandler', () => {
     );
     const input = { ...createInput(), conversationAppId: null };
     const { result } = renderHook(() => useChatSubmitHandler(input));
-    let pending!: Promise<void>;
+    let pending!: Promise<unknown>;
     act(() => {
       pending = result.current('A draft');
     });
@@ -147,17 +148,17 @@ describe('useChatSubmitHandler', () => {
     jest.mocked(executeChatSubmit).mockImplementationOnce(
       () =>
         new Promise(resolve => {
-          finishB = resolve;
+          finishB = () => resolve({ ok: true });
         })
     );
     const input = { ...createInput(), conversationAppId: null };
     const { result } = renderHook(() => useChatSubmitHandler(input));
-    let pendingA!: Promise<void>;
+    let pendingA!: Promise<unknown>;
     act(() => {
       pendingA = result.current('A');
     });
     act(() => useCurrentAppStore.setState({ currentAppId: 'app-B' }));
-    let pendingB!: Promise<void>;
+    let pendingB!: Promise<unknown>;
     await act(async () => {
       pendingB = result.current('B');
       await Promise.resolve();
@@ -217,7 +218,7 @@ describe('useChatSubmitHandler', () => {
       ({ path }) => useChatSubmitHandler({ ...input, currentPathname: path }),
       { initialProps: { path: '/chat/new' } }
     );
-    let pending: Promise<void>;
+    let pending: Promise<unknown>;
     act(() => {
       pending = result.current('Original');
     });
@@ -235,6 +236,7 @@ describe('useChatSubmitHandler', () => {
     let captured: Parameters<typeof executeChatSubmit>[0] | undefined;
     jest.mocked(executeChatSubmit).mockImplementation(async value => {
       captured = value;
+      return { ok: true };
     });
     const { result, rerender } = renderHook(
       ({ path }) => useChatSubmitHandler({ ...input, currentPathname: path }),
@@ -271,9 +273,10 @@ describe('useChatSubmitHandler', () => {
       await new Promise<void>(resolve => {
         finish = resolve;
       });
+      return { ok: true };
     });
     const submit = renderHook(() => useChatSubmitHandler(input));
-    let pending!: Promise<void>;
+    let pending!: Promise<unknown>;
     await act(async () => {
       pending = submit.result.current('Question');
       await Promise.resolve();
@@ -390,7 +393,7 @@ describe('useChatSubmitHandler', () => {
         incompleteAnswerMessage: input.incompleteAnswerMessage,
       })
     );
-    expect(mockCaptureInput).toHaveBeenCalledWith('hello', 'user-1');
+    expect(mockCaptureInput).toHaveBeenCalledWith('hello', 'user-1', undefined);
     const submission = jest.mocked(executeChatSubmit).mock.calls[0][0];
     const binding = { externalId: 'external-A', taskId: 'task-A' };
     submission.onAccepted?.(binding);

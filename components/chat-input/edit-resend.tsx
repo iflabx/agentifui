@@ -1,12 +1,10 @@
 'use client';
 
-import { ConfirmDialog } from '@components/ui/confirm-dialog';
-
 import {
   type ReactNode,
   createContext,
-  useCallback,
   useContext,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -19,150 +17,186 @@ import type { MessageEditSource } from '../../packages/shared/src/message-edit';
 
 export type EditSource = MessageEditSource;
 
-export function correctionDraft(source: string) {
-  return {
-    text: source,
-    selectionStart: 0,
-    selectionEnd: source.length,
-  };
+interface EditOptions {
+  scope: string | null;
+  blocked: boolean;
+  sourceIds?: string[];
+  onSubmit: (text: string, source: EditSource) => Promise<boolean>;
 }
 
-interface EditOptions {
-  source?: EditSource;
-  onSourceChange?: (source?: EditSource) => void;
-  scope: string | null;
-  value: string;
+function InlineMessageEditor({
+  source,
+  blocked,
+  onSubmit,
+  onCancel,
+}: {
+  source: EditSource;
   blocked: boolean;
-  hasDraftAttachments?: boolean;
-  replace: (text: string) => boolean;
+  onSubmit: (text: string) => Promise<boolean>;
+  onCancel: () => void;
+}) {
+  const t = useTranslations('components.chat.editResend');
+  const inputId = useId();
+  const input = useRef<HTMLTextAreaElement>(null);
+  const submitting = useRef(false);
+  const [text, setText] = useState(source.text);
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useLayoutEffect(() => {
+    input.current?.focus();
+    input.current?.select();
+  }, []);
+  const submit = async () => {
+    if (blocked || submitting.current || !text.trim()) return;
+    submitting.current = true;
+    setPending(true);
+    setFailed(false);
+    try {
+      if (!(await onSubmit(text))) setFailed(true);
+    } catch {
+      setFailed(true);
+    } finally {
+      submitting.current = false;
+      setPending(false);
+    }
+  };
+  return (
+    <form
+      aria-label={t('editorLabel')}
+      className="w-full rounded-2xl border border-stone-300 bg-stone-100 p-3 dark:border-stone-600 dark:bg-stone-800"
+      onSubmit={event => {
+        event.preventDefault();
+        void submit();
+      }}
+    >
+      <label className="sr-only" htmlFor={inputId}>
+        {t('editorLabel')}
+      </label>
+      <textarea
+        id={inputId}
+        name="message-edit"
+        ref={input}
+        value={text}
+        rows={4}
+        disabled={blocked || pending}
+        aria-describedby={failed ? `${inputId}-error` : undefined}
+        className="max-h-[60vh] min-h-24 w-full resize-y bg-transparent px-1 py-2 text-base leading-relaxed text-stone-800 outline-none dark:text-stone-100"
+        onChange={event => {
+          setText(event.target.value);
+          setFailed(false);
+        }}
+        onKeyDown={event => {
+          if (event.nativeEvent.isComposing) return;
+          if (event.key === 'Escape' && !pending) {
+            event.preventDefault();
+            onCancel();
+          }
+          if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+            event.preventDefault();
+            void submit();
+          }
+        }}
+      />
+      {source.hasAttachments && (
+        <p className="mb-2 text-sm text-stone-500">{t('textOnly')}</p>
+      )}
+      {failed && (
+        <p
+          id={`${inputId}-error`}
+          role="alert"
+          className="mb-2 text-sm text-red-600 dark:text-red-400"
+        >
+          {t('sendFailed')}
+        </p>
+      )}
+      <div className="flex flex-wrap justify-end gap-2">
+        <button
+          type="button"
+          disabled={pending}
+          onClick={onCancel}
+          className="rounded-full border border-stone-300 px-4 py-2 text-sm disabled:opacity-50 dark:border-stone-600"
+        >
+          {t('cancel')}
+        </button>
+        <button
+          type="submit"
+          disabled={blocked || pending || !text.trim()}
+          className="rounded-full bg-stone-800 px-4 py-2 text-sm text-white disabled:opacity-50 dark:bg-stone-200 dark:text-stone-900"
+        >
+          {t(pending ? 'sending' : 'send')}
+        </button>
+      </div>
+    </form>
+  );
 }
 
 export function useEditResend(options: EditOptions) {
-  const t = useTranslations('components.chat.editResend');
-  const live = useRef(options);
-  const input = useRef<HTMLTextAreaElement | null>(null);
-  const [pending, setPending] = useState<{
-    scope: string;
-    source: EditSource;
-  } | null>(null);
-  const [notice, setNotice] = useState<{
-    scope: string;
-    source: EditSource;
-  } | null>(null);
   const [selection, setSelection] = useState<{
     scope: string;
-    text: string;
-    selectionStart: number;
-    selectionEnd: number;
+    source: EditSource;
   } | null>(null);
+  const live = useRef(options);
+  const sending = useRef(false);
   useLayoutEffect(() => {
     live.current = options;
   });
   useLayoutEffect(() => {
-    setPending(null);
-    setNotice(null);
     setSelection(null);
   }, [options.scope]);
+  const sourceVisible =
+    !selection ||
+    !options.sourceIds ||
+    options.sourceIds.includes(selection.source.id);
   useLayoutEffect(() => {
-    if (options.blocked) setPending(null);
-  }, [options.blocked]);
-  useLayoutEffect(() => {
-    if (!options.value) setNotice(null);
-    if (
-      selection &&
-      selection.scope === options.scope &&
-      selection.text === options.value &&
-      input.current
-    ) {
-      input.current.focus();
-      input.current.setSelectionRange(
-        selection.selectionStart,
-        selection.selectionEnd
-      );
-      setSelection(null);
-    }
-  }, [options.value, options.scope, selection]);
-  const apply = useCallback(
-    (request: { scope: string; source: EditSource }) => {
-      const current = live.current;
-      if (current.scope !== request.scope || current.blocked) return;
-      const draft = correctionDraft(request.source.text);
-      if (!current.replace(draft.text)) return;
-      current.onSourceChange?.(request.source);
-      setNotice(request);
-      setPending(null);
-      setSelection({ ...draft, scope: request.scope });
-    },
-    []
-  );
-  const scope = options.scope;
-  const start = useCallback(
-    (source: EditSource) => {
-      const current = live.current;
-      if (
-        !scope ||
-        scope !== current.scope ||
-        current.blocked ||
-        !source.text.trim()
-      )
-        return;
-      const request = { scope, source };
-      if (current.value.trim() || current.hasDraftAttachments)
-        setPending(request);
-      else apply(request);
-    },
-    [scope, apply]
-  );
-  const onInputRef = useCallback((node: HTMLTextAreaElement | null) => {
-    input.current = node;
-  }, []);
+    if (!sourceVisible) setSelection(null);
+  }, [sourceVisible]);
+  const active =
+    selection?.scope === options.scope && sourceVisible ? selection : null;
   const controls = useMemo(
-    () => ({ start, disabled: options.blocked }),
-    [start, options.blocked]
-  );
-  const activeSource = options.onSourceChange
-    ? options.source
-    : notice?.scope === scope
-      ? notice.source
-      : undefined;
-  return {
-    sourceId: activeSource?.id,
-    controls,
-    onInputRef,
-    notice: activeSource ? (
-      <div
-        role="status"
-        className="flex items-start gap-3 px-4 pt-3 text-sm text-stone-600 dark:text-stone-300"
-      >
-        <p className="min-w-0 flex-1">
-          {t('notice')}
-          {activeSource.hasAttachments ? ` ${t('textOnly')}` : ''}
-        </p>
-        <button
-          type="button"
-          className="shrink-0 underline"
-          onClick={() => {
-            setNotice(null);
-            options.onSourceChange?.();
+    () => ({
+      sourceId: active?.source.id,
+      disabled: options.blocked || Boolean(active),
+      start: (source: EditSource) => {
+        if (
+          !options.scope ||
+          live.current.scope !== options.scope ||
+          live.current.blocked ||
+          active ||
+          sending.current ||
+          !source.text.trim()
+        )
+          return;
+        setSelection({ scope: options.scope, source });
+      },
+      editor: active ? (
+        <InlineMessageEditor
+          key={JSON.stringify([active.scope, active.source.id])}
+          source={active.source}
+          blocked={options.blocked}
+          onCancel={() => setSelection(null)}
+          onSubmit={async text => {
+            if (
+              sending.current ||
+              live.current.blocked ||
+              live.current.scope !== active.scope
+            )
+              return false;
+            sending.current = true;
+            try {
+              const accepted = await live.current.onSubmit(text, active.source);
+              if (accepted)
+                setSelection(current => (current === active ? null : current));
+              return accepted;
+            } finally {
+              sending.current = false;
+            }
           }}
-        >
-          {t('exit')}
-        </button>
-      </div>
-    ) : null,
-    confirmation:
-      pending && pending.scope === scope && !options.blocked ? (
-        <ConfirmDialog
-          isOpen
-          onClose={() => setPending(null)}
-          onConfirm={() => apply(pending)}
-          title={t('replaceTitle')}
-          message={t('replaceMessage')}
-          confirmText={t('replaceConfirm')}
-          icon="edit"
         />
       ) : null,
-  };
+    }),
+    [active, options.scope, options.blocked]
+  );
+  return { controls, active: Boolean(active) };
 }
 
 type EditControls = ReturnType<typeof useEditResend>['controls'];

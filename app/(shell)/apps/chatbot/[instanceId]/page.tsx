@@ -263,11 +263,17 @@ function LegacyAppDetailPage() {
         console.log('[AppDetail] UI state updated, start sending message');
 
         // call original handleSubmit, it will create conversation and send message
-        await originalHandleSubmit(message, files, undefined, editSourceId);
+        const result = await originalHandleSubmit(
+          message,
+          files,
+          undefined,
+          editSourceId
+        );
 
         console.log(
           '[AppDetail] message sent successfully, waiting for route change'
         );
+        return result;
       } catch (error) {
         console.error('[AppDetail] send message failed:', error);
 

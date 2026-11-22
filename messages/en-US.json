@@ -2395,6 +2395,11 @@
   "components": {
     "chat": {
       "editResend": {
+        "editorLabel": "Edit message",
+        "send": "Send",
+        "cancel": "Cancel",
+        "sendFailed": "The edit was not accepted. Your changes are kept.",
+        "sending": "Sending…",
         "action": "Edit and send",
         "notice": "Editing an earlier message. Sending continues the conversation from this point with your revised question.",
         "textOnly": "Text only: original attachments are not reattached.",

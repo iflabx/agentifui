@@ -38,6 +38,7 @@ import type {
   ChatStreamCompletionData,
   ChatSubmissionAccepted,
   ChatSubmissionBinding,
+  ChatSubmitResult,
   ChatViewScope,
   DifyLocalFile,
 } from './types';
@@ -194,7 +195,7 @@ interface ExecuteChatSubmitInput {
 
 export async function executeChatSubmit(
   input: ExecuteChatSubmitInput
-): Promise<void> {
+): Promise<ChatSubmitResult> {
   const isCurrent = input.viewScope?.isCurrent || (() => true);
   const guard =
     <Args extends unknown[]>(callback: (...args: Args) => void) =>
@@ -260,6 +261,7 @@ export async function executeChatSubmit(
   let answerStream: AsyncGenerator<string, void, undefined> | undefined;
   let assistantFallback: AssistantMessagePersistenceFallback | null = null;
   let getBinding: (() => ChatSubmissionBinding) | undefined;
+  let acceptedSubmission = false;
   const refreshBinding = () => {
     const binding = getBinding?.();
     finalRealConvId = binding?.externalId || finalRealConvId;
@@ -267,10 +269,13 @@ export async function executeChatSubmit(
     finalDbConvUUID = binding?.dbConversationId || finalDbConvUUID;
   };
   const onAccepted = (accepted: ChatSubmissionAccepted) => {
+    acceptedSubmission = true;
     if (input.editSourceId) {
       const state = useChatStore.getState();
       const source = state.messages.findIndex(
-        message => (message.db_id || message.id) === input.editSourceId
+        message =>
+          message.db_id === input.editSourceId ||
+          message.id === input.editSourceId
       );
       const replacement = state.messages.findIndex(
         message => message.id === userMessage.id
@@ -494,4 +499,5 @@ export async function executeChatSubmit(
     input.setIsWaitingForResponse(false);
     if (isCurrent()) input.isSubmittingRef.current = false;
   }
+  return { ok: acceptedSubmission, surfaced: true };
 }

@@ -2395,6 +2395,11 @@
   "components": {
     "chat": {
       "editResend": {
+        "editorLabel": "編輯訊息",
+        "send": "傳送",
+        "cancel": "取消",
+        "sendFailed": "修改尚未被接受，已保留編輯內容。",
+        "sending": "傳送中…",
         "action": "修改並傳送",
         "notice": "正在修改先前的訊息。傳送後，將從這裡以修改後的問題繼續對話。",
         "textOnly": "僅複製文字，不會重新附加原附件。",

@@ -7,6 +7,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react';
 import { TextEncoder } from 'node:util';
 
@@ -48,25 +49,28 @@ jest.mock('@components/chat-input/view', () => ({
     onValueChange,
     onSubmit,
     disabled,
-    editNotice,
   }: {
     value: string;
     onValueChange: (text: string) => void;
     onSubmit: () => void;
     disabled?: boolean;
-    editNotice?: React.ReactNode;
   }) => (
-    <div data-testid="shared-input">
-      {editNotice}
+    <form
+      data-testid="shared-input"
+      onSubmit={event => {
+        event.preventDefault();
+        onSubmit();
+      }}
+    >
       <textarea
         value={value}
         onChange={event => onValueChange(event.target.value)}
         disabled={disabled}
       />
-      <button onClick={onSubmit} disabled={disabled}>
+      <button type="submit" disabled={disabled}>
         send
       </button>
-    </div>
+    </form>
   ),
 }));
 jest.mock('@components/chat/messages/user-message/user-message', () => ({
@@ -75,15 +79,17 @@ jest.mock('@components/chat/messages/user-message/user-message', () => ({
     content,
     onEdit,
     editDisabled,
+    editor,
   }: {
     id: string;
     content: string;
     onEdit?: () => void;
     editDisabled?: boolean;
+    editor?: React.ReactNode;
   }) => (
     <div data-testid="shared-user" data-message-id={id}>
-      {content}
-      {onEdit && (
+      {editor ?? content}
+      {!editor && onEdit && (
         <button disabled={editDisabled} onClick={onEdit}>
           edit-{id}
         </button>
@@ -167,7 +173,7 @@ describe('Agent chat draft', () => {
     expect(screen.getByRole('main')).toHaveClass('pt-16', 'md:pt-12');
   });
 
-  it('prepares a correction without sending and submits the visible text through the existing snapshot', async () => {
+  it('edits in the original message and preserves the bottom draft on rejection and acceptance', async () => {
     const base = useAgentChat('app', null, 'user');
     const messages = [
       { id: 'old', role: 'user' as const, content: 'old request' },
@@ -179,31 +185,104 @@ describe('Agent chat draft', () => {
       view: { ...base.view, conversationId: 'thread', messages },
     });
     render(<AgentChat appId="app" conversationId="thread" />);
+    const bottom = within(screen.getByTestId('shared-input'));
+    const input = bottom.getByRole('textbox');
+    fireEvent.change(input, { target: { value: 'Unsent bottom draft' } });
+    const drafts = useLangchainDraftStore.getState().drafts;
     fireEvent.click(screen.getByText('edit-old'));
     expect(send).not.toHaveBeenCalled();
-    const input = screen.getByRole('textbox') as HTMLTextAreaElement;
-    expect(input.value).toContain('old request');
-    fireEvent.change(input, { target: { value: 'my visible correction' } });
+    const message = within(screen.getByTestId('shared-user'));
+    const editor = message.getByRole('textbox');
+    expect(editor).toHaveValue('old request');
+    expect(input).toHaveValue('Unsent bottom draft');
+    expect(input).toBeDisabled();
+    expect(bottom.getByRole('button', { name: 'send' })).toBeDisabled();
+    fireEvent.change(editor, { target: { value: 'my visible correction' } });
+    fireEvent.submit(screen.getByTestId('shared-input'));
+    expect(send).not.toHaveBeenCalled();
     send.mockResolvedValueOnce(false);
     await act(async () => {
-      fireEvent.click(screen.getByText('send'));
+      fireEvent.click(message.getByRole('button', { name: 'send' }));
     });
     expect(send).toHaveBeenLastCalledWith(
       'my visible correction',
-      expect.objectContaining({ text: 'my visible correction' }),
+      undefined,
       'old'
     );
-    expect(input).toHaveValue('my visible correction');
-    expect(screen.getByTestId('shared-user')).toHaveTextContent('old request');
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(editor).toHaveValue('my visible correction');
+    expect(input).toHaveValue('Unsent bottom draft');
+    expect(useLangchainDraftStore.getState().drafts).toBe(drafts);
     expect(screen.getByTestId('shared-assistant')).toHaveTextContent(
       'old answer'
     );
     send.mockResolvedValueOnce(true);
     await act(async () => {
-      fireEvent.click(screen.getByText('send'));
+      fireEvent.click(message.getByRole('button', { name: 'send' }));
     });
-    expect(input).toHaveValue('');
-    expect(screen.queryByText('exit')).not.toBeInTheDocument();
+    expect(message.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(input).toHaveValue('Unsent bottom draft');
+    expect(input).toBeEnabled();
+    expect(useLangchainDraftStore.getState().drafts).toBe(drafts);
+    send.mockResolvedValueOnce(false);
+    await act(async () => {
+      fireEvent.click(bottom.getByRole('button', { name: 'send' }));
+    });
+    expect(send).toHaveBeenLastCalledWith(
+      'Unsent bottom draft',
+      expect.objectContaining({ text: 'Unsent bottom draft' })
+    );
+  });
+
+  it('cancels inline editing without changing the original message or bottom draft', () => {
+    const base = useAgentChat('app', null, 'user');
+    jest.mocked(useAgentChat).mockReturnValue({
+      ...base,
+      draftScope: 'thread',
+      view: {
+        ...base.view,
+        conversationId: 'thread',
+        messages: [{ id: 'old', role: 'user', content: 'old request' }],
+      },
+    });
+    render(<AgentChat appId="app" conversationId="thread" />);
+    const input = screen.getByRole('textbox');
+    fireEvent.change(input, { target: { value: 'Unsent bottom draft' } });
+    const drafts = useLangchainDraftStore.getState().drafts;
+    fireEvent.click(screen.getByText('edit-old'));
+    const message = within(screen.getByTestId('shared-user'));
+    fireEvent.change(message.getByRole('textbox'), {
+      target: { value: 'Cancelled correction' },
+    });
+    fireEvent.click(message.getByRole('button', { name: 'cancel' }));
+    expect(message.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(screen.getByTestId('shared-user')).toHaveTextContent('old request');
+    expect(input).toHaveValue('Unsent bottom draft');
+    expect(input).toBeEnabled();
+    expect(useLangchainDraftStore.getState().drafts).toBe(drafts);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('mounts the shared editor only in the selected user message', () => {
+    const base = useAgentChat('app', null, 'user');
+    jest.mocked(useAgentChat).mockReturnValue({
+      ...base,
+      draftScope: 'thread',
+      view: {
+        ...base.view,
+        conversationId: 'thread',
+        messages: [
+          { id: 'first', role: 'user', content: 'first request' },
+          { id: 'second', role: 'user', content: 'second request' },
+        ],
+      },
+    });
+    render(<AgentChat appId="app" conversationId="thread" />);
+    fireEvent.click(screen.getByText('edit-second'));
+    const [first, second] = screen.getAllByTestId('shared-user');
+    expect(within(first).queryByRole('textbox')).not.toBeInTheDocument();
+    expect(within(second).getByRole('textbox')).toHaveValue('second request');
+    expect(send).not.toHaveBeenCalled();
   });
 
   it.each(['busy', 'historyLoading', 'historyFailed', 'unconfirmed'] as const)(
@@ -223,6 +302,197 @@ describe('Agent chat draft', () => {
       render(<AgentChat appId="app" conversationId="thread" />);
       expect(screen.getByText('edit-old')).toBeDisabled();
       fireEvent.click(screen.getByText('edit-old'));
+      expect(screen.getByRole('textbox')).toHaveValue('');
+      expect(send).not.toHaveBeenCalled();
+    }
+  );
+
+  it('blocks inline editing while human input is pending or uncertain', () => {
+    const base = useAgentChat('app', null, 'user');
+    jest.mocked(useAgentChat).mockReturnValue({
+      ...base,
+      humanInput: true,
+      draftScope: 'thread',
+      view: {
+        ...base.view,
+        conversationId: 'thread',
+        messages: [{ id: 'old', role: 'user', content: 'old request' }],
+      },
+    });
+    const interactions = jest
+      .mocked(useAgentInteractions)
+      .getMockImplementation()!({} as never);
+    jest.mocked(useAgentInteractions).mockReturnValue({
+      ...interactions,
+      blocked: true,
+      uncertainId: 'confirmation',
+    });
+    render(<AgentChat appId="app" conversationId="thread" />);
+    expect(screen.getByText('edit-old')).toBeDisabled();
+    fireEvent.click(screen.getByText('edit-old'));
+    expect(
+      within(screen.getByTestId('shared-user')).queryByRole('textbox')
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'send' })).toBeDisabled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('preserves the inline correction while recovery blocks further submissions', () => {
+    const base = useAgentChat('app', null, 'user');
+    const current = {
+      ...base,
+      draftScope: 'thread',
+      view: {
+        ...base.view,
+        conversationId: 'thread',
+        messages: [
+          { id: 'old', role: 'user' as const, content: 'old request' },
+        ],
+      },
+    };
+    jest.mocked(useAgentChat).mockReturnValue(current);
+    const { rerender } = render(
+      <AgentChat appId="app" conversationId="thread" />
+    );
+    fireEvent.click(screen.getByText('edit-old'));
+    const message = within(screen.getByTestId('shared-user'));
+    fireEvent.change(message.getByRole('textbox'), {
+      target: { value: 'Keep this correction' },
+    });
+    jest.mocked(useAgentChat).mockReturnValue({
+      ...current,
+      unconfirmed: true,
+    });
+    rerender(<AgentChat appId="app" conversationId="thread" />);
+    expect(message.getByRole('textbox')).toHaveValue('Keep this correction');
+    expect(message.getByRole('button', { name: 'send' })).toBeDisabled();
+    fireEvent.click(message.getByRole('button', { name: 'send' }));
+    fireEvent.submit(screen.getByTestId('shared-input'));
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('unlocks editing after recovery replaces an unconfirmed edit source without consuming the bottom draft', async () => {
+    const base = useAgentChat('app', null, 'user');
+    const current = {
+      ...base,
+      draftScope: 'thread',
+      view: {
+        ...base.view,
+        conversationId: 'thread',
+        messages: [
+          { id: 'old', role: 'user' as const, content: 'old request' },
+          { id: 'reply', role: 'assistant' as const, content: 'old answer' },
+        ],
+      },
+    };
+    jest.mocked(useAgentChat).mockReturnValue(current);
+    const { rerender } = render(
+      <AgentChat appId="app" conversationId="thread" />
+    );
+    const bottom = within(screen.getByTestId('shared-input'));
+    const input = bottom.getByRole('textbox');
+    fireEvent.change(input, { target: { value: 'Unsent bottom draft' } });
+    const drafts = useLangchainDraftStore.getState().drafts;
+    fireEvent.click(screen.getByText('edit-old'));
+    const message = within(screen.getByTestId('shared-user'));
+    fireEvent.change(message.getByRole('textbox'), {
+      target: { value: 'Recovered correction' },
+    });
+    send.mockImplementationOnce(async () => {
+      jest.mocked(useAgentChat).mockReturnValue({
+        ...current,
+        unconfirmed: true,
+      });
+      return false;
+    });
+    await act(async () => {
+      fireEvent.click(message.getByRole('button', { name: 'send' }));
+    });
+    rerender(<AgentChat appId="app" conversationId="thread" />);
+    expect(send).toHaveBeenCalledWith('Recovered correction', undefined, 'old');
+    expect(message.getByRole('textbox')).toHaveValue('Recovered correction');
+    expect(input).toBeDisabled();
+    expect(bottom.getByRole('button', { name: 'send' })).toBeDisabled();
+    expect(input).toHaveValue('Unsent bottom draft');
+    expect(useLangchainDraftStore.getState().drafts).toBe(drafts);
+
+    jest.mocked(useAgentChat).mockReturnValue({
+      ...current,
+      unconfirmed: false,
+      view: {
+        ...current.view,
+        messages: [
+          { id: 'recovered', role: 'user', content: 'Recovered correction' },
+          { id: 'new-reply', role: 'assistant', content: 'Recovered answer' },
+        ],
+      },
+    });
+    rerender(<AgentChat appId="app" conversationId="thread" />);
+    expect(screen.queryByText('edit-old')).not.toBeInTheDocument();
+    expect(screen.queryByText('old request')).not.toBeInTheDocument();
+    expect(screen.getByTestId('shared-assistant')).toHaveTextContent(
+      'Recovered answer'
+    );
+    expect(screen.getAllByRole('textbox')).toEqual([input]);
+    expect(input).toHaveValue('Unsent bottom draft');
+    expect(input).toBeEnabled();
+    expect(bottom.getByRole('button', { name: 'send' })).toBeEnabled();
+    expect(useLangchainDraftStore.getState().drafts).toBe(drafts);
+    expect(screen.getByText('edit-recovered')).toBeEnabled();
+    fireEvent.click(screen.getByText('edit-recovered'));
+    expect(
+      within(screen.getByTestId('shared-user')).getByRole('textbox')
+    ).toHaveValue('Recovered correction');
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['conversation', 'application', 'actor', 'epoch'] as const)(
+    'clears inline editing when the %s scope changes',
+    target => {
+      const base = useAgentChat('app', null, 'user');
+      const current = {
+        ...base,
+        draftScope: 'thread',
+        view: {
+          ...base.view,
+          conversationId: 'thread',
+          messages: [
+            { id: 'old', role: 'user' as const, content: 'old request' },
+          ],
+        },
+      };
+      jest.mocked(useAgentChat).mockReturnValue(current);
+      const { rerender } = render(
+        <AgentChat appId="app" conversationId="thread" />
+      );
+      fireEvent.click(screen.getByText('edit-old'));
+      fireEvent.change(
+        within(screen.getByTestId('shared-user')).getByRole('textbox'),
+        { target: { value: 'Private correction' } }
+      );
+      if (target === 'conversation') {
+        jest.mocked(useAgentChat).mockReturnValue({
+          ...current,
+          draftScope: 'other-thread',
+          view: { ...current.view, conversationId: 'other-thread' },
+        });
+      } else if (target === 'actor') {
+        mockActorId = 'other-user';
+      } else if (target === 'epoch') {
+        act(() => {
+          useLangchainDraftStore.getState().setActor(null);
+          useLangchainDraftStore.getState().setActor('user');
+        });
+      }
+      rerender(
+        <AgentChat
+          appId={target === 'application' ? 'other-app' : 'app'}
+          conversationId={target === 'conversation' ? 'other-thread' : 'thread'}
+        />
+      );
+      expect(
+        within(screen.getByTestId('shared-user')).queryByRole('textbox')
+      ).not.toBeInTheDocument();
       expect(screen.getByRole('textbox')).toHaveValue('');
       expect(send).not.toHaveBeenCalled();
     }

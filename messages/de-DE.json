@@ -2395,6 +2395,11 @@
   "components": {
     "chat": {
       "editResend": {
+        "editorLabel": "Nachricht bearbeiten",
+        "send": "Senden",
+        "cancel": "Abbrechen",
+        "sendFailed": "Die Änderung wurde nicht angenommen. Ihre Eingabe bleibt erhalten.",
+        "sending": "Wird gesendet…",
         "action": "Bearbeiten und senden",
         "notice": "Frühere Nachricht bearbeiten. Nach dem Senden wird das Gespräch ab hier mit Ihrer geänderten Frage fortgesetzt.",
         "textOnly": "Nur Text: ursprüngliche Anhänge werden nicht erneut angefügt.",

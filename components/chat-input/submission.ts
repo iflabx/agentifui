@@ -3,12 +3,17 @@ import { bindChatInputConversation } from '@lib/hooks/use-chat-input-route-sync'
 import { useAttachmentStore } from '@lib/stores/attachment-store';
 import { useChatInputStore } from '@lib/stores/chat-input-store';
 
-export function captureDifyInputSubmission(message: string, userId: string) {
+export function captureDifyInputSubmission(
+  message: string,
+  userId: string,
+  editSourceId?: string
+) {
   const input = useChatInputStore.getState();
   const snapshot = input.snapshot();
   const epoch = input.actorEpoch;
   const files = [...useAttachmentStore.getState().getFiles(snapshot.scope)];
-  const eligible = input.actorId === userId && snapshot.message === message;
+  const eligible =
+    !editSourceId && input.actorId === userId && snapshot.message === message;
   let accepted = false;
   const ownsActor = () => {
     const current = useChatInputStore.getState();

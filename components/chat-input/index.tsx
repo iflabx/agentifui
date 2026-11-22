@@ -23,6 +23,7 @@ import {
   INITIAL_INPUT_HEIGHT,
   useChatLayoutStore,
 } from '@lib/stores/chat-layout-store';
+import { useChatStore } from '@lib/stores/chat-store';
 import { useNotificationStore } from '@lib/stores/ui/notification-store';
 import { RotateCcw } from 'lucide-react';
 
@@ -87,6 +88,7 @@ export const ChatInput = ({
   const { message, setMessage, isWelcomeScreen, currentRoute } =
     useChatInputStore();
   const attachments = useAttachmentStore(state => state.files);
+  const messages = useChatStore(state => state.messages);
   const {
     instance: inputApp,
     failed: inputAppFailed,
@@ -151,35 +153,41 @@ export const ChatInput = ({
       ? currentRoute
       : null;
   const edit = useEditResend({
-    source: useChatInputStore.getState().editSources[currentRoute],
-    onSourceChange: source =>
-      useChatInputStore.getState().setEditSource(source),
+    sourceIds: messages.flatMap(item =>
+      item.db_id ? [item.id, item.db_id] : [item.id]
+    ),
     scope: editScope,
-    value: message,
     blocked: disabled || waiting || isProcessing,
-    hasDraftAttachments: attachments.length > 0,
-    replace: text => {
+    onSubmit: async (text, source) => {
       const current = useChatInputStore.getState();
       if (
         !editScope ||
         current.currentRoute !== editScope ||
         current.actorId !== session?.user.id ||
-        locks.current.has(editScope)
+        locks.current.has(editScope) ||
+        !onSubmit
       )
         return false;
-      current.setMessage(text);
-      useAttachmentStore.getState().setFiles([], editScope);
-      return true;
+      const savedSource = useChatStore
+        .getState()
+        .messages.find(
+          item => item.id === source.id || item.db_id === source.id
+        );
+      const sourceId = savedSource?.db_id || source.id;
+      locks.current.add(editScope);
+      setSubmittingScope(editScope);
+      const unregister = registerChatInputSubmission(editScope);
+      try {
+        const result = await onSubmit(text, undefined, sourceId);
+        return isChatSubmitResult(result) && result.ok;
+      } finally {
+        unregister();
+        locks.current.delete(editScope);
+        setSubmittingScope(scope => (scope === editScope ? null : scope));
+      }
     },
   });
   useRegisterDifyEdit(editScope ? edit.controls : null);
-  const editInputRef = useCallback(
-    (node: HTMLTextAreaElement | null) => {
-      inputRef(node);
-      edit.onInputRef(node);
-    },
-    [inputRef, edit.onInputRef]
-  );
   const { handleFileSelect, handleRetryUpload } = useChatInputUploads({
     scope: route.ready ? currentRoute : null,
     currentAppId: inputApp ? route.appId : null,
@@ -192,6 +200,7 @@ export const ChatInput = ({
     const snapshot = input.snapshot();
     if (
       disabled ||
+      edit.active ||
       waiting ||
       isProcessing ||
       blockedAttachments ||
@@ -215,13 +224,7 @@ export const ChatInput = ({
       useAttachmentStore.getState().consumeFiles(snapshot.scope, files);
     };
     try {
-      const result = snapshot.editSource
-        ? await onSubmit(
-            snapshot.message,
-            buildSubmitFiles(files),
-            snapshot.editSource.id
-          )
-        : await onSubmit(snapshot.message, buildSubmitFiles(files));
+      const result = await onSubmit(snapshot.message, buildSubmitFiles(files));
       if (isChatSubmitResult(result) && result.ok) consume();
       if (isChatSubmitResult(result) && !result.ok) {
         const failure =
@@ -283,13 +286,13 @@ export const ChatInput = ({
 
   return (
     <>
-      {edit.confirmation}
       <ChatInputView
         key={route.ready ? currentRoute : 'loading'}
         value={route.ready ? message : ''}
         onValueChange={setMessage}
         onSubmit={handleLocalSubmit}
-        disabled={disabled}
+        disabled={disabled || edit.active}
+        stopDisabled={disabled}
         isProcessing={isProcessing}
         onStop={onStop}
         isWaiting={waiting || blockedAttachments}
@@ -300,8 +303,7 @@ export const ChatInput = ({
         widthClass={widthClass}
         isTransitioningToWelcome={isTransitioningToWelcome}
         onHeightChange={updateTextHeight}
-        onInputRef={editInputRef}
-        editNotice={edit.notice}
+        onInputRef={inputRef}
         attachmentPreview={
           route.ready ? (
             <AttachmentPreviewBar
@@ -327,7 +329,7 @@ export const ChatInput = ({
               config={fileConfig}
               attachmentCount={attachments.length}
               onFileSelect={handleFileSelect}
-              disabled={disabled || waiting || isProcessing}
+              disabled={disabled || edit.active || waiting || isProcessing}
               ariaLabel={t('input.addAttachment')}
             />
           ) : undefined

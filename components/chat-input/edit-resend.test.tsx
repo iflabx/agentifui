@@ -6,29 +6,9 @@ import {
   screen,
 } from '@testing-library/react';
 
-import { useState } from 'react';
-
-import { correctionDraft, useEditResend } from './edit-resend';
+import { type EditSource, useEditResend } from './edit-resend';
 
 jest.mock('next-intl', () => ({ useTranslations: () => (key: string) => key }));
-jest.mock('@components/ui/confirm-dialog', () => ({
-  ConfirmDialog: ({
-    onConfirm,
-    onClose,
-    isLoading,
-  }: {
-    onConfirm: () => void;
-    onClose: () => void;
-    isLoading: boolean;
-  }) => (
-    <div role="dialog">
-      <button onClick={onConfirm} disabled={isLoading}>
-        confirm
-      </button>
-      <button onClick={onClose}>cancel</button>
-    </div>
-  ),
-}));
 
 const source = {
   id: 'original',
@@ -38,120 +18,162 @@ const source = {
 function Harness({
   scope = 'actor/app/conversation',
   blocked = false,
-  initial = '',
-  files = false,
+  submit = async () => true,
 }: {
-  scope?: string;
+  scope?: string | null;
   blocked?: boolean;
-  initial?: string;
-  files?: boolean;
+  submit?: (text: string, selected: EditSource) => Promise<boolean>;
 }) {
-  const [value, setValue] = useState(initial);
-  const [attachments, setAttachments] = useState(files);
-  const edit = useEditResend({
-    scope,
-    blocked,
-    value,
-    hasDraftAttachments: attachments,
-    replace: text => {
-      setValue(text);
-      setAttachments(false);
-      return true;
-    },
-  });
+  const edit = useEditResend({ scope, blocked, onSubmit: submit });
   return (
     <>
       <button
-        onClick={() => edit.controls.start(source)}
         disabled={edit.controls.disabled}
+        onClick={() => edit.controls.start(source)}
       >
         edit
       </button>
+      <article data-testid="original-message">
+        {edit.controls.editor || source.text}
+      </article>
       <textarea
-        ref={edit.onInputRef}
-        value={value}
-        onChange={event => setValue(event.target.value)}
+        aria-label="bottom draft"
+        defaultValue="unsent draft"
+        disabled={edit.active}
       />
-      <span data-testid="files">{String(attachments)}</span>
-      {edit.notice}
-      {edit.confirmation}
     </>
   );
 }
 
-describe('edit and append preparation', () => {
-  it('prepares only the full original text without a visible correction prompt', () => {
-    const original = '😀'.repeat(121) + '\nfull body';
-    const draft = correctionDraft(original);
-    expect(draft.text.slice(draft.selectionStart, draft.selectionEnd)).toBe(
-      original
-    );
-    expect(draft.text).toBe(original);
-  });
-
-  it('prepares once, focuses new requirements, and exits without removing visible text', () => {
-    const view = render(<Harness />);
+describe('inline historical message editing', () => {
+  it('edits at the message and preserves the bottom draft on cancel', () => {
+    const submit = jest.fn();
+    render(<Harness submit={submit} />);
     fireEvent.click(screen.getByText('edit'));
-    const input = screen.getByRole('textbox') as HTMLTextAreaElement;
-    const prepared = input.value;
-    expect(prepared).toContain('original question');
-    expect(input).toHaveFocus();
-    expect(input.value.slice(input.selectionStart, input.selectionEnd)).toBe(
+    const editor = screen.getByRole('textbox', {
+      name: 'editorLabel',
+    }) as HTMLTextAreaElement;
+    expect(screen.getByTestId('original-message')).toContainElement(editor);
+    expect(editor).toHaveValue(source.text);
+    expect(editor).toHaveFocus();
+    expect(editor.selectionEnd - editor.selectionStart).toBe(
+      source.text.length
+    );
+    expect(screen.getByRole('textbox', { name: 'bottom draft' })).toHaveValue(
+      'unsent draft'
+    );
+    expect(
+      screen.getByRole('textbox', { name: 'bottom draft' })
+    ).toBeDisabled();
+    expect(screen.getByText('textOnly')).toBeInTheDocument();
+    expect(submit).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'cancel' }));
+    expect(screen.queryByRole('form')).not.toBeInTheDocument();
+    expect(screen.getByTestId('original-message')).toHaveTextContent(
       source.text
     );
-    expect(screen.getByRole('status')).toHaveTextContent('textOnly');
-    view.rerender(<Harness />);
-    expect(input.value).toBe(prepared);
-    fireEvent.click(screen.getByText('exit'));
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
-    expect(input.value).toBe(prepared);
-    fireEvent.change(input, { target: { value: 'only my new requirement' } });
-    expect(input.value).toBe('only my new requirement');
+    expect(screen.getByRole('textbox', { name: 'bottom draft' })).toBeEnabled();
   });
 
-  it.each([
-    { initial: 'draft', files: false },
-    { initial: '', files: true },
-  ])(
-    'confirms replacement and preserves draft/attachments on cancel: %j',
-    props => {
-      render(<Harness {...props} />);
-      fireEvent.click(screen.getByText('edit'));
-      expect(screen.getByRole('dialog')).toBeInTheDocument();
-      fireEvent.click(screen.getByText('cancel'));
-      expect(screen.getByRole('textbox')).toHaveValue(props.initial);
-      expect(screen.getByTestId('files')).toHaveTextContent(
-        String(props.files)
-      );
-      fireEvent.click(screen.getByText('edit'));
-      fireEvent.click(screen.getByText('confirm'));
-      expect(
-        (screen.getByRole('textbox') as HTMLTextAreaElement).value
-      ).toContain('original question');
-      expect(screen.getByTestId('files')).toHaveTextContent('false');
-    }
-  );
-
-  it('dismisses metadata on scope change and cannot confirm while blocked', () => {
-    const view = render(<Harness initial="draft" />);
+  it('retains rejected changes and closes only after explicit acceptance', async () => {
+    const submit = jest
+      .fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+    render(<Harness submit={submit} />);
     fireEvent.click(screen.getByText('edit'));
-    view.rerender(<Harness initial="draft" blocked />);
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(screen.getByRole('textbox')).toHaveValue('draft');
-    view.rerender(<Harness scope="other-actor/app/conversation" />);
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByText('edit'));
-    fireEvent.click(screen.getByText('confirm'));
-    view.rerender(<Harness scope="other-app/conversation" />);
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    const editor = screen.getByRole('textbox', { name: 'editorLabel' });
+    fireEvent.change(editor, { target: { value: 'updated question' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'send' }));
+    });
+    expect(submit).toHaveBeenLastCalledWith('updated question', source);
+    expect(editor).toHaveValue('updated question');
+    expect(screen.getByRole('alert')).toHaveTextContent('sendFailed');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'send' }));
+    });
+    expect(screen.queryByRole('form')).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'bottom draft' })).toHaveValue(
+      'unsent draft'
+    );
   });
 
-  it('rejects a stale callback, blank text and a failed scope replacement', () => {
-    const replace = jest.fn(() => false);
+  it('keeps a thrown failure and forbids blank sends', async () => {
+    const submit = jest.fn().mockRejectedValue(new Error('offline'));
+    render(<Harness submit={submit} />);
+    fireEvent.click(screen.getByText('edit'));
+    const editor = screen.getByRole('textbox', { name: 'editorLabel' });
+    fireEvent.change(editor, { target: { value: '   ' } });
+    expect(screen.getByRole('button', { name: 'send' })).toBeDisabled();
+    fireEvent.change(editor, { target: { value: 'retryable text' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'send' }));
+    });
+    expect(editor).toHaveValue('retryable text');
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
+
+  it('serializes sends and does not cancel a pending request', async () => {
+    let finish!: (accepted: boolean) => void;
+    const submit = jest.fn(
+      () =>
+        new Promise<boolean>(resolve => {
+          finish = resolve;
+        })
+    );
+    render(<Harness submit={submit} />);
+    fireEvent.click(screen.getByText('edit'));
+    fireEvent.submit(screen.getByRole('form'));
+    fireEvent.submit(screen.getByRole('form'));
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'cancel' })).toBeDisabled();
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'editorLabel' }), {
+      key: 'Escape',
+    });
+    expect(screen.getByRole('form')).toBeInTheDocument();
+    await act(async () => {
+      finish(true);
+    });
+    expect(screen.queryByRole('form')).not.toBeInTheDocument();
+  });
+
+  it('keeps Enter as newline, ignores IME shortcuts and cancels with Escape', () => {
+    const submit = jest.fn();
+    render(<Harness submit={submit} />);
+    fireEvent.click(screen.getByText('edit'));
+    const editor = screen.getByRole('textbox', { name: 'editorLabel' });
+    fireEvent.keyDown(editor, { key: 'Enter' });
+    fireEvent.keyDown(editor, {
+      key: 'Enter',
+      ctrlKey: true,
+      isComposing: true,
+    });
+    expect(submit).not.toHaveBeenCalled();
+    fireEvent.keyDown(editor, { key: 'Escape' });
+    expect(screen.queryByRole('form')).not.toBeInTheDocument();
+  });
+
+  it('retains temporarily blocked editing but clears it on navigation', () => {
+    const view = render(<Harness />);
+    fireEvent.click(screen.getByText('edit'));
+    fireEvent.change(screen.getByRole('textbox', { name: 'editorLabel' }), {
+      target: { value: 'changed' },
+    });
+    view.rerender(<Harness blocked />);
+    expect(screen.getByRole('textbox', { name: 'editorLabel' })).toHaveValue(
+      'changed'
+    );
+    expect(screen.getByRole('button', { name: 'send' })).toBeDisabled();
+    view.rerender(<Harness scope="other/conversation" />);
+    expect(screen.queryByRole('form')).not.toBeInTheDocument();
+  });
+
+  it('ignores stale callbacks, absent scopes and empty sources', () => {
     const hook = renderHook(
       ({ scope }) =>
-        useEditResend({ scope, value: '', blocked: false, replace }),
-      { initialProps: { scope: 'A' } }
+        useEditResend({ scope, blocked: false, onSubmit: jest.fn() }),
+      { initialProps: { scope: 'A' as string | null } }
     );
     const stale = hook.result.current.controls.start;
     hook.rerender({ scope: 'B' });
@@ -159,16 +181,28 @@ describe('edit and append preparation', () => {
     act(() =>
       hook.result.current.controls.start({ id: 'blank', text: ' \n ' })
     );
-    expect(replace).not.toHaveBeenCalled();
+    expect(hook.result.current.active).toBe(false);
+    hook.rerender({ scope: null });
     act(() => hook.result.current.controls.start(source));
-    expect(replace).toHaveBeenCalledTimes(1);
-    expect(hook.result.current.notice).toBeNull();
+    expect(hook.result.current.active).toBe(false);
   });
 
-  it('dismisses the notice when the normal draft consumer clears the text', () => {
-    render(<Harness />);
-    fireEvent.click(screen.getByText('edit'));
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: '' } });
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  it('clears an edit after recovery removes its source from the visible history', () => {
+    const hook = renderHook(
+      ({ sourceIds }) =>
+        useEditResend({
+          scope: 'same-thread',
+          sourceIds,
+          blocked: false,
+          onSubmit: jest.fn(),
+        }),
+      { initialProps: { sourceIds: ['original', 'old-answer'] } }
+    );
+    act(() => hook.result.current.controls.start(source));
+    expect(hook.result.current.active).toBe(true);
+    hook.rerender({ sourceIds: ['replacement', 'new-answer'] });
+    expect(hook.result.current.active).toBe(false);
+    expect(hook.result.current.controls.editor).toBeNull();
+    expect(hook.result.current.controls.disabled).toBe(false);
   });
 });

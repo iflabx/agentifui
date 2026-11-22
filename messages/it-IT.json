@@ -2395,6 +2395,11 @@
   "components": {
     "chat": {
       "editResend": {
+        "editorLabel": "Modifica messaggio",
+        "send": "Invia",
+        "cancel": "Annulla",
+        "sendFailed": "La modifica non è stata accettata. Il testo è stato conservato.",
+        "sending": "Invio…",
         "action": "Modifica e invia",
         "notice": "Stai modificando un messaggio precedente. Dopo l’invio, la conversazione proseguirà da questo punto con la domanda modificata.",
         "textOnly": "Solo testo: gli allegati originali non vengono aggiunti di nuovo.",

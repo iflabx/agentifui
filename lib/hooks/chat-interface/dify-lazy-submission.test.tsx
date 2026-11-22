@@ -131,7 +131,7 @@ describe('real lazy Dify SSE submission binding', () => {
       const navigateToConversation = jest.fn();
       const chunkBufferRef = { current: '' };
       const appendTimerRef = { current: null as NodeJS.Timeout | null };
-      let work!: Promise<void>;
+      let work!: ReturnType<typeof executeChatSubmit>;
       await act(async () => {
         work = executeChatSubmit({
           message: 'Question',

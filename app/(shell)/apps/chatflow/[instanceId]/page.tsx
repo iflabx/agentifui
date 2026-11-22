@@ -299,11 +299,17 @@ export default function AppDetailPage() {
         console.log('[AppDetail] UI state updated, start sending message');
 
         // call the original handleSubmit, it will create a conversation and send a message
-        await originalHandleSubmit(message, files, undefined, editSourceId);
+        const result = await originalHandleSubmit(
+          message,
+          files,
+          undefined,
+          editSourceId
+        );
 
         console.log(
           '[AppDetail] Message sent successfully, waiting for route jump'
         );
+        return result;
       } catch (error) {
         console.error('[AppDetail] Message sending failed:', error);
 

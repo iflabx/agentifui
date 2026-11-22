@@ -22,6 +22,7 @@ export interface ChatInputViewProps {
   onValueChange: (value: string) => void;
   onSubmit: () => void | Promise<void>;
   disabled?: boolean;
+  stopDisabled?: boolean;
   isProcessing?: boolean;
   onStop?: () => void;
   className?: string;
@@ -45,6 +46,7 @@ export function ChatInputView({
   onValueChange,
   onSubmit,
   disabled = false,
+  stopDisabled = disabled,
   isProcessing = false,
   onStop,
   className,
@@ -169,7 +171,7 @@ export function ChatInputView({
               }
               disabled={
                 stopping
-                  ? disabled
+                  ? stopDisabled
                   : disabled || busy || isProcessing || !value.trim()
               }
               ariaLabel={

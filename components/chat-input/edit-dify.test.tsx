@@ -3,6 +3,7 @@ import {
   chatInputScope,
   useChatInputStore,
 } from '@lib/stores/chat-input-store';
+import { useChatStore } from '@lib/stores/chat-store';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import { DifyEditProvider, useDifyEditControls } from './edit-resend';
@@ -40,35 +41,33 @@ jest.mock('./file-type-selector', () => ({ FileTypeSelector: () => null }));
 jest.mock('./attachment-preview-bar', () => ({
   AttachmentPreviewBar: () => null,
 }));
-jest.mock('@components/ui/confirm-dialog', () => ({
-  ConfirmDialog: ({
-    onConfirm,
-    onClose,
-  }: {
-    onConfirm: () => void;
-    onClose: () => void;
-  }) => (
-    <div role="dialog">
-      <button onClick={onConfirm}>confirm</button>
-      <button onClick={onClose}>cancel</button>
-    </div>
-  ),
-}));
 
 function EditMessage() {
   const edit = useDifyEditControls();
   return edit ? (
-    <button
-      disabled={edit.disabled}
-      onClick={() =>
-        edit.start({ id: 'old', text: 'old question', hasAttachments: true })
-      }
-    >
-      edit
-    </button>
+    <article data-testid="old-message">
+      {edit.editor || (
+        <button
+          disabled={edit.disabled}
+          onClick={() =>
+            edit.start({
+              id: 'old',
+              text: 'old question',
+              hasAttachments: true,
+            })
+          }
+        >
+          edit
+        </button>
+      )}
+    </article>
   ) : null;
 }
-function Harness({ submit }: { submit: () => Promise<unknown> }) {
+function Harness({
+  submit,
+}: {
+  submit: (...args: unknown[]) => Promise<unknown>;
+}) {
   return (
     <DifyEditProvider>
       <EditMessage />
@@ -92,106 +91,94 @@ function activate(target: string) {
   return scope;
 }
 
-describe('Dify edit preparation through the existing composer', () => {
+describe('Dify inline editing without replacing the composer', () => {
   beforeEach(() => {
     useChatInputStore.getState().setActor(null);
     useChatInputStore.getState().setActor('actor');
     useAttachmentStore.getState().resetAll();
+    useChatStore.setState({
+      messages: [{ id: 'old', text: 'old question', isUser: true }],
+    });
     activate('conversation:original');
   });
-
   it('requires a persisted conversation scope', () => {
     activate('newdraft:original');
     render(<Harness submit={jest.fn()} />);
     expect(screen.queryByText('edit')).not.toBeInTheDocument();
   });
-
-  it('cancels intact, clears only selected attachments on confirm, and ignores late upload completion', () => {
-    const store = useAttachmentStore.getState();
-    store.addFiles([new File(['data'], 'draft.txt')]);
-    const file = useAttachmentStore.getState().files[0];
-    const scope = useChatInputStore.getState().currentRoute;
-    const attempt = store.beginUpload(scope, file.id)!;
-    useChatInputStore.getState().setMessage('current draft');
-    const submit = jest.fn();
-    render(<Harness submit={submit} />);
-    fireEvent.click(screen.getByText('edit'));
-    fireEvent.click(screen.getByText('cancel'));
-    expect(useChatInputStore.getState().message).toBe('current draft');
-    expect(useAttachmentStore.getState().files).toHaveLength(1);
-    fireEvent.click(screen.getByText('edit'));
-    fireEvent.click(screen.getByText('confirm'));
-    act(() =>
-      store.finishUpload(scope, file.id, attempt, { uploadedId: 'late' })
-    );
-    expect(useAttachmentStore.getState().files).toEqual([]);
-    expect(useChatInputStore.getState().message).toContain('old question');
-    expect(useChatInputStore.getState().currentRoute).toBe(scope);
-    expect(submit).not.toHaveBeenCalled();
-  });
-
-  it('uses the normal submit payload, preserves an unaccepted draft, and consumes only explicit acceptance', async () => {
+  it('keeps bottom text and attachments on cancel, rejection and acceptance', async () => {
+    useAttachmentStore.getState().addFiles([new File(['data'], 'draft.txt')]);
+    const files = useAttachmentStore.getState().files;
+    useChatInputStore.getState().setMessage('bottom draft');
     const submit = jest
       .fn()
-      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ ok: false, surfaced: true })
       .mockResolvedValueOnce({ ok: true });
     render(<Harness submit={submit} />);
     fireEvent.click(screen.getByText('edit'));
-    fireEvent.change(screen.getByRole('textbox'), {
-      target: { value: 'visible new requirement' },
-    });
+    const bottom = document.querySelector('textarea[name="message"]')!;
+    expect(bottom).toHaveValue('bottom draft');
+    expect(bottom).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'cancel' }));
+    expect(bottom).toBeEnabled();
+    fireEvent.click(screen.getByText('edit'));
+    const editor = screen.getByRole('textbox', { name: 'editorLabel' });
+    fireEvent.change(editor, { target: { value: 'revised question' } });
+    fireEvent.keyDown(bottom, { key: 'Enter' });
+    expect(submit).not.toHaveBeenCalled();
     await act(async () => {
-      fireEvent.click(
-        screen.getByRole('button', { name: 'input.sendMessage' })
-      );
+      fireEvent.click(screen.getByRole('button', { name: 'send' }));
     });
     expect(submit).toHaveBeenLastCalledWith(
-      'visible new requirement',
+      'revised question',
       undefined,
       'old'
     );
-    expect(useChatInputStore.getState().message).toBe(
-      'visible new requirement'
-    );
+    expect(editor).toHaveValue('revised question');
+    expect(useChatInputStore.getState().message).toBe('bottom draft');
+    expect(useAttachmentStore.getState().files).toBe(files);
     await act(async () => {
-      fireEvent.click(
-        screen.getByRole('button', { name: 'input.sendMessage' })
-      );
+      fireEvent.click(screen.getByRole('button', { name: 'send' }));
     });
-    expect(useChatInputStore.getState().message).toBe('');
+    expect(screen.queryByRole('form')).not.toBeInTheDocument();
+    expect(useChatInputStore.getState().message).toBe('bottom draft');
+    expect(useAttachmentStore.getState().files).toBe(files);
   });
-
-  it('blocks replacement while submission is pending and preserves newer draft content', async () => {
-    let finish!: (value: unknown) => void;
-    const submit = jest.fn(
-      () =>
-        new Promise(resolve => {
-          finish = resolve;
-        })
-    );
+  it('resolves a source that completed saving after opening the editor', async () => {
+    const submit = jest.fn().mockResolvedValue({ ok: true });
     render(<Harness submit={submit} />);
     fireEvent.click(screen.getByText('edit'));
-    fireEvent.click(screen.getByRole('button', { name: 'input.sendMessage' }));
-    expect(screen.getByText('edit')).toBeDisabled();
-    fireEvent.change(screen.getByRole('textbox'), {
-      target: { value: 'later draft' },
-    });
+    act(() =>
+      useChatStore.setState({
+        messages: [
+          {
+            id: 'old',
+            db_id: 'saved-source-id',
+            text: 'old question',
+            isUser: true,
+          },
+        ],
+      })
+    );
     await act(async () => {
-      finish({ ok: true });
+      fireEvent.click(screen.getByRole('button', { name: 'send' }));
     });
-    expect(useChatInputStore.getState().message).toBe('later draft');
-    expect(submit).toHaveBeenCalledTimes(1);
+    expect(submit).toHaveBeenCalledWith(
+      'old question',
+      undefined,
+      'saved-source-id'
+    );
   });
-
-  it('drops an open confirmation when changing conversation', () => {
-    useChatInputStore.getState().setMessage('A draft');
+  it('closes on navigation without changing the new conversation draft', () => {
     render(<Harness submit={jest.fn()} />);
     fireEvent.click(screen.getByText('edit'));
     act(() => {
       activate('conversation:B');
       useChatInputStore.getState().setMessage('B draft');
     });
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(screen.getByRole('textbox')).toHaveValue('B draft');
+    expect(screen.queryByRole('form')).not.toBeInTheDocument();
+    expect(document.querySelector('textarea[name="message"]')).toHaveValue(
+      'B draft'
+    );
   });
 });

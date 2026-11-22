@@ -2395,6 +2395,11 @@
   "components": {
     "chat": {
       "editResend": {
+        "editorLabel": "Editar mensaje",
+        "send": "Enviar",
+        "cancel": "Cancelar",
+        "sendFailed": "No se aceptó la modificación. Se conservan los cambios.",
+        "sending": "Enviando…",
         "action": "Editar y enviar",
         "notice": "Estás editando un mensaje anterior. Al enviarlo, la conversación continuará desde este punto con la pregunta modificada.",
         "textOnly": "Solo texto: no se adjuntan de nuevo los archivos originales.",

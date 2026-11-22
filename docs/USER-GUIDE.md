@@ -135,8 +135,10 @@ Use the actions actually present on a message:
 
 - **Copy** copies available message text. Browser clipboard permission and a
   secure context can affect whether copying succeeds.
-- **Edit and send** on a historical user text message puts only the original question
-  in the existing composer. Edit it and use the normal send button. Once accepted,
+- **Edit and send** on a historical user text message opens an editor at that
+  message's original position, containing only the original question. Edit it and
+  choose **Send** (or press Ctrl/Cmd+Enter); Enter inserts a newline. Choose
+  **Cancel** or press Escape to leave without changing the conversation. Once accepted,
   the conversation continues from that position with the revised question and new
   answer; the superseded question and subsequent turns no longer appear in the
   current conversation view, including after reopening history.
@@ -147,9 +149,11 @@ Use the actions actually present on a message:
   undone. Repeated identical requests or failed earlier requests can also make the
   intended correction ambiguous to the model. Both your text and the implicit
   instruction count toward request limits.
-  Replacing an existing draft or selected attachments requires confirmation; cancelling
-  keeps them. **Exit editing** dismisses the notice but keeps the prepared text.
-  Historical attachments are not copied: attach files again if needed and supported.
+  Your unsent draft and selected attachments in the bottom composer are preserved;
+  ordinary sending is disabled while editing. A refused edit keeps your changes
+  available for correction or retry. Historical attachments are not copied to the
+  edited request, and the inline editor currently sends text only. To send new files,
+  cancel editing and use the normal composer if the application supports uploads.
   Existing application parameters remain in effect. Single-task applications, workflow
   records, attachment-only messages and non-user messages do not offer this operation.
   Running tasks, unresolved saves and pending human input retain their normal limits.

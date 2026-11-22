@@ -162,6 +162,11 @@ export const ChatLoader = ({
                   attachments={msg.attachments}
                   conversationAppId={conversationAppId}
                   id={msg.id}
+                  editor={
+                    edit?.sourceId === msg.id || edit?.sourceId === msg.db_id
+                      ? edit?.editor
+                      : undefined
+                  }
                   onEdit={
                     edit && msg.text.trim()
                       ? () =>

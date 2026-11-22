@@ -2395,6 +2395,11 @@
   "components": {
     "chat": {
       "editResend": {
+        "editorLabel": "编辑消息",
+        "send": "发送",
+        "cancel": "取消",
+        "sendFailed": "修改尚未被接受，已保留编辑内容。",
+        "sending": "发送中…",
         "action": "修改并发送",
         "notice": "正在修改此前的消息。发送后，将从这里以修改后的问题继续对话。",
         "textOnly": "仅复制文字，原附件不会重新附加。",

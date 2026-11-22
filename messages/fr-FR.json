@@ -2395,6 +2395,11 @@
   "components": {
     "chat": {
       "editResend": {
+        "editorLabel": "Modifier le message",
+        "send": "Envoyer",
+        "cancel": "Annuler",
+        "sendFailed": "La modification n’a pas été acceptée. Votre saisie est conservée.",
+        "sending": "Envoi…",
         "action": "Modifier et envoyer",
         "notice": "Modification d’un message précédent. Après l’envoi, la conversation reprendra ici avec votre question modifiée.",
         "textOnly": "Texte uniquement : les pièces jointes originales ne sont pas ajoutées.",

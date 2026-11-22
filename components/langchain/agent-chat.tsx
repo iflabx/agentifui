@@ -141,27 +141,20 @@ function AgentChatSession({
     (chat.singleTask && Boolean(chat.view.conversationId));
   const run = chat.view.run;
   const edit = useEditResend({
-    source: draft?.editSource,
-    onSourceChange: source => {
-      if (scope) useLangchainDraftStore.getState().setEditSource(scope, source);
-    },
+    sourceIds: chat.view.messages.map(message => message.id),
     scope:
       scope && chat.view.conversationId
-        ? JSON.stringify([scope, chat.view.conversationId])
+        ? JSON.stringify([
+            actorId,
+            actorEpoch,
+            appId,
+            scope,
+            chat.view.conversationId,
+          ])
         : null,
-    value: content,
     blocked: disabled,
-    replace: text => {
-      const current = useLangchainDraftStore.getState();
-      if (
-        !scope ||
-        current.actorId !== actorId ||
-        current.actorEpoch !== actorEpoch
-      )
-        return false;
-      current.setText(scope, text);
-      return true;
-    },
+    onSubmit: async (text, source) =>
+      (await chat.send(text, undefined, source.id)) === true,
   });
   const lastUserIndex = chat.view.messages.findLastIndex(
     message => message.role === 'user'
@@ -227,11 +220,9 @@ function AgentChatSession({
   }, [chat.view.messages, chat.view.tools, chat.draftScope]);
 
   const submit = async () => {
-    if (disabled || !content.trim() || !draft) return;
+    if (disabled || edit.active || !content.trim() || !draft) return;
     const snapshot = draft;
-    const accepted = edit.sourceId
-      ? await chat.send(content, snapshot, edit.sourceId)
-      : await chat.send(content, snapshot);
+    const accepted = await chat.send(content, snapshot);
     if (accepted) useLangchainDraftStore.getState().consumeSnapshot(snapshot);
   };
 
@@ -371,7 +362,12 @@ function AgentChatSession({
                         })
                     : undefined
                 }
-                editDisabled={disabled}
+                editDisabled={edit.controls.disabled}
+                editor={
+                  edit.controls.sourceId === message.id
+                    ? edit.controls.editor
+                    : undefined
+                }
               />
             ) : message.role === 'assistant' && message.content ? (
               <Fragment key={message.id}>
@@ -513,7 +509,6 @@ function AgentChatSession({
         </div>
       </div>
       <ChatInputBackdrop />
-      {edit.confirmation}
       <ChatInputView
         key={chat.draftScope}
         value={content}
@@ -521,14 +516,12 @@ function AgentChatSession({
           if (scope) useLangchainDraftStore.getState().setText(scope, text);
         }}
         onSubmit={submit}
-        disabled={disabled}
+        disabled={disabled || edit.active}
         isProcessing={chat.busy}
         placeholder={t('placeholder')}
         sendButtonAriaLabel={t('send')}
         widthClass={widthClass}
         onHeightChange={setInputHeight}
-        onInputRef={edit.onInputRef}
-        editNotice={edit.notice}
       />
     </main>
   );

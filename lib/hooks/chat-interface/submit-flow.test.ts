@@ -108,6 +108,58 @@ describe('executeChatSubmit', () => {
     };
   };
 
+  it('reports acceptance and replaces the source path without requiring the source ID to stay preferred', async () => {
+    const { input, userMessage } = createInput();
+    useChatStore.setState({
+      messages: [
+        { id: 'prefix', text: 'prefix', isUser: true },
+        {
+          id: 'client-source',
+          db_id: 'saved-source',
+          text: 'old question',
+          isUser: true,
+        },
+        { id: 'old-answer', text: 'old answer', isUser: false },
+        { id: 'old-tail', text: 'old tail', isUser: true },
+      ],
+    });
+    input.addMessage.mockImplementation(() => {
+      useChatStore.setState(state => ({
+        messages: [...state.messages, userMessage],
+      }));
+      return userMessage;
+    });
+    mockPrepareChatSubmitConversationState.mockReturnValueOnce(false);
+    mockStartExistingChatConversation.mockImplementationOnce(async options => {
+      options.onAccepted({ externalId: 'conv-1', taskId: 'task-1' });
+      return {
+        answerStream: (async function* () {})(),
+        finalDbConvUUID: 'db-1',
+      };
+    });
+    expect(
+      await executeChatSubmit({ ...input, editSourceId: 'client-source' })
+    ).toEqual({ ok: true, surfaced: true });
+    expect(useChatStore.getState().messages.map(message => message.id)).toEqual(
+      ['prefix', userMessage.id]
+    );
+  });
+
+  it('does not report acceptance or hide the source when upstream refuses the edit', async () => {
+    const { input } = createInput();
+    useChatStore.setState({
+      messages: [{ id: 'source', text: 'original', isUser: true }],
+    });
+    mockPrepareChatSubmitConversationState.mockReturnValueOnce(false);
+    mockStartExistingChatConversation.mockRejectedValueOnce(
+      new Error('refused')
+    );
+    expect(
+      await executeChatSubmit({ ...input, editSourceId: 'source' })
+    ).toEqual({ ok: false, surfaced: true });
+    expect(useChatStore.getState().messages[0].id).toBe('source');
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     useChatStore.setState({
