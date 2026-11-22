@@ -179,7 +179,9 @@ export const ChatInput = ({
       const unregister = registerChatInputSubmission(editScope);
       try {
         const result = await onSubmit(text, undefined, sourceId);
-        return isChatSubmitResult(result) && result.ok;
+        return isChatSubmitResult(result)
+          ? (result.editResult ?? result.ok)
+          : false;
       } finally {
         unregister();
         locks.current.delete(editScope);

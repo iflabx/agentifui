@@ -2395,6 +2395,8 @@
   "components": {
     "chat": {
       "editResend": {
+        "unconfirmed": "A aguardar confirmação. Não envie novamente; consulte o estado.",
+        "checkStatus": "Consultar estado",
         "editorLabel": "Editar mensagem",
         "send": "Enviar",
         "cancel": "Cancelar",

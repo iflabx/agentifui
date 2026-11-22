@@ -1,3 +1,7 @@
+import type {
+  EditRecoveryReceipt,
+  EditSubmissionResult,
+} from '@lib/types/message-edit';
 import {
   act,
   fireEvent,
@@ -19,12 +23,17 @@ function Harness({
   scope = 'actor/app/conversation',
   blocked = false,
   submit = async () => true,
+  recovery,
 }: {
   scope?: string | null;
   blocked?: boolean;
-  submit?: (text: string, selected: EditSource) => Promise<boolean>;
+  submit?: (
+    text: string,
+    selected: EditSource
+  ) => Promise<EditSubmissionResult>;
+  recovery?: EditRecoveryReceipt;
 }) {
-  const edit = useEditResend({ scope, blocked, onSubmit: submit });
+  const edit = useEditResend({ scope, blocked, onSubmit: submit, recovery });
   return (
     <>
       <button
@@ -36,6 +45,7 @@ function Harness({
       <article data-testid="original-message">
         {edit.controls.editor || source.text}
       </article>
+      {!edit.controls.pending && <p>original answer and later turns</p>}
       <textarea
         aria-label="bottom draft"
         defaultValue="unsent draft"
@@ -46,6 +56,134 @@ function Harness({
 }
 
 describe('inline historical message editing', () => {
+  it('restores an in-memory unknown edit when returning to its conversation', () => {
+    const hook = renderHook(
+      ({ scope }) =>
+        useEditResend({
+          scope,
+          sourceIds: ['source'],
+          blocked: true,
+          onSubmit: jest.fn(),
+          restore: {
+            sourceId: 'source',
+            text: 'saved revision',
+            submissionId: 'pending',
+          },
+        }),
+      { initialProps: { scope: 'returned-thread' as string | null } }
+    );
+    expect(hook.result.current.controls.pending).toEqual({
+      sourceId: 'source',
+      text: 'saved revision',
+    });
+    hook.rerender({ scope: null });
+    expect(hook.result.current.active).toBe(false);
+    hook.rerender({ scope: 'returned-thread' });
+    expect(hook.result.current.controls.pending?.text).toBe('saved revision');
+  });
+  it('replaces immediately, then restores the old path and revised draft on definite rejection', async () => {
+    let reject!: (result: boolean) => void;
+    const submit = jest.fn(
+      () =>
+        new Promise<boolean>(resolve => {
+          reject = resolve;
+        })
+    );
+    render(<Harness submit={submit} />);
+    fireEvent.click(screen.getByText('edit'));
+    fireEvent.change(screen.getByRole('textbox', { name: 'editorLabel' }), {
+      target: { value: 'replacement' },
+    });
+    fireEvent.submit(screen.getByRole('form'));
+    expect(screen.getByTestId('original-message')).toHaveTextContent(
+      'replacement'
+    );
+    expect(
+      screen.queryByText('original answer and later turns')
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'bottom draft' })).toHaveValue(
+      'unsent draft'
+    );
+    await act(async () => reject(false));
+    expect(
+      screen.getByText('original answer and later turns')
+    ).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'editorLabel' })).toHaveValue(
+      'replacement'
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('sendFailed');
+  });
+
+  it('checks an uncertain submission read-only and restores only after a confirmed rejection', async () => {
+    const check = jest
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(false);
+    const submit = jest
+      .fn()
+      .mockResolvedValue({ status: 'unknown', submissionId: 'attempt', check });
+    render(<Harness submit={submit} />);
+    fireEvent.click(screen.getByText('edit'));
+    fireEvent.change(screen.getByRole('textbox', { name: 'editorLabel' }), {
+      target: { value: 'revision' },
+    });
+    await act(async () => fireEvent.submit(screen.getByRole('form')));
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await act(async () =>
+        fireEvent.click(screen.getByRole('button', { name: 'checkStatus' }))
+      );
+      expect(screen.queryByRole('form')).not.toBeInTheDocument();
+      expect(
+        screen.queryByText('original answer and later turns')
+      ).not.toBeInTheDocument();
+    }
+    await act(async () =>
+      fireEvent.click(screen.getByRole('button', { name: 'checkStatus' }))
+    );
+    expect(screen.getByRole('textbox', { name: 'editorLabel' })).toHaveValue(
+      'revision'
+    );
+    expect(submit).toHaveBeenCalledTimes(1);
+  });
+
+  it('matches asynchronous recovery to the exact submission and ignores stale results after navigation', async () => {
+    const submit = jest
+      .fn()
+      .mockResolvedValue({ status: 'unknown', submissionId: 'attempt' });
+    const view = render(<Harness submit={submit} />);
+    fireEvent.click(screen.getByText('edit'));
+    await act(async () => fireEvent.submit(screen.getByRole('form')));
+    view.rerender(
+      <Harness
+        submit={submit}
+        recovery={{ submissionId: 'other', accepted: false }}
+      />
+    );
+    expect(screen.queryByRole('form')).not.toBeInTheDocument();
+    view.rerender(
+      <Harness
+        submit={submit}
+        recovery={{ submissionId: 'attempt', accepted: false }}
+      />
+    );
+    expect(screen.getByRole('textbox', { name: 'editorLabel' })).toHaveValue(
+      source.text
+    );
+    let finish!: (result: boolean) => void;
+    submit.mockImplementationOnce(
+      () =>
+        new Promise<boolean>(resolve => {
+          finish = resolve;
+        })
+    );
+    await act(async () => fireEvent.submit(screen.getByRole('form')));
+    view.rerender(<Harness scope="other" submit={submit} />);
+    await act(async () => finish(false));
+    expect(screen.queryByRole('form')).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'bottom draft' })).toBeEnabled();
+  });
+
   it('edits at the message and preserves the bottom draft on cancel', () => {
     const submit = jest.fn();
     render(<Harness submit={submit} />);
@@ -88,7 +226,9 @@ describe('inline historical message editing', () => {
       fireEvent.click(screen.getByRole('button', { name: 'send' }));
     });
     expect(submit).toHaveBeenLastCalledWith('updated question', source);
-    expect(editor).toHaveValue('updated question');
+    expect(screen.getByRole('textbox', { name: 'editorLabel' })).toHaveValue(
+      'updated question'
+    );
     expect(screen.getByRole('alert')).toHaveTextContent('sendFailed');
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'send' }));
@@ -99,7 +239,7 @@ describe('inline historical message editing', () => {
     );
   });
 
-  it('keeps a thrown failure and forbids blank sends', async () => {
+  it('does not treat a thrown transport failure as a definite rejection', async () => {
     const submit = jest.fn().mockRejectedValue(new Error('offline'));
     render(<Harness submit={submit} />);
     fireEvent.click(screen.getByText('edit'));
@@ -110,8 +250,17 @@ describe('inline historical message editing', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'send' }));
     });
-    expect(editor).toHaveValue('retryable text');
-    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.queryByRole('form')).not.toBeInTheDocument();
+    expect(screen.getByTestId('original-message')).toHaveTextContent(
+      'retryable text'
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('unconfirmed');
+    expect(
+      screen.queryByText('original answer and later turns')
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('textbox', { name: 'bottom draft' })
+    ).toBeDisabled();
   });
 
   it('serializes sends and does not cancel a pending request', async () => {
@@ -124,14 +273,18 @@ describe('inline historical message editing', () => {
     );
     render(<Harness submit={submit} />);
     fireEvent.click(screen.getByText('edit'));
-    fireEvent.submit(screen.getByRole('form'));
-    fireEvent.submit(screen.getByRole('form'));
+    const form = screen.getByRole('form');
+    fireEvent.submit(form);
+    fireEvent.submit(form);
     expect(submit).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole('button', { name: 'cancel' })).toBeDisabled();
-    fireEvent.keyDown(screen.getByRole('textbox', { name: 'editorLabel' }), {
-      key: 'Escape',
-    });
-    expect(screen.getByRole('form')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'cancel' })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('form')).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('sending');
+    expect(
+      screen.queryByText('original answer and later turns')
+    ).not.toBeInTheDocument();
     await act(async () => {
       finish(true);
     });

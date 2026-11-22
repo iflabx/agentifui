@@ -2395,6 +2395,8 @@
   "components": {
     "chat": {
       "editResend": {
+        "unconfirmed": "Bestätigung ausstehend. Nicht erneut senden, sondern den Status prüfen.",
+        "checkStatus": "Status prüfen",
         "editorLabel": "Nachricht bearbeiten",
         "send": "Senden",
         "cancel": "Abbrechen",

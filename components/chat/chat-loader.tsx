@@ -58,6 +58,15 @@ export const ChatLoader = ({
 }: ChatLoaderProps) => {
   const { widthClass, paddingClass } = useChatWidth();
   const edit = useDifyEditControls();
+  const pendingSource = edit?.pending
+    ? messages.findIndex(
+        message =>
+          message.id === edit.pending!.sourceId ||
+          message.db_id === edit.pending!.sourceId
+      )
+    : -1;
+  const displayedMessages =
+    pendingSource < 0 ? messages : messages.slice(0, pendingSource + 1);
   const { paddingBottomStyle } = useChatBottomSpacing();
 
   // Ref for the bottom of the message container, used for scroll-to-bottom
@@ -119,6 +128,7 @@ export const ChatLoader = ({
     // If there are new messages, scroll to bottom
     if (
       messages.length > prevMessagesCountRef.current &&
+      !edit?.pending &&
       initialLoadCompletedRef.current
     ) {
       // Use smooth scroll effect
@@ -127,7 +137,7 @@ export const ChatLoader = ({
 
     // Update previous message count ref
     prevMessagesCountRef.current = messages.length;
-  }, [messages.length, scrollToBottom]);
+  }, [messages.length, scrollToBottom, edit?.pending]);
 
   // Ensure scroll to bottom after loading is complete
   useEffect(() => {
@@ -154,12 +164,16 @@ export const ChatLoader = ({
           <MessageSkeleton />
         ) : (
           <>
-            {messages.map(msg =>
+            {displayedMessages.map(msg =>
               msg.isUser ? (
                 <UserMessage
                   key={msg.id}
                   content={msg.text}
-                  attachments={msg.attachments}
+                  attachments={
+                    edit?.pending?.sourceId === (msg.db_id || msg.id)
+                      ? undefined
+                      : msg.attachments
+                  }
                   conversationAppId={conversationAppId}
                   id={msg.id}
                   editor={

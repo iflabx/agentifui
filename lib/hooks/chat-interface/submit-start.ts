@@ -165,6 +165,8 @@ export async function startNewChatConversation(
 
 interface StartExistingChatConversationInput {
   editSourceId?: string;
+  submissionId?: string;
+  onDispatch?: () => void;
   onAccepted?: (accepted: ChatSubmissionAccepted) => void;
   message: string;
   inputs?: Record<string, unknown>;
@@ -204,10 +206,7 @@ export async function startExistingChatConversation(
   }
 
   if (input.editSourceId) {
-    if (
-      !finalDbConvUUID ||
-      !(await input.saveMessage(input.userMessage, finalDbConvUUID))
-    )
+    if (!finalDbConvUUID)
       throw new Error(
         'The revised message could not be saved. Please try again.'
       );
@@ -246,6 +245,7 @@ export async function startExistingChatConversation(
     auto_generate_name: false,
   };
 
+  input.onDispatch?.();
   const streamServiceResponse = await streamDifyChat(
     difyPayload,
     input.appId,
@@ -276,7 +276,7 @@ export async function startExistingChatConversation(
       }
     },
     input.onNodeEvent,
-    undefined,
+    input.submissionId ? { submissionId: input.submissionId } : undefined,
     input.onAccepted
   );
 

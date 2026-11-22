@@ -1,5 +1,10 @@
 'use client';
 
+import type {
+  EditRecoveryReceipt,
+  EditSubmissionResult,
+} from '@lib/types/message-edit';
+
 import {
   type ReactNode,
   createContext,
@@ -21,7 +26,9 @@ interface EditOptions {
   scope: string | null;
   blocked: boolean;
   sourceIds?: string[];
-  onSubmit: (text: string, source: EditSource) => Promise<boolean>;
+  recovery?: EditRecoveryReceipt | null;
+  restore?: { sourceId: string; text: string; submissionId: string };
+  onSubmit: (text: string, source: EditSource) => Promise<EditSubmissionResult>;
 }
 
 function InlineMessageEditor({
@@ -29,19 +36,22 @@ function InlineMessageEditor({
   blocked,
   onSubmit,
   onCancel,
+  text,
+  onChange,
+  failed,
 }: {
   source: EditSource;
   blocked: boolean;
-  onSubmit: (text: string) => Promise<boolean>;
+  onSubmit: (text: string) => Promise<void>;
   onCancel: () => void;
+  text: string;
+  onChange: (text: string) => void;
+  failed: boolean;
 }) {
   const t = useTranslations('components.chat.editResend');
   const inputId = useId();
   const input = useRef<HTMLTextAreaElement>(null);
   const submitting = useRef(false);
-  const [text, setText] = useState(source.text);
-  const [pending, setPending] = useState(false);
-  const [failed, setFailed] = useState(false);
   useLayoutEffect(() => {
     input.current?.focus();
     input.current?.select();
@@ -49,15 +59,10 @@ function InlineMessageEditor({
   const submit = async () => {
     if (blocked || submitting.current || !text.trim()) return;
     submitting.current = true;
-    setPending(true);
-    setFailed(false);
     try {
-      if (!(await onSubmit(text))) setFailed(true);
-    } catch {
-      setFailed(true);
+      await onSubmit(text);
     } finally {
       submitting.current = false;
-      setPending(false);
     }
   };
   return (
@@ -78,16 +83,15 @@ function InlineMessageEditor({
         ref={input}
         value={text}
         rows={4}
-        disabled={blocked || pending}
+        disabled={blocked}
         aria-describedby={failed ? `${inputId}-error` : undefined}
         className="max-h-[60vh] min-h-24 w-full resize-y bg-transparent px-1 py-2 text-base leading-relaxed text-stone-800 outline-none dark:text-stone-100"
         onChange={event => {
-          setText(event.target.value);
-          setFailed(false);
+          onChange(event.target.value);
         }}
         onKeyDown={event => {
           if (event.nativeEvent.isComposing) return;
-          if (event.key === 'Escape' && !pending) {
+          if (event.key === 'Escape' && !submitting.current) {
             event.preventDefault();
             onCancel();
           }
@@ -112,7 +116,6 @@ function InlineMessageEditor({
       <div className="flex flex-wrap justify-end gap-2">
         <button
           type="button"
-          disabled={pending}
           onClick={onCancel}
           className="rounded-full border border-stone-300 px-4 py-2 text-sm disabled:opacity-50 dark:border-stone-600"
         >
@@ -120,10 +123,10 @@ function InlineMessageEditor({
         </button>
         <button
           type="submit"
-          disabled={blocked || pending || !text.trim()}
+          disabled={blocked || !text.trim()}
           className="rounded-full bg-stone-800 px-4 py-2 text-sm text-white disabled:opacity-50 dark:bg-stone-200 dark:text-stone-900"
         >
-          {t(pending ? 'sending' : 'send')}
+          {t('send')}
         </button>
       </div>
     </form>
@@ -131,9 +134,14 @@ function InlineMessageEditor({
 }
 
 export function useEditResend(options: EditOptions) {
+  const t = useTranslations('components.chat.editResend');
   const [selection, setSelection] = useState<{
     scope: string;
     source: EditSource;
+    text: string;
+    failed?: boolean;
+    pending?: boolean;
+    unknown?: Exclude<EditSubmissionResult, boolean>;
   } | null>(null);
   const live = useRef(options);
   const sending = useRef(false);
@@ -150,6 +158,34 @@ export function useEditResend(options: EditOptions) {
   useLayoutEffect(() => {
     if (!sourceVisible) setSelection(null);
   }, [sourceVisible]);
+  useLayoutEffect(() => {
+    const restored = options.restore;
+    const scope = options.scope;
+    if (!scope || !restored || !options.sourceIds?.includes(restored.sourceId))
+      return;
+    setSelection(
+      current =>
+        current ?? {
+          scope,
+          source: { id: restored.sourceId, text: restored.text },
+          text: restored.text,
+          pending: true,
+          unknown: { status: 'unknown', submissionId: restored.submissionId },
+        }
+    );
+  }, [options.scope, options.restore?.submissionId, options.sourceIds]);
+  useLayoutEffect(() => {
+    const recovery = options.recovery;
+    if (!recovery) return;
+    setSelection(current =>
+      current?.scope === options.scope &&
+      current.unknown?.submissionId === recovery.submissionId
+        ? recovery.accepted
+          ? null
+          : { ...current, pending: false, unknown: undefined, failed: true }
+        : current
+    );
+  }, [options.recovery, options.scope, selection?.unknown?.submissionId]);
   const active =
     selection?.scope === options.scope && sourceVisible ? selection : null;
   const controls = useMemo(
@@ -166,13 +202,65 @@ export function useEditResend(options: EditOptions) {
           !source.text.trim()
         )
           return;
-        setSelection({ scope: options.scope, source });
+        setSelection({ scope: options.scope, source, text: source.text });
       },
-      editor: active ? (
+      pending: active?.pending
+        ? { sourceId: active.source.id, text: active.text }
+        : null,
+      editor: active?.pending ? (
+        <div
+          className="space-y-2 rounded-2xl bg-stone-100 px-4 py-3 dark:bg-stone-800"
+          aria-busy={!active.unknown}
+        >
+          <p className="break-words whitespace-pre-wrap">{active.text}</p>
+          <p role="status" className="text-sm text-stone-500">
+            {t(active.unknown ? 'unconfirmed' : 'sending')}
+          </p>
+          {active.unknown?.check && (
+            <button
+              type="button"
+              className="text-sm underline disabled:opacity-50"
+              onClick={async event => {
+                const button = event.currentTarget;
+                button.disabled = true;
+                try {
+                  const accepted = await active.unknown!.check!();
+                  if (accepted !== null)
+                    setSelection(current =>
+                      current === active && live.current.scope === active.scope
+                        ? accepted
+                          ? null
+                          : {
+                              ...current,
+                              pending: false,
+                              unknown: undefined,
+                              failed: true,
+                            }
+                        : current
+                    );
+                } catch {
+                  return;
+                } finally {
+                  button.disabled = false;
+                }
+              }}
+            >
+              {t('checkStatus')}
+            </button>
+          )}
+        </div>
+      ) : active ? (
         <InlineMessageEditor
           key={JSON.stringify([active.scope, active.source.id])}
           source={active.source}
           blocked={options.blocked}
+          text={active.text}
+          failed={Boolean(active.failed)}
+          onChange={text =>
+            setSelection(current =>
+              current === active ? { ...current, text, failed: false } : current
+            )
+          }
           onCancel={() => setSelection(null)}
           onSubmit={async text => {
             if (
@@ -180,13 +268,30 @@ export function useEditResend(options: EditOptions) {
               live.current.blocked ||
               live.current.scope !== active.scope
             )
-              return false;
+              return;
             sending.current = true;
+            const attempt = { ...active, text, pending: true, failed: false };
+            setSelection(attempt);
             try {
-              const accepted = await live.current.onSubmit(text, active.source);
-              if (accepted)
-                setSelection(current => (current === active ? null : current));
-              return accepted;
+              const result = await live.current.onSubmit(text, active.source);
+              setSelection(current =>
+                current !== attempt || live.current.scope !== active.scope
+                  ? current
+                  : result === true
+                    ? null
+                    : result === false
+                      ? { ...current, pending: false, failed: true }
+                      : { ...current, unknown: result }
+              );
+            } catch {
+              setSelection(current =>
+                current === attempt
+                  ? {
+                      ...current,
+                      unknown: { status: 'unknown', submissionId: '' },
+                    }
+                  : current
+              );
             } finally {
               sending.current = false;
             }
@@ -194,7 +299,7 @@ export function useEditResend(options: EditOptions) {
         />
       ) : null,
     }),
-    [active, options.scope, options.blocked]
+    [active, options.scope, options.blocked, t]
   );
   return { controls, active: Boolean(active) };
 }

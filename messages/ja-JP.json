@@ -2395,6 +2395,8 @@
   "components": {
     "chat": {
       "editResend": {
+        "unconfirmed": "送信結果を確認中です。再送せず、状態を確認してください。",
+        "checkStatus": "状態を確認",
         "editorLabel": "メッセージを編集",
         "send": "送信",
         "cancel": "キャンセル",

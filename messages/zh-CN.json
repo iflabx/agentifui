@@ -2395,6 +2395,8 @@
   "components": {
     "chat": {
       "editResend": {
+        "unconfirmed": "正在确认提交结果，请勿重复发送，可查询状态。",
+        "checkStatus": "查询状态",
         "editorLabel": "编辑消息",
         "send": "发送",
         "cancel": "取消",

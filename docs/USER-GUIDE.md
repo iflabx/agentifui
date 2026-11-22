@@ -138,7 +138,9 @@ Use the actions actually present on a message:
 - **Edit and send** on a historical user text message opens an editor at that
   message's original position, containing only the original question. Edit it and
   choose **Send** (or press Ctrl/Cmd+Enter); Enter inserts a newline. Choose
-  **Cancel** or press Escape to leave without changing the conversation. Once accepted,
+  **Cancel** or press Escape to leave without changing the conversation. Sending
+  immediately shows the revised question and temporarily hides its old answer and
+  subsequent turns while the request is being confirmed. Once accepted,
   the conversation continues from that position with the revised question and new
   answer; the superseded question and subsequent turns no longer appear in the
   current conversation view, including after reopening history.
@@ -150,8 +152,12 @@ Use the actions actually present on a message:
   intended correction ambiguous to the model. Both your text and the implicit
   instruction count toward request limits.
   Your unsent draft and selected attachments in the bottom composer are preserved;
-  ordinary sending is disabled while editing. A refused edit keeps your changes
-  available for correction or retry. Historical attachments are not copied to the
+  ordinary sending is disabled while editing. A definite refusal restores the old
+  conversation view and reopens the editor with your changes. A network interruption
+  or timeout does not prove rejection: the provisional view stays in place, with
+  sending blocked until the result can be confirmed. Use the status check rather
+  than sending again. Failure after acceptance does not restore the old path.
+  Historical attachments are not copied to the
   edited request, and the inline editor currently sends text only. To send new files,
   cancel editing and use the normal composer if the application supports uploads.
   Existing application parameters remain in effect. Single-task applications, workflow

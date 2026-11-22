@@ -1,6 +1,11 @@
 import { streamDifyChat } from '@lib/services/dify/chat-service';
 
+import { resolveDbConversationUuidByExternalId } from './conversation-db';
 import { startExistingChatConversation } from './submit-start';
+
+jest.mock('./conversation-db', () => ({
+  resolveDbConversationUuidByExternalId: jest.fn(),
+}));
 
 jest.mock('@lib/services/dify/chat-service', () => ({
   streamDifyChat: jest.fn(),
@@ -40,20 +45,18 @@ beforeEach(() => {
   });
 });
 
-it('persists the revised user message and attachments before dispatch, forwarding only text and edit identity', async () => {
-  let saved!: (value: boolean) => void;
-  const save = jest.fn(
-    () =>
-      new Promise<boolean>(resolve => {
-        saved = resolve;
-      })
-  );
-  const input = fixture(save);
-  const pending = startExistingChatConversation(input);
-  expect(save).toHaveBeenCalledWith(input.userMessage, 'local');
-  expect(streamDifyChat).not.toHaveBeenCalled();
-  saved(true);
-  await pending;
+it('lets the server stage the pending edit and forwards a stable submission identity', async () => {
+  const input = {
+    ...fixture(),
+    submissionId: 'submission',
+    onDispatch: jest.fn(),
+  };
+  await startExistingChatConversation(input);
+  expect(input.saveMessage).not.toHaveBeenCalled();
+  expect(input.onDispatch).toHaveBeenCalledTimes(1);
+  expect(jest.mocked(streamDifyChat).mock.calls[0][4]).toEqual({
+    submissionId: 'submission',
+  });
   expect(jest.mocked(streamDifyChat).mock.calls[0][0]).toMatchObject({
     query: 'Revised question',
     editSourceId: 'source-db-id',
@@ -62,9 +65,12 @@ it('persists the revised user message and attachments before dispatch, forwardin
   });
 });
 
-it('does not dispatch a revision whose local user message could not be saved', async () => {
+it('does not dispatch a revision without a local conversation binding', async () => {
+  jest
+    .mocked(resolveDbConversationUuidByExternalId)
+    .mockResolvedValueOnce(null);
   await expect(
-    startExistingChatConversation(fixture(jest.fn().mockResolvedValue(false)))
+    startExistingChatConversation({ ...fixture(), dbConversationUUID: null })
   ).rejects.toThrow('could not be saved');
   expect(streamDifyChat).not.toHaveBeenCalled();
 });

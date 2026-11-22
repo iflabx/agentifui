@@ -23,7 +23,7 @@ import { useTranslations } from 'next-intl';
 import { AgentInteractionCard } from './agent-interaction-card';
 import { AgentResultCard } from './agent-result-card';
 import { agentTimeline } from './state';
-import { useAgentChat } from './use-agent-chat';
+import { editViewPrefix, useAgentChat } from './use-agent-chat';
 import { useAgentInteractions } from './use-agent-interactions';
 
 interface AgentChatProps {
@@ -139,7 +139,6 @@ function AgentChatSession({
     chat.unconfirmed ||
     (chat.humanInput && interactions.blocked) ||
     (chat.singleTask && Boolean(chat.view.conversationId));
-  const run = chat.view.run;
   const edit = useEditResend({
     sourceIds: chat.view.messages.map(message => message.id),
     scope:
@@ -153,10 +152,33 @@ function AgentChatSession({
           ])
         : null,
     blocked: disabled,
+    recovery: chat.editRecovery,
+    restore: chat.pendingEdit?.editSourceId
+      ? {
+          sourceId: chat.pendingEdit.editSourceId,
+          text: chat.pendingEdit.content,
+          submissionId: chat.pendingEdit.submissionId,
+        }
+      : undefined,
     onSubmit: async (text, source) =>
-      (await chat.send(text, undefined, source.id)) === true,
+      (await chat.send(text, undefined, source.id)) ?? false,
   });
-  const lastUserIndex = chat.view.messages.findLastIndex(
+  const pendingSource =
+    edit.controls.pending &&
+    chat.view.messages.find(
+      message => message.id === edit.controls.pending!.sourceId
+    );
+  const presentation = pendingSource
+    ? {
+        ...editViewPrefix(chat.view, pendingSource.id),
+        messages: [
+          ...editViewPrefix(chat.view, pendingSource.id).messages,
+          pendingSource,
+        ],
+      }
+    : chat.view;
+  const run = presentation.run;
+  const lastUserIndex = presentation.messages.findLastIndex(
     message => message.role === 'user'
   );
   const runLabel = !run
@@ -177,7 +199,7 @@ function AgentChatSession({
                   ? 'unknown'
                   : 'running';
   const renderedResultIds = new Set<string>();
-  const timeline = agentTimeline(chat.view);
+  const timeline = agentTimeline(presentation);
   const processRuns = new Map<string, typeof chat.view.tools>();
   for (const entry of timeline) {
     if (entry.type !== 'tool') continue;
@@ -216,14 +238,21 @@ function AgentChatSession({
 
   useEffect(() => {
     const area = scrollArea.current;
-    if (area && following.current) area.scrollTop = area.scrollHeight;
-  }, [chat.view.messages, chat.view.tools, chat.draftScope]);
+    if (area && following.current && !edit.controls.pending)
+      area.scrollTop = area.scrollHeight;
+  }, [
+    chat.view.messages,
+    chat.view.tools,
+    chat.draftScope,
+    edit.controls.pending,
+  ]);
 
   const submit = async () => {
     if (disabled || edit.active || !content.trim() || !draft) return;
     const snapshot = draft;
     const accepted = await chat.send(content, snapshot);
-    if (accepted) useLangchainDraftStore.getState().consumeSnapshot(snapshot);
+    if (accepted === true)
+      useLangchainDraftStore.getState().consumeSnapshot(snapshot);
   };
 
   return (
@@ -344,7 +373,7 @@ function AgentChatSession({
               );
             }
             const { message } = item;
-            const index = chat.view.messages.indexOf(message);
+            const index = presentation.messages.indexOf(message);
             return message.role === 'user' ? (
               <UserMessage
                 key={message.id}
@@ -384,14 +413,14 @@ function AgentChatSession({
                 />
                 {(() => {
                   const runId = message.metadata?.backend_run_id;
-                  const next = chat.view.messages[index + 1];
+                  const next = presentation.messages[index + 1];
                   if (
                     typeof runId !== 'string' ||
                     (next?.metadata?.backend_run_id === runId &&
                       next.role === 'assistant')
                   )
                     return null;
-                  const results = (chat.view.resultRuns ?? []).filter(
+                  const results = (presentation.resultRuns ?? []).filter(
                     resultRun => (resultRun.id || resultRun.runId) === runId
                   );
                   results.forEach(resultRun =>
@@ -411,7 +440,7 @@ function AgentChatSession({
               </Fragment>
             ) : null;
           })}
-          {(chat.view.resultRuns ?? [])
+          {(presentation.resultRuns ?? [])
             .filter(
               resultRun =>
                 !renderedResultIds.has(resultRun.id || resultRun.runId || '')

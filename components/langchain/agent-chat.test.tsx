@@ -30,7 +30,10 @@ jest.mock('@lib/auth/better-auth/react-hooks', () => ({
 jest.mock('next-intl', () => ({ useTranslations: () => (key: string) => key }));
 jest.mock('react-markdown', () => ({ __esModule: true, default: () => null }));
 jest.mock('remark-gfm', () => ({ __esModule: true, default: () => undefined }));
-jest.mock('./use-agent-chat', () => ({ useAgentChat: jest.fn() }));
+jest.mock('./use-agent-chat', () => ({
+  ...jest.requireActual('./use-agent-chat'),
+  useAgentChat: jest.fn(),
+}));
 jest.mock('./use-agent-interactions', () => ({
   useAgentInteractions: jest.fn(),
 }));
@@ -141,6 +144,8 @@ describe('Agent chat draft', () => {
       check: jest.fn(),
     });
     jest.mocked(useAgentChat).mockReturnValue({
+      editRecovery: null,
+      pendingEdit: undefined,
       view: { messages: [], tools: [] },
       draftScope: 'new:0',
       appName: 'Agent',
@@ -210,7 +215,7 @@ describe('Agent chat draft', () => {
       'old'
     );
     expect(send).toHaveBeenCalledTimes(1);
-    expect(editor).toHaveValue('my visible correction');
+    expect(message.getByRole('textbox')).toHaveValue('my visible correction');
     expect(input).toHaveValue('Unsent bottom draft');
     expect(useLangchainDraftStore.getState().drafts).toBe(drafts);
     expect(screen.getByTestId('shared-assistant')).toHaveTextContent(

@@ -2395,6 +2395,8 @@
   "components": {
     "chat": {
       "editResend": {
+        "unconfirmed": "In attesa di conferma. Non inviare di nuovo; verifica lo stato.",
+        "checkStatus": "Verifica stato",
         "editorLabel": "Modifica messaggio",
         "send": "Invia",
         "cancel": "Annulla",

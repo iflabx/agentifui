@@ -10,7 +10,7 @@ import { useLangchainDraftStore } from '@lib/stores/langchain-draft-store';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { TextEncoder } from 'node:util';
 
-import { useAgentChat } from './use-agent-chat';
+import { editViewPrefix, useAgentChat } from './use-agent-chat';
 
 jest.mock('@lib/hooks/use-combined-conversations', () => ({
   conversationEvents: { emit: jest.fn() },
@@ -27,6 +27,92 @@ jest.mock('@lib/services/client/agui-stream', () => ({
 }));
 
 describe('independent agent chat lifecycle', () => {
+  it('projects only retained messages, tools and results while a revision is pending', () => {
+    const prefix = editViewPrefix(
+      {
+        messages: [
+          {
+            id: 'first',
+            role: 'user',
+            content: 'first',
+            metadata: { backend_run_id: 'first-run' },
+          },
+          {
+            id: 'first-answer',
+            role: 'assistant',
+            content: 'answer',
+            metadata: { backend_run_id: 'first-run' },
+          },
+          {
+            id: 'source',
+            role: 'user',
+            content: 'old',
+            metadata: { backend_run_id: 'old-run' },
+          },
+          {
+            id: 'old-answer',
+            role: 'assistant',
+            content: 'old answer',
+            metadata: { backend_run_id: 'old-run' },
+          },
+        ],
+        tools: [
+          { runId: 'first-run', toolCallId: 'kept' },
+          { runId: 'old-run', toolCallId: 'hidden' },
+        ],
+        resultRuns: [{ id: 'first-run' }, { id: 'old-run' }],
+        runId: 'old-run',
+        run: { id: 'old-run' },
+      } as never,
+      'source'
+    );
+    expect(prefix.messages.map(message => message.id)).toEqual([
+      'first',
+      'first-answer',
+    ]);
+    expect(prefix.tools.map(tool => tool.toolCallId)).toEqual(['kept']);
+    expect(prefix.resultRuns?.map(run => run.id)).toEqual(['first-run']);
+    expect(prefix.run).toBeUndefined();
+    expect(prefix.runId).toBeUndefined();
+  });
+
+  it('keeps an edited request uncertain on transport failure, then publishes confirmed rejection without resending', async () => {
+    jest
+      .mocked(consumeAgentStream)
+      .mockRejectedValueOnce(new Error('network lost'));
+    jest
+      .mocked(agentSubmissionRequest)
+      .mockResolvedValue({ state: 'rejected', runId: null });
+    const hook = renderHook(() =>
+      useAgentChat('app-uuid', 'local', 'test-actor')
+    );
+    await waitFor(() => expect(hook.result.current.ready).toBe(true));
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await hook.result.current.send('revision', undefined, 'user');
+    });
+    const submissionId = JSON.parse(
+      jest.mocked(global.fetch).mock.calls[0][1]!.body as string
+    ).submissionId;
+    expect(outcome).toEqual({ status: 'unknown', submissionId });
+    expect(hook.result.current.unconfirmed).toBe(true);
+    jest.useFakeTimers();
+    act(() => hook.result.current.retryStatus());
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(1600);
+    });
+    expect(hook.result.current.editRecovery).toEqual({
+      submissionId,
+      accepted: false,
+    });
+    expect(hook.result.current.unconfirmed).toBe(false);
+    expect(
+      hook.result.current.view.messages.map(message => message.id)
+    ).toEqual(['user', 'assistant']);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    hook.unmount();
+  });
+
   const originalEncoder = globalThis.TextEncoder;
   beforeAll(() => {
     globalThis.TextEncoder = TextEncoder;
