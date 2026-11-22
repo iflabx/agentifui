@@ -12,9 +12,17 @@ interface ExecutionBarProps {
   node: WorkflowNode;
   index: number;
   item: ExecutionProcessItem;
+  expansion?: { expanded: boolean; toggle: () => void };
+  historical?: boolean;
 }
 
-export function ExecutionBar({ node, index, item }: ExecutionBarProps) {
+export function ExecutionBar({
+  node,
+  index,
+  item,
+  expansion,
+  historical = false,
+}: ExecutionBarProps) {
   const tTypes = useTranslations('pages.workflow.nodeTypes');
   const tDetails = useTranslations('pages.workflow.iterationDetails');
   const iterationExpanded = useWorkflowExecutionStore(
@@ -32,7 +40,9 @@ export function ExecutionBar({ node, index, item }: ExecutionBarProps) {
   const expandable = Boolean(
     node.isIterationNode || node.isLoopNode || node.isParallelNode
   );
-  const expanded = Boolean(node.isLoopNode ? loopExpanded : iterationExpanded);
+  const expanded =
+    expansion?.expanded ??
+    Boolean(node.isLoopNode ? loopExpanded : iterationExpanded);
   const getNodeTitle = () => {
     // Return friendly Chinese name based on node type
     switch (node.type) {
@@ -108,7 +118,17 @@ export function ExecutionBar({ node, index, item }: ExecutionBarProps) {
           : null;
   return (
     <ExecutionProcessRow
-      item={{ ...item, title: getNodeTitle(), children }}
+      item={{
+        ...item,
+        title: getNodeTitle(),
+        children: children?.map(child => ({
+          ...child,
+          status:
+            historical && ['pending', 'running'].includes(child.status)
+              ? 'unknown'
+              : child.status,
+        })),
+      }}
       className={
         node.isInIteration || node.isInLoop ? 'ml-4 w-auto' : undefined
       }
@@ -117,7 +137,8 @@ export function ExecutionBar({ node, index, item }: ExecutionBarProps) {
       onToggle={
         expandable
           ? () => {
-              if (node.isLoopNode) toggleLoopExpanded(node.id);
+              if (expansion) expansion.toggle();
+              else if (node.isLoopNode) toggleLoopExpanded(node.id);
               else toggleIterationExpanded(node.id);
             }
           : undefined

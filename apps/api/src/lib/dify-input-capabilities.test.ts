@@ -108,7 +108,7 @@ describe('Dify effective input capabilities', () => {
     expect(result).toMatchObject({
       status: 'ready',
       mode: 'task',
-      text: { enabled: false },
+      text: { enabled: true, required: true, target: 'RequestText' },
     });
     expect(
       result.attachmentSlots.map(slot => [
@@ -224,6 +224,112 @@ describe('Dify effective input capabilities', () => {
   });
 });
 
+describe('task text mapping', () => {
+  const parameters = {
+    user_input_form: [
+      { paragraph: { variable: 'RequestText', required: true } },
+      { 'text-input': { variable: 'Context', required: false } },
+      { select: { variable: 'Choice', options: ['one'], required: true } },
+      { number: { variable: 'Count', required: true } },
+    ],
+  };
+
+  it.each(['workflow', 'text-generation', 'completion'])(
+    'maps only the sole free-text field automatically for %s and retains the full schema',
+    mode => {
+      const schema = { user_input_form: parameters.user_input_form.slice(1) };
+      const result = normalizeDifyInputCapabilities(schema, mode);
+      expect(result.text).toEqual({
+        enabled: true,
+        required: false,
+        target: 'Context',
+      });
+      expect(result.fields.map(field => field.key)).toEqual([
+        'Context',
+        'Choice',
+        'Count',
+      ]);
+    }
+  );
+
+  it('does not guess among multiple free-text fields or remove parameters', () => {
+    const result = normalizeDifyInputCapabilities(parameters, 'workflow');
+    expect(result.status).toBe('ready');
+    expect(result.text.enabled).toBe(false);
+    expect(result.fields.map(field => field.key)).toEqual([
+      'RequestText',
+      'Context',
+      'Choice',
+      'Count',
+    ]);
+    expect(normalizeDifyInputCapabilities({}, 'workflow').text.enabled).toBe(
+      false
+    );
+  });
+
+  it.each(['RequestText', 'Context'])(
+    'explicitly maps the exact free-text key %s and copies its required flag',
+    text_variable => {
+      const result = normalizeDifyInputCapabilities(
+        parameters,
+        'workflow',
+        undefined,
+        { text_variable }
+      );
+      expect(result.text).toEqual({
+        enabled: true,
+        required: text_variable === 'RequestText',
+        target: text_variable,
+      });
+      expect(result.fields).toHaveLength(4);
+    }
+  );
+
+  it('disables text for parameters-only even with a sole free-text field', () => {
+    const result = normalizeDifyInputCapabilities(
+      { user_input_form: parameters.user_input_form.slice(0, 1) },
+      'workflow',
+      undefined,
+      { text_variable: null }
+    );
+    expect(result.status).toBe('ready');
+    expect(result.text.enabled).toBe(false);
+    expect(result.fields[0]).toMatchObject({
+      key: 'RequestText',
+      required: true,
+    });
+  });
+
+  it.each(['missing', 'requesttext', ' RequestText', '', 'Choice', 'Count'])(
+    'fails closed for stale, inexact, or non-free-text mapping %p',
+    text_variable => {
+      const result = normalizeDifyInputCapabilities(
+        parameters,
+        'workflow',
+        undefined,
+        { text_variable }
+      );
+      expect(result).toMatchObject({
+        status: 'unavailable',
+        reason: 'TASK_TEXT_MAPPING_INVALID',
+        text: { enabled: false },
+      });
+      expect(result.fields).toHaveLength(4);
+    }
+  );
+
+  it.each([undefined, null, 'RequestText', 'missing'])(
+    'keeps conversation text routed to query regardless of task mapping %p',
+    text_variable => {
+      expect(
+        normalizeDifyInputCapabilities(parameters, 'chatflow', undefined, {
+          text_variable,
+        }).text
+      ).toEqual({ enabled: true, required: true, target: 'query' });
+    }
+  );
+});
+
 describe('live capability cache', () => {
   const originalFetch = global.fetch;
   const target = {
@@ -270,6 +376,50 @@ describe('live capability cache', () => {
       'unavailable'
     );
     expect((await resolveDifyInputCapabilities(target)).status).toBe('ready');
+  });
+
+  it('fingerprints mapping changes and passes the actual task config to normalization', async () => {
+    const fetchMock = jest.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            user_input_form: [
+              { paragraph: { variable: 'ExactText', required: true } },
+            ],
+          })
+        )
+    );
+    global.fetch = fetchMock;
+    const taskTarget = { ...target, appType: 'workflow' };
+    expect((await resolveDifyInputCapabilities(taskTarget)).text.target).toBe(
+      'ExactText'
+    );
+    const parametersOnly = {
+      ...taskTarget,
+      taskInput: { text_variable: null },
+    };
+    expect(
+      (await resolveDifyInputCapabilities(parametersOnly)).text.enabled
+    ).toBe(false);
+    expect(
+      (await resolveDifyInputCapabilities(parametersOnly)).text.enabled
+    ).toBe(false);
+    const explicit = {
+      ...taskTarget,
+      taskInput: { text_variable: 'ExactText' },
+    };
+    expect((await resolveDifyInputCapabilities(explicit)).text.target).toBe(
+      'ExactText'
+    );
+    expect(
+      (
+        await resolveDifyInputCapabilities({
+          ...taskTarget,
+          taskInput: { text_variable: 'stale' },
+        })
+      ).reason
+    ).toBe('TASK_TEXT_MAPPING_INVALID');
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
   it('does not reuse or cache a read from before invalidation', async () => {

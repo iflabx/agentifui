@@ -1,5 +1,6 @@
 'use client';
 
+import { ChatInputView } from '@components/chat-input/view';
 import { FileUploadField } from '@components/workflow/workflow-input-form/file-upload-field';
 import { FormField } from '@components/workflow/workflow-input-form/form-field';
 import {
@@ -29,14 +30,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 
-import { ChatflowFormActions } from './chatflow-input-area/form-actions';
 import {
   buildChatflowFormConfig,
-  isChatflowFormPristine,
   validateChatflowSubmission,
 } from './chatflow-input-area/helpers';
 import { ChatflowInputLoadingState } from './chatflow-input-area/loading-state';
-import { ChatflowQueryField } from './chatflow-input-area/query-field';
 import type {
   ChatflowFormData,
   UploadPayloadFile,
@@ -106,7 +104,6 @@ function ScopedChatflowInputArea({
     [initialFormData, draftFields]
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [isComposing, setIsComposing] = useState(false);
 
   useEffect(() => {
     onFormConfigChange?.(ready ? hasFormConfig : true);
@@ -131,8 +128,8 @@ function ScopedChatflowInputArea({
   );
 
   const handleQueryChange = useCallback(
-    (event: React.ChangeEvent<HTMLTextAreaElement>) => {
-      setQuery(event.target.value);
+    (value: string) => {
+      setQuery(value);
 
       if (errors.query) {
         setErrors(prev => {
@@ -144,19 +141,6 @@ function ScopedChatflowInputArea({
     },
     [errors]
   );
-
-  const handleReset = useCallback(() => {
-    setQuery('');
-    setFormData(
-      Object.fromEntries(
-        Object.entries(initialFormData).map(([key, value]) => [
-          key,
-          Array.isArray(value) ? [...value] : value,
-        ])
-      )
-    );
-    setErrors({});
-  }, [initialFormData]);
 
   const canSubmit = useCallback(() => {
     if (!ready || Object.values(uploadBlocked).some(Boolean)) return false;
@@ -186,7 +170,7 @@ function ScopedChatflowInputArea({
   ]);
 
   const handleSubmit = useCallback(
-    async (event: React.FormEvent) => {
+    async (event: Pick<React.FormEvent, 'preventDefault'>) => {
       event.preventDefault();
 
       if (
@@ -346,34 +330,6 @@ function ScopedChatflowInputArea({
     ]
   );
 
-  const handleQueryKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (event.key === 'Enter' && !event.shiftKey && !isComposing) {
-        event.preventDefault();
-
-        if (!isProcessing && !isWaiting && canSubmit()) {
-          const form = event.currentTarget.closest('form');
-          if (form) {
-            const submitEvent = new Event('submit', {
-              bubbles: true,
-              cancelable: true,
-            });
-            form.dispatchEvent(submitEvent);
-          }
-        }
-      }
-    },
-    [canSubmit, isComposing, isProcessing, isWaiting]
-  );
-
-  const handleCompositionStart = useCallback(() => {
-    setIsComposing(true);
-  }, []);
-
-  const handleCompositionEnd = useCallback(() => {
-    setIsComposing(false);
-  }, []);
-
   if (isLoading) {
     return (
       <ChatflowInputLoadingState
@@ -462,18 +418,6 @@ function ScopedChatflowInputArea({
               </button>
             </div>
           )}
-          <ChatflowQueryField
-            disabled={isProcessing || isWaiting}
-            error={errors.query}
-            onChange={handleQueryChange}
-            onCompositionEnd={handleCompositionEnd}
-            onCompositionStart={handleCompositionStart}
-            onKeyDown={handleQueryKeyDown}
-            placeholder={t('form.question.placeholder')}
-            query={query}
-            requiredLabel={t('form.question.label')}
-          />
-
           {hasFormConfig && (
             <div className="space-y-6">
               <h2 className="font-serif text-sm text-stone-600 dark:text-stone-400">
@@ -532,17 +476,18 @@ function ScopedChatflowInputArea({
             </div>
           )}
 
-          <ChatflowFormActions
+          {errors.query && <p role="alert">{errors.query}</p>}
+          <ChatInputView
+            embedded
+            value={query}
+            onValueChange={handleQueryChange}
+            onSubmit={() => handleSubmit({ preventDefault() {} })}
+            disabled={!ready || isProcessing || isWaiting}
             canSubmit={canSubmit()}
-            hasErrors={Object.keys(errors).length > 0}
-            isPristine={isChatflowFormPristine(query, formData)}
             isProcessing={isProcessing}
             isWaiting={isWaiting}
-            onReset={handleReset}
-            resetLabel={t('form.reset')}
-            submitLabel={t('form.startConversation')}
-            validationHint={t('form.checkAndCorrectErrors')}
-            workingLabel={t('form.processing')}
+            placeholder={t('form.question.placeholder')}
+            sendButtonAriaLabel={t('form.startConversation')}
           />
         </form>
       </div>

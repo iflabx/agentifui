@@ -150,6 +150,7 @@ export function useRecentTaskExecutions(limit: number = 20) {
       }
 
       const mappedExecutions = result.data
+        .filter(execution => !execution.conversation_id)
         .filter(execution => TERMINAL_EXECUTION_STATUSES.has(execution.status))
         .map(execution => {
           const app = apps.find(

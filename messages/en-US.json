@@ -1440,6 +1440,19 @@
           }
         },
         "page": {
+          "taskInput": {
+            "label": "Task main text",
+            "auto": "Automatic (one free-text field)",
+            "parametersOnly": "Parameters only",
+            "autoResolved": "Automatic mapping: message text goes to {variable}.",
+            "explicitResolved": "Explicit mapping: message text goes to {variable}.",
+            "parametersOnlyNote": "Message text is disabled; fill parameters and files instead.",
+            "ambiguous": "Multiple free-text fields: choose a main text variable or use parameters only. Message text is disabled.",
+            "noText": "No free-text field found. Message text is disabled.",
+            "invalid": "Configured variable {variable} is missing or is not a free-text field. Execution is unavailable until the mapping is corrected.",
+            "invalidOption": "Unavailable variable: {variable}",
+            "schemaNote": "Based on the saved parameter schema; synchronize from Dify to refresh."
+          },
           "title": {
             "edit": "Edit Application Instance",
             "add": "Add Application Instance"
@@ -2924,5 +2937,30 @@
       "copied": "Source copied.",
       "copyFailed": "Could not copy the source. Please select and copy its text."
     }
+  },
+  "taskChat": {
+    "loading": "Loading tasks…",
+    "loginRequired": "Please sign in",
+    "unavailable": "Application unavailable",
+    "independent": "Each send runs independently; previous tasks are not conversation memory.",
+    "placeholder": "Enter task input",
+    "parametersOnly": "Fill the parameters or attach required files above",
+    "taskTitle": "Task execution",
+    "replayed": "This submission already exists. It will not be run again automatically. Check its saved status.",
+    "submitFailed": "Submission could not be confirmed. Retry preserves the submission ID.",
+    "loadOlder": "Load earlier tasks",
+    "historyFailed": "Task history is unavailable. Check access and retry.",
+    "retry": "Retry",
+    "welcome": "Start a task using the input below.",
+    "parameterTask": "Parameter or file task",
+    "noProcess": "No saved execution details",
+    "running": "Running",
+    "unknown": "Outcome unconfirmed. The upstream task may still be running; it will not be restarted automatically.",
+    "completed": "Completed",
+    "failed": "Failed",
+    "stopped": "Stopped",
+    "runAgain": "Use these inputs again",
+    "viewResult": "View full result",
+    "recoverTask": "Mark interrupted and prepare another run"
   }
 }

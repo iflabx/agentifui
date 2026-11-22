@@ -1440,6 +1440,19 @@
           }
         },
         "page": {
+          "taskInput": {
+            "label": "Haupttext der Aufgabe",
+            "auto": "Automatisch (ein Freitextfeld)",
+            "parametersOnly": "Nur Parameter",
+            "autoResolved": "Automatische Zuordnung: Nachrichtentext an {variable}.",
+            "explicitResolved": "Explizite Zuordnung: Nachrichtentext an {variable}.",
+            "parametersOnlyNote": "Nachrichtentext ist deaktiviert. Verwenden Sie Parameter und Dateien.",
+            "ambiguous": "Mehrere Freitextfelder: Wählen Sie eine Haupttextvariable oder nur Parameter. Nachrichtentext ist deaktiviert.",
+            "noText": "Kein Freitextfeld gefunden. Nachrichtentext ist deaktiviert.",
+            "invalid": "Die Variable {variable} fehlt oder ist kein Freitextfeld. Vor der Ausführung muss die Zuordnung korrigiert werden.",
+            "invalidOption": "Nicht verfügbare Variable: {variable}",
+            "schemaNote": "Basiert auf dem gespeicherten Parameterschema. Zum Aktualisieren mit Dify synchronisieren."
+          },
           "title": {
             "edit": "Anwendungsinstanz bearbeiten",
             "add": "Anwendungsinstanz hinzufügen"
@@ -2924,5 +2937,30 @@
     "confirmationUnknown": "Ergebnis noch unbestätigt. Status prüfen, nicht erneut senden.",
     "confirmationSingleTask": "Dieser Agent verarbeitet eine Aufgabe pro Unterhaltung. Starten Sie für weitere Aufgaben eine neue Unterhaltung.",
     "confirmationNotDispatched": "Ihre Entscheidung wurde nicht gesendet. Prüfen Sie sie und versuchen Sie es erneut."
+  },
+  "taskChat": {
+    "loading": "Aufgaben werden geladen…",
+    "loginRequired": "Bitte anmelden",
+    "unavailable": "Anwendung nicht verfügbar",
+    "independent": "Jede Eingabe startet eine unabhängige Aufgabe ohne Erinnerung an frühere Aufgaben.",
+    "placeholder": "Aufgabeneingabe",
+    "parametersOnly": "Parameter ausfüllen oder benötigte Dateien oben anhängen",
+    "taskTitle": "Aufgabenausführung",
+    "replayed": "Diese Übermittlung existiert bereits und wird nicht automatisch wiederholt. Gespeicherten Status prüfen.",
+    "submitFailed": "Übermittlung nicht bestätigt. Ein erneuter Versuch behält die Übermittlungs-ID.",
+    "loadOlder": "Frühere Aufgaben laden",
+    "historyFailed": "Aufgabenverlauf nicht verfügbar. Zugriff prüfen und erneut versuchen.",
+    "retry": "Erneut versuchen",
+    "welcome": "Eine Aufgabe mit der Eingabe unten starten.",
+    "parameterTask": "Parameter- oder Dateiaufgabe",
+    "noProcess": "Keine gespeicherten Ausführungsdetails",
+    "running": "Wird ausgeführt",
+    "unknown": "Ergebnis unbestätigt. Die ursprüngliche Aufgabe läuft möglicherweise noch und wird nicht automatisch neu gestartet.",
+    "completed": "Abgeschlossen",
+    "failed": "Fehlgeschlagen",
+    "stopped": "Gestoppt",
+    "runAgain": "Eingaben erneut verwenden",
+    "viewResult": "Vollständiges Ergebnis",
+    "recoverTask": "Als unterbrochen markieren und nächsten Lauf vorbereiten"
   }
 }

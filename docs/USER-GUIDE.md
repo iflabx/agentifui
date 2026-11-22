@@ -289,22 +289,34 @@ not general file input. See [reports, data and sources](#9-reports-data-and-sour
 
 ### Run A Workflow Or Text-Generation Application
 
-1. Open the application from `/apps`, not the model selector. Review its input
-   form: supported fields include text, paragraph, number, selection and configured
-   file/file-list inputs. Complete required fields and wait for uploads.
-2. Submit once. Workflow tracking can show node progress and execution state;
-   text generation shows the generated content and available execution details.
+1. Open the application from `/apps`, not the model selector. Workflow and
+   text-generation applications use the shared chat input and message display.
+   Complete any parameters above the input and wait for required file uploads.
+   When a main text field is configured or unambiguously detected, the input
+   fills that exact upstream variable. Parameter/file-only tasks need no dummy text.
+2. Send once. Each send is an independent task, not a conversational continuation:
+   previous results are not automatically sent upstream as memory. Each round
+   retains its input, result and available execution-process details.
 3. Open the result viewer when available. Its copy/download controls export the
    displayed result: workflow output can be Markdown/JSON text and text-generation
    output can be a `.txt` download. This is not a universal export of conversation
    history, original uploaded files or an Agent's external state.
-4. Use that application's execution-history panel to reopen saved records.
-   It is separate from conversational history at `/chat/history`. Where selection
-   deletion is offered, confirm the intended records before removing them.
-5. Change the inputs and start a new execution for a new task. Reopening a record
-   displays a saved result; it does not rerun the workflow.
+4. New tasks are grouped into a local conversation in the sidebar. Reopen it to
+   view saved rounds, and load earlier tasks when more history is available.
+   Older unlinked execution records remain readable through their original
+   execution-history links; they are not converted or duplicated automatically.
+5. Use **Use these inputs again** to prepare another run, then submit explicitly.
+   This creates a new task rather than editing or branching a completed run.
+   Reopening history never runs a task. Deleting a local task conversation also
+   removes its linked executions from accessible history.
 
-On small screens, workflow views provide tabs for the form, tracker and history.
+Refreshing or leaving during a task can interrupt browser-side saving without
+stopping the upstream task. When its outcome cannot be confirmed, the saved round
+shows an unknown outcome, not an endless spinner or an automatic rerun. An explicit
+**Mark interrupted and prepare another run** action releases that local round for
+a new submission; it does not cancel an upstream task that might still be running.
+
+Older execution-history pages retain their original form/tracker/history layout.
 If a workflow stop/detail or file-preview action is denied for an ordinary user,
 the current Dify proxy may intentionally restrict that operation to administrators.
 Do not interpret every disabled follow-up action as a failed task submission.

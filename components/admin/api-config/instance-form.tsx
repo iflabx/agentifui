@@ -18,6 +18,7 @@ import {
   changeInstanceAppType,
   changeInstanceDifyAppType,
 } from './instance-form-utils';
+import { TaskInputMapping } from './task-input-mapping';
 import { useInstanceFormState } from './use-instance-form-state';
 
 export function InstanceForm(props: InstanceFormProps) {
@@ -396,6 +397,24 @@ export function InstanceForm(props: InstanceFormProps) {
                   {t('backend.aguiNote')}
                 </p>
               </div>
+            )}
+
+          {!isLangChain &&
+            ['workflow', 'text-generation'].includes(
+              formData.config.app_metadata.dify_apptype || ''
+            ) && (
+              <TaskInputMapping
+                config={formData.config}
+                disabled={isSyncing || isProcessing}
+                onChange={taskInput =>
+                  setFormData(previous => {
+                    const config = { ...previous.config };
+                    if (taskInput === undefined) delete config.task_input;
+                    else config.task_input = taskInput;
+                    return { ...previous, config };
+                  })
+                }
+              />
             )}
 
           <TagsSelector

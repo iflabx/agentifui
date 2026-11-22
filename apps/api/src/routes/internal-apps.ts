@@ -329,6 +329,7 @@ export const internalAppsRoutes: FastifyPluginAsync<
         difyApiKey: target.apiKey,
         credentialVersion: target.credentialVersion,
         appType: target.appType,
+        taskInput: target.taskInput,
       });
     }
   );

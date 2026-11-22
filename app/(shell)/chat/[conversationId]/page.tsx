@@ -15,6 +15,7 @@ import { ChatflowFloatingController } from '@components/chatflow/chatflow-floati
 import { ChatflowNodeTracker } from '@components/chatflow/chatflow-node-tracker';
 import { FilePreviewCanvas } from '@components/file-preview/file-preview-canvas';
 import { AgentChat } from '@components/langchain/agent-chat';
+import { TaskChat } from '@components/task-chat/task-chat';
 import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
 import { resolveHistoryAttachmentPreviewUserId } from '@lib/hooks/history-attachment-preview';
 import { useChatInterface } from '@lib/hooks/use-chat-interface';
@@ -54,6 +55,7 @@ export default function ChatPage() {
     key: string;
     appId?: string;
     conversationId?: string;
+    taskType?: 'workflow' | 'text-generation';
     failed?: boolean;
   } | null>(null);
   const key = JSON.stringify([actorId, id]);
@@ -69,8 +71,20 @@ export default function ChatPage() {
           return;
         }
         const conversation = result.data;
+        const taskType =
+          conversation?.metadata?.runtime === 'dify-task'
+            ? conversation.metadata.task_type
+            : null;
         setRouting({
           key,
+          ...((taskType === 'workflow' || taskType === 'text-generation') &&
+          conversation?.app_id
+            ? {
+                appId: conversation.app_id,
+                conversationId: conversation.id,
+                taskType,
+              }
+            : {}),
           ...(conversation?.interaction_protocol === 'ag-ui/1.0' &&
           conversation.app_id
             ? { appId: conversation.app_id, conversationId: conversation.id }
@@ -96,6 +110,14 @@ export default function ChatPage() {
     );
   if (routing?.key !== key) return <p role="status">{t('loading')}</p>;
   if (routing.failed) return <p role="alert">{t('requestFailed')}</p>;
+  if (routing.taskType && routing.appId)
+    return (
+      <TaskChat
+        appId={routing.appId}
+        conversationId={routing.conversationId}
+        taskType={routing.taskType}
+      />
+    );
   return routing.appId ? (
     <AgentChat
       key={routing.appId}

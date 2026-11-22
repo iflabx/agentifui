@@ -1,4 +1,9 @@
 import '@testing-library/jest-dom';
+import { deserialize, serialize } from 'node:v8';
+
+if (!global.structuredClone) {
+  global.structuredClone = value => deserialize(serialize(value));
+}
 
 // Mock next/router
 jest.mock('next/router', () => ({

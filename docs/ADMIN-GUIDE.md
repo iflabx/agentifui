@@ -195,6 +195,21 @@ forms, Dify human input, or automatic continuation after process loss. Test both
 decisions, refresh while waiting and reopening the saved result before offering
 it to users. Refresh/history must not themselves submit a decision.
 
+### Task Chat Input Mapping
+
+For native Dify Workflow and text-generation instances, use **Task text input**
+in the existing instance configuration. **Automatic** maps the composer only when
+there is exactly one free-text field. Choose an exact upstream variable to
+override it, or **Parameters only** to keep all input in the parameter area.
+The resolved mapping is displayed alongside the selection; syncing Dify parameters
+does not discard an explicit choice. If a selected variable is removed upstream,
+correct the mapping before accepting new tasks.
+
+Several possible free-text fields are intentionally not guessed: users can fill
+the separate parameters instead. Required files, counts and types still come from
+the authorized live application capabilities. This UI does not give Workflow
+conversational memory or migrate it to another execution protocol.
+
 ## 4. Visibility, Groups And Allowance
 
 ### Create A Group And Assign Access

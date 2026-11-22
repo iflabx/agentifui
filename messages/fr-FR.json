@@ -1440,6 +1440,19 @@
           }
         },
         "page": {
+          "taskInput": {
+            "label": "Texte principal de la tâche",
+            "auto": "Automatique (un seul champ de texte libre)",
+            "parametersOnly": "Paramètres uniquement",
+            "autoResolved": "Association automatique : le texte est envoyé à {variable}.",
+            "explicitResolved": "Association explicite : le texte est envoyé à {variable}.",
+            "parametersOnlyNote": "Le texte est désactivé. Utilisez les paramètres et les fichiers.",
+            "ambiguous": "Plusieurs champs de texte libre : choisissez une variable principale ou les paramètres uniquement. Le texte est désactivé.",
+            "noText": "Aucun champ de texte libre. Le texte est désactivé.",
+            "invalid": "La variable {variable} est absente ou ne permet pas de texte libre. Corrigez l’association avant toute exécution.",
+            "invalidOption": "Variable indisponible : {variable}",
+            "schemaNote": "Selon le schéma des paramètres enregistré ; synchronisez avec Dify pour le mettre à jour."
+          },
           "title": {
             "edit": "Modifier l'instance d'application",
             "add": "Ajouter une instance d'application"
@@ -2924,5 +2937,30 @@
     "confirmationUnknown": "Résultat non confirmé. Vérifiez le statut sans renvoyer la décision.",
     "confirmationSingleTask": "Cet agent traite une tâche par conversation. Créez une nouvelle conversation pour une autre tâche.",
     "confirmationNotDispatched": "Votre décision n'a pas été envoyée. Vérifiez-la puis réessayez."
+  },
+  "taskChat": {
+    "loading": "Chargement des tâches…",
+    "loginRequired": "Veuillez vous connecter",
+    "unavailable": "Application indisponible",
+    "independent": "Chaque envoi est indépendant, sans mémoire des tâches précédentes.",
+    "placeholder": "Saisir la tâche",
+    "parametersOnly": "Renseignez les paramètres ou joignez les fichiers requis ci-dessus",
+    "taskTitle": "Exécution de tâche",
+    "replayed": "Cet envoi existe déjà et ne sera pas répété automatiquement. Vérifiez son état enregistré.",
+    "submitFailed": "Envoi non confirmé. Réessayer conserve son identifiant.",
+    "loadOlder": "Charger les tâches précédentes",
+    "historyFailed": "Historique indisponible. Vérifiez les accès puis réessayez.",
+    "retry": "Réessayer",
+    "welcome": "Démarrez une tâche avec la saisie ci-dessous.",
+    "parameterTask": "Tâche avec paramètres ou fichiers",
+    "noProcess": "Aucun détail enregistré",
+    "running": "En cours",
+    "unknown": "Résultat non confirmé. La tâche initiale peut encore être active et ne sera pas relancée automatiquement.",
+    "completed": "Terminée",
+    "failed": "Échec",
+    "stopped": "Arrêtée",
+    "runAgain": "Réutiliser ces entrées",
+    "viewResult": "Voir le résultat complet",
+    "recoverTask": "Marquer interrompue et préparer une autre exécution"
   }
 }

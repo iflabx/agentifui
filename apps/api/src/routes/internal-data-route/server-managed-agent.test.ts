@@ -33,6 +33,59 @@ beforeEach(() => {
 });
 
 describe('trusted backend conversation boundary', () => {
+  it.each([
+    [
+      'messages.save',
+      {
+        message: {
+          conversation_id: 'task',
+          role: 'user',
+          content: 'must not persist',
+        },
+      },
+    ],
+    [
+      'messages.updateMetadata',
+      { conversationId: 'task', messageId: 'message', metadata: {} },
+    ],
+    ['messages.createPlaceholder', { conversationId: 'task' }],
+  ])(
+    'blocks generic %s for server-managed task conversations',
+    async (action, payload) => {
+      const response = await handleMessageAction(
+        action as string,
+        payload as Record<string, unknown>,
+        'actor'
+      );
+      expect(response?.statusCode).toBe(404);
+      expect(systemQuery).toHaveBeenCalledTimes(1);
+      expect(systemQuery.mock.calls[0][0]).toContain(
+        "COALESCE(conversations.metadata ->> 'runtime', '') <> 'dify-task'"
+      );
+      expect(systemQuery.mock.calls[0][0]).not.toContain(
+        'INSERT INTO messages'
+      );
+    }
+  );
+
+  it('rejects forged task runtime before generic creation', async () => {
+    expect(
+      (
+        await handleConversationAction(
+          'conversations.createConversation',
+          {
+            conversation: {
+              app_id: 'app',
+              metadata: { runtime: 'dify-task', task_type: 'workflow' },
+            },
+          },
+          'actor'
+        )
+      )?.statusCode
+    ).toBe(409);
+    expect(systemQuery).not.toHaveBeenCalled();
+  });
+
   it('checks owner, active actor/provider and live enabled app permission for history', async () => {
     systemQuery.mockResolvedValueOnce([{ id: 'conversation' }]);
     expect(await loadConversationOwnedByActor('conversation', 'actor')).toBe(
@@ -55,7 +108,7 @@ describe('trusted backend conversation boundary', () => {
       expect(sql).toContain(predicate);
     }
     expect(sql).not.toContain('external_id');
-    expect(sql).not.toContain('metadata');
+    expect(sql).toContain("conversations.metadata ->> 'runtime' = 'dify-task'");
   });
 
   it.each(['messages.getLatest', 'messages.getPage', 'messages.findDuplicate'])(
@@ -231,6 +284,15 @@ describe('trusted backend conversation boundary', () => {
   ])(
     'preserves owner-only local %s even after app revocation',
     async action => {
+      if (action === 'conversations.deleteConversation') {
+        jest.mocked(runWithPgSystemContext).mockImplementationOnce(operation =>
+          operation({
+            query: async (sql: string, params: unknown[]) => ({
+              rows: await systemQuery(sql, params),
+            }),
+          } as unknown as PoolClient)
+        );
+      }
       systemQuery.mockResolvedValueOnce([{ id: 'conversation' }]);
       const response = await handleConversationAction(
         action,

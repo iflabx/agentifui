@@ -29,6 +29,7 @@ export interface DifyAppConfig {
   displayName?: string;
   description?: string;
   appType?: string;
+  taskInput?: { text_variable?: string | null };
 }
 
 interface ResolveDifyConfigOptions {
@@ -278,5 +279,7 @@ export async function resolveDifyConfig(
     displayName: serviceInstance.display_name || serviceInstance.instance_id,
     description: serviceInstance.description || undefined,
     appType: readDifyAppType(serviceInstance.config),
+    taskInput: serviceInstance.config?.task_input as
+      { text_variable?: string | null } | undefined,
   };
 }

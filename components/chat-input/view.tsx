@@ -22,6 +22,9 @@ export interface ChatInputViewProps {
   onValueChange: (value: string) => void;
   onSubmit: () => void | Promise<void>;
   disabled?: boolean;
+  embedded?: boolean;
+  textDisabled?: boolean;
+  canSubmit?: boolean;
   stopDisabled?: boolean;
   isProcessing?: boolean;
   onStop?: () => void;
@@ -46,6 +49,9 @@ export function ChatInputView({
   onValueChange,
   onSubmit,
   disabled = false,
+  embedded = false,
+  textDisabled = false,
+  canSubmit = Boolean(value.trim()),
   stopDisabled = disabled,
   isProcessing = false,
   onStop,
@@ -94,7 +100,7 @@ export function ChatInputView({
       isWaiting ||
       composing.current ||
       submitting.current ||
-      !value.trim()
+      !canSubmit
     )
       return;
     submitting.current = true;
@@ -110,6 +116,7 @@ export function ChatInputView({
   const busy = isWaiting || pending;
   return (
     <ChatContainer
+      embedded={embedded}
       className={className}
       widthClass={widthClass}
       isWelcomeScreen={isWelcomeScreen}
@@ -124,7 +131,7 @@ export function ChatInputView({
           onChange={event => onValueChange(event.target.value)}
           placeholder={placeholder}
           maxHeight={maxHeight}
-          disabled={disabled}
+          disabled={disabled || textDisabled}
           onHeightChange={updateHeight}
           onCompositionStart={() => {
             composing.current = true;
@@ -172,7 +179,7 @@ export function ChatInputView({
               disabled={
                 stopping
                   ? stopDisabled
-                  : disabled || busy || isProcessing || !value.trim()
+                  : disabled || busy || isProcessing || !canSubmit
               }
               ariaLabel={
                 stopping

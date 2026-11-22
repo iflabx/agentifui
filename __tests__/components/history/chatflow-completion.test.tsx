@@ -108,6 +108,9 @@ jest.mock('@components/file-preview/file-preview-canvas', () => ({
 jest.mock('@components/langchain/agent-chat', () => ({
   AgentChat: () => <div>Agent view</div>,
 }));
+jest.mock('@components/task-chat/task-chat', () => ({
+  TaskChat: () => <div>Task view</div>,
+}));
 jest.mock('@components/chatflow/chatflow-node-tracker', () => ({
   ChatflowNodeTracker: () => <div>Execution process</div>,
 }));

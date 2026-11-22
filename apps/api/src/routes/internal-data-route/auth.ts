@@ -75,7 +75,11 @@ export async function ensureActionPermission(
   }
 
   if (AUTH_ACTIONS.has(action)) {
-    const resolved = await resolveActorIdentity(request, config);
+    const resolved = await resolveActorIdentity(
+      request,
+      config,
+      action.startsWith('appExecutions.')
+    );
     if (!resolved.ok) {
       return { error: resolved.error };
     }
@@ -117,13 +121,18 @@ export async function loadConversationOwnedByActor(
 export const unboundConversationSql = `NOT EXISTS (
   SELECT 1 FROM backend_conversations binding
   WHERE binding.conversation_id = conversations.id
-)`;
+ ) AND COALESCE(conversations.metadata ->> 'runtime', '') <> 'dify-task'`;
 
 export function boundConversationAccessSql(
   actorParameter: '$1' | '$2'
 ): string {
   return `(
     ${unboundConversationSql}
+    OR (
+      conversations.metadata ->> 'runtime' = 'dify-task'
+      AND conversations.status = 'active'
+      AND ${appAccessSql('conversations.app_id', `${actorParameter}::uuid`)}
+    )
     OR EXISTS (
       SELECT 1
       FROM backend_conversations binding
@@ -151,6 +160,43 @@ export function boundConversationAccessSql(
   )`;
 }
 
+export function appAccessSql(
+  appExpression: string,
+  actorExpression: string
+): string {
+  return `EXISTS (
+    SELECT 1 FROM service_instances access_instance
+    JOIN providers access_provider ON access_provider.id = access_instance.provider_id
+    JOIN profiles access_actor ON access_actor.id = ${actorExpression}
+    WHERE access_instance.id::text = (${appExpression})::text
+      AND access_actor.status = 'active'
+      AND access_provider.is_active = TRUE
+      AND (
+        access_actor.role = 'admin' OR access_instance.visibility = 'public'
+        OR (access_instance.visibility = 'group_only' AND EXISTS (
+          SELECT 1 FROM group_app_permissions access_permission
+          JOIN group_members access_member ON access_member.group_id = access_permission.group_id
+          WHERE access_permission.service_instance_id = access_instance.id
+            AND access_permission.is_enabled = TRUE
+            AND access_member.user_id = access_actor.id
+        ))
+      )
+  )`;
+}
+
+export function executionAccessSql(actorParameter: string): string {
+  return `app_executions.user_id = ${actorParameter}::uuid
+    AND app_executions.status <> 'deleted'::execution_status
+    AND ${appAccessSql('app_executions.service_instance_id', `${actorParameter}::uuid`)}
+    AND (app_executions.conversation_id IS NULL OR EXISTS (
+      SELECT 1 FROM conversations execution_conversation
+      WHERE execution_conversation.id = app_executions.conversation_id
+        AND execution_conversation.user_id = ${actorParameter}::uuid
+        AND execution_conversation.app_id = app_executions.service_instance_id::text
+        AND execution_conversation.status = 'active'
+    ))`;
+}
+
 export async function loadExecutionOwnedByActor(
   executionId: string,
   actorUserId: string
@@ -161,6 +207,8 @@ export async function loadExecutionOwnedByActor(
         id::text,
         user_id::text,
         service_instance_id::text,
+        conversation_id::text,
+        submission_id::text,
         execution_type::text,
         external_execution_id,
         task_id,
@@ -178,7 +226,7 @@ export async function loadExecutionOwnedByActor(
         completed_at::text
       FROM app_executions
       WHERE id = $1::uuid
-        AND user_id = $2::uuid
+        AND ${executionAccessSql('$2')}
       LIMIT 1
     `,
     [executionId, actorUserId],

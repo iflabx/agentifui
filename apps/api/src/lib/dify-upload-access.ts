@@ -76,7 +76,10 @@ async function checkDifyUploadAccess(
         AND $5::uuid IS NULL AND ($4::uuid IS NULL OR c.id=$4::uuid)
         AND $3 IN(SELECT dify_upload_file_ids(m.metadata)))
     OR EXISTS (SELECT 1 FROM app_executions e WHERE e.user_id=$1::uuid AND e.service_instance_id=$2::uuid
-      AND e.status<>'deleted' AND $4::uuid IS NULL AND ($5::uuid IS NULL OR e.id=$5::uuid)
+      AND e.status<>'deleted' AND ($4::uuid IS NULL OR e.conversation_id=$4::uuid) AND ($5::uuid IS NULL OR e.id=$5::uuid)
+      AND (e.conversation_id IS NULL OR EXISTS (SELECT 1 FROM conversations execution_conversation
+        WHERE execution_conversation.id=e.conversation_id AND execution_conversation.status='active'
+          AND execution_conversation.user_id=$1::uuid AND execution_conversation.app_id=$2::text))
       AND $3 IN(SELECT dify_upload_file_ids(e.inputs)))
     OR ($6 AND $4::uuid IS NULL AND $5::uuid IS NULL AND EXISTS(SELECT 1 FROM dify_upload_access
       WHERE user_id=$1::uuid AND service_instance_id=$2::uuid AND file_id=$3 AND NOT bound_once))

@@ -26,6 +26,7 @@ export interface DifyProxyTargetConfig {
   rootTaskId?: string;
   messageEdit?: DifyMessageEdit;
   credentialVersion?: string;
+  taskInput?: { text_variable?: string | null };
   difyApiKey: string;
   difyApiUrl: string;
   appType?: string;

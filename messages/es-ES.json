@@ -1440,6 +1440,19 @@
           }
         },
         "page": {
+          "taskInput": {
+            "label": "Texto principal de la tarea",
+            "auto": "Automático (un único campo de texto libre)",
+            "parametersOnly": "Solo parámetros",
+            "autoResolved": "Asignación automática: el texto se envía a {variable}.",
+            "explicitResolved": "Asignación explícita: el texto se envía a {variable}.",
+            "parametersOnlyNote": "El texto está desactivado. Utilice parámetros y archivos.",
+            "ambiguous": "Hay varios campos de texto libre: seleccione una variable principal o solo parámetros. El texto está desactivado.",
+            "noText": "No hay campos de texto libre. El texto está desactivado.",
+            "invalid": "La variable {variable} no existe o no es de texto libre. Corrija la asignación antes de ejecutar.",
+            "invalidOption": "Variable no disponible: {variable}",
+            "schemaNote": "Según el esquema de parámetros guardado; sincronice con Dify para actualizarlo."
+          },
           "title": {
             "edit": "Editar Instancia de Aplicación",
             "add": "Agregar Instancia de Aplicación"
@@ -2924,5 +2937,30 @@
     "confirmationUnknown": "Resultado sin confirmar. Consulte el estado sin volver a enviar.",
     "confirmationSingleTask": "Este agente admite una tarea por conversación. Inicie otra conversación para una nueva tarea.",
     "confirmationNotDispatched": "Su decisión no se envió. Revísela e inténtelo de nuevo."
+  },
+  "taskChat": {
+    "loading": "Cargando tareas…",
+    "loginRequired": "Inicia sesión",
+    "unavailable": "Aplicación no disponible",
+    "independent": "Cada envío se ejecuta de forma independiente, sin memoria de tareas anteriores.",
+    "placeholder": "Introduce la tarea",
+    "parametersOnly": "Completa los parámetros o adjunta los archivos necesarios arriba",
+    "taskTitle": "Ejecución de tarea",
+    "replayed": "Este envío ya existe y no se repetirá automáticamente. Comprueba su estado guardado.",
+    "submitFailed": "No se pudo confirmar el envío. Reintentar conserva su identificador.",
+    "loadOlder": "Cargar tareas anteriores",
+    "historyFailed": "Historial no disponible. Comprueba el acceso y reintenta.",
+    "retry": "Reintentar",
+    "welcome": "Inicia una tarea con la entrada inferior.",
+    "parameterTask": "Tarea con parámetros o archivos",
+    "noProcess": "No hay detalles de ejecución guardados",
+    "running": "En ejecución",
+    "unknown": "Resultado sin confirmar. La tarea original puede seguir ejecutándose; no se reiniciará automáticamente.",
+    "completed": "Completada",
+    "failed": "Fallida",
+    "stopped": "Detenida",
+    "runAgain": "Reutilizar estas entradas",
+    "viewResult": "Ver resultado completo",
+    "recoverTask": "Marcar interrumpida y preparar otra ejecución"
   }
 }
