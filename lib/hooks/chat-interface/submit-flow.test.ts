@@ -108,6 +108,171 @@ describe('executeChatSubmit', () => {
     };
   };
 
+  it('reports acceptance and replaces the source path without requiring the source ID to stay preferred', async () => {
+    const { input, userMessage } = createInput();
+    useChatStore.setState({
+      messages: [
+        { id: 'prefix', text: 'prefix', isUser: true },
+        {
+          id: 'client-source',
+          db_id: 'saved-source',
+          text: 'old question',
+          isUser: true,
+        },
+        { id: 'old-answer', text: 'old answer', isUser: false },
+        { id: 'old-tail', text: 'old tail', isUser: true },
+      ],
+    });
+    input.addMessage.mockImplementation(() => {
+      useChatStore.setState(state => ({
+        messages: [...state.messages, userMessage],
+      }));
+      return userMessage;
+    });
+    mockPrepareChatSubmitConversationState.mockReturnValueOnce(false);
+    mockStartExistingChatConversation.mockImplementationOnce(async options => {
+      options.onAccepted({ externalId: 'conv-1', taskId: 'task-1' });
+      return {
+        answerStream: (async function* () {})(),
+        finalDbConvUUID: 'db-1',
+      };
+    });
+    expect(
+      await executeChatSubmit({ ...input, editSourceId: 'client-source' })
+    ).toEqual({ ok: true, surfaced: true, editResult: true });
+    expect(useChatStore.getState().messages.map(message => message.id)).toEqual(
+      ['prefix', userMessage.id]
+    );
+  });
+
+  it('does not report acceptance or hide the source when upstream refuses the edit', async () => {
+    const { input } = createInput();
+    useChatStore.setState({
+      messages: [{ id: 'source', text: 'original', isUser: true }],
+    });
+    mockPrepareChatSubmitConversationState.mockReturnValueOnce(false);
+    mockStartExistingChatConversation.mockRejectedValueOnce(
+      new Error('refused')
+    );
+    expect(
+      await executeChatSubmit({ ...input, editSourceId: 'source' })
+    ).toEqual({ ok: false, surfaced: true, editResult: false });
+    expect(useChatStore.getState().messages[0].id).toBe('source');
+    expect(mockHandleChatSubmitStreamError).not.toHaveBeenCalled();
+  });
+
+  it('keeps a dispatched edit uncertain after transport loss without persisting an error answer', async () => {
+    const { input } = createInput();
+    useChatStore.setState({
+      messages: [{ id: 'source', text: 'original', isUser: true }],
+    });
+    mockPrepareChatSubmitConversationState.mockReturnValueOnce(false);
+    mockStartExistingChatConversation.mockImplementationOnce(async options => {
+      options.onDispatch();
+      throw new Error('connection lost');
+    });
+    const result = await executeChatSubmit({
+      ...input,
+      editSourceId: 'source',
+      dbConversationUUID: 'local',
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      editResult: {
+        status: 'unknown',
+        submissionId: expect.any(String),
+        check: expect.any(Function),
+      },
+    });
+    expect(mockHandleChatSubmitStreamError).not.toHaveBeenCalled();
+    expect(input.saveErrorPlaceholder).not.toHaveBeenCalled();
+    expect(useChatStore.getState().messages[0].id).toBe('source');
+  });
+
+  it('treats an unacknowledged normal EOF as unknown and does not persist it as an accepted turn', async () => {
+    const { input } = createInput();
+    mockPrepareChatSubmitConversationState.mockReturnValueOnce(false);
+    mockStartExistingChatConversation.mockImplementationOnce(async options => {
+      options.onDispatch();
+      return {
+        answerStream: (async function* () {})(),
+        finalDbConvUUID: 'local',
+      };
+    });
+    const result = await executeChatSubmit({
+      ...input,
+      editSourceId: 'source',
+      dbConversationUUID: 'local',
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      editResult: { status: 'unknown' },
+    });
+    expect(mockPersistChatMessagesAfterStreaming).not.toHaveBeenCalled();
+    expect(mockFinalizeChatSubmitStream).not.toHaveBeenCalled();
+  });
+
+  it('does not roll an accepted edit back when later generation fails', async () => {
+    const { input, userMessage } = createInput();
+    useChatStore.setState({
+      messages: [{ id: 'source', text: 'original', isUser: true }],
+    });
+    input.addMessage.mockImplementation(() => {
+      useChatStore.setState(state => ({
+        messages: [...state.messages, userMessage],
+      }));
+      return userMessage;
+    });
+    mockPrepareChatSubmitConversationState.mockReturnValueOnce(false);
+    mockStartExistingChatConversation.mockImplementationOnce(async options => {
+      options.onAccepted({ externalId: 'native', taskId: 'task' });
+      throw new Error('generation failed');
+    });
+    expect(
+      await executeChatSubmit({ ...input, editSourceId: 'source' })
+    ).toMatchObject({ ok: true, editResult: true });
+    expect(useChatStore.getState().messages.map(message => message.id)).toEqual(
+      [userMessage.id]
+    );
+    expect(mockHandleChatSubmitStreamError).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears only its local partial stream on unknown EOF without persisting it', async () => {
+    const { input } = createInput();
+    useChatStore.setState({
+      messages: [
+        { id: 'source', text: 'original', isUser: true },
+        { id: 'partial', text: 'partial reply', isUser: false },
+      ],
+    });
+    mockPrepareChatSubmitConversationState.mockReturnValueOnce(false);
+    mockStartExistingChatConversation.mockImplementationOnce(async options => {
+      options.onDispatch();
+      return {
+        answerStream: (async function* () {
+          yield 'partial reply';
+        })(),
+        finalDbConvUUID: 'local',
+      };
+    });
+    mockConsumeChatAnswerStream.mockResolvedValueOnce({
+      assistantMessageId: 'partial',
+      assistantText: 'partial reply',
+    });
+    const result = await executeChatSubmit({
+      ...input,
+      editSourceId: 'source',
+      dbConversationUUID: 'local',
+    });
+    expect(result.editResult).toMatchObject({ status: 'unknown' });
+    expect(input.finalizeStreamingMessage).toHaveBeenCalledWith('partial');
+    expect(useChatStore.getState().messages.map(message => message.id)).toEqual(
+      ['source']
+    );
+    expect(mockPersistChatMessagesAfterStreaming).not.toHaveBeenCalled();
+    expect(mockFinalizeChatSubmitStream).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     useChatStore.setState({

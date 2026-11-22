@@ -4,6 +4,7 @@ import { conversationEvents } from '@lib/hooks/use-combined-conversations';
 import { consumeAguiStream } from '@lib/services/client/agui-stream';
 import {
   AgentRequestError,
+  agentMessageFitsRequest,
   agentPath,
   agentRequest,
   agentRunSettled,
@@ -19,9 +20,14 @@ import {
   type LangchainDraftSnapshot,
   useLangchainDraftStore,
 } from '@lib/stores/langchain-draft-store';
+import type {
+  EditRecoveryReceipt,
+  EditSubmissionResult,
+} from '@lib/types/message-edit';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { replaceMessagePath } from '../../packages/shared/src/message-edit';
 import {
   agentDisplayHistory,
   projectAgentView,
@@ -36,6 +42,23 @@ import {
 import type { AgentViewState } from './state';
 
 const emptyView = (): AgentViewState => ({ messages: [], tools: [] });
+export function editViewPrefix(
+  view: AgentViewState,
+  sourceId: string
+): AgentViewState {
+  const messages = replaceMessagePath(view.messages, sourceId);
+  const runIds = new Set(
+    messages.map(message => message.metadata?.backend_run_id)
+  );
+  return {
+    ...view,
+    run: undefined,
+    runId: undefined,
+    messages,
+    tools: view.tools.filter(tool => runIds.has(tool.runId)),
+    resultRuns: view.resultRuns?.filter(run => runIds.has(run.id || run.runId)),
+  };
+}
 interface Detail {
   conversation: AgentConversation;
   messages: AgentMessage[];
@@ -82,6 +105,9 @@ export function useAgentChat(
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<AgentRequestError | null>(null);
   const [unconfirmed, setUnconfirmed] = useState(false);
+  const [editRecovery, setEditRecovery] = useState<EditRecoveryReceipt | null>(
+    null
+  );
   const [statusCheckVersion, setStatusCheckVersion] = useState(0);
   const [statusCheckExhausted, setStatusCheckExhausted] = useState(false);
   const [pendingSubmissionId, setPendingSubmissionId] = useState<string | null>(
@@ -343,6 +369,10 @@ export function useAgentChat(
           if (polling.signal.aborted || version !== navigationVersion.current)
             return;
           if (submission.state === 'rejected' && !submission.runId) {
+            setEditRecovery({
+              submissionId: pendingSubmissionId,
+              accepted: false,
+            });
             forgetPending(pendingSubmissionId);
             setPendingSubmissionId(null);
             setUnconfirmed(false);
@@ -374,6 +404,10 @@ export function useAgentChat(
           if (polling.signal.aborted || version !== navigationVersion.current)
             return;
           forgetPending(pendingSubmissionId, true);
+          setEditRecovery({
+            submissionId: pendingSubmissionId,
+            accepted: true,
+          });
           setPendingSubmissionId(null);
           conversationEvents.emit();
         }
@@ -436,10 +470,12 @@ export function useAgentChat(
 
   const send = async (
     content: string,
-    draftSnapshot?: LangchainDraftSnapshot
+    draftSnapshot?: LangchainDraftSnapshot,
+    editSourceId?: string
   ) => {
     if (
       !ready ||
+      (singleTask && Boolean(view.conversationId)) ||
       (!view.conversationId && !newConversationsEnabled) ||
       busy ||
       sending.current ||
@@ -452,6 +488,20 @@ export function useAgentChat(
       !content.trim()
     )
       return;
+    if (!agentMessageFitsRequest(content, view.conversationId)) {
+      setError(
+        new AgentRequestError(413, {
+          code: 'AGENT_MESSAGE_TOO_LONG',
+          source: 'frontend',
+          severity: 'warn',
+          retryable: false,
+          userMessage: 'AGENT_MESSAGE_TOO_LONG',
+          requestId: '',
+          occurredAt: new Date().toISOString(),
+        })
+      );
+      return false;
+    }
     sending.current = true;
     const currentGeneration = generation.current;
     const version = navigationVersion.current;
@@ -466,8 +516,9 @@ export function useAgentChat(
     const payload = {
       submissionId: crypto.randomUUID(),
       content: content.trim(),
+      ...(editSourceId ? { editSourceId } : {}),
     };
-    if (protocol.current === 'ag-ui/1.0' && actorId)
+    if (actorId)
       useLangchainDraftStore.getState().rememberSubmission(actorId, {
         appId,
         target: view.conversationId || 'new',
@@ -476,9 +527,7 @@ export function useAgentChat(
       });
     setBusy(true);
     setError(null);
-    setPendingSubmissionId(
-      protocol.current === 'ag-ui/1.0' ? payload.submissionId : null
-    );
+    setPendingSubmissionId(payload.submissionId);
     setView(previous => ({
       ...previous,
       run: undefined,
@@ -489,6 +538,10 @@ export function useAgentChat(
       ],
     }));
     let latest: AgentViewState = { ...view, run: undefined, runId: undefined };
+    let editResult: EditSubmissionResult = {
+      status: 'unknown',
+      submissionId: payload.submissionId,
+    };
     try {
       const response = await fetch(agentPath(appId, '/runs'), {
         method: 'POST',
@@ -514,7 +567,7 @@ export function useAgentChat(
           conversationId: view.conversationId,
           history: acceptance =>
             agentDisplayHistory([
-              ...view.messages,
+              ...replaceMessagePath(view.messages, editSourceId),
               {
                 id: acceptance.userMessageId,
                 role: 'user',
@@ -523,7 +576,10 @@ export function useAgentChat(
             ]),
           accept: (snapshot, acceptance) => {
             if (!ownsView()) return;
+            editResult = true;
             setPendingSubmissionId(null);
+            if (editSourceId && !accepted)
+              latest = editViewPrefix(latest, editSourceId);
             latest = projectAgentView(latest, snapshot);
             setView(latest);
             if (!accepted) {
@@ -555,9 +611,27 @@ export function useAgentChat(
       } else
         await consumeAgentStream(response, event => {
           if (!ownsView()) return;
+          if (event.type === 'accepted' && editSourceId) {
+            latest = {
+              ...editViewPrefix(latest, editSourceId),
+              messages: [
+                ...replaceMessagePath(view.messages, editSourceId),
+                {
+                  id: payload.submissionId,
+                  role: 'user',
+                  content: payload.content,
+                },
+              ],
+            };
+          }
           latest = reduceAgentEvent(latest, event);
-          setView(previous => reduceAgentEvent(previous, event));
+          setView(previous =>
+            editSourceId ? latest : reduceAgentEvent(previous, event)
+          );
           if (event.type === 'accepted') {
+            editResult = true;
+            setPendingSubmissionId(null);
+            forgetPending(payload.submissionId, true);
             draftScopes.current.set(event.conversationId, draftScope);
             if (draftScope.startsWith('new:')) newDraftVersion.current += 1;
             lastRouteConversation.current = event.conversationId;
@@ -565,7 +639,7 @@ export function useAgentChat(
             conversationEvents.emit();
           }
         });
-      if (!ownsView()) return Boolean(latest.runId);
+      if (!ownsView()) return editSourceId ? editResult : Boolean(latest.runId);
       if (!latest.run || !agentRunSettled(latest.run)) {
         setView(markAgentStreamInterrupted);
         setUnconfirmed(true);
@@ -575,7 +649,7 @@ export function useAgentChat(
         if (ownsView()) conversationEvents.emit();
       }
     } catch (failure) {
-      if (!ownsView()) return Boolean(latest.runId);
+      if (!ownsView()) return editSourceId ? editResult : Boolean(latest.runId);
       setError(
         failure instanceof AgentRequestError
           ? failure
@@ -583,12 +657,16 @@ export function useAgentChat(
       );
       if (failure instanceof AgentRequestError && !latest.runId) {
         if (
-          protocol.current !== 'ag-ui/1.0' ||
-          (failure.status >= 400 &&
-            failure.status < 500 &&
-            (failure.status !== 409 ||
-              failure.detail?.code === 'AGENT_RESULT_PROFILE_DISABLED'))
+          failure.status >= 400 &&
+          failure.status < 500 &&
+          failure.status !== 408 &&
+          (failure.status !== 409 ||
+            [
+              'AGENT_RESULT_PROFILE_DISABLED',
+              'AGENT_EDIT_SOURCE_UNAVAILABLE',
+            ].includes(failure.detail?.code ?? ''))
         ) {
+          editResult = false;
           setView(view);
           setPendingSubmissionId(null);
           forgetPending(payload.submissionId);
@@ -608,7 +686,7 @@ export function useAgentChat(
         setBusy(false);
       }
     }
-    return Boolean(latest.runId);
+    return editSourceId ? editResult : Boolean(latest.runId);
   };
 
   const remove = async () => {
@@ -706,6 +784,17 @@ export function useAgentChat(
     busy,
     error,
     unconfirmed,
+    editRecovery,
+    pendingEdit:
+      actorId && pendingSubmissionId
+        ? useLangchainDraftStore
+            .getState()
+            .findSubmission(
+              actorId,
+              appId,
+              view.conversationId || lastRouteConversation.current || 'new'
+            )
+        : undefined,
     statusCheckExhausted,
     retryStatus: () => setStatusCheckVersion(previous => previous + 1),
     historyLoading,

@@ -157,7 +157,7 @@ beforeAll(async () => {
     });
     incoming.on('end', () => {
       const body = (raw ? JSON.parse(raw) : {}) as Record<string, unknown>;
-      const path = incoming.url || '';
+      const path = new URL(incoming.url || '/', 'http://localhost').pathname;
       calls.push({ path, body });
       if (incoming.headers.authorization !== `Bearer ${serviceKey}`) {
         response.writeHead(401);
@@ -416,6 +416,121 @@ afterAll(async () => {
     if (original[name] === undefined) delete process.env[name];
     else process.env[name] = original[name];
   }
+});
+
+it('activates legacy Dify edits after acceptance and keeps delayed browser saves idempotent', async () => {
+  const conversationId = randomUUID();
+  const nativeId = randomUUID();
+  const sourceId = randomUUID();
+  await database.query(
+    'INSERT INTO conversations(id,user_id,title,app_id,external_id) VALUES($1,$2,$3,$4,$5)',
+    [conversationId, actors[0], 'Legacy edit test', apps[0], nativeId]
+  );
+  await database.query(
+    `INSERT INTO messages(id,conversation_id,user_id,role,content,metadata,sequence_index,created_at)
+     VALUES($1,$2,$3,'user','Original','{}',0,NOW()-interval '2 seconds'),
+       ($4,$2,NULL,'assistant','Old answer','{}',1,NOW()-interval '1 second')`,
+    [sourceId, conversationId, actors[0], randomUUID()]
+  );
+  const clientMessageId = `msg-${Date.now()}-synthetic`;
+  const response = await servers[0].inject({
+    method: 'POST',
+    url: `/api/dify/${marker}-0/chat-messages`,
+    headers: {
+      cookie: `session_token=${tokens[0]}`,
+      'x-agentifui-submission-id': randomUUID(),
+    },
+    payload: {
+      query: 'Revised',
+      conversation_id: nativeId,
+      user: actors[0],
+      inputs: {},
+      response_mode: 'streaming',
+      editSourceId: sourceId,
+      editMessageId: clientMessageId,
+    },
+  });
+  expect({
+    status: response.statusCode,
+    error: response.statusCode === 200 ? null : response.json(),
+  }).toEqual({ status: 200, error: null });
+  expect(generations()).toHaveLength(1);
+  expect(generations()[0].body.query).toContain(
+    'Replacement request:\nRevised'
+  );
+  expect(generations()[0].body).not.toHaveProperty('editSourceId');
+  const storedRows = (
+    await database.query(
+      'SELECT * FROM messages WHERE conversation_id=$1 ORDER BY created_at',
+      [conversationId]
+    )
+  ).rows;
+  expect(storedRows).toHaveLength(3);
+  expect(storedRows[0].metadata.edit_hidden).toBe(true);
+  expect(storedRows[1].metadata.edit_hidden).toBe(true);
+  expect(storedRows[2].content).toBe('Revised');
+  expect(storedRows[2].metadata.edit_source_id).toBe(sourceId);
+  expect(storedRows[2].external_id).toBeTruthy();
+  const delayedSave = await action('messages.save', {
+    message: {
+      conversation_id: conversationId,
+      user_id: actors[0],
+      role: 'user',
+      content: 'Revised',
+      metadata: { client_message_id: clientMessageId, edit_hidden: false },
+    },
+  });
+  expect(delayedSave.statusCode).toBe(200);
+  expect(
+    (
+      await database.query(
+        'SELECT count(*)::int AS count FROM messages WHERE conversation_id=$1',
+        [conversationId]
+      )
+    ).rows[0].count
+  ).toBe(3);
+  const history = await action('messages.getPage', {
+    conversationId,
+    limit: 20,
+  });
+  expect(history.statusCode).toBe(200);
+  expect(JSON.stringify(history.json())).not.toContain('Old answer');
+  expect(JSON.stringify(history.json())).toContain('Revised');
+});
+
+it('keeps edited Dify user text separate from the implicit upstream query', async () => {
+  const first = await stored(await submit('first'));
+  await submit('second', { conversationId: first.conversation_id });
+  const edited = await submit('replacement', {
+    conversationId: first.conversation_id,
+    extra: { editSourceId: first.user_message_id },
+  });
+  const run = await stored(edited);
+  expect(run.execution_status).toBe('success');
+  expect(run.thread_id).toBe(first.thread_id);
+  expect(generations().at(-1)?.body.query).toContain(
+    'Replacement request:\nreplacement'
+  );
+  const history = (await get(`conversations/${first.conversation_id}`)).json();
+  expect(history.messages).toHaveLength(2);
+  expect(history.messages[0].content).toBe('replacement');
+  expect(history.messages[0].metadata.edit_source_id).toBe(
+    first.user_message_id
+  );
+  expect(history.runs).toHaveLength(1);
+  expect(
+    run.result.agui.messages.filter(
+      (message: { role: string }) => message.role === 'user'
+    )
+  ).toEqual([expect.objectContaining({ content: 'replacement' })]);
+  expect(
+    (
+      await database.query(
+        'SELECT count(*)::int AS count FROM messages WHERE conversation_id=$1',
+        [first.conversation_id]
+      )
+    ).rows[0].count
+  ).toBe(6);
 });
 
 it('saves two negotiated turns once with trusted native identity and complete local history across API replicas', async () => {

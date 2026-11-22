@@ -1,6 +1,7 @@
 /** @jest-environment node */
 import {
   AgentRequestError,
+  agentMessageFitsRequest,
   agentPath,
   agentRequest,
   consumeAgentStream,
@@ -8,6 +9,16 @@ import {
 import type { AgentEvent } from './langchain-api';
 
 describe('agent client stream', () => {
+  it('counts the full visible UTF-16 text and serialized request without truncation', () => {
+    expect(agentMessageFitsRequest('a'.repeat(16000), 'conversation')).toBe(
+      true
+    );
+    expect(agentMessageFitsRequest('a'.repeat(16001))).toBe(false);
+    expect(agentMessageFitsRequest('😀'.repeat(8000))).toBe(true);
+    expect(agentMessageFitsRequest('😀'.repeat(8001))).toBe(false);
+    expect(agentMessageFitsRequest('a' + '\u0001'.repeat(12000))).toBe(false);
+    expect(agentMessageFitsRequest('a' + '\u0001'.repeat(10900))).toBe(false);
+  });
   it('reads fragmented UTF-8 data events without persisting or generating requests', async () => {
     const bytes = new TextEncoder().encode(
       'data: {"type":"text","messageId":"one","delta":"你好"}\r\n\r\ndata: {"type":"status","executionStatus":"success","persistenceStatus":"saved"}\n\n'

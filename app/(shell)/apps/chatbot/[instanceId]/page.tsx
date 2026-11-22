@@ -7,6 +7,7 @@ import {
   WelcomeScreen,
 } from '@components/chat';
 import { ChatInput } from '@components/chat-input';
+import { DifyEditProvider } from '@components/chat-input/edit-resend';
 import { DynamicSuggestedQuestions } from '@components/chat/dynamic-suggested-questions';
 import { AgentAppEntry } from '@components/langchain/agent-app-entry';
 import {
@@ -247,7 +248,11 @@ function LegacyAppDetailPage() {
 
   // wrap handleSubmit, implement UI switch logic
   const handleSubmit = useCallback(
-    async (message: string, files?: ChatUploadFile[]) => {
+    async (
+      message: string,
+      files?: ChatUploadFile[],
+      editSourceId?: string
+    ) => {
       try {
         // immediately set submit state to true
         setIsSubmitting(true);
@@ -258,11 +263,17 @@ function LegacyAppDetailPage() {
         console.log('[AppDetail] UI state updated, start sending message');
 
         // call original handleSubmit, it will create conversation and send message
-        await originalHandleSubmit(message, files);
+        const result = await originalHandleSubmit(
+          message,
+          files,
+          undefined,
+          editSourceId
+        );
 
         console.log(
           '[AppDetail] message sent successfully, waiting for route change'
         );
+        return result;
       } catch (error) {
         console.error('[AppDetail] send message failed:', error);
 
@@ -357,80 +368,82 @@ function LegacyAppDetailPage() {
   }
 
   return (
-    <div
-      className={cn(
-        'relative flex h-full w-full flex-col',
-        'bg-stone-100 dark:bg-stone-800',
-        'text-stone-900 dark:text-gray-100'
-      )}
-    >
-      {/* Main content area with simplified layout */}
+    <DifyEditProvider>
       <div
         className={cn(
-          'relative flex min-h-0 flex-1 flex-col overflow-hidden',
-          'pt-10'
+          'relative flex h-full w-full flex-col',
+          'bg-stone-100 dark:bg-stone-800',
+          'text-stone-900 dark:text-gray-100'
         )}
-        style={
-          { '--chat-input-height': chatInputHeightVar } as React.CSSProperties
-        }
       >
-        {/* main content */}
-        <div className="min-h-0 flex-1">
-          {/* Simplified display logic using useWelcomeScreen */}
-          {isWelcomeScreen && messages.length === 0 ? (
-            <div
-              className={cn(
-                'h-full overflow-y-auto scroll-smooth',
-                'mx-auto w-full',
-                widthClass,
-                paddingClass
-              )}
-            >
-              <div className="py-8">
-                <div className="mb-8">
-                  <WelcomeScreen username={profile?.username} />
+        {/* Main content area with simplified layout */}
+        <div
+          className={cn(
+            'relative flex min-h-0 flex-1 flex-col overflow-hidden',
+            'pt-10'
+          )}
+          style={
+            { '--chat-input-height': chatInputHeightVar } as React.CSSProperties
+          }
+        >
+          {/* main content */}
+          <div className="min-h-0 flex-1">
+            {/* Simplified display logic using useWelcomeScreen */}
+            {isWelcomeScreen && messages.length === 0 ? (
+              <div
+                className={cn(
+                  'h-full overflow-y-auto scroll-smooth',
+                  'mx-auto w-full',
+                  widthClass,
+                  paddingClass
+                )}
+              >
+                <div className="py-8">
+                  <div className="mb-8">
+                    <WelcomeScreen username={profile?.username} />
+                  </div>
                 </div>
               </div>
-            </div>
-          ) : (
-            <div
-              ref={scrollRef}
-              className="chat-scroll-container h-full overflow-y-auto scroll-smooth"
-            >
-              <ChatLoader
-                messages={messages}
-                conversationAppId={conversationAppId}
-                isWaitingForResponse={isWaitingForResponse}
-                isLoadingInitial={false}
-              />
-            </div>
+            ) : (
+              <div
+                ref={scrollRef}
+                className="chat-scroll-container h-full overflow-y-auto scroll-smooth"
+              >
+                <ChatLoader
+                  messages={messages}
+                  conversationAppId={conversationAppId}
+                  isWaitingForResponse={isWaitingForResponse}
+                  isLoadingInitial={false}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* scroll to bottom button */}
+          <ScrollToBottomButton />
+
+          {/* input box background */}
+          <ChatInputBackdrop />
+
+          {/* Chat input with simplified configuration */}
+          <ChatInput
+            onSubmit={handleSubmit}
+            placeholder={t('startChatWith', {
+              appName: currentApp.display_name || t('defaultApp'),
+            })}
+            isProcessing={isProcessing}
+            isWaiting={isWaitingForResponse}
+            onStop={handleStopProcessing}
+            showModelSelector={false}
+            requireModelValidation={false}
+          />
+
+          {/* Show dynamic suggested questions when on welcome screen with no messages */}
+          {isWelcomeScreen && messages.length === 0 && (
+            <DynamicSuggestedQuestions onQuestionClick={sendDirectMessage} />
           )}
         </div>
-
-        {/* scroll to bottom button */}
-        <ScrollToBottomButton />
-
-        {/* input box background */}
-        <ChatInputBackdrop />
-
-        {/* Chat input with simplified configuration */}
-        <ChatInput
-          onSubmit={handleSubmit}
-          placeholder={t('startChatWith', {
-            appName: currentApp.display_name || t('defaultApp'),
-          })}
-          isProcessing={isProcessing}
-          isWaiting={isWaitingForResponse}
-          onStop={handleStopProcessing}
-          showModelSelector={false}
-          requireModelValidation={false}
-        />
-
-        {/* Show dynamic suggested questions when on welcome screen with no messages */}
-        {isWelcomeScreen && messages.length === 0 && (
-          <DynamicSuggestedQuestions onQuestionClick={sendDirectMessage} />
-        )}
       </div>
-    </div>
+    </DifyEditProvider>
   );
 }

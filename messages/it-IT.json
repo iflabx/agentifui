@@ -2394,6 +2394,23 @@
   },
   "components": {
     "chat": {
+      "editResend": {
+        "unconfirmed": "In attesa di conferma. Non inviare di nuovo; verifica lo stato.",
+        "checkStatus": "Verifica stato",
+        "editorLabel": "Modifica messaggio",
+        "send": "Invia",
+        "cancel": "Annulla",
+        "sendFailed": "La modifica non è stata accettata. Il testo è stato conservato.",
+        "sending": "Invio…",
+        "action": "Modifica e invia",
+        "notice": "Stai modificando un messaggio precedente. Dopo l’invio, la conversazione proseguirà da questo punto con la domanda modificata.",
+        "textOnly": "Solo testo: gli allegati originali non vengono aggiunti di nuovo.",
+        "exit": "Esci dalla modifica",
+        "replaceTitle": "Sostituire la bozza attuale?",
+        "replaceMessage": "Il testo e gli allegati selezionati verranno sostituiti. I messaggi storici e i file archiviati non saranno eliminati.",
+        "replaceConfirm": "Sostituisci bozza",
+        "tooLong": "Il messaggio completo è troppo lungo. Accorcialo e riprova; la bozza è conservata."
+      },
       "messageActions": {
         "copy": "Copia",
         "copied": "Copiato",

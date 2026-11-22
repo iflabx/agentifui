@@ -2394,6 +2394,23 @@
   },
   "components": {
     "chat": {
+      "editResend": {
+        "unconfirmed": "Bestätigung ausstehend. Nicht erneut senden, sondern den Status prüfen.",
+        "checkStatus": "Status prüfen",
+        "editorLabel": "Nachricht bearbeiten",
+        "send": "Senden",
+        "cancel": "Abbrechen",
+        "sendFailed": "Die Änderung wurde nicht angenommen. Ihre Eingabe bleibt erhalten.",
+        "sending": "Wird gesendet…",
+        "action": "Bearbeiten und senden",
+        "notice": "Frühere Nachricht bearbeiten. Nach dem Senden wird das Gespräch ab hier mit Ihrer geänderten Frage fortgesetzt.",
+        "textOnly": "Nur Text: ursprüngliche Anhänge werden nicht erneut angefügt.",
+        "exit": "Bearbeitung beenden",
+        "replaceTitle": "Aktuellen Entwurf ersetzen?",
+        "replaceMessage": "Der aktuelle Text und ausgewählte Anhänge werden ersetzt. Gespeicherte Nachrichten und Dateien werden nicht gelöscht.",
+        "replaceConfirm": "Entwurf ersetzen",
+        "tooLong": "Die vollständige Nachricht ist zu lang. Bitte kürzen und erneut versuchen. Der Entwurf bleibt erhalten."
+      },
       "messageActions": {
         "copy": "Kopieren",
         "copied": "Kopiert",

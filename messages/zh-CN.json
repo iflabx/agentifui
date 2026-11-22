@@ -2394,6 +2394,23 @@
   },
   "components": {
     "chat": {
+      "editResend": {
+        "unconfirmed": "正在确认提交结果，请勿重复发送，可查询状态。",
+        "checkStatus": "查询状态",
+        "editorLabel": "编辑消息",
+        "send": "发送",
+        "cancel": "取消",
+        "sendFailed": "修改尚未被接受，已保留编辑内容。",
+        "sending": "发送中…",
+        "action": "修改并发送",
+        "notice": "正在修改此前的消息。发送后，将从这里以修改后的问题继续对话。",
+        "textOnly": "仅复制文字，原附件不会重新附加。",
+        "exit": "退出修改",
+        "replaceTitle": "替换当前输入草稿？",
+        "replaceMessage": "当前文字和已选附件将被替换，不会删除历史消息或已存储的文件。",
+        "replaceConfirm": "替换草稿",
+        "tooLong": "完整消息过长，请缩短后重试；草稿已保留。"
+      },
       "messageActions": {
         "copy": "复制",
         "copied": "已复制",

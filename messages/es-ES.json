@@ -2394,6 +2394,23 @@
   },
   "components": {
     "chat": {
+      "editResend": {
+        "unconfirmed": "Esperando confirmación. No envíes de nuevo; consulta el estado.",
+        "checkStatus": "Consultar estado",
+        "editorLabel": "Editar mensaje",
+        "send": "Enviar",
+        "cancel": "Cancelar",
+        "sendFailed": "No se aceptó la modificación. Se conservan los cambios.",
+        "sending": "Enviando…",
+        "action": "Editar y enviar",
+        "notice": "Estás editando un mensaje anterior. Al enviarlo, la conversación continuará desde este punto con la pregunta modificada.",
+        "textOnly": "Solo texto: no se adjuntan de nuevo los archivos originales.",
+        "exit": "Salir de la edición",
+        "replaceTitle": "¿Reemplazar el borrador actual?",
+        "replaceMessage": "Se reemplazarán el texto actual y los adjuntos seleccionados. No se eliminarán mensajes históricos ni archivos almacenados.",
+        "replaceConfirm": "Reemplazar borrador",
+        "tooLong": "El mensaje completo es demasiado largo. Acórtalo e inténtalo de nuevo; el borrador se conserva."
+      },
       "messageActions": {
         "copy": "Copiar",
         "copied": "Copiado",

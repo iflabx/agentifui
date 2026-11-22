@@ -11,6 +11,25 @@ jest.mock('./container', () => ({
 }));
 
 describe('ChatInputView', () => {
+  it('allows stopping a generation while inline editing disables ordinary input', () => {
+    const stop = jest.fn();
+    render(
+      <ChatInputView
+        value="preserved draft"
+        onValueChange={jest.fn()}
+        onSubmit={jest.fn()}
+        disabled
+        stopDisabled={false}
+        isProcessing
+        onStop={stop}
+      />
+    );
+    expect(screen.getByRole('textbox')).toBeDisabled();
+    const button = screen.getByRole('button', { name: 'input.stopGeneration' });
+    expect(button).toBeEnabled();
+    fireEvent.click(button);
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
   it('is controlled and renders only supplied actions', () => {
     const change = jest.fn();
     render(

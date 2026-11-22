@@ -124,10 +124,16 @@ export function useChatPageState(conversationIdFromUrl: string | undefined) {
     (
       originalHandleSubmit: (
         message: string,
-        files?: unknown[]
+        files?: unknown[],
+        inputs?: Record<string, unknown>,
+        editSourceId?: string
       ) => Promise<unknown>
     ) => {
-      return async (message: string, files?: unknown[]) => {
+      return async (
+        message: string,
+        files?: unknown[],
+        editSourceId?: string
+      ) => {
         // Immediately set submitting state to true
         setIsSubmitting(true);
         // Immediately close welcome screen
@@ -159,7 +165,12 @@ export function useChatPageState(conversationIdFromUrl: string | undefined) {
         }
 
         // Call the original handleSubmit function
-        const result = await originalHandleSubmit(message, files);
+        const result = await originalHandleSubmit(
+          message,
+          files,
+          undefined,
+          editSourceId
+        );
 
         // If it's a new conversation, a temp ID may be created after submit
         // Need to ensure sidebar selection state is synced with current conversation ID again

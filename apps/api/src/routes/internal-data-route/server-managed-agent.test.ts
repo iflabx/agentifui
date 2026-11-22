@@ -1,8 +1,11 @@
 /** @jest-environment node */
+import type { PoolClient } from 'pg';
+
 import { LANGCHAIN_CAPABILITIES } from '../../lib/agent-backends';
 import {
   queryRowsWithPgSystemContext,
   queryRowsWithPgUserContext,
+  runWithPgSystemContext,
 } from '../../lib/pg-context';
 import { loadConversationOwnedByActor } from './auth';
 import { handleConversationAction } from './conversation-actions';
@@ -12,6 +15,7 @@ import { handleMessageAction } from './message-actions';
 jest.mock('../../lib/pg-context', () => ({
   queryRowsWithPgSystemContext: jest.fn(),
   queryRowsWithPgUserContext: jest.fn(),
+  runWithPgSystemContext: jest.fn(),
 }));
 
 const systemQuery = jest.mocked(queryRowsWithPgSystemContext);
@@ -19,6 +23,13 @@ const systemQuery = jest.mocked(queryRowsWithPgSystemContext);
 beforeEach(() => {
   jest.resetAllMocks();
   systemQuery.mockResolvedValue([]);
+  jest.mocked(runWithPgSystemContext).mockImplementation(operation =>
+    operation({
+      query: async (sql: string, params: unknown[]) => ({
+        rows: sql.includes('FOR UPDATE') ? [] : await systemQuery(sql, params),
+      }),
+    } as unknown as PoolClient)
+  );
 });
 
 describe('trusted backend conversation boundary', () => {

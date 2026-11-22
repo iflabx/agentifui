@@ -10,6 +10,7 @@ import { normalizeCompletedAssistantReply } from '@lib/utils/think-parser';
 
 import type { MutableRefObject } from 'react';
 
+import { isDefiniteEditRejection, pendingDifyEdit } from './edit-recovery';
 import type { ChatModerationTranslator } from './error-utils';
 import {
   mapChatUploadFilesToDifyFiles,
@@ -38,6 +39,7 @@ import type {
   ChatStreamCompletionData,
   ChatSubmissionAccepted,
   ChatSubmissionBinding,
+  ChatSubmitResult,
   ChatViewScope,
   DifyLocalFile,
 } from './types';
@@ -138,6 +140,7 @@ function buildAssistantPersistenceFallback(input: {
 }
 
 interface ExecuteChatSubmitInput {
+  editSourceId?: string;
   onAccepted?: (accepted: ChatSubmissionAccepted) => void;
   viewScope?: ChatViewScope;
   message: string;
@@ -193,7 +196,7 @@ interface ExecuteChatSubmitInput {
 
 export async function executeChatSubmit(
   input: ExecuteChatSubmitInput
-): Promise<void> {
+): Promise<ChatSubmitResult> {
   const isCurrent = input.viewScope?.isCurrent || (() => true);
   const guard =
     <Args extends unknown[]>(callback: (...args: Args) => void) =>
@@ -259,6 +262,10 @@ export async function executeChatSubmit(
   let answerStream: AsyncGenerator<string, void, undefined> | undefined;
   let assistantFallback: AssistantMessagePersistenceFallback | null = null;
   let getBinding: (() => ChatSubmissionBinding) | undefined;
+  let acceptedSubmission = false;
+  const editSubmissionId = input.editSourceId ? crypto.randomUUID() : undefined;
+  let editDispatched = false;
+  let editResult: ChatSubmitResult['editResult'];
   const refreshBinding = () => {
     const binding = getBinding?.();
     finalRealConvId = binding?.externalId || finalRealConvId;
@@ -266,6 +273,25 @@ export async function executeChatSubmit(
     finalDbConvUUID = binding?.dbConversationId || finalDbConvUUID;
   };
   const onAccepted = (accepted: ChatSubmissionAccepted) => {
+    acceptedSubmission = true;
+    if (input.editSourceId) {
+      const state = useChatStore.getState();
+      const source = state.messages.findIndex(
+        message =>
+          message.db_id === input.editSourceId ||
+          message.id === input.editSourceId
+      );
+      const replacement = state.messages.findIndex(
+        message => message.id === userMessage.id
+      );
+      if (isCurrent() && source >= 0 && replacement > source) {
+        useChatStore.setState({
+          messages: state.messages.filter(
+            (_, index) => index < source || index >= replacement
+          ),
+        });
+      }
+    }
     finalRealConvId = accepted.externalId;
     finalTaskId = accepted.taskId;
     input.setCurrentTaskId(accepted.taskId);
@@ -310,6 +336,11 @@ export async function executeChatSubmit(
           viewScope: input.viewScope,
         })
       : await startExistingChatConversation({
+          editSourceId: input.editSourceId,
+          submissionId: editSubmissionId,
+          onDispatch: () => {
+            editDispatched = true;
+          },
           onAccepted,
           message: input.message,
           inputs: input.inputs,
@@ -367,6 +398,8 @@ export async function executeChatSubmit(
     });
     assistantMessageId = answerStreamResult.assistantMessageId;
     refreshBinding();
+    if (input.editSourceId && !acceptedSubmission)
+      throw new Error('The edited submission has not been confirmed.');
 
     const completionData = await applyChatCompletionMetadata({
       completionPromise,
@@ -442,38 +475,89 @@ export async function executeChatSubmit(
     if (!finalDbConvUUID && conversationPersistencePromise) {
       finalDbConvUUID = await conversationPersistencePromise;
     }
-    handleChatSubmitStreamError({
-      error,
-      assistantMessageId,
-      assistantFallback,
-      finalDbConvUUID,
-      userMessage,
-      addMessage: input.addMessage,
-      setMessageError: input.setMessageError,
-      updateMessage: input.updateMessage,
-      saveMessage: input.saveMessage,
-      saveErrorPlaceholder: input.saveErrorPlaceholder,
-      moderationT: input.moderationT,
-      getAssistantMessageMetadata: input.getAssistantMessageMetadata,
-    });
+    if (input.editSourceId && !acceptedSubmission) {
+      if (!editDispatched || isDefiniteEditRejection(error)) {
+        editResult = false;
+        if (isCurrent())
+          useChatStore.setState(state => ({
+            messages: state.messages.filter(
+              message => message.id !== userMessage.id
+            ),
+          }));
+      } else {
+        editResult = pendingDifyEdit({
+          appId: input.appConfig.instance.id,
+          submissionId: editSubmissionId!,
+          conversationId: finalDbConvUUID || input.dbConversationUUID!,
+          sourceId: input.editSourceId,
+          messageId: userMessage.id,
+          isCurrent,
+        });
+      }
+    } else
+      handleChatSubmitStreamError({
+        error,
+        assistantMessageId,
+        assistantFallback,
+        finalDbConvUUID,
+        userMessage,
+        addMessage: input.addMessage,
+        setMessageError: input.setMessageError,
+        updateMessage: input.updateMessage,
+        saveMessage: input.saveMessage,
+        saveErrorPlaceholder: input.saveErrorPlaceholder,
+        moderationT: input.moderationT,
+        getAssistantMessageMetadata: input.getAssistantMessageMetadata,
+      });
   } finally {
     if (isCurrent() && input.appendTimerRef.current) {
       clearTimeout(input.appendTimerRef.current);
     }
+    if (input.editSourceId && !acceptedSubmission && assistantMessageId) {
+      input.finalizeStreamingMessage(assistantMessageId);
+      if (isCurrent())
+        useChatStore.setState(state => ({
+          messages: state.messages.filter(
+            message => message.id !== assistantMessageId
+          ),
+        }));
+    }
 
-    await finalizeChatSubmitStream({
-      assistantMessageId,
-      finalDbConvUUID,
-      dbConversationUUID: input.dbConversationUUID,
-      finalizeStreamingMessage: input.finalizeStreamingMessage,
-      updateMessage: input.updateMessage,
-      saveMessage: input.saveMessage,
-      saveStoppedAssistantMessage: input.saveStoppedAssistantMessage,
-      isNewConversationFlow,
-      finalRealConvId,
-    });
+    if (!input.editSourceId || acceptedSubmission)
+      await finalizeChatSubmitStream({
+        assistantMessageId,
+        finalDbConvUUID,
+        dbConversationUUID: input.dbConversationUUID,
+        finalizeStreamingMessage: input.finalizeStreamingMessage,
+        updateMessage: input.updateMessage,
+        saveMessage: input.saveMessage,
+        saveStoppedAssistantMessage: input.saveStoppedAssistantMessage,
+        isNewConversationFlow,
+        finalRealConvId,
+      });
 
     input.setIsWaitingForResponse(false);
     if (isCurrent()) input.isSubmittingRef.current = false;
   }
+  if (
+    input.editSourceId &&
+    !acceptedSubmission &&
+    editDispatched &&
+    editResult === undefined
+  )
+    editResult = pendingDifyEdit({
+      appId: input.appConfig.instance.id,
+      submissionId: editSubmissionId!,
+      conversationId: finalDbConvUUID || input.dbConversationUUID!,
+      sourceId: input.editSourceId,
+      messageId: userMessage.id,
+      isCurrent,
+    });
+  return {
+    ok: acceptedSubmission,
+    surfaced: true,
+    ...(input.editSourceId
+      ? { editResult: acceptedSubmission ? true : (editResult ?? false) }
+      : {}),
+  };
 }

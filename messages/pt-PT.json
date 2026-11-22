@@ -2394,6 +2394,23 @@
   },
   "components": {
     "chat": {
+      "editResend": {
+        "unconfirmed": "A aguardar confirmação. Não envie novamente; consulte o estado.",
+        "checkStatus": "Consultar estado",
+        "editorLabel": "Editar mensagem",
+        "send": "Enviar",
+        "cancel": "Cancelar",
+        "sendFailed": "A alteração não foi aceite. As alterações foram mantidas.",
+        "sending": "A enviar…",
+        "action": "Editar e enviar",
+        "notice": "Está a editar uma mensagem anterior. Após o envio, a conversa continua a partir deste ponto com a pergunta revista.",
+        "textOnly": "Apenas texto: os anexos originais não são novamente anexados.",
+        "exit": "Sair da edição",
+        "replaceTitle": "Substituir o rascunho atual?",
+        "replaceMessage": "O texto atual e os anexos selecionados serão substituídos. As mensagens anteriores e os ficheiros guardados não serão eliminados.",
+        "replaceConfirm": "Substituir rascunho",
+        "tooLong": "A mensagem completa é demasiado longa. Encurte-a e tente novamente; o rascunho foi mantido."
+      },
       "messageActions": {
         "copy": "Copiar",
         "copied": "Copiado",

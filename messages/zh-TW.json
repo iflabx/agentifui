@@ -2394,6 +2394,23 @@
   },
   "components": {
     "chat": {
+      "editResend": {
+        "unconfirmed": "正在確認提交結果，請勿重複傳送，可查詢狀態。",
+        "checkStatus": "查詢狀態",
+        "editorLabel": "編輯訊息",
+        "send": "傳送",
+        "cancel": "取消",
+        "sendFailed": "修改尚未被接受，已保留編輯內容。",
+        "sending": "傳送中…",
+        "action": "修改並傳送",
+        "notice": "正在修改先前的訊息。傳送後，將從這裡以修改後的問題繼續對話。",
+        "textOnly": "僅複製文字，不會重新附加原附件。",
+        "exit": "結束修改",
+        "replaceTitle": "取代目前的輸入草稿？",
+        "replaceMessage": "目前文字和已選附件將被取代，不會刪除歷史訊息或已儲存的檔案。",
+        "replaceConfirm": "取代草稿",
+        "tooLong": "完整訊息過長，請縮短後重試；草稿已保留。"
+      },
       "messageActions": {
         "copy": "複製",
         "copied": "已複製",

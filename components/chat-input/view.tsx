@@ -2,7 +2,13 @@
 
 import { ArrowUpIcon, Loader2, Square } from 'lucide-react';
 
-import { type ReactNode, useCallback, useRef, useState } from 'react';
+import {
+  type ReactNode,
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 
 import { useTranslations } from 'next-intl';
 
@@ -16,6 +22,7 @@ export interface ChatInputViewProps {
   onValueChange: (value: string) => void;
   onSubmit: () => void | Promise<void>;
   disabled?: boolean;
+  stopDisabled?: boolean;
   isProcessing?: boolean;
   onStop?: () => void;
   className?: string;
@@ -23,6 +30,7 @@ export interface ChatInputViewProps {
   isWelcomeScreen?: boolean;
   widthClass?: string;
   attachmentPreview?: ReactNode;
+  editNotice?: ReactNode;
   attachmentAction?: ReactNode;
   modelSelector?: ReactNode;
   maxHeight?: number;
@@ -38,6 +46,7 @@ export function ChatInputView({
   onValueChange,
   onSubmit,
   disabled = false,
+  stopDisabled = disabled,
   isProcessing = false,
   onStop,
   className,
@@ -45,6 +54,7 @@ export function ChatInputView({
   isWelcomeScreen = false,
   widthClass = 'max-w-3xl',
   attachmentPreview,
+  editNotice,
   attachmentAction,
   modelSelector,
   maxHeight = 300,
@@ -58,6 +68,21 @@ export function ChatInputView({
   const composing = useRef(false);
   const submitting = useRef(false);
   const [pending, setPending] = useState(false);
+  const noticeRef = useRef<HTMLDivElement>(null);
+  const [noticeHeight, setNoticeHeight] = useState(0);
+  useLayoutEffect(() => {
+    const node = noticeRef.current;
+    if (!node) return;
+    const measure = () => setNoticeHeight(node.getBoundingClientRect().height);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [editNotice]);
+  const updateHeight = useCallback(
+    (height: number) => onHeightChange?.(height + noticeHeight),
+    [onHeightChange, noticeHeight]
+  );
   const inputRef = useCallback(
     (node: HTMLTextAreaElement | null) => onInputRef?.(node),
     [onInputRef]
@@ -91,6 +116,7 @@ export function ChatInputView({
       isTransitioningToWelcome={isTransitioningToWelcome}
     >
       {attachmentPreview}
+      <div ref={noticeRef}>{editNotice}</div>
       <ChatTextArea>
         <ChatTextInput
           ref={inputRef}
@@ -99,7 +125,7 @@ export function ChatInputView({
           placeholder={placeholder}
           maxHeight={maxHeight}
           disabled={disabled}
-          onHeightChange={onHeightChange}
+          onHeightChange={updateHeight}
           onCompositionStart={() => {
             composing.current = true;
           }}
@@ -145,7 +171,7 @@ export function ChatInputView({
               }
               disabled={
                 stopping
-                  ? disabled
+                  ? stopDisabled
                   : disabled || busy || isProcessing || !value.trim()
               }
               ariaLabel={

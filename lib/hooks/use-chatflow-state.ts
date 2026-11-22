@@ -7,7 +7,8 @@ type ChatInterfaceLike = {
   handleSubmit: (
     message: string,
     files?: unknown[],
-    inputs?: Record<string, unknown>
+    inputs?: Record<string, unknown>,
+    editSourceId?: string
   ) => Promise<unknown>;
   isProcessing: boolean;
   handleStopProcessing: () => Promise<unknown> | unknown;

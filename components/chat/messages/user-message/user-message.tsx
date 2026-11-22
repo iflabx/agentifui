@@ -17,6 +17,8 @@ interface UserMessageProps {
   className?: string;
   onCopy?: () => void;
   onEdit?: () => void;
+  editDisabled?: boolean;
+  editor?: React.ReactNode;
 }
 
 export const UserMessage: React.FC<UserMessageProps> = ({
@@ -26,6 +28,8 @@ export const UserMessage: React.FC<UserMessageProps> = ({
   id,
   className,
   onEdit,
+  editDisabled,
+  editor,
 }) => {
   const isMobile = useMobile();
   const isMounted = useMounted();
@@ -51,23 +55,32 @@ export const UserMessage: React.FC<UserMessageProps> = ({
           />
         )}
         {/* Message bubble - modern design, stone color theme */}
-        <div
-          className={cn(
-            'max-w-full rounded-2xl px-4 py-3 text-base leading-relaxed',
-            'markdown-body assistant-message-content shadow-sm',
-            'bg-stone-200/80 text-stone-800',
-            'dark:bg-stone-700/70 dark:text-stone-100',
-            'border',
-            'border-stone-300/80 dark:border-stone-600/30',
-            isMobile ? 'max-w-[85%]' : 'max-w-[75%]',
-            className
-          )}
-        >
-          {content}
-        </div>
+        {editor || (
+          <div
+            className={cn(
+              'max-w-full rounded-2xl px-4 py-3 text-base leading-relaxed',
+              'markdown-body assistant-message-content shadow-sm',
+              'bg-stone-200/80 text-stone-800',
+              'dark:bg-stone-700/70 dark:text-stone-100',
+              'border',
+              'border-stone-300/80 dark:border-stone-600/30',
+              isMobile ? 'max-w-[85%]' : 'max-w-[75%]',
+              className
+            )}
+          >
+            {content}
+          </div>
+        )}
 
         {/* Message action buttons */}
-        <UserMessageActions messageId={id} content={content} onEdit={onEdit} />
+        {!editor && (
+          <UserMessageActions
+            messageId={id}
+            content={content}
+            onEdit={onEdit}
+            editDisabled={editDisabled}
+          />
+        )}
       </div>
     </div>
   );

@@ -36,6 +36,10 @@ import {
   normalizeRequestBody,
   resolveDifyProxyTimeoutMs,
 } from './helpers';
+import {
+  acceptDifyMessageEdit,
+  sanitizeDifyMessageHistory,
+} from './message-edits';
 import { sendUpstreamStream } from './stream';
 import {
   injectTrustedUserContext,
@@ -162,6 +166,7 @@ async function sendUpstreamResponse(input: {
   upstream: Response;
   upstreamRequestStartedAt: number;
   resilienceElapsedMs: number;
+  loadHistoryPage?: (firstId: string) => Promise<unknown>;
 }): Promise<void> {
   const {
     request,
@@ -207,6 +212,28 @@ async function sendUpstreamResponse(input: {
   const responseContentType = (
     upstream.headers.get('content-type') || ''
   ).toLowerCase();
+
+  if (upstream.ok && request.method === 'GET' && slugPath === 'messages') {
+    let history: unknown;
+    try {
+      history = await upstream.json();
+    } catch {
+      throw new AgentPolicyError(503, 'DIFY_HISTORY_UNAVAILABLE');
+    }
+    const externalId = target.searchParams.get('conversation_id');
+    if (!externalId)
+      throw new AgentPolicyError(400, 'DIFY_HISTORY_CONVERSATION_REQUIRED');
+    const visible = await sanitizeDifyMessageHistory(
+      history,
+      externalId,
+      context,
+      input.targetConfig,
+      input.loadHistoryPage,
+      target.searchParams.get('first_id') ?? undefined
+    );
+    reply.type('application/json').status(upstream.status).send(visible);
+    return;
+  }
 
   const mediaType = responseContentType.split(';')[0].trim();
   if (
@@ -438,6 +465,17 @@ export async function dispatchDifyUpstreamRequest(
 
   const actualMethod = targetConfig.tempConfigUsed ? 'GET' : request.method;
   let upstreamPayload = targetConfig.rawBody;
+  if (targetConfig.messageEdit && isObjectRecord(upstreamPayload)) {
+    const {
+      editSourceId: _source,
+      editMessageId: _message,
+      ...body
+    } = upstreamPayload;
+    upstreamPayload = {
+      ...body,
+      query: targetConfig.messageEdit.upstreamContent,
+    };
+  }
 
   if (actualMethod !== 'GET' && actualMethod !== 'HEAD') {
     try {
@@ -539,6 +577,8 @@ export async function dispatchDifyUpstreamRequest(
 
   let dispatched = false;
   let claimed = false;
+  let editAccepted = false;
+  let editMessageBound = false;
   try {
     const resilienceResult = await fetchWithDifyProxyResilience({
       circuitKey,
@@ -636,11 +676,49 @@ export async function dispatchDifyUpstreamRequest(
           ? observeDifyResponse(
               resilienceResult.response,
               targetConfig.rootTaskId,
-              slugPath
+              slugPath,
+              targetConfig.messageEdit
+                ? async event => {
+                    const hasMessageId =
+                      typeof event.message_id === 'string' &&
+                      !!event.message_id;
+                    if (editAccepted && (!hasMessageId || editMessageBound))
+                      return;
+                    await acceptDifyMessageEdit(
+                      targetConfig.messageEdit!,
+                      event
+                    );
+                    editAccepted = true;
+                    if (hasMessageId) editMessageBound = true;
+                  }
+                : undefined
             )
           : resilienceResult.response,
       upstreamRequestStartedAt,
       resilienceElapsedMs: resilienceResult.elapsedMs,
+      loadHistoryPage: async firstId => {
+        const pageUrl = new URL(target);
+        pageUrl.searchParams.set('first_id', firstId);
+        const page = await fetchWithDifyProxyResilience({
+          circuitKey,
+          requestSignal: downstream.signal,
+          execute: signal =>
+            fetch(pageUrl, {
+              method: 'GET',
+              headers: upstreamHeaders,
+              redirect: 'manual',
+              cache: 'no-store',
+              signal,
+            }),
+        });
+        if (!page.ok || !page.response.ok)
+          throw new AgentPolicyError(503, 'DIFY_HISTORY_UNAVAILABLE');
+        try {
+          return await page.response.json();
+        } catch {
+          throw new AgentPolicyError(503, 'DIFY_HISTORY_UNAVAILABLE');
+        }
+      },
     });
     if (targetConfig.rootTaskId)
       await confirmSubmission(targetConfig.rootTaskId, 'unknown');

@@ -174,6 +174,74 @@ describe('trusted agent run repository', () => {
     ).toHaveLength(1);
   });
 
+  it('stores only revised text, binds the source, and hides rather than deletes the replaced path', async () => {
+    const originalQuery = query.getMockImplementation()!;
+    query.mockImplementation(async (sql: string, params: unknown[]) => {
+      if (sql.includes('SELECT content, sequence_index'))
+        return { rows: [{ content: 'Original question', sequence_index: 2 }] };
+      return originalQuery(sql, params);
+    });
+    const result = await reserveRun({
+      ...input,
+      conversationId: CONVERSATION,
+      editSourceId: USER_MESSAGE,
+    });
+    expect(result.upstreamContent).toContain('Replacement request:\nhello');
+    const insert = query.mock.calls.find(([sql]) =>
+      sql.includes('INSERT INTO messages')
+    )!;
+    expect(insert[1][3]).toBe('hello');
+    expect(JSON.parse(insert[1][6])).toEqual({ edit_source_id: USER_MESSAGE });
+    const source = query.mock.calls.find(([sql]) =>
+      sql.includes('SELECT content, sequence_index')
+    )!;
+    expect(source[1]).toEqual([USER_MESSAGE, CONVERSATION, USER]);
+    expect(source[0]).toContain('edit_hidden');
+    const hide = query.mock.calls.find(([sql]) =>
+      sql.includes('UPDATE messages SET metadata')
+    )!;
+    expect(hide[1].slice(0, 2)).toEqual([CONVERSATION, 2]);
+    expect(
+      query.mock.calls.some(([sql]) => sql.includes('DELETE FROM messages'))
+    ).toBe(false);
+  });
+
+  it('rejects missing, hidden or foreign edit sources before writing a new turn', async () => {
+    await expect(
+      reserveRun({
+        ...input,
+        conversationId: CONVERSATION,
+        editSourceId: USER_MESSAGE,
+      })
+    ).rejects.toMatchObject({ code: 'AGENT_EDIT_SOURCE_UNAVAILABLE' });
+    expect(
+      query.mock.calls.some(([sql]) => sql.includes('INSERT INTO messages'))
+    ).toBe(false);
+    await expect(
+      reserveRun({ ...input, editSourceId: USER_MESSAGE })
+    ).rejects.toMatchObject({ code: 'INVALID_AGENT_REQUEST' });
+  });
+
+  it('counts the hidden prompt against the request limit before saving', async () => {
+    const originalQuery = query.getMockImplementation()!;
+    query.mockImplementation(async (sql: string, params: unknown[]) => {
+      if (sql.includes('SELECT content, sequence_index'))
+        return { rows: [{ content: 'Old question', sequence_index: 0 }] };
+      return originalQuery(sql, params);
+    });
+    await expect(
+      reserveRun({
+        ...input,
+        content: 'a'.repeat(15999),
+        conversationId: CONVERSATION,
+        editSourceId: USER_MESSAGE,
+      })
+    ).rejects.toMatchObject({ code: 'AGENT_MESSAGE_TOO_LONG' });
+    expect(
+      query.mock.calls.some(([sql]) => sql.includes('INSERT INTO messages'))
+    ).toBe(false);
+  });
+
   describe('immutable result registration', () => {
     const manifest = parseAgentDeliverables({
       profile: 'phase4.result.v1',

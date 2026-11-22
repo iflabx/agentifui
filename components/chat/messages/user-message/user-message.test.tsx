@@ -41,6 +41,37 @@ jest.mock('./file-attachment-display', () => ({
 }));
 
 describe('UserMessage', () => {
+  it('replaces only the message bubble with its inline editor and keeps attachment access', () => {
+    const { container } = render(
+      <UserMessage
+        id="selected-message"
+        content="old question"
+        attachments={[
+          {
+            id: 'file',
+            name: 'notes.txt',
+            size: 4,
+            type: 'text/plain',
+            upload_file_id: 'upload-file',
+          },
+        ]}
+        editor={
+          <textarea
+            aria-label="inline question"
+            defaultValue="changed question"
+          />
+        }
+      />
+    );
+    expect(
+      container.querySelector('[data-message-id="selected-message"]')
+    ).toContainElement(
+      screen.getByRole('textbox', { name: 'inline question' })
+    );
+    expect(screen.queryByText('old question')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('message-actions')).not.toBeInTheDocument();
+    expect(screen.getByTestId('attachment-display')).toBeInTheDocument();
+  });
   it('preserves input-file preview URLs through the message rendering boundary', () => {
     const previewUrl = '/api/dify/app-1/files/upload-1/preview';
     render(

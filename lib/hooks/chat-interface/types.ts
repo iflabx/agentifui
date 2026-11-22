@@ -14,6 +14,7 @@ import type {
   DifySseWorkflowStartedEvent,
   DifyUsage,
 } from '@lib/services/dify/types';
+import type { EditSubmissionResult } from '@lib/types/message-edit';
 
 export type ChatNodeEvent =
   | DifySseWorkflowStartedEvent
@@ -31,6 +32,7 @@ export type ChatNodeEvent =
 
 export interface ChatSubmitResult {
   ok: boolean;
+  editResult?: EditSubmissionResult;
   surfaced?: boolean;
   errorMessage?: string;
   errorCode?: string;

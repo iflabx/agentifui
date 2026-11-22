@@ -164,6 +164,9 @@ export async function startNewChatConversation(
 }
 
 interface StartExistingChatConversationInput {
+  editSourceId?: string;
+  submissionId?: string;
+  onDispatch?: () => void;
   onAccepted?: (accepted: ChatSubmissionAccepted) => void;
   message: string;
   inputs?: Record<string, unknown>;
@@ -202,15 +205,22 @@ export async function startExistingChatConversation(
     });
   }
 
-  persistUserMessageIfNeeded({
-    userMessage: input.userMessage,
-    conversationId: finalDbConvUUID,
-    saveMessage: input.saveMessage,
-    successLog:
-      '[handleSubmit] User message saved early in historical conversation, ID=',
-    errorLog:
-      '[handleSubmit] Failed to save user message early in historical conversation:',
-  });
+  if (input.editSourceId) {
+    if (!finalDbConvUUID)
+      throw new Error(
+        'The revised message could not be saved. Please try again.'
+      );
+  } else {
+    void persistUserMessageIfNeeded({
+      userMessage: input.userMessage,
+      conversationId: finalDbConvUUID,
+      saveMessage: input.saveMessage,
+      successLog:
+        '[handleSubmit] User message saved early in historical conversation, ID=',
+      errorLog:
+        '[handleSubmit] Failed to save user message early in historical conversation:',
+    });
+  }
 
   console.log('[handleSubmit] Conversation ID type check:', {
     type: typeof input.difyConversationId,
@@ -220,6 +230,12 @@ export async function startExistingChatConversation(
   });
 
   const difyPayload: DifyChatRequestPayload = {
+    ...(input.editSourceId
+      ? {
+          editSourceId: input.editSourceId,
+          editMessageId: input.userMessage.id,
+        }
+      : {}),
     query: input.message,
     inputs: input.inputs || {},
     ...(input.difyFiles && { files: input.difyFiles }),
@@ -229,6 +245,7 @@ export async function startExistingChatConversation(
     auto_generate_name: false,
   };
 
+  input.onDispatch?.();
   const streamServiceResponse = await streamDifyChat(
     difyPayload,
     input.appId,
@@ -259,7 +276,7 @@ export async function startExistingChatConversation(
       }
     },
     input.onNodeEvent,
-    undefined,
+    input.submissionId ? { submissionId: input.submissionId } : undefined,
     input.onAccepted
   );
 

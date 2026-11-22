@@ -2,6 +2,7 @@ import {
   type AgentProjectionSnapshot,
   MAX_PROJECTION_MESSAGES,
   type Message,
+  buildMessageEditPrompt,
   mergeAgentHistoryResult,
   readAgentHistoryMessages,
   readAgentHistoryResult,
@@ -85,6 +86,7 @@ export interface ReserveAgentRunInput {
   submissionId: string;
   content: string;
   conversationId?: string;
+  editSourceId?: string;
   userLimit?: number;
   appLimit?: number;
 }
@@ -233,9 +235,11 @@ async function validateBinding(
   if (!rows[0]) throw new AgentRunError(409, 'AGENT_CONVERSATION_UNAVAILABLE');
 }
 
-export async function reserveRun(
-  input: ReserveAgentRunInput
-): Promise<{ run: AgentRunRecord; replayed: boolean }> {
+export async function reserveRun(input: ReserveAgentRunInput): Promise<{
+  run: AgentRunRecord;
+  replayed: boolean;
+  upstreamContent?: string;
+}> {
   const userId = uuid(input.userId);
   const serviceId = uuid(input.serviceInstanceId);
   const submissionId = uuid(input.submissionId);
@@ -260,7 +264,18 @@ export async function reserveRun(
     throw new AgentRunError(400, 'INVALID_AGENT_REQUEST');
   }
   const normalized = { ...input, userId, serviceInstanceId: serviceId };
-  const requestHash = createHash('sha256').update(input.content).digest('hex');
+  const editSourceId = input.editSourceId
+    ? uuid(input.editSourceId)
+    : undefined;
+  if (editSourceId && !conversationId)
+    throw new AgentRunError(400, 'INVALID_AGENT_REQUEST');
+  const requestHash = createHash('sha256')
+    .update(
+      editSourceId
+        ? JSON.stringify([input.content, editSourceId])
+        : input.content
+    )
+    .digest('hex');
   return storage(() =>
     runWithPgSystemContext(async client => {
       await client.query(
@@ -368,6 +383,38 @@ export async function reserveRun(
       }
       const messageId = randomUUID();
       const runId = randomUUID();
+      let upstreamContent = input.content;
+      let editSequence: number | undefined;
+      if (editSourceId) {
+        const source = await client.query(
+          `SELECT content, sequence_index,
+             (SELECT count(*)::int FROM messages preceding
+               WHERE preceding.conversation_id = messages.conversation_id AND preceding.role = 'user'
+                 AND preceding.sequence_index <= messages.sequence_index) AS user_turn
+           FROM messages
+           WHERE id = $1::uuid AND conversation_id = $2::uuid
+             AND user_id = $3::uuid AND role = 'user'
+             AND COALESCE(metadata->>'edit_hidden', 'false') <> 'true' FOR UPDATE`,
+          [editSourceId, allocatedId, userId]
+        );
+        if (
+          !source.rows[0] ||
+          !source.rows[0].content.trim() ||
+          !Number.isSafeInteger(source.rows[0].sequence_index)
+        )
+          throw new AgentRunError(409, 'AGENT_EDIT_SOURCE_UNAVAILABLE');
+        editSequence = source.rows[0].sequence_index;
+        upstreamContent = buildMessageEditPrompt(
+          source.rows[0].content,
+          input.content,
+          source.rows[0].user_turn
+        );
+        if (
+          upstreamContent.length > 16000 ||
+          Buffer.byteLength(JSON.stringify(upstreamContent), 'utf8') > 63000
+        )
+          throw new AgentRunError(413, 'AGENT_MESSAGE_TOO_LONG');
+      }
       if (input.governanceTaskId) {
         await admitSubmission(
           client,
@@ -380,10 +427,29 @@ export async function reserveRun(
       await client.query(
         `INSERT INTO messages (id, conversation_id, user_id, role, content, metadata, sequence_index)
        SELECT $1::uuid, $2::uuid, $3::uuid, 'user', $4,
-         jsonb_build_object('backend_type', $6::text, 'backend_run_id', $5::text),
+         jsonb_build_object('backend_type', $6::text, 'backend_run_id', $5::text) || $7::jsonb,
          COALESCE(MAX(sequence_index), -1) + 1 FROM messages WHERE conversation_id = $2::uuid`,
-        [messageId, allocatedId, userId, input.content, runId, backendType]
+        [
+          messageId,
+          allocatedId,
+          userId,
+          input.content,
+          runId,
+          backendType,
+          JSON.stringify(editSourceId ? { edit_source_id: editSourceId } : {}),
+        ]
       );
+      if (editSequence !== undefined) {
+        await client.query(
+          `UPDATE messages SET metadata = COALESCE(metadata, '{}'::jsonb) || '{"edit_hidden":true}'::jsonb
+           WHERE conversation_id = $1::uuid AND sequence_index >= $2 AND id <> $3::uuid`,
+          [allocatedId, editSequence, messageId]
+        );
+        await client.query(
+          `UPDATE conversations SET last_message_preview = $2, updated_at = NOW() WHERE id = $1::uuid`,
+          [allocatedId, input.content.slice(0, 200)]
+        );
+      }
       await client.query(
         `INSERT INTO backend_runs (id, conversation_id, user_id, service_instance_id,
         submission_id, request_hash, user_message_id)
@@ -404,7 +470,11 @@ export async function reserveRun(
           [input.governanceTaskId, runId]
         );
       }
-      return { run: await loadRun(client, runId), replayed: false };
+      return {
+        run: await loadRun(client, runId),
+        replayed: false,
+        upstreamContent,
+      };
     })
   );
 }
@@ -487,6 +557,7 @@ export async function loadRunDisplayHistory(
          WHERE c.id = $1::uuid AND c.user_id = $2::uuid AND c.status = 'active'
            AND b.service_instance_id = $3::uuid AND b.config_fingerprint = $4
            AND m.sequence_index <= $5
+           AND COALESCE(m.metadata->>'edit_hidden', 'false') <> 'true'
          ORDER BY m.sequence_index, m.created_at, m.id LIMIT $6`,
         [
           run.conversation_id,
@@ -516,6 +587,7 @@ export async function loadRunDisplayHistory(
         `SELECT r.id::text, r.result FROM backend_runs r
          LEFT JOIN messages m ON m.id = r.user_message_id
          WHERE r.conversation_id = $1::uuid AND r.id <> $2::uuid
+           AND COALESCE(m.metadata->>'edit_hidden', 'false') <> 'true'
            AND COALESCE(r.sequence_anchor, m.sequence_index) <= $3 AND r.persistence_status = 'saved'
          ORDER BY COALESCE(r.sequence_anchor, m.sequence_index), r.created_at LIMIT $4`,
         [

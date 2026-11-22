@@ -2394,6 +2394,23 @@
   },
   "components": {
     "chat": {
+      "editResend": {
+        "unconfirmed": "Confirmation en attente. Ne renvoyez pas le message ; vérifiez son statut.",
+        "checkStatus": "Vérifier le statut",
+        "editorLabel": "Modifier le message",
+        "send": "Envoyer",
+        "cancel": "Annuler",
+        "sendFailed": "La modification n’a pas été acceptée. Votre saisie est conservée.",
+        "sending": "Envoi…",
+        "action": "Modifier et envoyer",
+        "notice": "Modification d’un message précédent. Après l’envoi, la conversation reprendra ici avec votre question modifiée.",
+        "textOnly": "Texte uniquement : les pièces jointes originales ne sont pas ajoutées.",
+        "exit": "Quitter la modification",
+        "replaceTitle": "Remplacer le brouillon actuel ?",
+        "replaceMessage": "Le texte et les pièces jointes sélectionnées seront remplacés. Les messages historiques et les fichiers stockés ne seront pas supprimés.",
+        "replaceConfirm": "Remplacer le brouillon",
+        "tooLong": "Le message complet est trop long. Raccourcissez-le puis réessayez ; votre brouillon est conservé."
+      },
       "messageActions": {
         "copy": "Copier",
         "copied": "Copié",

@@ -135,9 +135,37 @@ Use the actions actually present on a message:
 
 - **Copy** copies available message text. Browser clipboard permission and a
   secure context can affect whether copying succeeds.
-- **Edit** and **Regenerate**, where offered by the conversation path, prepare or
-  request another answer. They are not a way to repair an incompletely saved run.
-  Review what will be sent and any new usage before proceeding.
+- **Edit and send** on a historical user text message opens an editor at that
+  message's original position, containing only the original question. Edit it and
+  choose **Send** (or press Ctrl/Cmd+Enter); Enter inserts a newline. Choose
+  **Cancel** or press Escape to leave without changing the conversation. Sending
+  immediately shows the revised question and temporarily hides its old answer and
+  subsequent turns while the request is being confirmed. Once accepted,
+  the conversation continues from that position with the revised question and new
+  answer; the superseded question and subsequent turns no longer appear in the
+  current conversation view, including after reopening history.
+  The backend retains the old records and appends the revision to the same Agent
+  conversation. It supplies an implicit correction instruction, not displayed in
+  your message, to favor the new request. This is not a context reset or a true
+  branch: old context may still influence the model, and past tool effects are not
+  undone. Repeated identical requests or failed earlier requests can also make the
+  intended correction ambiguous to the model. Both your text and the implicit
+  instruction count toward request limits.
+  Your unsent draft and selected attachments in the bottom composer are preserved;
+  ordinary sending is disabled while editing. A definite refusal restores the old
+  conversation view and reopens the editor with your changes. A network interruption
+  or timeout does not prove rejection: the provisional view stays in place, with
+  sending blocked until the result can be confirmed. Use the status check rather
+  than sending again. Failure after acceptance does not restore the old path.
+  Historical attachments are not copied to the
+  edited request, and the inline editor currently sends text only. To send new files,
+  cancel editing and use the normal composer if the application supports uploads.
+  Existing application parameters remain in effect. Single-task applications, workflow
+  records, attachment-only messages and non-user messages do not offer this operation.
+  Running tasks, unresolved saves and pending human input retain their normal limits.
+- **Regenerate**, where offered, requests another answer. Neither action repairs an
+  incompletely saved run. Each accepted new request follows normal usage and permission
+  rules. Refresh or reopen history to check that the current conversation view persists.
 - **Useful/Not useful** feedback is offered only on paths wired to feedback.
   Selecting feedback does not modify the answer or guarantee an upstream model
   will be retrained.

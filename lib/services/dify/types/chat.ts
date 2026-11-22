@@ -1,6 +1,8 @@
 import type { DifyFile, DifyRetrieverResource, DifyUsage } from './shared';
 
 export interface DifyChatRequestPayload {
+  editSourceId?: string;
+  editMessageId?: string;
   query: string;
   inputs?: Record<string, unknown>;
   response_mode: 'streaming' | 'blocking';

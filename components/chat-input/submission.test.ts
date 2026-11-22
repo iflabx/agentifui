@@ -99,6 +99,19 @@ describe('submission-local Dify input acceptance', () => {
     expect(bindChatInputConversation).not.toHaveBeenCalled();
   });
 
+  it('does not consume a bottom draft or its attachments when an inline edit has the same text', () => {
+    useAttachmentStore.getState().addFiles([new File(['draft'], 'draft.txt')]);
+    const files = useAttachmentStore.getState().files;
+    const accept = captureDifyInputSubmission(
+      'Question',
+      'actor',
+      'source-message'
+    );
+    accept('app', { externalId: 'external-A', taskId: 'task-A' });
+    expect(useChatInputStore.getState().message).toBe('Question');
+    expect(useAttachmentStore.getState().files).toBe(files);
+  });
+
   it('registers the accepted scope immediately while passing persistence to the binder', async () => {
     let finish!: (value: string | null) => void;
     const conversationPersistencePromise = new Promise<string | null>(

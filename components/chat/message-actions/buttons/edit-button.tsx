@@ -11,6 +11,7 @@ import { useEditAction } from '../hooks/use-edit-action';
 
 interface EditButtonProps {
   onEdit: () => void;
+  disabled?: boolean;
   tooltipPosition?: 'top' | 'bottom' | 'left' | 'right';
   tooltipSize?: 'sm' | 'md'; // tooltip size
   showTooltipArrow?: boolean; // whether to show tooltip arrow
@@ -25,18 +26,20 @@ interface EditButtonProps {
  */
 export const EditButton: React.FC<EditButtonProps> = ({
   onEdit,
+  disabled,
   tooltipPosition = 'bottom',
   tooltipSize = 'sm',
   showTooltipArrow = false,
   className,
 }) => {
   const { handleEdit } = useEditAction(onEdit);
-  const t = useTranslations('components.chat.messageActions');
+  const t = useTranslations('components.chat.editResend');
 
   return (
     <MessageActionButton
       icon={FiEdit2}
-      label={t('edit')}
+      label={t('action')}
+      disabled={disabled}
       onClick={handleEdit}
       tooltipPosition={tooltipPosition}
       tooltipSize={tooltipSize}

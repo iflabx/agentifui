@@ -209,7 +209,8 @@ export function useChatSubmitHandler({
     async (
       message: string,
       files?: unknown[],
-      inputs?: Record<string, unknown>
+      inputs?: Record<string, unknown>,
+      editSourceId?: string
     ) => {
       if (isSubmittingRef.current) {
         console.warn('[handleSubmit] Submission blocked: already submitting.');
@@ -281,7 +282,11 @@ export function useChatSubmitHandler({
         draftScope: inputSnapshot.currentRoute,
       };
       task.current = owner;
-      const acceptInput = captureDifyInputSubmission(message, currentUserId);
+      const acceptInput = captureDifyInputSubmission(
+        message,
+        currentUserId,
+        editSourceId
+      );
       isSubmittingRef.current = true;
       const isCurrent = () =>
         owner.active &&
@@ -356,7 +361,8 @@ export function useChatSubmitHandler({
             owner.active = false;
           },
         });
-        await executeChatSubmit({
+        return await executeChatSubmit({
+          editSourceId,
           onAccepted: accepted => acceptInput(appConfig.appId, accepted),
           viewScope,
           message,

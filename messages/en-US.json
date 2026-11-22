@@ -2394,6 +2394,23 @@
   },
   "components": {
     "chat": {
+      "editResend": {
+        "unconfirmed": "Waiting for confirmation. Do not send again; check the submission status instead.",
+        "checkStatus": "Check status",
+        "editorLabel": "Edit message",
+        "send": "Send",
+        "cancel": "Cancel",
+        "sendFailed": "The edit was not accepted. Your changes are kept.",
+        "sending": "Sending…",
+        "action": "Edit and send",
+        "notice": "Editing an earlier message. Sending continues the conversation from this point with your revised question.",
+        "textOnly": "Text only: original attachments are not reattached.",
+        "exit": "Exit editing",
+        "replaceTitle": "Replace the current draft?",
+        "replaceMessage": "The current text and selected attachments will be replaced. Historical messages and stored files will not be deleted.",
+        "replaceConfirm": "Replace draft",
+        "tooLong": "The complete message is too long. Shorten it and try again; your draft has been kept."
+      },
       "messageActions": {
         "copy": "Copy",
         "copied": "Copied",

@@ -1,12 +1,17 @@
 import { create } from 'zustand';
 
+import type { MessageEditSource } from '../../packages/shared/src/message-edit';
+
 export interface DraftSnapshot {
+  editSource?: MessageEditSource;
   scope: string;
   revision: number;
   message: string;
 }
 
 interface ChatInputState {
+  editSources: Record<string, MessageEditSource | undefined>;
+  setEditSource: (source?: MessageEditSource) => void;
   messagesByRoute: Record<string, string>;
   revisionsByRoute: Record<string, number>;
   aliases: Record<string, string>;
@@ -45,6 +50,16 @@ export function chatInputScope(
 }
 
 export const useChatInputStore = create<ChatInputState>((set, get) => ({
+  editSources: {},
+  setEditSource: source =>
+    set(state => ({
+      editSources: { ...state.editSources, [state.currentRoute]: source },
+      revisionsByRoute: {
+        ...state.revisionsByRoute,
+        [state.currentRoute]:
+          (state.revisionsByRoute[state.currentRoute] || 0) + 1,
+      },
+    })),
   messagesByRoute: {},
   revisionsByRoute: {},
   aliases: {},
@@ -66,6 +81,9 @@ export const useChatInputStore = create<ChatInputState>((set, get) => ({
     set({
       message,
       messagesByRoute: { ...state.messagesByRoute, [scope]: message },
+      ...(message
+        ? {}
+        : { editSources: { ...state.editSources, [scope]: undefined } }),
       revisionsByRoute: {
         ...state.revisionsByRoute,
         [scope]: (state.revisionsByRoute[scope] || 0) + 1,
@@ -84,6 +102,7 @@ export const useChatInputStore = create<ChatInputState>((set, get) => ({
   },
   clearAllMessages: () =>
     set({
+      editSources: {},
       messagesByRoute: {},
       revisionsByRoute: {},
       aliases: {},
@@ -96,6 +115,7 @@ export const useChatInputStore = create<ChatInputState>((set, get) => ({
       delete messagesByRoute[scope];
       return {
         messagesByRoute,
+        editSources: { ...state.editSources, [scope]: undefined },
         revisionsByRoute: {
           ...state.revisionsByRoute,
           [scope]: (state.revisionsByRoute[scope] || 0) + 1,
@@ -119,6 +139,7 @@ export const useChatInputStore = create<ChatInputState>((set, get) => ({
       actorId,
       actorSessionId: sessionId ?? null,
       actorEpoch: state.actorEpoch + 1,
+      editSources: {},
       messagesByRoute: {},
       revisionsByRoute: {},
       aliases: {},
@@ -132,6 +153,9 @@ export const useChatInputStore = create<ChatInputState>((set, get) => ({
     scope: get().currentRoute,
     revision: get().revisionsByRoute[get().currentRoute] || 0,
     message: get().message,
+    ...(get().editSources[get().currentRoute]
+      ? { editSource: get().editSources[get().currentRoute] }
+      : {}),
   }),
   consumeSnapshot: snapshot => {
     const state = get();
@@ -154,6 +178,11 @@ export const useChatInputStore = create<ChatInputState>((set, get) => ({
     delete messagesByRoute[source];
     set({
       messagesByRoute,
+      editSources: {
+        ...state.editSources,
+        [source]: undefined,
+        [target]: state.editSources[source],
+      },
       revisionsByRoute: {
         ...state.revisionsByRoute,
         [target]: state.revisionsByRoute[source] || 0,

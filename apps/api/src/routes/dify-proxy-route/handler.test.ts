@@ -11,6 +11,7 @@ import {
 import { handleOwnedDifyFilePreview } from './file-preview';
 import { handleDifyProxy } from './handler';
 import { runInputModeration } from './input-moderation';
+import { resolveDifyMessageEdit, stageDifyMessageEdit } from './message-edits';
 import { resolveProxyRequestContext } from './request-context';
 import { resolveDifyTargetConfig } from './target-config';
 import { dispatchDifyUpstreamRequest } from './upstream';
@@ -41,6 +42,11 @@ jest.mock('./input-moderation', () => ({
 
 jest.mock('./upstream', () => ({
   dispatchDifyUpstreamRequest: jest.fn(),
+}));
+
+jest.mock('./message-edits', () => ({
+  resolveDifyMessageEdit: jest.fn(),
+  stageDifyMessageEdit: jest.fn(),
 }));
 
 jest.mock('../../lib/error-events', () => ({
@@ -122,6 +128,7 @@ describe('handleDifyProxy input moderation integration', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.mocked(resolveDifyMessageEdit).mockResolvedValue(undefined);
     jest.mocked(handleOwnedDifyFilePreview).mockResolvedValue(false);
     jest.mocked(registerSubmission).mockResolvedValue({
       task: { root_task_id: 'root-task' } as never,
@@ -298,5 +305,80 @@ describe('handleDifyProxy input moderation integration', () => {
     expect(mockedDispatchDifyUpstreamRequest).toHaveBeenCalledTimes(1);
     expect(reply.status).not.toHaveBeenCalledWith(400);
     expect(reply.status).not.toHaveBeenCalledWith(503);
+  });
+
+  const edit = {
+    userId: 'user-1',
+    conversationId: '10000000-0000-4000-8000-000000000001',
+    sourceId: '20000000-0000-4000-8000-000000000001',
+    clientMessageId: 'msg-1700000000000-aBc',
+    externalConversationId: 'native-conversation',
+    content: 'new request',
+    upstreamContent: 'hidden edit instruction',
+  };
+
+  it('moderates the actual prompt but binds the visible message only after admission', async () => {
+    jest.mocked(resolveDifyMessageEdit).mockResolvedValue(edit);
+    jest
+      .mocked(stageDifyMessageEdit)
+      .mockResolvedValue({ ...edit, messageId: 'local-message' });
+    await handleDifyProxy(createRequest(), createReply(), createConfig());
+    expect(mockedRunInputModeration).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetConfig: expect.objectContaining({
+          rawBody: { query: edit.upstreamContent },
+        }),
+      })
+    );
+    expect(stageDifyMessageEdit).toHaveBeenCalledWith(edit, 'root-task');
+    expect(
+      jest.mocked(admitSubmission).mock.invocationCallOrder[0]
+    ).toBeLessThan(
+      jest.mocked(stageDifyMessageEdit).mock.invocationCallOrder[0]
+    );
+    expect(
+      jest.mocked(stageDifyMessageEdit).mock.invocationCallOrder[0]
+    ).toBeLessThan(
+      mockedDispatchDifyUpstreamRequest.mock.invocationCallOrder[0]
+    );
+    expect(
+      jest.mocked(registerSubmission).mock.calls[0][0].request
+    ).toMatchObject({ body: { query: 'hello moderation' } });
+  });
+
+  it.each(['moderation', 'quota'])(
+    'does not stage an edit after %s refuses it',
+    async gate => {
+      jest.mocked(resolveDifyMessageEdit).mockResolvedValue(edit);
+      if (gate === 'moderation')
+        mockedRunInputModeration.mockResolvedValue({
+          outcome: 'block',
+          categories: [],
+        });
+      else
+        jest
+          .mocked(admitSubmission)
+          .mockRejectedValueOnce(
+            new AgentPolicyError(429, 'AGENT_QUOTA_EXCEEDED')
+          );
+      await handleDifyProxy(createRequest(), createReply(), createConfig());
+      expect(stageDifyMessageEdit).not.toHaveBeenCalled();
+      expect(mockedDispatchDifyUpstreamRequest).not.toHaveBeenCalled();
+    }
+  );
+
+  it('releases the admitted submission if the source is no longer valid at staging', async () => {
+    jest.mocked(resolveDifyMessageEdit).mockResolvedValue(edit);
+    jest
+      .mocked(stageDifyMessageEdit)
+      .mockRejectedValueOnce(
+        new AgentPolicyError(409, 'MESSAGE_EDIT_SOURCE_UNAVAILABLE')
+      );
+    await handleDifyProxy(createRequest(), createReply(), createConfig());
+    expect(rejectSubmission).toHaveBeenCalledWith(
+      'root-task',
+      'MESSAGE_EDIT_NOT_DISPATCHED'
+    );
+    expect(mockedDispatchDifyUpstreamRequest).not.toHaveBeenCalled();
   });
 });
