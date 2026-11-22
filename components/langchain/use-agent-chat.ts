@@ -23,6 +23,7 @@ import {
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { replaceMessagePath } from '../../packages/shared/src/message-edit';
 import {
   agentDisplayHistory,
   projectAgentView,
@@ -37,6 +38,21 @@ import {
 import type { AgentViewState } from './state';
 
 const emptyView = (): AgentViewState => ({ messages: [], tools: [] });
+function editViewPrefix(
+  view: AgentViewState,
+  sourceId: string
+): AgentViewState {
+  const messages = replaceMessagePath(view.messages, sourceId);
+  const runIds = new Set(
+    messages.map(message => message.metadata?.backend_run_id)
+  );
+  return {
+    ...view,
+    messages,
+    tools: view.tools.filter(tool => runIds.has(tool.runId)),
+    resultRuns: view.resultRuns?.filter(run => runIds.has(run.id || run.runId)),
+  };
+}
 interface Detail {
   conversation: AgentConversation;
   messages: AgentMessage[];
@@ -437,7 +453,8 @@ export function useAgentChat(
 
   const send = async (
     content: string,
-    draftSnapshot?: LangchainDraftSnapshot
+    draftSnapshot?: LangchainDraftSnapshot,
+    editSourceId?: string
   ) => {
     if (
       !ready ||
@@ -482,6 +499,7 @@ export function useAgentChat(
     const payload = {
       submissionId: crypto.randomUUID(),
       content: content.trim(),
+      ...(editSourceId ? { editSourceId } : {}),
     };
     if (protocol.current === 'ag-ui/1.0' && actorId)
       useLangchainDraftStore.getState().rememberSubmission(actorId, {
@@ -530,7 +548,7 @@ export function useAgentChat(
           conversationId: view.conversationId,
           history: acceptance =>
             agentDisplayHistory([
-              ...view.messages,
+              ...replaceMessagePath(view.messages, editSourceId),
               {
                 id: acceptance.userMessageId,
                 role: 'user',
@@ -540,6 +558,8 @@ export function useAgentChat(
           accept: (snapshot, acceptance) => {
             if (!ownsView()) return;
             setPendingSubmissionId(null);
+            if (editSourceId && !accepted)
+              latest = editViewPrefix(latest, editSourceId);
             latest = projectAgentView(latest, snapshot);
             setView(latest);
             if (!accepted) {
@@ -571,8 +591,23 @@ export function useAgentChat(
       } else
         await consumeAgentStream(response, event => {
           if (!ownsView()) return;
+          if (event.type === 'accepted' && editSourceId) {
+            latest = {
+              ...editViewPrefix(latest, editSourceId),
+              messages: [
+                ...replaceMessagePath(view.messages, editSourceId),
+                {
+                  id: payload.submissionId,
+                  role: 'user',
+                  content: payload.content,
+                },
+              ],
+            };
+          }
           latest = reduceAgentEvent(latest, event);
-          setView(previous => reduceAgentEvent(previous, event));
+          setView(previous =>
+            editSourceId ? latest : reduceAgentEvent(previous, event)
+          );
           if (event.type === 'accepted') {
             draftScopes.current.set(event.conversationId, draftScope);
             if (draftScope.startsWith('new:')) newDraftVersion.current += 1;
@@ -603,7 +638,10 @@ export function useAgentChat(
           (failure.status >= 400 &&
             failure.status < 500 &&
             (failure.status !== 409 ||
-              failure.detail?.code === 'AGENT_RESULT_PROFILE_DISABLED'))
+              [
+                'AGENT_RESULT_PROFILE_DISABLED',
+                'AGENT_EDIT_SOURCE_UNAVAILABLE',
+              ].includes(failure.detail?.code ?? '')))
         ) {
           setView(view);
           setPendingSubmissionId(null);

@@ -80,20 +80,13 @@ function Harness({
 }
 
 describe('edit and append preparation', () => {
-  it('limits only the Unicode excerpt, preserving the complete replacement and selection', () => {
+  it('prepares only the full original text without a visible correction prompt', () => {
     const original = '😀'.repeat(121) + '\nfull body';
-    const draft = correctionDraft(original, {
-      original: 'Old',
-      replacement: 'New',
-      guidance: 'Guide',
-    });
-    expect(draft.text).toContain(`“${'😀'.repeat(120)}…”`);
+    const draft = correctionDraft(original);
     expect(draft.text.slice(draft.selectionStart, draft.selectionEnd)).toBe(
       original
     );
-    expect(draft.text).toBe(
-      `Old\n“${'😀'.repeat(120)}…”\n\nNew\n${original}\n\nGuide`
-    );
+    expect(draft.text).toBe(original);
   });
 
   it('prepares once, focuses new requirements, and exits without removing visible text', () => {

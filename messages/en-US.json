@@ -2396,10 +2396,7 @@
     "chat": {
       "editResend": {
         "action": "Edit and send",
-        "original": "I am correcting this earlier request:",
-        "replacement": "Please use these new requirements:",
-        "guidance": "Do not use the previous answer to the old request or conclusions derived from it as the basis for this answer. Keep other unchanged context. If information needed for the new requirements is missing, say so explicitly.",
-        "notice": "An editable correction has been added. Sending appends a new message to this conversation; the original and later messages remain.",
+        "notice": "Editing an earlier message. Sending continues the conversation from this point with your revised question.",
         "textOnly": "Text only: original attachments are not reattached.",
         "exit": "Exit editing",
         "replaceTitle": "Replace the current draft?",

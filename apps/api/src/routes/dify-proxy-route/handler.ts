@@ -23,6 +23,7 @@ import {
   isObjectRecord,
 } from './helpers';
 import { runInputModeration } from './input-moderation';
+import { resolveDifyMessageEdit, stageDifyMessageEdit } from './message-edits';
 import { resolveProxyRequestContext } from './request-context';
 import { requiresDifyResourceAdmin } from './resource-access';
 import { resolveDifyTargetConfig } from './target-config';
@@ -118,6 +119,12 @@ async function handleDifyProxyRequest(
   const path = adjustApiPathByAppType(context.slug, target.appType);
   if (/human-input|human_input|\/resume(?:\/|$)/.test(path))
     throw new AgentPolicyError(409, 'AGENT_CAPABILITY_UNSUPPORTED');
+  const messageEdit = await resolveDifyMessageEdit(
+    context,
+    target,
+    request.method,
+    path
+  );
   let rootTaskId: string | undefined;
   if (!target.tempConfigUsed && isDifyGeneration(request.method, path)) {
     if (!target.serviceInstanceId)
@@ -159,7 +166,13 @@ async function handleDifyProxyRequest(
     request,
     config,
     context: { ...context, slug: path.split('/') },
-    targetConfig: targetConfigResult.targetConfig,
+    targetConfig:
+      messageEdit && isObjectRecord(target.rawBody)
+        ? {
+            ...target,
+            rawBody: { ...target.rawBody, query: messageEdit.upstreamContent },
+          }
+        : target,
   });
   if (moderationResult.outcome === 'block') {
     if (rootTaskId)
@@ -225,6 +238,17 @@ async function handleDifyProxyRequest(
       throw error;
     }
     target.rootTaskId = rootTaskId;
+    if (messageEdit) {
+      try {
+        target.messageEdit = await stageDifyMessageEdit(
+          messageEdit,
+          rootTaskId
+        );
+      } catch (error) {
+        await rejectSubmission(rootTaskId, 'MESSAGE_EDIT_NOT_DISPATCHED');
+        throw error;
+      }
+    }
   }
   await dispatchDifyUpstreamRequest(
     request,

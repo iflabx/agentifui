@@ -4,6 +4,7 @@ import { EventEmitter } from 'node:events';
 import { request as httpRequest } from 'node:http';
 import { type AddressInfo, createConnection } from 'node:net';
 
+import { AgentPolicyError } from '../../lib/agent-backends';
 import {
   confirmSubmission,
   markSubmissionSubmitting,
@@ -17,6 +18,10 @@ import {
   assertDifyUploadStorage,
   saveDifyUpload,
 } from '../../lib/dify-upload-archive';
+import {
+  acceptDifyMessageEdit,
+  sanitizeDifyMessageHistory,
+} from './message-edits';
 import {
   injectTrustedUserContext,
   loadTrustedUserProfile,
@@ -56,6 +61,11 @@ jest.mock('../../lib/agent-submissions', () => ({
 
 jest.mock('../../lib/error-events', () => ({
   recordApiErrorEvent: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('./message-edits', () => ({
+  acceptDifyMessageEdit: jest.fn().mockResolvedValue(undefined),
+  sanitizeDifyMessageHistory: jest.fn(),
 }));
 
 function createRequest(
@@ -225,6 +235,7 @@ describe('dispatchDifyUpstreamRequest trusted user context integration', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.mocked(acceptDifyMessageEdit).mockResolvedValue(undefined);
     global.fetch = mockedFetch;
     mockedGetDifyProxyCircuitSnapshot.mockReturnValue({
       status: 'closed',
@@ -267,6 +278,125 @@ describe('dispatchDifyUpstreamRequest trusted user context integration', () => {
 
   afterAll(() => {
     global.fetch = originalFetch;
+  });
+
+  it('sends only a server-generated prompt upstream, binding the visible record before forwarding acceptance', async () => {
+    mockedShouldInjectTrustedUserContext.mockReturnValue(false);
+    const edit = {
+      userId: createContext().actor.userId,
+      conversationId: '10000000-0000-4000-8000-000000000001',
+      sourceId: '20000000-0000-4000-8000-000000000001',
+      messageId: '30000000-0000-4000-8000-000000000001',
+      clientMessageId: 'msg-1700000000000-aBc',
+      externalConversationId: 'native-conversation',
+      content: 'new request',
+      upstreamContent: 'hidden edit instruction',
+    };
+    mockedFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          message_id: 'native-message',
+          conversation_id: edit.externalConversationId,
+          answer: 'answer',
+        }),
+        { headers: { 'content-type': 'application/json' } }
+      )
+    );
+    const reply = createReply();
+    await dispatchDifyUpstreamRequest(
+      createRequest(),
+      reply,
+      createContext(),
+      createTargetConfig({
+        rootTaskId: 'root',
+        messageEdit: edit,
+        rawBody: {
+          query: edit.content,
+          editSourceId: edit.sourceId,
+          editMessageId: edit.clientMessageId,
+          conversation_id: edit.externalConversationId,
+        },
+      })
+    );
+    const body = JSON.parse(mockedFetch.mock.calls[0][1]!.body as string);
+    expect(body).toMatchObject({
+      query: edit.upstreamContent,
+      conversation_id: edit.externalConversationId,
+    });
+    expect(body).not.toHaveProperty('editSourceId');
+    expect(body).not.toHaveProperty('editMessageId');
+    expect(acceptDifyMessageEdit).toHaveBeenCalledWith(
+      edit,
+      expect.objectContaining({ message_id: 'native-message' })
+    );
+    expect(
+      jest.mocked(acceptDifyMessageEdit).mock.invocationCallOrder[0]
+    ).toBeLessThan(jest.mocked(confirmSubmission).mock.invocationCallOrder[0]);
+    expect(reply.send).toHaveBeenCalledWith(
+      expect.objectContaining({ answer: 'answer' })
+    );
+  });
+
+  it('does not return the raw hidden history body when sanitization fails', async () => {
+    mockedFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: [{ id: 'native-message', query: 'hidden edit instruction' }],
+          has_more: false,
+        }),
+        { headers: { 'content-type': 'application/json' } }
+      )
+    );
+    jest
+      .mocked(sanitizeDifyMessageHistory)
+      .mockRejectedValueOnce(
+        new AgentPolicyError(503, 'DIFY_HISTORY_RECONCILIATION_REQUIRED')
+      );
+    const reply = createReply();
+    await expect(
+      dispatchDifyUpstreamRequest(
+        createRequest({
+          method: 'GET',
+          raw: {
+            url: '/api/dify/app-1/messages?conversation_id=native-conversation',
+          },
+        }),
+        reply,
+        createContext({ slug: ['messages'] }),
+        createTargetConfig()
+      )
+    ).rejects.toMatchObject({ code: 'DIFY_HISTORY_RECONCILIATION_REQUIRED' });
+    expect(reply.send).not.toHaveBeenCalled();
+  });
+
+  it('continues hidden native pages with the scoped actor and original conversation', async () => {
+    mockedFetch.mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ data: [], has_more: false }), {
+          headers: { 'content-type': 'application/json' },
+        })
+    );
+    jest
+      .mocked(sanitizeDifyMessageHistory)
+      .mockImplementationOnce(
+        async (_value, _externalId, _context, _target, loadPage) =>
+          loadPage!('native-hidden')
+      );
+    await dispatchDifyUpstreamRequest(
+      createRequest({
+        method: 'GET',
+        raw: {
+          url: '/api/dify/app-1/messages?conversation_id=native-conversation&user=forged',
+        },
+      }),
+      createReply(),
+      createContext({ slug: ['messages'] }),
+      createTargetConfig()
+    );
+    const url = new URL(String(mockedFetch.mock.calls[1][0]));
+    expect(url.searchParams.get('first_id')).toBe('native-hidden');
+    expect(url.searchParams.get('user')).toBe(createContext().actor.userId);
+    expect(url.searchParams.get('conversation_id')).toBe('native-conversation');
   });
 
   it.each([400, 401, 403, 404, 405, 413, 415, 422])(

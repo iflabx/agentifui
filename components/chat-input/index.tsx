@@ -46,7 +46,8 @@ interface ChatInputProps {
   maxHeight?: number;
   onSubmit?: (
     message: string,
-    files?: ReturnType<typeof buildSubmitFiles>
+    files?: ReturnType<typeof buildSubmitFiles>,
+    editSourceId?: string
   ) => Promise<unknown> | unknown;
   onStop?: () => void;
   isProcessing?: boolean;
@@ -150,6 +151,9 @@ export const ChatInput = ({
       ? currentRoute
       : null;
   const edit = useEditResend({
+    source: useChatInputStore.getState().editSources[currentRoute],
+    onSourceChange: source =>
+      useChatInputStore.getState().setEditSource(source),
     scope: editScope,
     value: message,
     blocked: disabled || waiting || isProcessing,
@@ -211,7 +215,13 @@ export const ChatInput = ({
       useAttachmentStore.getState().consumeFiles(snapshot.scope, files);
     };
     try {
-      const result = await onSubmit(snapshot.message, buildSubmitFiles(files));
+      const result = snapshot.editSource
+        ? await onSubmit(
+            snapshot.message,
+            buildSubmitFiles(files),
+            snapshot.editSource.id
+          )
+        : await onSubmit(snapshot.message, buildSubmitFiles(files));
       if (isChatSubmitResult(result) && result.ok) consume();
       if (isChatSubmitResult(result) && !result.ok) {
         const failure =

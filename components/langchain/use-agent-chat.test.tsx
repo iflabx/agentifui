@@ -61,6 +61,136 @@ describe('independent agent chat lifecycle', () => {
     jest.useRealTimers();
   });
 
+  it('sends only revised text and a source reference, replacing the visible suffix after acceptance', async () => {
+    jest
+      .mocked(consumeAgentStream)
+      .mockImplementationOnce(async (_response, emit) => {
+        emit({
+          type: 'accepted',
+          conversationId: 'local',
+          runId: 'new-run',
+          userMessageId: 'edited-user',
+        });
+        emit({ type: 'text', messageId: 'new-answer', delta: 'New answer' });
+      });
+    const hook = renderHook(() =>
+      useAgentChat('app-uuid', 'local', 'test-actor')
+    );
+    await waitFor(() => expect(hook.result.current.historyLoading).toBe(false));
+    await waitFor(() =>
+      expect(hook.result.current.view.messages).toHaveLength(2)
+    );
+    await act(async () => {
+      await hook.result.current.send('Revised question', undefined, 'user');
+    });
+    const body = JSON.parse(
+      jest.mocked(global.fetch).mock.calls[0][1]!.body as string
+    );
+    expect(body).toMatchObject({
+      content: 'Revised question',
+      editSourceId: 'user',
+      conversationId: 'local',
+    });
+    expect(
+      hook.result.current.view.messages.map(message => message.content)
+    ).toEqual(['Revised question', 'New answer']);
+    expect(
+      hook.result.current.view.messages.some(
+        message => message.id === 'assistant'
+      )
+    ).toBe(false);
+    hook.unmount();
+  });
+
+  it('initializes an edited AG-UI stream with only the retained prefix and visible revised text', async () => {
+    const original = jest.mocked(agentRequest).getMockImplementation()!;
+    jest
+      .mocked(agentRequest)
+      .mockImplementation(async (appId, suffix, init) => {
+        if (!suffix)
+          return { app: { name: 'Agent' }, protocol: 'ag-ui/1.0' } as never;
+        if (suffix.startsWith('/runs/'))
+          return {
+            id: 'edited-run',
+            executionStatus: 'running',
+            persistenceStatus: 'pending',
+          } as never;
+        const detail = await original(appId, suffix, init);
+        return { ...(detail as object), protocol: 'ag-ui/1.0' } as never;
+      });
+    jest
+      .mocked(consumeAguiStream)
+      .mockImplementationOnce(async (_response, input) => {
+        const acceptance = {
+          conversationId: 'local',
+          runId: 'edited-run',
+          userMessageId: 'edited-user',
+          submissionId: input.submissionId,
+        };
+        const messages =
+          typeof input.history === 'function'
+            ? input.history(acceptance)
+            : input.history;
+        expect(messages).toEqual([
+          { id: 'edited-user', role: 'user', content: 'Revised' },
+        ]);
+        input.accept(
+          {
+            schemaVersion: 2,
+            threadId: 'local',
+            runId: 'edited-run',
+            status: 'running',
+            messages: messages!,
+            outputMessageIds: [],
+            warnings: [],
+          },
+          acceptance
+        );
+      });
+    const hook = renderHook(() =>
+      useAgentChat('app-uuid', 'local', 'test-actor')
+    );
+    await waitFor(() =>
+      expect(hook.result.current.view.messages).toHaveLength(2)
+    );
+    await act(async () => {
+      await hook.result.current.send('Revised', undefined, 'user');
+    });
+    expect(consumeAguiStream).toHaveBeenCalledTimes(1);
+    expect(
+      hook.result.current.view.messages.map(message => message.content)
+    ).toEqual(['Revised']);
+    hook.unmount();
+  });
+
+  it('keeps the original visible path when an edited source is rejected', async () => {
+    jest.mocked(consumeAgentStream).mockImplementationOnce(async () => {
+      throw new AgentRequestError(409, {
+        code: 'AGENT_EDIT_SOURCE_UNAVAILABLE',
+        source: 'frontend',
+        severity: 'warn',
+        retryable: false,
+        userMessage: 'Unavailable',
+        requestId: 'synthetic',
+        occurredAt: '',
+      });
+    });
+    const hook = renderHook(() =>
+      useAgentChat('app-uuid', 'local', 'test-actor')
+    );
+    await waitFor(() =>
+      expect(hook.result.current.view.messages).toHaveLength(2)
+    );
+    const original = hook.result.current.view.messages;
+    await act(async () => {
+      await hook.result.current.send('Revised question', undefined, 'user');
+    });
+    expect(hook.result.current.view.messages).toEqual(original);
+    expect(hook.result.current.unconfirmed).toBe(false);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    hook.unmount();
+  });
+
   it('rejects overlong correction text before creating optimistic messages or submissions', async () => {
     const hook = renderHook(() =>
       useAgentChat('app-uuid', 'local', 'test-actor')

@@ -2396,10 +2396,7 @@
     "chat": {
       "editResend": {
         "action": "Modifica e invia",
-        "original": "Correggo questa richiesta precedente:",
-        "replacement": "Usa questi nuovi requisiti:",
-        "guidance": "Non usare la risposta alla vecchia richiesta né le conclusioni che ne derivano come base di questa risposta. Mantieni il contesto invariato. Se mancano informazioni per i nuovi requisiti, segnalalo esplicitamente.",
-        "notice": "È stata aggiunta una correzione modificabile. L’invio aggiunge un messaggio alla conversazione; i messaggi originali e successivi restano.",
+        "notice": "Stai modificando un messaggio precedente. Dopo l’invio, la conversazione proseguirà da questo punto con la domanda modificata.",
         "textOnly": "Solo testo: gli allegati originali non vengono aggiunti di nuovo.",
         "exit": "Esci dalla modifica",
         "replaceTitle": "Sostituire la bozza attuale?",

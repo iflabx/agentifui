@@ -141,6 +141,10 @@ function AgentChatSession({
     (chat.singleTask && Boolean(chat.view.conversationId));
   const run = chat.view.run;
   const edit = useEditResend({
+    source: draft?.editSource,
+    onSourceChange: source => {
+      if (scope) useLangchainDraftStore.getState().setEditSource(scope, source);
+    },
     scope:
       scope && chat.view.conversationId
         ? JSON.stringify([scope, chat.view.conversationId])
@@ -225,7 +229,9 @@ function AgentChatSession({
   const submit = async () => {
     if (disabled || !content.trim() || !draft) return;
     const snapshot = draft;
-    const accepted = await chat.send(content, snapshot);
+    const accepted = edit.sourceId
+      ? await chat.send(content, snapshot, edit.sourceId)
+      : await chat.send(content, snapshot);
     if (accepted) useLangchainDraftStore.getState().consumeSnapshot(snapshot);
   };
 

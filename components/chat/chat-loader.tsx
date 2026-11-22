@@ -166,7 +166,7 @@ export const ChatLoader = ({
                     edit && msg.text.trim()
                       ? () =>
                           edit.start({
-                            id: msg.id,
+                            id: msg.db_id || msg.id,
                             text: msg.text,
                             hasAttachments: Boolean(msg.attachments?.length),
                           })

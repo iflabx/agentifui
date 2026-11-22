@@ -190,7 +190,8 @@ describe('Agent chat draft', () => {
     });
     expect(send).toHaveBeenLastCalledWith(
       'my visible correction',
-      expect.objectContaining({ text: 'my visible correction' })
+      expect.objectContaining({ text: 'my visible correction' }),
+      'old'
     );
     expect(input).toHaveValue('my visible correction');
     expect(screen.getByTestId('shared-user')).toHaveTextContent('old request');

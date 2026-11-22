@@ -185,4 +185,73 @@ describe('Dify native acceptance evidence without browser persistence changes', 
     ).text();
     expect(confirmSubmission).toHaveBeenLastCalledWith('root', 'unknown');
   });
+
+  it('persists an edit identity before confirming acceptance and forwarding its completed frame', async () => {
+    let release!: () => void;
+    let entered!: () => void;
+    const waiting = new Promise<void>(resolve => {
+      release = resolve;
+    });
+    const started = new Promise<void>(resolve => {
+      entered = resolve;
+    });
+    const onIdentity = jest.fn(async () => {
+      entered();
+      await waiting;
+    });
+    const observed = observeDifyResponse(
+      response([
+        { event: 'message_end', message_id: 'native-message', task_id: 'task' },
+      ]),
+      'root',
+      'chat-messages',
+      onIdentity
+    );
+    const reader = observed.body!.getReader();
+    let forwarded = false;
+    const next = reader.read().then(value => {
+      forwarded = true;
+      return value;
+    });
+    await started;
+    expect(confirmSubmission).not.toHaveBeenCalled();
+    expect(forwarded).toBe(false);
+    release();
+    expect((await next).value).toBeDefined();
+    expect(confirmSubmission).toHaveBeenNthCalledWith(1, 'root', 'accepted');
+    expect(confirmSubmission).toHaveBeenNthCalledWith(2, 'root', 'finished');
+    await reader.cancel();
+  });
+
+  it('does not forward the accepted frame when edit persistence fails', async () => {
+    const failure = new Error('edit persistence failed');
+    const onIdentity = jest.fn().mockRejectedValue(failure);
+    await expect(
+      observeDifyResponse(
+        response([{ event: 'message', message_id: 'native-message' }]),
+        'root',
+        'chat-messages',
+        onIdentity
+      ).text()
+    ).rejects.toBe(failure);
+    expect(confirmSubmission).not.toHaveBeenCalledWith('root', 'accepted');
+    expect(confirmSubmission).toHaveBeenCalledWith('root', 'unknown');
+  });
+
+  it('does not call edit persistence for a refusal or an ambiguous bare response', async () => {
+    const onIdentity = jest.fn();
+    await observeDifyResponse(
+      new Response('{}'),
+      'root',
+      'chat-messages',
+      onIdentity
+    ).text();
+    await observeDifyResponse(
+      response([{ code: 'invalid_param', status: 400 }]),
+      'root',
+      'chat-messages',
+      onIdentity
+    ).text();
+    expect(onIdentity).not.toHaveBeenCalled();
+  });
 });

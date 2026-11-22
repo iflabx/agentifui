@@ -475,7 +475,13 @@ export const agentRunsRoutes: FastifyPluginAsync<{
         typeof body !== 'object' ||
         Array.isArray(body) ||
         Object.keys(body).some(
-          key => !['submissionId', 'conversationId', 'content'].includes(key)
+          key =>
+            ![
+              'submissionId',
+              'conversationId',
+              'content',
+              'editSourceId',
+            ].includes(key)
         ) ||
         typeof body.content !== 'string' ||
         !body.content.trim() ||
@@ -503,6 +509,9 @@ export const agentRunsRoutes: FastifyPluginAsync<{
         request: {
           content: body.content,
           conversationId: body.conversationId ?? null,
+          ...(body.editSourceId === undefined
+            ? {}
+            : { editSourceId: uuid(body.editSourceId) }),
         },
       });
       const rootTaskId = registration.task.root_task_id;
@@ -559,6 +568,9 @@ export const agentRunsRoutes: FastifyPluginAsync<{
               : uuid(body.conversationId),
           content: body.content,
           ...readAgentAdmissionLimits(),
+          ...(body.editSourceId === undefined
+            ? {}
+            : { editSourceId: uuid(body.editSourceId) }),
         });
       } catch (error) {
         if (
@@ -621,7 +633,7 @@ export const agentRunsRoutes: FastifyPluginAsync<{
         rootTaskId,
         app,
         run,
-        content: body.content,
+        content: reservation.upstreamContent ?? body.content,
         emit,
         ...(agui ? { agui: { emit } } : {}),
         report: (value: { runId: string; code: string }) =>
@@ -704,6 +716,7 @@ export const agentRunsRoutes: FastifyPluginAsync<{
       const page = await queryRowsWithPgSystemContext(
         `SELECT id::text, role::text, content, metadata, status::text, created_at::text, sequence_index
        FROM messages WHERE conversation_id = $1::uuid
+         AND COALESCE(metadata->>'edit_hidden', 'false') <> 'true'
          AND ($2::integer IS NULL OR sequence_index < $2)
        ORDER BY sequence_index DESC, created_at DESC, id DESC LIMIT $3`,
         [conversationId, before, limit + 1]
@@ -720,6 +733,7 @@ export const agentRunsRoutes: FastifyPluginAsync<{
           deliverables,
           CASE WHEN persistence_status <> 'saved' OR result ? 'agui' THEN result ELSE NULL END AS result
        FROM backend_runs WHERE conversation_id = $1::uuid
+         AND NOT EXISTS (SELECT 1 FROM messages hidden WHERE hidden.id = backend_runs.user_message_id AND hidden.metadata->>'edit_hidden' = 'true')
          AND (user_message_id = ANY($2::uuid[]) OR id::text = ANY($3::text[]) OR run_kind = 'resume')
        ORDER BY created_at DESC, id DESC LIMIT 100`,
         [conversationId, messageIds, runIds]

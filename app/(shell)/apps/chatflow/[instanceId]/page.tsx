@@ -284,7 +284,11 @@ export default function AppDetailPage() {
 
   // wrap handleSubmit, implement UI switching logic
   const handleSubmit = useCallback(
-    async (message: string, files?: ChatUploadFile[]) => {
+    async (
+      message: string,
+      files?: ChatUploadFile[],
+      editSourceId?: string
+    ) => {
       try {
         // immediately set the submission state to true
         setIsSubmitting(true);
@@ -295,7 +299,7 @@ export default function AppDetailPage() {
         console.log('[AppDetail] UI state updated, start sending message');
 
         // call the original handleSubmit, it will create a conversation and send a message
-        await originalHandleSubmit(message, files);
+        await originalHandleSubmit(message, files, undefined, editSourceId);
 
         console.log(
           '[AppDetail] Message sent successfully, waiting for route jump'

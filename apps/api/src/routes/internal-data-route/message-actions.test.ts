@@ -1,10 +1,14 @@
 /** @jest-environment node */
-import { queryRowsWithPgSystemContext } from '../../lib/pg-context';
+import {
+  queryRowsWithPgSystemContext,
+  runWithPgSystemContext,
+} from '../../lib/pg-context';
 import { loadConversationOwnedByActor } from './auth';
 import { handleMessageAction } from './message-actions';
 
 jest.mock('../../lib/pg-context', () => ({
   queryRowsWithPgSystemContext: jest.fn(),
+  runWithPgSystemContext: jest.fn(),
 }));
 jest.mock('./auth', () => ({ loadConversationOwnedByActor: jest.fn() }));
 
@@ -211,5 +215,124 @@ describe('conversation message pages', () => {
       )?.statusCode
     ).toBe(404);
     expect(queryRowsWithPgSystemContext).not.toHaveBeenCalled();
+  });
+
+  it.each(['messages.getLatest', 'messages.getPage'])(
+    'filters edit state before pagination for %s',
+    async action => {
+      await handleMessageAction(action, { conversationId }, 'actor');
+      const sql = jest.mocked(queryRowsWithPgSystemContext).mock.calls[0][0];
+      for (const flag of ['edit_hidden', 'edit_pending']) {
+        expect(sql.indexOf(flag)).toBeGreaterThan(-1);
+        expect(sql.indexOf(flag)).toBeLessThan(sql.indexOf('LIMIT $2'));
+      }
+    }
+  );
+});
+
+describe('server-controlled edit persistence', () => {
+  const conversationId = '00000000-0000-4000-8000-000000000001';
+  const messageId = '00000000-0000-4000-8000-000000000002';
+  const clientMessageId = 'msg-1700000000000-aBc';
+  const query = jest.fn();
+  const payload = {
+    message: {
+      conversation_id: conversationId,
+      role: 'user',
+      content: 'new question',
+      metadata: {
+        client_message_id: clientMessageId,
+        attachments: [{ id: 'file' }],
+        edit_hidden: false,
+        edit_source_id: 'forged',
+      },
+    },
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    query.mockReset();
+    jest.mocked(loadConversationOwnedByActor).mockResolvedValue(true);
+    jest
+      .mocked(runWithPgSystemContext)
+      .mockImplementation(async operation => operation({ query } as never));
+  });
+
+  it('serializes an early frontend save and strips forged activation metadata', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ id: messageId }] });
+    await handleMessageAction('messages.save', payload, 'actor');
+    expect(query.mock.calls[0][0]).toContain('FOR UPDATE');
+    expect(query.mock.calls[1][1]).toEqual([
+      conversationId,
+      'user',
+      clientMessageId,
+    ]);
+    const [sql, params] = query.mock.calls[2];
+    expect(sql).toContain('INSERT INTO messages');
+    expect(JSON.parse(params[4])).toEqual({
+      client_message_id: clientMessageId,
+      attachments: [{ id: 'file' }],
+    });
+  });
+
+  it('merges attachments onto the reserved or accepted record without duplicating it or overwriting edit flags', async () => {
+    const existing = {
+      id: messageId,
+      content: 'new question',
+      metadata: { edit_source_id: 'source', edit_pending: true },
+    };
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [existing] })
+      .mockResolvedValueOnce({ rows: [existing] });
+    const response = await handleMessageAction(
+      'messages.save',
+      payload,
+      'actor'
+    );
+    expect(response?.payload).toMatchObject({ data: existing });
+    const [sql, params] = query.mock.calls[2];
+    expect(sql).toContain('UPDATE messages SET metadata');
+    expect(sql).not.toContain('content =');
+    expect(sql).not.toContain('external_id =');
+    expect(JSON.parse(params[1])).toEqual({
+      client_message_id: clientMessageId,
+      attachments: [{ id: 'file' }],
+    });
+    expect(
+      query.mock.calls.some(([statement]) =>
+        statement.includes('INSERT INTO messages')
+      )
+    ).toBe(false);
+  });
+
+  it('protects activation and client identity from a later metadata replacement', async () => {
+    jest
+      .mocked(queryRowsWithPgSystemContext)
+      .mockResolvedValueOnce([{ id: messageId }] as never);
+    await handleMessageAction(
+      'messages.updateMetadata',
+      {
+        conversationId,
+        messageId,
+        metadata: {
+          edit_hidden: false,
+          edit_source_id: 'forged',
+          attachments: [{ id: 'file' }],
+        },
+      },
+      'actor'
+    );
+    const [sql, params] = jest.mocked(queryRowsWithPgSystemContext).mock
+      .calls[0];
+    expect(sql).toContain(
+      "left(entry.key, 5) = 'edit_' OR entry.key = 'client_message_id'"
+    );
+    expect(JSON.parse(params![2] as string)).toEqual({
+      attachments: [{ id: 'file' }],
+    });
   });
 });

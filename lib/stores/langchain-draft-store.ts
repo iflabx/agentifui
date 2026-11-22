@@ -1,12 +1,16 @@
 import { create } from 'zustand';
 
+import type { MessageEditSource } from '../../packages/shared/src/message-edit';
+
 export interface LangchainDraftSnapshot {
+  editSource?: MessageEditSource;
   scope: string;
   text: string;
   revision: number;
 }
 
 export interface PendingAgentSubmission {
+  editSourceId?: string;
   appId: string;
   target: string;
   submissionId: string;
@@ -43,6 +47,7 @@ interface LangchainDraftState {
     conversationId: string
   ) => void;
   setText: (scope: string, text: string) => void;
+  setEditSource: (scope: string, source?: MessageEditSource) => void;
   consumeSnapshot: (snapshot: LangchainDraftSnapshot) => void;
 }
 
@@ -153,7 +158,24 @@ export const useLangchainDraftStore = create<LangchainDraftState>(
             scope,
             text,
             revision: (state.drafts[scope]?.revision || 0) + 1,
+            ...(text && state.drafts[scope]?.editSource
+              ? { editSource: state.drafts[scope].editSource }
+              : {}),
           },
+        },
+      });
+    },
+    setEditSource: (scope, editSource) => {
+      const state = get();
+      const prefix =
+        JSON.stringify([state.actorEpoch, state.actorId]).slice(0, -1) + ',';
+      if (!state.actorId || !scope.startsWith(prefix)) return;
+      const current = state.drafts[scope];
+      if (!current) return;
+      set({
+        drafts: {
+          ...state.drafts,
+          [scope]: { ...current, editSource, revision: current.revision + 1 },
         },
       });
     },

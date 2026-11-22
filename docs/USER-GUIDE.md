@@ -135,14 +135,18 @@ Use the actions actually present on a message:
 
 - **Copy** copies available message text. Browser clipboard permission and a
   secure context can affect whether copying succeeds.
-- **Edit and send** on a historical user text message prepares an editable correction
-  in the existing composer. Review the quoted old request and edit the new requirements,
-  then use the normal send button. This appends a new user message and answer to the
-  same conversation; it does not change the original message, remove later messages,
-  create a branch or reset the Agent's memory or previous tool effects.
-  You can change or delete all correction wording. Only the visible final text is sent.
-  The correction asks the model to prefer the new requirements, but cannot guarantee
-  that it ignores all old context. The full text counts toward normal request limits.
+- **Edit and send** on a historical user text message puts only the original question
+  in the existing composer. Edit it and use the normal send button. Once accepted,
+  the conversation continues from that position with the revised question and new
+  answer; the superseded question and subsequent turns no longer appear in the
+  current conversation view, including after reopening history.
+  The backend retains the old records and appends the revision to the same Agent
+  conversation. It supplies an implicit correction instruction, not displayed in
+  your message, to favor the new request. This is not a context reset or a true
+  branch: old context may still influence the model, and past tool effects are not
+  undone. Repeated identical requests or failed earlier requests can also make the
+  intended correction ambiguous to the model. Both your text and the implicit
+  instruction count toward request limits.
   Replacing an existing draft or selected attachments requires confirmation; cancelling
   keeps them. **Exit editing** dismisses the notice but keeps the prepared text.
   Historical attachments are not copied: attach files again if needed and supported.
@@ -151,7 +155,7 @@ Use the actions actually present on a message:
   Running tasks, unresolved saves and pending human input retain their normal limits.
 - **Regenerate**, where offered, requests another answer. Neither action repairs an
   incompletely saved run. Each accepted new request follows normal usage and permission
-  rules. Refresh or reopen history to check that the original and appended turns persist.
+  rules. Refresh or reopen history to check that the current conversation view persists.
 - **Useful/Not useful** feedback is offered only on paths wired to feedback.
   Selecting feedback does not modify the answer or guarantee an upstream model
   will be retrained.

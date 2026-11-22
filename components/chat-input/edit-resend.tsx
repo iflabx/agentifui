@@ -15,28 +15,21 @@ import {
 
 import { useTranslations } from 'next-intl';
 
-export interface EditSource {
-  id: string;
-  text: string;
-  hasAttachments?: boolean;
-}
+import type { MessageEditSource } from '../../packages/shared/src/message-edit';
 
-export function correctionDraft(
-  source: string,
-  labels: { original: string; replacement: string; guidance: string }
-) {
-  const points = Array.from(source);
-  const excerpt =
-    points.slice(0, 120).join('') + (points.length > 120 ? '…' : '');
-  const prefix = `${labels.original}\n“${excerpt}”\n\n${labels.replacement}\n`;
+export type EditSource = MessageEditSource;
+
+export function correctionDraft(source: string) {
   return {
-    text: `${prefix}${source}\n\n${labels.guidance}`,
-    selectionStart: prefix.length,
-    selectionEnd: prefix.length + source.length,
+    text: source,
+    selectionStart: 0,
+    selectionEnd: source.length,
   };
 }
 
 interface EditOptions {
+  source?: EditSource;
+  onSourceChange?: (source?: EditSource) => void;
   scope: string | null;
   value: string;
   blocked: boolean;
@@ -93,17 +86,14 @@ export function useEditResend(options: EditOptions) {
     (request: { scope: string; source: EditSource }) => {
       const current = live.current;
       if (current.scope !== request.scope || current.blocked) return;
-      const draft = correctionDraft(request.source.text, {
-        original: t('original'),
-        replacement: t('replacement'),
-        guidance: t('guidance'),
-      });
+      const draft = correctionDraft(request.source.text);
       if (!current.replace(draft.text)) return;
+      current.onSourceChange?.(request.source);
       setNotice(request);
       setPending(null);
       setSelection({ ...draft, scope: request.scope });
     },
-    [t]
+    []
   );
   const scope = options.scope;
   const start = useCallback(
@@ -130,28 +120,36 @@ export function useEditResend(options: EditOptions) {
     () => ({ start, disabled: options.blocked }),
     [start, options.blocked]
   );
+  const activeSource = options.onSourceChange
+    ? options.source
+    : notice?.scope === scope
+      ? notice.source
+      : undefined;
   return {
+    sourceId: activeSource?.id,
     controls,
     onInputRef,
-    notice:
-      notice && notice.scope === scope ? (
-        <div
-          role="status"
-          className="flex items-start gap-3 px-4 pt-3 text-sm text-stone-600 dark:text-stone-300"
+    notice: activeSource ? (
+      <div
+        role="status"
+        className="flex items-start gap-3 px-4 pt-3 text-sm text-stone-600 dark:text-stone-300"
+      >
+        <p className="min-w-0 flex-1">
+          {t('notice')}
+          {activeSource.hasAttachments ? ` ${t('textOnly')}` : ''}
+        </p>
+        <button
+          type="button"
+          className="shrink-0 underline"
+          onClick={() => {
+            setNotice(null);
+            options.onSourceChange?.();
+          }}
         >
-          <p className="min-w-0 flex-1">
-            {t('notice')}
-            {notice.source.hasAttachments ? ` ${t('textOnly')}` : ''}
-          </p>
-          <button
-            type="button"
-            className="shrink-0 underline"
-            onClick={() => setNotice(null)}
-          >
-            {t('exit')}
-          </button>
-        </div>
-      ) : null,
+          {t('exit')}
+        </button>
+      </div>
+    ) : null,
     confirmation:
       pending && pending.scope === scope && !options.blocked ? (
         <ConfirmDialog

@@ -138,6 +138,7 @@ function buildAssistantPersistenceFallback(input: {
 }
 
 interface ExecuteChatSubmitInput {
+  editSourceId?: string;
   onAccepted?: (accepted: ChatSubmissionAccepted) => void;
   viewScope?: ChatViewScope;
   message: string;
@@ -266,6 +267,22 @@ export async function executeChatSubmit(
     finalDbConvUUID = binding?.dbConversationId || finalDbConvUUID;
   };
   const onAccepted = (accepted: ChatSubmissionAccepted) => {
+    if (input.editSourceId) {
+      const state = useChatStore.getState();
+      const source = state.messages.findIndex(
+        message => (message.db_id || message.id) === input.editSourceId
+      );
+      const replacement = state.messages.findIndex(
+        message => message.id === userMessage.id
+      );
+      if (isCurrent() && source >= 0 && replacement > source) {
+        useChatStore.setState({
+          messages: state.messages.filter(
+            (_, index) => index < source || index >= replacement
+          ),
+        });
+      }
+    }
     finalRealConvId = accepted.externalId;
     finalTaskId = accepted.taskId;
     input.setCurrentTaskId(accepted.taskId);
@@ -310,6 +327,7 @@ export async function executeChatSubmit(
           viewScope: input.viewScope,
         })
       : await startExistingChatConversation({
+          editSourceId: input.editSourceId,
           onAccepted,
           message: input.message,
           inputs: input.inputs,

@@ -16,7 +16,8 @@ const NATIVE_REFUSAL_CODES = new Set([
 export function observeDifyResponse(
   upstream: Response,
   taskId: string,
-  path: string
+  path: string,
+  onIdentity?: (event: Record<string, unknown>) => Promise<void>
 ): Response {
   if (!upstream.body) return upstream;
   const reader = upstream.body.getReader();
@@ -62,6 +63,7 @@ export function observeDifyResponse(
       terminal = true;
       return;
     }
+    if (hasIdentity && onIdentity) await onIdentity(event);
     if (!accepted && hasIdentity) {
       await confirmSubmission(taskId, 'accepted');
       accepted = true;

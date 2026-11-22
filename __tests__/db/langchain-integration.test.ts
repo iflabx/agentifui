@@ -1683,6 +1683,128 @@ it('soft-deletes only the owned local conversation and does not claim upstream m
 describe('negotiated AG-UI persistence and protocol', () => {
   const protocol = 'ag-ui/1.0';
 
+  it('appends implicit edits upstream while persisting a paginated revised display path', async () => {
+    const first = aguiAcceptance(
+      (await submit(0, 'First question', { protocol })).body
+    );
+    await submit(0, 'Second question', {
+      protocol,
+      conversationId: first.conversationId,
+    });
+    await submit(0, 'Third question', {
+      protocol,
+      conversationId: first.conversationId,
+    });
+    const path = `/api/internal/apps/${applications[0]}/agent/conversations/${first.conversationId}`;
+    const original = (await request(0, path)).json().messages;
+    const sourceId = original[2].id;
+    const editSubmissionId = randomUUID();
+    const revision = await submit(0, 'Revised second question', {
+      protocol,
+      conversationId: first.conversationId,
+      submissionId: editSubmissionId,
+      extra: { editSourceId: sourceId },
+    });
+    expect(events(revision.body).at(-1)?.type).toBe('RUN_FINISHED');
+    const upstreamBody = modelCalls().at(-1)!.body;
+    expect(upstreamBody.threadId).toBe(modelCalls()[0].body.threadId);
+    expect(upstreamBody.messages).toHaveLength(1);
+    expect(JSON.stringify(upstreamBody.messages)).toContain(
+      'Replacement request:'
+    );
+    expect(JSON.stringify(upstreamBody.messages)).toContain(
+      'Revised second question'
+    );
+    const history = (await request(0, path, 1)).json();
+    expect(
+      history.messages.map((message: { content: string }) => message.content)
+    ).toEqual([
+      'First question',
+      'synthetic answer 1',
+      'Revised second question',
+      'synthetic answer 4',
+    ]);
+    expect(history.runs).toHaveLength(2);
+    expect(JSON.stringify(history)).not.toContain('Replacement request:');
+    const raw = (
+      await database.query(
+        'SELECT * FROM messages WHERE conversation_id=$1 ORDER BY sequence_index',
+        [first.conversationId]
+      )
+    ).rows;
+    expect(raw).toHaveLength(8);
+    expect(
+      raw.filter(message => message.metadata.edit_hidden === true)
+    ).toHaveLength(4);
+    expect(raw[6].metadata.edit_source_id).toBe(sourceId);
+    const page = (await request(0, `${path}?limit=2`)).json();
+    const older = (
+      await request(0, `${path}?limit=2&before=${page.nextCursor}`)
+    ).json();
+    expect(older.messages.map((message: { id: string }) => message.id)).toEqual(
+      original.slice(0, 2).map((message: { id: string }) => message.id)
+    );
+    expect(older.nextCursor).toBeNull();
+    const count = modelCalls().length;
+    const replay = await submit(0, 'Revised second question', {
+      protocol,
+      conversationId: first.conversationId,
+      submissionId: editSubmissionId,
+      extra: { editSourceId: sourceId },
+    });
+    expect(replay.statusCode).toBe(409);
+    expect(replay.json().code).toBe('AGENT_SUBMISSION_REPLAY');
+    expect(modelCalls()).toHaveLength(count);
+    const mismatch = await submit(0, 'Revised second question', {
+      protocol,
+      conversationId: first.conversationId,
+      submissionId: editSubmissionId,
+      extra: { editSourceId: original[0].id },
+    });
+    expect(mismatch.statusCode).toBe(409);
+    expect(modelCalls()).toHaveLength(count);
+    const stale = await submit(0, 'Stale edit', {
+      protocol,
+      conversationId: first.conversationId,
+      extra: { editSourceId: sourceId },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(modelCalls()).toHaveLength(count);
+    const next = await submit(0, 'Revised again', {
+      protocol,
+      conversationId: first.conversationId,
+      extra: { editSourceId: raw[6].id },
+    });
+    expect(events(next.body).at(-1)?.type).toBe('RUN_FINISHED');
+    expect(
+      (await request(0, path))
+        .json()
+        .messages.map((message: { content: string }) => message.content)
+    ).toEqual([
+      'First question',
+      'synthetic answer 1',
+      'Revised again',
+      'synthetic answer 5',
+    ]);
+    const current = (await request(0, path)).json().messages;
+    const competing = await Promise.all(
+      ['Concurrent A', 'Concurrent B'].map(content =>
+        submit(0, content, {
+          protocol,
+          conversationId: first.conversationId,
+          extra: { editSourceId: current[2].id },
+        })
+      )
+    );
+    expect(
+      competing.filter(response => response.statusCode === 200)
+    ).toHaveLength(1);
+    expect(
+      competing.filter(response => response.statusCode === 409)
+    ).toHaveLength(1);
+    expect(modelCalls()).toHaveLength(count + 2);
+  });
+
   function aguiAcceptance(body: string) {
     const stream = events(body);
     expect(stream[0]).toMatchObject({

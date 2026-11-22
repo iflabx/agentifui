@@ -248,7 +248,11 @@ function LegacyAppDetailPage() {
 
   // wrap handleSubmit, implement UI switch logic
   const handleSubmit = useCallback(
-    async (message: string, files?: ChatUploadFile[]) => {
+    async (
+      message: string,
+      files?: ChatUploadFile[],
+      editSourceId?: string
+    ) => {
       try {
         // immediately set submit state to true
         setIsSubmitting(true);
@@ -259,7 +263,7 @@ function LegacyAppDetailPage() {
         console.log('[AppDetail] UI state updated, start sending message');
 
         // call original handleSubmit, it will create conversation and send message
-        await originalHandleSubmit(message, files);
+        await originalHandleSubmit(message, files, undefined, editSourceId);
 
         console.log(
           '[AppDetail] message sent successfully, waiting for route change'

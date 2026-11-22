@@ -2396,10 +2396,7 @@
     "chat": {
       "editResend": {
         "action": "Editar e enviar",
-        "original": "Estou a corrigir este pedido anterior:",
-        "replacement": "Utilize estes novos requisitos:",
-        "guidance": "Não utilize a resposta ao pedido anterior nem as conclusões dele derivadas como base desta resposta. Mantenha o restante contexto inalterado. Se faltar informação para os novos requisitos, indique-o explicitamente.",
-        "notice": "Foi adicionada uma correção editável. O envio acrescenta uma mensagem à conversa; as mensagens originais e posteriores mantêm-se.",
+        "notice": "Está a editar uma mensagem anterior. Após o envio, a conversa continua a partir deste ponto com a pergunta revista.",
         "textOnly": "Apenas texto: os anexos originais não são novamente anexados.",
         "exit": "Sair da edição",
         "replaceTitle": "Substituir o rascunho atual?",

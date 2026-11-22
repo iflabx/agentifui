@@ -147,7 +147,8 @@ describe('Dify edit preparation through the existing composer', () => {
     });
     expect(submit).toHaveBeenLastCalledWith(
       'visible new requirement',
-      undefined
+      undefined,
+      'old'
     );
     expect(useChatInputStore.getState().message).toBe(
       'visible new requirement'

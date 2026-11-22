@@ -1,4 +1,11 @@
-import { queryRowsWithPgSystemContext } from '../../lib/pg-context';
+import {
+  lockMessageEditConversation,
+  stripMessageEditMetadata,
+} from '../../lib/message-edits';
+import {
+  queryRowsWithPgSystemContext,
+  runWithPgSystemContext,
+} from '../../lib/pg-context';
 import { loadConversationOwnedByActor } from './auth';
 import {
   buildAssistantPreview,
@@ -78,6 +85,8 @@ export async function handleMessageAction(
           sequence_index
         FROM messages
         WHERE conversation_id = $1::uuid
+          AND COALESCE(metadata ->> 'edit_hidden', 'false') <> 'true'
+          AND COALESCE(metadata ->> 'edit_pending', 'false') <> 'true'
           AND (
             $3::uuid IS NULL
             OR (created_at, COALESCE(sequence_index, 0), id) < (
@@ -186,12 +195,13 @@ export async function handleMessageAction(
       return toErrorResponse('Invalid status', 400);
     }
 
-    const metadata =
+    const metadata = stripMessageEditMetadata(
       message.metadata &&
-      typeof message.metadata === 'object' &&
-      !Array.isArray(message.metadata)
-        ? message.metadata
-        : {};
+        typeof message.metadata === 'object' &&
+        !Array.isArray(message.metadata)
+        ? (message.metadata as Record<string, unknown>)
+        : {}
+    );
 
     const sequenceIndex =
       typeof message.sequence_index === 'number' &&
@@ -201,8 +211,31 @@ export async function handleMessageAction(
           ? 0
           : 1;
 
-    const rows = await queryRowsWithPgSystemContext<MessageRow>(
-      `
+    const rows = await runWithPgSystemContext(async client => {
+      await lockMessageEditConversation(client, conversationId);
+      const clientMessageId =
+        typeof metadata.client_message_id === 'string'
+          ? metadata.client_message_id
+          : '';
+      if (clientMessageId) {
+        const existing = await client.query<MessageRow>(
+          `SELECT * FROM messages WHERE conversation_id = $1::uuid AND role = $2::message_role
+             AND metadata ->> 'client_message_id' = $3
+             AND NOT EXISTS (SELECT 1 FROM backend_conversations binding WHERE binding.conversation_id = $1::uuid)
+             ORDER BY created_at, id LIMIT 1`,
+          [conversationId, role, clientMessageId]
+        );
+        if (existing.rows[0]) {
+          const merged = await client.query<MessageRow>(
+            `UPDATE messages SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb
+             WHERE id = $1::uuid RETURNING *`,
+            [existing.rows[0].id, JSON.stringify(metadata)]
+          );
+          return merged.rows;
+        }
+      }
+      const inserted = await client.query<MessageRow>(
+        `
         INSERT INTO messages (
           conversation_id,
           user_id,
@@ -246,21 +279,23 @@ export async function handleMessageAction(
           is_synced,
           sequence_index
       `,
-      [
-        conversationId,
-        role === 'user' ? actorUserId : null,
-        role,
-        content,
-        JSON.stringify(metadata),
-        status || 'sent',
-        readString(message.external_id) || null,
-        typeof message.token_count === 'number' &&
-        Number.isFinite(message.token_count)
-          ? Math.floor(message.token_count)
-          : null,
-        sequenceIndex,
-      ]
-    );
+        [
+          conversationId,
+          role === 'user' ? actorUserId : null,
+          role,
+          content,
+          JSON.stringify(metadata),
+          status || 'sent',
+          readString(message.external_id) || null,
+          typeof message.token_count === 'number' &&
+          Number.isFinite(message.token_count)
+            ? Math.floor(message.token_count)
+            : null,
+          sequenceIndex,
+        ]
+      );
+      return inserted.rows;
+    });
 
     const saved = rows[0] ? sanitizeMessage(rows[0]) : null;
 
@@ -287,7 +322,9 @@ export async function handleMessageAction(
   if (action === 'messages.updateMetadata') {
     const conversationId = readString(payload?.conversationId);
     const messageId = readString(payload?.messageId);
-    const metadata = readObject(payload?.metadata) || {};
+    const metadata = stripMessageEditMetadata(
+      readObject(payload?.metadata) || {}
+    );
 
     if (!conversationId || !messageId) {
       return toErrorResponse('Missing required fields', 400);
@@ -305,7 +342,11 @@ export async function handleMessageAction(
     const rows = await queryRowsWithPgSystemContext<MessageRow>(
       `
         UPDATE messages
-        SET metadata = $3::jsonb
+        SET metadata = $3::jsonb || COALESCE((
+          SELECT jsonb_object_agg(entry.key, entry.value)
+          FROM jsonb_each(COALESCE(messages.metadata, '{}'::jsonb)) entry
+          WHERE left(entry.key, 5) = 'edit_' OR entry.key = 'client_message_id'
+        ), '{}'::jsonb)
         WHERE id = $1::uuid
           AND conversation_id = $2::uuid
           AND NOT EXISTS (

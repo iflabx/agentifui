@@ -1,6 +1,24 @@
 import { useChatInputStore } from './chat-input-store';
 
 describe('scoped chat input drafts', () => {
+  it('keeps the edit source with its draft across navigation and consumes only the accepted revision', () => {
+    const input = useChatInputStore.getState();
+    input.setMessage('Revised');
+    input.setEditSource({ id: 'source', text: 'Original' });
+    const snapshot = input.snapshot();
+    input.setCurrentRoute('B');
+    expect(input.snapshot().editSource).toBeUndefined();
+    input.setCurrentRoute('A');
+    expect(input.snapshot().editSource?.id).toBe('source');
+    input.setEditSource();
+    input.consumeSnapshot(snapshot);
+    expect(input.getMessage()).toBe('Revised');
+    expect(input.snapshot().editSource).toBeUndefined();
+    input.setEditSource({ id: 'another', text: 'Original' });
+    input.consumeSnapshot(input.snapshot());
+    expect(input.snapshot().editSource).toBeUndefined();
+    expect(input.getMessage()).toBe('');
+  });
   beforeEach(() => {
     useChatInputStore.getState().clearAllMessages();
     useChatInputStore.getState().setCurrentRoute('A');

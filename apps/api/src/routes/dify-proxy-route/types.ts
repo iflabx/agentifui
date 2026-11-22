@@ -1,4 +1,5 @@
 import type { AgentErrorSource } from '../../lib/agent-error';
+import type { DifyMessageEdit } from './message-edits';
 
 export interface DifyProxyActor {
   userId: string;
@@ -23,6 +24,7 @@ export interface DifyProxyTargetConfig {
   serviceInstanceId?: string;
   appInstanceId?: string;
   rootTaskId?: string;
+  messageEdit?: DifyMessageEdit;
   credentialVersion?: string;
   difyApiKey: string;
   difyApiUrl: string;

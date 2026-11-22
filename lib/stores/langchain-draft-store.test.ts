@@ -14,6 +14,33 @@ describe('LangChain draft store', () => {
     return langchainDraftScope(state.actorEpoch, 'actor', app, target);
   }
 
+  it('preserves editing metadata with scoped text until explicitly exited or consumed', () => {
+    const key = scope('app', 'conversation');
+    const state = useLangchainDraftStore.getState();
+    state.setText(key, 'Original');
+    state.setEditSource(key, { id: 'source', text: 'Original' });
+    state.setText(key, 'Revised');
+    const snapshot = useLangchainDraftStore.getState().drafts[key];
+    expect(snapshot.editSource?.id).toBe('source');
+    state.selectScope('app', 'another', false);
+    state.selectScope('app', 'conversation', false);
+    expect(useLangchainDraftStore.getState().drafts[key].editSource?.id).toBe(
+      'source'
+    );
+    state.setEditSource(key);
+    state.consumeSnapshot(snapshot);
+    expect(useLangchainDraftStore.getState().drafts[key].text).toBe('Revised');
+    expect(
+      useLangchainDraftStore.getState().drafts[key].editSource
+    ).toBeUndefined();
+    state.setEditSource(key, { id: 'another', text: 'Original' });
+    state.consumeSnapshot(useLangchainDraftStore.getState().drafts[key]);
+    expect(
+      useLangchainDraftStore.getState().drafts[key].editSource
+    ).toBeUndefined();
+    expect(useLangchainDraftStore.getState().drafts[key].text).toBe('');
+  });
+
   it('keeps actor, application and target buckets distinct', () => {
     const first = scope('app-A', 'new:0');
     const second = scope('app-B', 'new:0');
