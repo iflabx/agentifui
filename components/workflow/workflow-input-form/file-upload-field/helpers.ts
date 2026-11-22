@@ -27,7 +27,8 @@ export function isWorkflowUploadOwner(
 
 export interface UploadFile extends Partial<WorkflowUploadOwner> {
   id: string;
-  file: File;
+  file?: File;
+  reference?: Record<string, unknown>;
   name: string;
   size: number;
   type: string;
@@ -72,6 +73,44 @@ export function createUploadFiles(files: File[]): UploadFile[] {
   }));
 }
 
+export function restoreUploadFiles(
+  values: unknown[],
+  owner: WorkflowUploadOwner,
+  restoreScope?: WorkflowUploadOwner
+): UploadFile[] {
+  const allowHistoricalEpoch =
+    restoreScope && isWorkflowUploadOwner(restoreScope, owner);
+  const seen = new Set<string>();
+  return values.flatMap(value => {
+    if (!isProcessedFileItem(value)) return [];
+    const reference = value as Record<string, unknown>;
+    const uploadedId = reference.upload_file_id as string;
+    if (
+      !uploadedId ||
+      seen.has(uploadedId) ||
+      reference.app_id !== owner.app_id ||
+      reference.actor_id !== owner.actor_id ||
+      (!allowHistoricalEpoch && !isWorkflowUploadOwner(reference, owner))
+    )
+      return [];
+    seen.add(uploadedId);
+    return [
+      {
+        ...owner,
+        id: `saved-${uploadedId}`,
+        uploadedId,
+        reference: { ...reference, ...owner },
+        name: typeof reference.name === 'string' ? reference.name : uploadedId,
+        size: typeof reference.size === 'number' ? reference.size : NaN,
+        type:
+          typeof reference.mime_type === 'string' ? reference.mime_type : '',
+        status: 'success' as const,
+        progress: 100,
+      },
+    ];
+  });
+}
+
 export function getDifyFileType(
   file: Pick<UploadFile, 'type'> & { name?: string }
 ): 'image' | 'document' | 'audio' | 'video' | 'custom' {
@@ -109,22 +148,28 @@ export function getSuccessfulFilesPayload(
         file.uploadedId &&
         (!owner || isWorkflowUploadOwner(file, owner))
     )
-    .map(file => ({
-      type: getDifyFileType(file),
-      transfer_method: 'local_file' as const,
-      upload_file_id: file.uploadedId as string,
-      name: file.name,
-      size: file.size,
-      mime_type: file.type,
-      ...(file.app_id && file.actor_id && typeof file.actor_epoch === 'number'
-        ? {
-            app_id: file.app_id,
-            actor_id: file.actor_id,
-            actor_epoch: file.actor_epoch,
+    .map(file =>
+      file.reference
+        ? { ...file.reference }
+        : {
+            type: getDifyFileType(file),
+            transfer_method: 'local_file' as const,
+            upload_file_id: file.uploadedId as string,
+            name: file.name,
+            size: file.size,
+            mime_type: file.type,
+            ...(file.app_id &&
+            file.actor_id &&
+            typeof file.actor_epoch === 'number'
+              ? {
+                  app_id: file.app_id,
+                  actor_id: file.actor_id,
+                  actor_epoch: file.actor_epoch,
+                }
+              : {}),
+            ...(file.previewUrl ? { preview_url: file.previewUrl } : {}),
           }
-        : {}),
-      ...(file.previewUrl ? { preview_url: file.previewUrl } : {}),
-    }));
+    );
 
   return {
     successIds: successfulFiles

@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useRef, useState } from 'react';
+import { type ReactNode, useId, useRef, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 
@@ -11,12 +11,16 @@ interface ExecutionProcessDisclosureProps {
   items: ExecutionProcessItem[];
   historical?: boolean;
   unordered?: boolean;
+  executing?: boolean;
+  renderItem?: (item: ExecutionProcessItem, index: number) => ReactNode;
 }
 
 export function ExecutionProcessDisclosure({
   items,
   historical,
   unordered,
+  executing,
+  renderItem,
 }: ExecutionProcessDisclosureProps) {
   const translate = useTranslations('executionProcess');
   const [open, setOpen] = useState(false);
@@ -51,6 +55,8 @@ export function ExecutionProcessDisclosure({
             items={items}
             historical={historical}
             unordered={unordered}
+            executing={executing}
+            renderItem={renderItem}
             onClose={() => {
               setOpen(false);
               trigger.current?.focus();

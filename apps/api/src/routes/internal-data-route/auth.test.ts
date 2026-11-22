@@ -18,6 +18,28 @@ const config = {} as ApiRuntimeConfig;
 const action = 'conversations.syncGeneratedTitleIfPlaceholder';
 
 describe('internal action authorization', () => {
+  it.each(['appExecutions.reserveTask', 'appExecutions.getByConversation'])(
+    'uses fresh session status for %s',
+    async taskAction => {
+      jest.mocked(resolveProfileStatusFromSession).mockResolvedValueOnce({
+        kind: 'ok',
+        identity: {
+          userId: 'actor',
+          authUserId: 'actor',
+          role: 'user',
+          status: 'active',
+        },
+      });
+      expect(
+        await ensureActionPermission(request, config, taskAction, {})
+      ).toEqual({ error: null, actorUserId: 'actor' });
+      expect(resolveProfileStatusFromSession).toHaveBeenLastCalledWith(
+        request,
+        config,
+        { bypassCache: true }
+      );
+    }
+  );
   it('classifies every implemented action exactly once', () => {
     const actions = Object.entries(actionTypes)
       .filter(

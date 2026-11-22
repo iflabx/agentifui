@@ -55,7 +55,8 @@ export function unavailableInputCapabilities(
 export function normalizeDifyInputCapabilities(
   parameters: unknown,
   appType = 'chatbot',
-  platformMaxBytes = 16 * MIB - 64 * 1024
+  platformMaxBytes = 16 * MIB - 64 * 1024,
+  taskInput?: { text_variable?: string | null }
 ): AgentInputCapabilities {
   const task = ['workflow', 'text-generation', 'completion'].includes(appType);
   const result: AgentInputCapabilities = {
@@ -235,6 +236,28 @@ export function normalizeDifyInputCapabilities(
     }
     result.fields.push(field);
   }
+  if (task) {
+    const candidates = result.fields.filter(field =>
+      ['text-input', 'paragraph'].includes(field.type)
+    );
+    const variable = taskInput?.text_variable;
+    const field =
+      variable === undefined
+        ? candidates.length === 1
+          ? candidates[0]
+          : undefined
+        : candidates.find(candidate => candidate.key === variable);
+    if (variable !== undefined && variable !== null && !field) {
+      result.status = 'unavailable';
+      result.reason = 'TASK_TEXT_MAPPING_INVALID';
+    } else if (field && variable !== null && result.status === 'ready') {
+      result.text = {
+        enabled: true,
+        required: field.required,
+        target: field.key,
+      };
+    }
+  }
   return result;
 }
 
@@ -244,6 +267,7 @@ interface DifyInputTarget {
   difyApiKey: string;
   credentialVersion?: string;
   appType?: string;
+  taskInput?: { text_variable?: string | null };
 }
 const cache = new Map<
   string,
@@ -274,6 +298,7 @@ export async function resolveDifyInputCapabilities(
         target.difyApiKey,
         target.credentialVersion,
         target.appType,
+        target.taskInput,
         platformMaxBytes,
       ])
     )
@@ -297,7 +322,8 @@ export async function resolveDifyInputCapabilities(
       const capabilities = normalizeDifyInputCapabilities(
         await response.json(),
         target.appType,
-        platformMaxBytes
+        platformMaxBytes,
+        target.taskInput
       );
       if (startedGeneration === generation) {
         if (cache.size >= 512) cache.delete(cache.keys().next().value!);

@@ -1440,6 +1440,19 @@
           }
         },
         "page": {
+          "taskInput": {
+            "label": "Testo principale dell’attività",
+            "auto": "Automatico (un solo campo di testo libero)",
+            "parametersOnly": "Solo parametri",
+            "autoResolved": "Mappatura automatica: il testo viene inviato a {variable}.",
+            "explicitResolved": "Mappatura esplicita: il testo viene inviato a {variable}.",
+            "parametersOnlyNote": "Il testo è disabilitato. Usare parametri e file.",
+            "ambiguous": "Più campi di testo libero: scegliere una variabile principale o solo parametri. Il testo è disabilitato.",
+            "noText": "Nessun campo di testo libero. Il testo è disabilitato.",
+            "invalid": "La variabile {variable} manca o non è un campo di testo libero. Correggere la mappatura prima dell’esecuzione.",
+            "invalidOption": "Variabile non disponibile: {variable}",
+            "schemaNote": "Basato sullo schema dei parametri salvato; sincronizzare con Dify per aggiornarlo."
+          },
           "title": {
             "edit": "Modifica Istanza Applicazione",
             "add": "Aggiungi Istanza Applicazione"
@@ -2924,5 +2937,30 @@
     "confirmationUnknown": "Risultato non confermato. Verificare lo stato senza inviare di nuovo.",
     "confirmationSingleTask": "Questo agente gestisce una attività per conversazione. Avviare una nuova conversazione per altre attività.",
     "confirmationNotDispatched": "La decisione non è stata inviata. Controllarla e riprovare."
+  },
+  "taskChat": {
+    "loading": "Caricamento attività…",
+    "loginRequired": "Accedi per continuare",
+    "unavailable": "Applicazione non disponibile",
+    "independent": "Ogni invio è indipendente, senza memoria delle attività precedenti.",
+    "placeholder": "Inserisci il contenuto",
+    "parametersOnly": "Compila i parametri o allega i file richiesti sopra",
+    "taskTitle": "Esecuzione attività",
+    "replayed": "Questo invio esiste già e non verrà ripetuto automaticamente. Controlla lo stato salvato.",
+    "submitFailed": "Invio non confermato. Un nuovo tentativo mantiene lo stesso identificatore.",
+    "loadOlder": "Carica attività precedenti",
+    "historyFailed": "Cronologia non disponibile. Controlla gli accessi e riprova.",
+    "retry": "Riprova",
+    "welcome": "Avvia un’attività con l’input qui sotto.",
+    "parameterTask": "Attività con parametri o file",
+    "noProcess": "Nessun dettaglio salvato",
+    "running": "In esecuzione",
+    "unknown": "Esito non confermato. L’attività originale potrebbe essere ancora in corso e non verrà riavviata automaticamente.",
+    "completed": "Completata",
+    "failed": "Non riuscita",
+    "stopped": "Interrotta",
+    "runAgain": "Riutilizza questi input",
+    "viewResult": "Visualizza risultato completo",
+    "recoverTask": "Segna interrotta e prepara un’altra esecuzione"
   }
 }

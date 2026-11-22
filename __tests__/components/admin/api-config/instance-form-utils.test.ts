@@ -12,6 +12,29 @@ import {
 } from '@components/admin/api-config/instance-form-utils';
 
 describe('instance form utils', () => {
+  it.each([undefined, null, 'ExactText'])(
+    'roundtrips task mapping %p without inventing an automatic override',
+    text_variable => {
+      const instance = {
+        instance_id: 'task',
+        config: {
+          app_metadata: { dify_apptype: 'workflow' as const },
+          ...(text_variable === undefined
+            ? {}
+            : { task_input: { text_variable } }),
+        },
+      };
+      const data = createInstanceFormDataFromInstance(instance, []);
+      const saved = prepareInstanceFormForSave(data);
+      expect(saved.config.task_input).toEqual(instance.config.task_input);
+      expect(
+        createInstanceFormDataFromInstance(saved, []).config.task_input
+      ).toEqual(instance.config.task_input);
+      if (text_variable === undefined)
+        expect(saved.config).not.toHaveProperty('task_input');
+    }
+  );
+
   it.each([true, false, undefined])(
     'roundtrips result-profile intent %s without converting ordinary apps to paused profiles',
     enabled => {

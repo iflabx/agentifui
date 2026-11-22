@@ -6,6 +6,7 @@ import {
   executeDifyCompletion,
   streamDifyCompletion,
 } from './completion-service';
+import { hasDefinitiveTaskOutcome } from './submission';
 import type { DifyCompletionRequestPayload } from './types';
 
 global.TextDecoder = TextDecoder as typeof global.TextDecoder;
@@ -368,6 +369,53 @@ describe('streamDifyCompletion', () => {
       expect(body.locked).toBe(false);
     }
   );
+
+  it.each([
+    ['', ''],
+    ['', 'data: [DONE]\n\n'],
+    ['Partial answer', ''],
+    ['Partial answer', 'data: [DONE]\n\n'],
+  ])(
+    'rejects task EOF without message_end for answer %p and suffix %p',
+    async (answer, suffix) => {
+      const body = createBody(
+        (answer ? frame({ event: 'message', id: 'message-1', answer }) : '') +
+          suffix
+      );
+      mockResponse(body);
+      const response = await streamDifyCompletion('app-1', payload, {
+        submissionId: 'submission-1',
+      });
+      const completion = response.completionPromise.catch(error => error);
+
+      await expect(collectStream(response.answerStream)).rejects.toThrow(
+        'Completion stream ended before message_end.'
+      );
+      const error = await completion;
+      expect(error).toBeInstanceOf(Error);
+      expect(hasDefinitiveTaskOutcome(error)).toBe(false);
+      expect(body.locked).toBe(false);
+    }
+  );
+
+  it('completes a task only after message_end', async () => {
+    mockResponse(
+      createBody(
+        frame({ event: 'message', id: 'message-1', answer: 'Final answer' }) +
+          frame({ event: 'message_end', id: 'message-1', metadata: {} })
+      )
+    );
+    const response = await streamDifyCompletion('app-1', payload, {
+      submissionId: 'submission-1',
+    });
+
+    await expect(collectStream(response.answerStream)).resolves.toBe(
+      'Final answer'
+    );
+    await expect(response.completionPromise).resolves.toMatchObject({
+      metadata: { has_content: true, message_id: 'message-1' },
+    });
+  });
 
   it('settles an empty clean stream without claiming generated content', async () => {
     const body = createBody('');

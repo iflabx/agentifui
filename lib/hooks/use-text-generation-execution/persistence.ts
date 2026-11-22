@@ -23,6 +23,7 @@ type SaveCompleteTextGenerationDataParams = {
   messageId: string | null;
   generatedText: string;
   instanceId: string;
+  preserveStatusOnSaveFailure?: boolean;
   updateCurrentExecution: TextGenerationExecutionUpdater;
   addExecutionToHistory: (execution: AppExecution) => void;
 };
@@ -265,6 +266,7 @@ export async function saveCompleteTextGenerationData({
   messageId,
   generatedText,
   instanceId,
+  preserveStatusOnSaveFailure = false,
   updateCurrentExecution,
   addExecutionToHistory,
 }: SaveCompleteTextGenerationDataParams): Promise<Result<AppExecution>> {
@@ -379,9 +381,16 @@ export async function saveCompleteTextGenerationData({
       };
     } catch (compactError) {
       console.warn(
-        '[Text Generation] Failed to save compact text generation data, falling back to failed status:',
+        '[Text Generation] Failed to save compact text generation data:',
         compactError
       );
+    }
+
+    if (preserveStatusOnSaveFailure) {
+      return {
+        success: false,
+        error: new Error(TEXT_GENERATION_PERSISTENCE_FAILURE_MESSAGE),
+      };
     }
 
     const persistenceFailureMessage =

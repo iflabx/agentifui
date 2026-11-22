@@ -2,6 +2,7 @@ import { parseSseStream } from '@lib/utils/sse-parser';
 
 import {
   type DifySubmissionOptions,
+  definitiveTaskError,
   difySubmissionHeaders,
 } from '../submission';
 import {
@@ -332,8 +333,11 @@ export async function streamDifyWorkflow(
                 '[Dify Workflow Service] Workflow error:',
                 event.message
               );
-              const error = new Error(
-                `Dify Workflow error: ${event.code} - ${event.message}`
+              const error = definitiveTaskError(
+                new Error(
+                  `Dify Workflow error: ${event.code} - ${event.message}`
+                ),
+                'failed'
               );
               rejectCompletion(error);
               throw error;

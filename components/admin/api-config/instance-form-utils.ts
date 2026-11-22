@@ -87,6 +87,9 @@ export function createInstanceFormDataFromInstance(
       ...(!isLangChain
         ? { dify_parameters: instance.config?.dify_parameters || {} }
         : {}),
+      ...(!isLangChain && instance.config?.task_input
+        ? { task_input: { ...instance.config.task_input } }
+        : {}),
     },
   };
 

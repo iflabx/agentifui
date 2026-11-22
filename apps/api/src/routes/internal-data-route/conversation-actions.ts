@@ -1,4 +1,7 @@
-import { queryRowsWithPgSystemContext } from '../../lib/pg-context';
+import {
+  queryRowsWithPgSystemContext,
+  runWithPgSystemContext,
+} from '../../lib/pg-context';
 import { boundConversationAccessSql, unboundConversationSql } from './auth';
 import {
   parsePositiveInt,
@@ -146,6 +149,16 @@ export async function handleConversationAction(
         ? (payload.conversation as Record<string, unknown>)
         : {};
 
+    if (
+      conversation.metadata &&
+      typeof conversation.metadata === 'object' &&
+      (conversation.metadata as Record<string, unknown>).runtime === 'dify-task'
+    )
+      return toErrorResponse(
+        'Task conversations must be reserved through their backend',
+        409
+      );
+
     const rows = await queryRowsWithPgSystemContext<ConversationRow>(
       `
         INSERT INTO conversations (
@@ -178,7 +191,8 @@ export async function handleConversationAction(
         WHERE NOT EXISTS (
           SELECT 1 FROM service_instances instance
           WHERE (lower(instance.id::text) = lower($9::text) OR instance.instance_id = $9::text)
-            AND instance.config ->> 'backend_type' = 'langchain'
+            AND (instance.config ->> 'backend_type' = 'langchain'
+              OR instance.config #>> '{app_metadata,dify_apptype}' IN ('workflow', 'text-generation'))
         )
         RETURNING
           id::text,
@@ -292,19 +306,26 @@ export async function handleConversationAction(
       return toErrorResponse('Missing required fields', 400);
     }
 
-    const rows = await queryRowsWithPgSystemContext<{ id: string }>(
-      `
-        UPDATE conversations
-        SET status = 'deleted', updated_at = NOW()
-        WHERE id = $1::uuid
-          AND user_id = $2::uuid
-          AND status = 'active'
-        RETURNING id::text
-      `,
-      [conversationId, resolvedUserId]
-    );
-
-    return toSuccessResponse(Boolean(rows[0]?.id));
+    return runWithPgSystemContext(async client => {
+      const locked = await client.query<{ id: string }>(
+        `SELECT id::text FROM conversations
+         WHERE id = $1::uuid AND user_id = $2::uuid AND status = 'active' FOR UPDATE`,
+        [conversationId, resolvedUserId]
+      );
+      if (!locked.rows[0]) return toSuccessResponse(false);
+      await client.query(
+        `UPDATE conversations SET status = 'deleted', updated_at = NOW()
+         WHERE id = $1::uuid AND user_id = $2::uuid AND status = 'active'`,
+        [conversationId, resolvedUserId]
+      );
+      await client.query(
+        `UPDATE app_executions SET status = 'deleted'::execution_status, updated_at = NOW()
+         WHERE conversation_id = $1::uuid AND user_id = $2::uuid
+           AND status <> 'deleted'::execution_status`,
+        [conversationId, resolvedUserId]
+      );
+      return toSuccessResponse(true);
+    });
   }
 
   return null;

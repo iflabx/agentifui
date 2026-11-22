@@ -1,16 +1,15 @@
 import { queryRowsWithPgSystemContext } from '../../lib/pg-context';
-import { loadExecutionOwnedByActor } from './auth';
+import { appAccessSql, executionAccessSql } from './auth';
 import {
-  normalizeNullableTextValue,
   parseExecutionStatus,
   parseExecutionType,
   parsePositiveInt,
-  readObject,
   readString,
   sanitizeExecution,
   toErrorResponse,
   toSuccessResponse,
 } from './helpers';
+import { updateAccessibleExecution } from './task-execution-actions';
 import {
   type ApiActionResponse,
   type AppExecutionRow,
@@ -26,6 +25,8 @@ export async function handleAppExecutionAction(
   if (!LOCAL_APP_EXECUTION_ACTIONS.has(action)) {
     return null;
   }
+
+  if (!actorUserId) return toErrorResponse('Unauthorized', 401);
 
   const resolvedUserId = (actorUserId || readString(payload?.userId)).trim();
 
@@ -61,6 +62,8 @@ export async function handleAppExecutionAction(
           id::text,
           user_id::text,
           service_instance_id::text,
+          conversation_id::text,
+          submission_id::text,
           execution_type::text,
           external_execution_id,
           task_id,
@@ -78,7 +81,7 @@ export async function handleAppExecutionAction(
           completed_at::text
         FROM app_executions
         WHERE user_id = $1::uuid
-          AND status <> 'deleted'::execution_status
+          AND ${executionAccessSql('$1')}
           ${executionTypeClause}
         ORDER BY updated_at DESC, created_at DESC
         LIMIT $${params.length}
@@ -103,6 +106,8 @@ export async function handleAppExecutionAction(
           id::text,
           user_id::text,
           service_instance_id::text,
+          conversation_id::text,
+          submission_id::text,
           execution_type::text,
           external_execution_id,
           task_id,
@@ -121,7 +126,7 @@ export async function handleAppExecutionAction(
         FROM app_executions
         WHERE service_instance_id = $1::uuid
           AND user_id = $2::uuid
-          AND status <> 'deleted'::execution_status
+          AND ${executionAccessSql('$2')}
         ORDER BY created_at DESC
         LIMIT $3
       `,
@@ -143,6 +148,8 @@ export async function handleAppExecutionAction(
           id::text,
           user_id::text,
           service_instance_id::text,
+          conversation_id::text,
+          submission_id::text,
           execution_type::text,
           external_execution_id,
           task_id,
@@ -160,7 +167,7 @@ export async function handleAppExecutionAction(
           completed_at::text
         FROM app_executions
         WHERE id = $1::uuid
-          AND user_id = $2::uuid
+          AND ${executionAccessSql('$2')}
         LIMIT 1
       `,
       [executionId, resolvedUserId]
@@ -182,6 +189,12 @@ export async function handleAppExecutionAction(
         : {};
 
     const serviceInstanceId = readString(execution.service_instance_id);
+    if (execution.conversation_id != null || execution.submission_id != null) {
+      return toErrorResponse(
+        'Linked task executions must be reserved through their backend',
+        409
+      );
+    }
     const executionType = parseExecutionType(execution.execution_type);
     const title = readString(execution.title);
     const parsedStatus =
@@ -252,7 +265,7 @@ export async function handleAppExecutionAction(
           created_at,
           updated_at
         )
-        VALUES (
+        SELECT
           $1::uuid,
           $2::uuid,
           $3::execution_type,
@@ -270,7 +283,7 @@ export async function handleAppExecutionAction(
           $15::timestamptz,
           NOW(),
           NOW()
-        )
+        WHERE ${appAccessSql('$2::uuid', '$1::uuid')}
         RETURNING
           id::text,
           user_id::text,
@@ -344,11 +357,6 @@ export async function handleAppExecutionAction(
       return toErrorResponse('Missing required fields', 400);
     }
 
-    const owned = await loadExecutionOwnedByActor(executionId, actorUserId);
-    if (!owned) {
-      return toErrorResponse('Execution record not found', 404);
-    }
-
     const updates: string[] = [
       'status = $1::execution_status',
       'updated_at = NOW()',
@@ -370,19 +378,15 @@ export async function handleAppExecutionAction(
       updates.push('completed_at = NOW()');
     }
 
-    params.push(executionId);
-
-    const rows = await queryRowsWithPgSystemContext<{ id: string }>(
-      `
-        UPDATE app_executions
-        SET ${updates.join(', ')}
-        WHERE id = $${index}::uuid
-        RETURNING id::text
-      `,
+    const rows = await updateAccessibleExecution(
+      executionId,
+      actorUserId,
+      updates,
       params
     );
-
-    return toSuccessResponse(Boolean(rows[0]?.id));
+    return rows[0]
+      ? toSuccessResponse(true)
+      : toErrorResponse('Execution deleted or unavailable', 409);
   }
 
   if (action === 'appExecutions.updateComplete') {
@@ -403,11 +407,6 @@ export async function handleAppExecutionAction(
     const status = parseExecutionStatus(completeData.status);
     if (!status) {
       return toErrorResponse('Invalid status', 400);
-    }
-
-    const owned = await loadExecutionOwnedByActor(executionId, actorUserId);
-    if (!owned) {
-      return toErrorResponse('Execution record not found', 404);
     }
 
     const updates: string[] = [
@@ -500,37 +499,15 @@ export async function handleAppExecutionAction(
       addSetWithCast('metadata', 'jsonb', JSON.stringify(metadata));
     }
 
-    params.push(executionId);
-
-    const rows = await queryRowsWithPgSystemContext<AppExecutionRow>(
-      `
-        UPDATE app_executions
-        SET ${updates.join(', ')}
-        WHERE id = $${index}::uuid
-        RETURNING
-          id::text,
-          user_id::text,
-          service_instance_id::text,
-          execution_type::text,
-          external_execution_id,
-          task_id,
-          title,
-          inputs,
-          outputs,
-          status::text,
-          error_message,
-          total_steps,
-          total_tokens,
-          elapsed_time,
-          metadata,
-          created_at::text,
-          updated_at::text,
-          completed_at::text
-      `,
+    const rows = await updateAccessibleExecution(
+      executionId,
+      actorUserId,
+      updates,
       params
     );
-
-    return toSuccessResponse(rows[0] ? sanitizeExecution(rows[0]) : null);
+    return rows[0]
+      ? toSuccessResponse(sanitizeExecution(rows[0]))
+      : toErrorResponse('Execution deleted or unavailable', 409);
   }
 
   if (action === 'appExecutions.delete') {
@@ -539,25 +516,16 @@ export async function handleAppExecutionAction(
       return toErrorResponse('Missing required fields', 400);
     }
 
-    const owned = await loadExecutionOwnedByActor(executionId, actorUserId);
-    if (!owned) {
-      return toErrorResponse('Execution record not found', 404);
-    }
-
-    const rows = await queryRowsWithPgSystemContext<{ id: string }>(
-      `
-        UPDATE app_executions
-        SET status = 'deleted'::execution_status,
-            updated_at = NOW()
-        WHERE id = $1::uuid
-          AND user_id = $2::uuid
-          AND status <> 'deleted'::execution_status
-        RETURNING id::text
-      `,
-      [executionId, resolvedUserId]
+    const rows = await updateAccessibleExecution(
+      executionId,
+      actorUserId,
+      ["status = 'deleted'::execution_status", 'updated_at = NOW()'],
+      [],
+      true
     );
-
-    return toSuccessResponse(Boolean(rows[0]?.id));
+    return rows[0]
+      ? toSuccessResponse(true)
+      : toErrorResponse('Execution deleted or unavailable', 409);
   }
 
   return null;

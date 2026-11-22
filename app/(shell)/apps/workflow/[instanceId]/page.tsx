@@ -1,5 +1,6 @@
 'use client';
 
+import { TaskChat } from '@components/task-chat/task-chat';
 import { WorkflowLayout } from '@components/workflow/workflow-layout';
 import { useCurrentApp } from '@lib/hooks/use-current-app';
 import { useAppListStore } from '@lib/stores/app-list-store';
@@ -10,7 +11,7 @@ import { Blocks, Loader2 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 interface WorkflowPageProps {
   params: Promise<{
@@ -33,6 +34,7 @@ interface WorkflowPageProps {
 export default function WorkflowPage({ params }: WorkflowPageProps) {
   const { instanceId } = React.use(params);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const t = useTranslations('pages.apps');
 
   // --- app related state ---
@@ -236,7 +238,15 @@ export default function WorkflowPage({ params }: WorkflowPageProps) {
       )}
     >
       <div className="h-full overflow-hidden pt-12">
-        <WorkflowLayout instanceId={instanceId} />
+        {searchParams?.get('executionId') ? (
+          <WorkflowLayout instanceId={instanceId} />
+        ) : (
+          <TaskChat
+            instanceId={instanceId}
+            taskType="workflow"
+            conversationId={searchParams?.get('conversationId')}
+          />
+        )}
       </div>
     </div>
   );

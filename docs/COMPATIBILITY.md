@@ -85,6 +85,13 @@ message/tool anchors; older unordered records are labeled as summaries. Workflow
 execution history can show saved node summaries, including the existing failure
 snapshot formats. These summaries are read-only, not a complete nested execution
 replay; unfinished snapshot nodes have unknown outcomes rather than live timers.
+New native Workflow task rounds also retain their own captured iteration/loop
+and parallel process hierarchy when available. The common chat UI groups these
+independent executions locally; it does not add upstream conversational memory.
+If a request was dispatched but no trustworthy terminal result is available,
+the task is shown as unknown/interrupted, not automatically rerun. Recovering its
+inputs and submitting a new run are separate user actions; recovery does not
+cancel a possibly still-running upstream task.
 Chatflow process tracking remains transient and is not reconstructed after refresh.
 Missing snapshots show no process record, never another live task's steps.
 

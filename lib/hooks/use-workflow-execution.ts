@@ -3,20 +3,24 @@ import { conversationEvents } from '@lib/hooks/use-combined-conversations';
 import { useProfile } from '@lib/hooks/use-profile';
 import { toUserFacingAgentError } from '@lib/services/agent-error/user-facing-error';
 import {
+  type TaskExecutionReservation,
   createExecution,
   getExecutionsByServiceInstance,
   updateExecutionStatus,
 } from '@lib/services/client/app-executions-api';
+import { hasDefinitiveTaskOutcome } from '@lib/services/dify/submission';
 import type {
   DifyWorkflowRequestPayload,
   DifyWorkflowStreamResponse,
 } from '@lib/services/dify/types';
+import { useChatInputStore } from '@lib/stores/chat-input-store';
 import { useAutoAddFavoriteApp } from '@lib/stores/favorite-apps-store';
 import { useWorkflowExecutionStore } from '@lib/stores/workflow-execution-store';
 import type { AppExecution } from '@lib/types/database';
 
 import { useCallback, useEffect, useRef } from 'react';
 
+import { taskExecutionIsCurrent } from './task-execution-lifecycle';
 import { useDateFormatter } from './use-date-formatter';
 import { resolveWorkflowTargetApp } from './use-workflow-execution/app-instance';
 import {
@@ -40,7 +44,7 @@ import type { WorkflowNodeSnapshot } from './use-workflow-execution/types';
  * - Provides error handling and recovery mechanisms
  * - Manages data consistency
  */
-export function useWorkflowExecution(instanceId: string) {
+export function useWorkflowExecution(instanceId: string, taskChat = false) {
   const { profile } = useProfile();
   const userId = profile?.id;
   const canStop = profile?.role === 'admin';
@@ -69,6 +73,7 @@ export function useWorkflowExecution(instanceId: string) {
 
   const sseConnectionRef = useRef<EventSource | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const activeMount = useRef(true);
 
   const createTitle = useCallback(
     () =>
@@ -77,7 +82,10 @@ export function useWorkflowExecution(instanceId: string) {
   );
 
   const executeWorkflow = useCallback(
-    async (nextFormData: Record<string, unknown>) => {
+    async (
+      nextFormData: Record<string, unknown>,
+      reservation?: TaskExecutionReservation
+    ) => {
       if (!userId) {
         getActions().setError('User not logged in, please log in first');
         return false;
@@ -92,6 +100,20 @@ export function useWorkflowExecution(instanceId: string) {
       const normalizedInputs = buildNormalizedWorkflowInputs(nextFormData);
       let streamResponse: DifyWorkflowStreamResponse | null = null;
       let currentExecutionId: string | null = null;
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+      const actorEpoch = useChatInputStore.getState().actorEpoch;
+      const isCurrent = () =>
+        activeMount.current &&
+        (reservation
+          ? taskExecutionIsCurrent(
+              controller.signal,
+              userId,
+              actorEpoch,
+              currentExecutionId
+            )
+          : !controller.signal.aborted);
+      let generationDispatched = false;
 
       try {
         getActions().startExecution(nextFormData);
@@ -101,6 +123,7 @@ export function useWorkflowExecution(instanceId: string) {
           instanceId,
           'execution'
         );
+        if (!isCurrent()) return false;
         if (!targetApp) {
           throw new Error(`App record not found: ${instanceId}`);
         }
@@ -136,7 +159,9 @@ export function useWorkflowExecution(instanceId: string) {
           },
         };
 
-        const createResult = await createExecution(executionData);
+        const createResult = reservation
+          ? { success: true as const, data: reservation.execution }
+          : await createExecution(executionData);
         if (!createResult.success) {
           throw new Error(
             `Failed to create database record: ${createResult.error.message}`
@@ -144,6 +169,14 @@ export function useWorkflowExecution(instanceId: string) {
         }
 
         const dbExecution = createResult.data;
+        if (!isCurrent()) return false;
+        if (
+          dbExecution.service_instance_id !== targetApp.id ||
+          dbExecution.execution_type !== 'workflow' ||
+          (reservation &&
+            dbExecution.submission_id !== reservation.submissionId)
+        )
+          throw new Error('Task reservation does not match this application');
         currentExecutionId = dbExecution.id;
         console.log(
           '[Workflow Execution] Database record created successfully, ID:',
@@ -155,9 +188,10 @@ export function useWorkflowExecution(instanceId: string) {
           dbExecution.id,
           'running'
         );
-        if (updateRunningResult.success) {
-          getActions().updateCurrentExecution({ status: 'running' });
-        }
+        if (!isCurrent()) return false;
+        if (!updateRunningResult.success || !updateRunningResult.data)
+          throw new Error('Task is deleted or no longer available');
+        getActions().updateCurrentExecution({ status: 'running' });
 
         const difyPayload: DifyWorkflowRequestPayload = {
           inputs: normalizedInputs,
@@ -173,8 +207,14 @@ export function useWorkflowExecution(instanceId: string) {
         const { streamDifyWorkflow } =
           await import('@lib/services/dify/workflow-service');
 
-        abortControllerRef.current = new AbortController();
-        streamResponse = await streamDifyWorkflow(difyPayload, instanceId);
+        if (!isCurrent()) return false;
+        generationDispatched = true;
+        streamResponse = await streamDifyWorkflow(
+          difyPayload,
+          instanceId,
+          undefined,
+          reservation ? { submissionId: reservation.submissionId } : undefined
+        );
 
         console.log(
           '[Workflow Execution] Dify streaming response started successfully'
@@ -182,7 +222,7 @@ export function useWorkflowExecution(instanceId: string) {
         console.log('[Workflow Execution] Start handling SSE event stream');
 
         for await (const event of streamResponse.progressStream) {
-          if (abortControllerRef.current?.signal.aborted) {
+          if (!isCurrent()) {
             console.log('[Workflow Execution] Execution aborted');
             break;
           }
@@ -206,6 +246,7 @@ export function useWorkflowExecution(instanceId: string) {
         }
 
         const finalResult = await streamResponse.completionPromise;
+        if (!isCurrent()) return false;
 
         console.log(
           '[Workflow Execution] Workflow execution completed, final result:',
@@ -228,10 +269,18 @@ export function useWorkflowExecution(instanceId: string) {
           taskId,
           workflowRunId,
           nodeExecutionData,
+          processNodes: reservation
+            ? structuredClone(getActions().nodes)
+            : undefined,
           instanceId,
-          updateCurrentExecution: getActions().updateCurrentExecution,
-          addExecutionToHistory: getActions().addExecutionToHistory,
+          updateCurrentExecution: updates => {
+            if (isCurrent()) getActions().updateCurrentExecution(updates);
+          },
+          addExecutionToHistory: execution => {
+            if (isCurrent()) getActions().addExecutionToHistory(execution);
+          },
         });
+        if (!isCurrent()) return false;
 
         if (!saveResult.success) {
           throw new Error(
@@ -250,6 +299,18 @@ export function useWorkflowExecution(instanceId: string) {
         );
         return true;
       } catch (caughtError) {
+        if (!isCurrent()) return false;
+        if (
+          reservation &&
+          generationDispatched &&
+          !hasDefinitiveTaskOutcome(caughtError)
+        ) {
+          getActions().setError('TASK_OUTCOME_UNKNOWN');
+          getActions().stopExecution();
+          getActions().unlockForm();
+          conversationEvents.emit();
+          return false;
+        }
         console.error('[Workflow Execution] ❌ Execution failed:', caughtError);
 
         const rawErrorMessage =
@@ -281,9 +342,12 @@ export function useWorkflowExecution(instanceId: string) {
               nodeExecutionData,
               streamResponse,
               instanceId,
-              updateCurrentExecution: getActions().updateCurrentExecution,
+              updateCurrentExecution: updates => {
+                if (isCurrent()) getActions().updateCurrentExecution(updates);
+              },
             });
           } catch (updateError) {
+            if (!isCurrent()) return false;
             console.error(
               '[Workflow Execution] ❌ Error while updating failed status:',
               updateError
@@ -297,6 +361,7 @@ export function useWorkflowExecution(instanceId: string) {
                 errorMessage,
                 completedAt
               );
+              if (!isCurrent()) return false;
               getActions().updateCurrentExecution({
                 status: 'failed',
                 error_message: errorMessage,
@@ -313,11 +378,12 @@ export function useWorkflowExecution(instanceId: string) {
         }
         return false;
       } finally {
-        cleanupWorkflowExecutionResources(
-          sseConnectionRef,
-          abortControllerRef,
-          false
-        );
+        if (abortControllerRef.current === controller)
+          cleanupWorkflowExecutionResources(
+            sseConnectionRef,
+            abortControllerRef,
+            false
+          );
       }
     },
     [addToFavorites, createTitle, getActions, instanceId, userId]
@@ -326,6 +392,14 @@ export function useWorkflowExecution(instanceId: string) {
   const stopWorkflowExecution = useCallback(async () => {
     if (!canStop) return;
     console.log('[Workflow Execution] Stop workflow execution');
+    const executionId = getActions().currentExecution?.id;
+    const epoch = useChatInputStore.getState().actorEpoch;
+    const canMutate = () =>
+      activeMount.current &&
+      (!taskChat ||
+        (useChatInputStore.getState().actorId === userId &&
+          useChatInputStore.getState().actorEpoch === epoch &&
+          getActions().currentExecution?.id === executionId));
 
     try {
       cleanupWorkflowExecutionResources(
@@ -350,6 +424,7 @@ export function useWorkflowExecution(instanceId: string) {
         }
       }
 
+      if (!canMutate()) return;
       getActions().stopExecution();
 
       if (state.currentExecution?.id) {
@@ -361,6 +436,7 @@ export function useWorkflowExecution(instanceId: string) {
             'Stopped by user',
             completedAt
           );
+          if (!canMutate()) return;
 
           getActions().updateCurrentExecution({
             status: 'stopped',
@@ -382,7 +458,7 @@ export function useWorkflowExecution(instanceId: string) {
       );
       getActions().setError('Failed to stop execution');
     }
-  }, [canStop, getActions, instanceId, userId]);
+  }, [canStop, getActions, instanceId, userId, taskChat]);
 
   const loadWorkflowHistory = useCallback(async () => {
     if (!userId) return;
@@ -470,7 +546,9 @@ export function useWorkflowExecution(instanceId: string) {
   }, [getActions]);
 
   useEffect(() => {
+    activeMount.current = true;
     return () => {
+      activeMount.current = false;
       cleanupWorkflowExecutionResources(
         sseConnectionRef,
         abortControllerRef,
@@ -488,10 +566,10 @@ export function useWorkflowExecution(instanceId: string) {
   }, [instanceId, clearExecutionState]);
 
   useEffect(() => {
-    if (userId && instanceId) {
+    if (userId && instanceId && !taskChat) {
       loadWorkflowHistory();
     }
-  }, [instanceId, loadWorkflowHistory, userId]);
+  }, [instanceId, loadWorkflowHistory, userId, taskChat]);
 
   return {
     isExecuting,

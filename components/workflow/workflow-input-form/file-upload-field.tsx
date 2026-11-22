@@ -34,6 +34,7 @@ import {
   getMaxFiles,
   getSuccessfulFilesPayload,
   isProcessedFileItem,
+  restoreUploadFiles,
 } from './file-upload-field/helpers';
 import { FileUploadDropzone } from './file-upload-field/upload-dropzone';
 import { UploadFileItem } from './file-upload-field/upload-file-item';
@@ -50,6 +51,7 @@ interface FileUploadFieldProps {
   required?: boolean;
   onBlockedChange?: (blocked: boolean) => void;
   onRequirementsChanged?: () => void;
+  restoreScope?: WorkflowUploadOwner;
 }
 
 export function FileUploadField(props: FileUploadFieldProps) {
@@ -78,6 +80,7 @@ function ScopedFileUploadField({
   required,
   onBlockedChange,
   onRequirementsChanged,
+  restoreScope,
   userId,
   actorEpoch,
   loading,
@@ -123,7 +126,14 @@ function ScopedFileUploadField({
     };
   }, [actorEpoch, userId]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!activeViewRef.current || !owner) return;
+    const actor = useChatInputStore.getState();
+    if (
+      actor.actorId !== owner.actor_id ||
+      actor.actorEpoch !== owner.actor_epoch
+    )
+      return;
     if (value === lastEmittedValue.current) return;
     if (!value || (Array.isArray(value) && value.length === 0)) {
       attempts.current.clear();
@@ -140,6 +150,27 @@ function ScopedFileUploadField({
       isProcessedFileItem(item)
     );
     if (isProcessedFiles) {
+      const restored = restoreUploadFiles(valueArray, owner, restoreScope);
+      const current = uploadFilesRef.current;
+      const sameReferences =
+        restored.length ===
+          current.filter(file => file.status === 'success').length &&
+        restored.every(file =>
+          current.some(
+            existing =>
+              existing.status === 'success' &&
+              existing.uploadedId === file.uploadedId
+          )
+        );
+      if (sameReferences) return;
+      attempts.current.clear();
+      lastSuccessIdsRef.current = getSuccessfulFilesPayload(
+        restored,
+        isSingleFileMode,
+        owner
+      ).successIds;
+      setSelectionError(null);
+      setUploadFiles(restored);
       return;
     }
 
@@ -151,12 +182,12 @@ function ScopedFileUploadField({
       convertedFiles.forEach(file => attempts.current.set(file.id, null));
       setUploadFiles(convertedFiles);
     }
-  }, [value, setUploadFiles]);
+  }, [value, setUploadFiles, owner, restoreScope, isSingleFileMode]);
 
   useLayoutEffect(() => {
     if (!activeViewRef.current || !owner || loading) return;
     const payload = getSuccessfulFilesPayload(
-      uploadFiles,
+      uploadFilesRef.current,
       isSingleFileMode,
       owner
     );
@@ -211,6 +242,7 @@ function ScopedFileUploadField({
       )
         return;
       if (
+        !uploadFile.file ||
         !slot ||
         validateInputFile(slot, uploadFile.file) ||
         uploadFilesRef.current.length > slot.maxCount
@@ -341,7 +373,7 @@ function ScopedFileUploadField({
   const handleRetryUpload = useCallback(
     (id: string) => {
       const uploadFile = uploadFiles.find(file => file.id === id);
-      if (uploadFile && uploadFile.status === 'error') {
+      if (uploadFile?.file && uploadFile.status === 'error') {
         const nextError = !slot
           ? 'INPUT_CAPABILITIES_UNAVAILABLE'
           : validateInputFile(slot, uploadFile.file);
@@ -395,7 +427,7 @@ function ScopedFileUploadField({
     : uploadFiles.length > maxFiles
       ? 'INPUT_TOO_MANY_FILES'
       : uploadFiles
-          .map(file => validateInputFile(slot, file.file))
+          .map(file => validateInputFile(slot, file.file ?? file))
           .find(Boolean);
   const blocked =
     Boolean(capabilityError) ||

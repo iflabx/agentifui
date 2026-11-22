@@ -1440,6 +1440,19 @@
           }
         },
         "page": {
+          "taskInput": {
+            "label": "任务主文本",
+            "auto": "自动（唯一自由文本字段）",
+            "parametersOnly": "仅参数",
+            "autoResolved": "自动映射：消息正文写入 {variable}。",
+            "explicitResolved": "显式映射：消息正文写入 {variable}。",
+            "parametersOnlyNote": "正文已禁用，请填写参数和文件。",
+            "ambiguous": "存在多个自由文本字段：请选择主文本变量或仅使用参数。正文已禁用。",
+            "noText": "没有自由文本字段，正文已禁用。",
+            "invalid": "配置的变量 {variable} 不存在或不是自由文本字段。修正映射前无法执行。",
+            "invalidOption": "不可用变量：{variable}",
+            "schemaNote": "基于已保存的参数结构；从 Dify 同步可刷新。"
+          },
           "title": {
             "edit": "编辑应用实例",
             "add": "添加应用实例"
@@ -2924,5 +2937,30 @@
     "confirmationUnknown": "结果尚未确认。请查询状态，不要重复提交。",
     "confirmationSingleTask": "此 Agent 每个会话只处理一个任务。其他任务请新建会话。",
     "confirmationNotDispatched": "本次决定尚未发送。请核对后手动重试。"
+  },
+  "taskChat": {
+    "loading": "正在加载任务…",
+    "loginRequired": "请先登录",
+    "unavailable": "应用不可用",
+    "independent": "每次发送独立运行，不会自动将之前的任务作为对话记忆。",
+    "placeholder": "输入任务内容",
+    "parametersOnly": "请填写上方参数或上传所需文件",
+    "taskTitle": "任务执行",
+    "replayed": "此提交已经存在，不会自动再次运行，请检查已保存状态。",
+    "submitFailed": "无法确认提交结果，再次重试会保留提交标识。",
+    "loadOlder": "加载更早任务",
+    "historyFailed": "任务历史不可用，请检查权限并重试。",
+    "retry": "重试",
+    "welcome": "使用下方输入区开始任务。",
+    "parameterTask": "参数或文件任务",
+    "noProcess": "没有已保存的执行详情",
+    "running": "运行中",
+    "unknown": "结果尚未确认，上游任务可能仍在运行，系统不会自动重新执行。",
+    "completed": "已完成",
+    "failed": "失败",
+    "stopped": "已停止",
+    "runAgain": "再次使用这些输入",
+    "viewResult": "查看完整结果",
+    "recoverTask": "标记中断并准备再次运行"
   }
 }

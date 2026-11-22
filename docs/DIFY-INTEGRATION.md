@@ -47,7 +47,16 @@ Native generation endpoints enforce aggregate slot counts and registered file
 ownership/type/size before admission. Upload validation alone does not authorize
 a later generation request. This does not route Workflow or text generation
 through the text-only shared AG-UI transport; those execution adapters retain
-their existing behavior. See [configuration](CONFIGURATION.md#dify-input-attachment-previews)
+their native execution semantics. New Workflow/text-generation sessions use the
+shared chat interface with local task grouping; they do not gain upstream chat
+memory. Each round is one independent `app_executions` record. Legacy execution
+links remain readable without automatically creating conversations.
+
+Administrators can set `config.task_input.text_variable` to an exact text field,
+leave it absent to map one unambiguous text field, or use `null` for parameters-only
+tasks. Other required fields and file slots remain parameters. Pure-file/parameter
+tasks do not require dummy composer text. See the [administrator guide](ADMIN-GUIDE.md)
+for configuration and [configuration](CONFIGURATION.md#dify-input-attachment-previews)
 for the additive metadata migration and old-reference compatibility.
 
 When a native Chatflow continuation omits initialization variables, the server
@@ -140,10 +149,12 @@ and query data. Generation inputs under `agentifui_user_` are server-controlled,
 including version-specific Workflow execution paths.
 
 An upstream `user` parameter is not a universal resource-ownership check: some
-Dify operations are application-scoped. Workflow logs, Workflow run details,
-Workflow task stopping and proxied file previews currently require an AgentifUI
-administrator. Other authenticated roles receive HTTP 403 before an upstream
-request is sent. This also applies to the shortened Workflow route aliases.
+Dify operations are application-scoped. Workflow logs, Workflow run details and
+Workflow task stopping currently require an AgentifUI administrator. Other
+authenticated roles receive HTTP 403 before those upstream requests are sent.
+This also applies to the shortened Workflow route aliases. Input-file previews
+instead require a registered upload or an accessible saved reference belonging
+to the current user and application; a file ID alone does not authorize access.
 Normal chat requests and user-scoped chat stop operations retain their existing
 behavior. Workflow execution itself is still available to authorized users, but
 the restricted follow-up operations are not available to ordinary users.

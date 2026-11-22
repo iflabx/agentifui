@@ -1440,6 +1440,19 @@
           }
         },
         "page": {
+          "taskInput": {
+            "label": "タスクの本文",
+            "auto": "自動（自由テキスト欄が1つ）",
+            "parametersOnly": "パラメーターのみ",
+            "autoResolved": "自動割り当て：本文は {variable} に送信されます。",
+            "explicitResolved": "明示的な割り当て：本文は {variable} に送信されます。",
+            "parametersOnlyNote": "本文は無効です。パラメーターとファイルを入力してください。",
+            "ambiguous": "自由テキスト欄が複数あります。本文の変数を選ぶか、パラメーターのみを使用してください。本文は無効です。",
+            "noText": "自由テキスト欄がないため、本文は無効です。",
+            "invalid": "変数 {variable} が存在しないか、自由テキスト欄ではありません。割り当てを修正するまで実行できません。",
+            "invalidOption": "使用できない変数：{variable}",
+            "schemaNote": "保存済みのパラメーター定義に基づきます。Dify から同期して更新してください。"
+          },
           "title": {
             "edit": "アプリケーションインスタンスを編集",
             "add": "アプリケーションインスタンスを追加"
@@ -2924,5 +2937,30 @@
     "confirmationUnknown": "結果は未確認です。再送信せず、状態を確認してください。",
     "confirmationSingleTask": "このエージェントは会話ごとに1件のタスクを処理します。別のタスクは新しい会話で開始してください。",
     "confirmationNotDispatched": "回答は送信されませんでした。内容を確認して再試行できます。"
+  },
+  "taskChat": {
+    "loading": "タスクを読み込み中…",
+    "loginRequired": "ログインしてください",
+    "unavailable": "アプリを利用できません",
+    "independent": "送信ごとに独立して実行され、過去のタスクは会話の記憶になりません。",
+    "placeholder": "タスク内容を入力",
+    "parametersOnly": "上のパラメーターを入力するか必要なファイルを添付してください",
+    "taskTitle": "タスク実行",
+    "replayed": "この送信は既に存在するため自動で再実行しません。保存済みの状態を確認してください。",
+    "submitFailed": "送信結果を確認できません。再試行時は同じ送信IDを使用します。",
+    "loadOlder": "以前のタスクを読み込む",
+    "historyFailed": "履歴を利用できません。アクセス権を確認して再試行してください。",
+    "retry": "再試行",
+    "welcome": "下の入力欄からタスクを開始してください。",
+    "parameterTask": "パラメーターまたはファイルのタスク",
+    "noProcess": "保存済みの実行詳細はありません",
+    "running": "実行中",
+    "unknown": "結果を確認できません。元のタスクが実行中の可能性があります。自動で再実行しません。",
+    "completed": "完了",
+    "failed": "失敗",
+    "stopped": "停止済み",
+    "runAgain": "同じ入力を再利用",
+    "viewResult": "結果全体を表示",
+    "recoverTask": "中断として記録し次の実行を準備"
   }
 }

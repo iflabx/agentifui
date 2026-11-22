@@ -9,6 +9,7 @@ import { parseSseStream } from '@lib/utils/sse-parser';
 import { extractUsage } from './chat-service/helpers';
 import {
   type DifySubmissionOptions,
+  definitiveTaskError,
   difySubmissionHeaders,
 } from './submission';
 import type {
@@ -125,7 +126,14 @@ export async function streamDifyCompletion(
         '[Dify Completion Service] Streamed text generation failed:',
         errorData
       );
-      throw new Error(`Streamed text generation failed: ${errorData.message}`);
+      const error = new Error(
+        `Streamed text generation failed: ${errorData.message}`
+      );
+      throw response.status >= 400 &&
+        response.status < 500 &&
+        ![408, 409].includes(response.status)
+        ? definitiveTaskError(error, 'refused')
+        : error;
     }
 
     if (!response.body) {
@@ -198,7 +206,10 @@ export async function streamDifyCompletion(
           }
 
           if (event.event === 'error') {
-            throw new Error(event.message || 'Dify completion stream failed.');
+            throw definitiveTaskError(
+              new Error(event.message || 'Dify completion stream failed.'),
+              'failed'
+            );
           }
 
           if (event.event !== 'message' && event.event !== 'message_end') {
@@ -235,6 +246,9 @@ export async function streamDifyCompletion(
           }
         }
 
+        if (options?.submissionId) {
+          throw new Error('Completion stream ended before message_end.');
+        }
         resolveCompletion({ stream_completed: true });
       } catch (error) {
         const streamError =

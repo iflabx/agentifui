@@ -8,6 +8,43 @@ import type { Result } from '@lib/types/result';
 
 type AppExecutionInput = Omit<AppExecution, 'id' | 'created_at' | 'updated_at'>;
 
+export interface TaskExecutionReservation {
+  execution: AppExecution;
+  submissionId: string;
+}
+
+export function reserveTaskExecution(input: {
+  serviceInstanceId: string;
+  conversationId?: string;
+  submissionId: string;
+  inputs: Record<string, unknown>;
+  title: string;
+}): Promise<
+  Result<{
+    execution: AppExecution;
+    conversationId: string;
+    replayed: boolean;
+  }>
+> {
+  return callInternalDataAction('appExecutions.reserveTask', input);
+}
+
+export function getConversationExecutions(
+  conversationId: string,
+  cursor?: string
+): Promise<
+  Result<{
+    executions: AppExecution[];
+    hasMore: boolean;
+    nextCursor: string | null;
+  }>
+> {
+  return callInternalDataAction('appExecutions.getByConversation', {
+    conversationId,
+    ...(cursor ? { cursor } : {}),
+  });
+}
+
 type CompleteExecutionDataInput = {
   status: ExecutionStatus;
   external_execution_id?: string | null;

@@ -277,7 +277,13 @@ export function useInstanceFormState({
         ]);
       }
 
-      const updatedFormData = { ...formData };
+      const updatedFormData = {
+        ...formData,
+        config: {
+          ...formData.config,
+          app_metadata: { ...formData.config.app_metadata },
+        },
+      };
 
       if (appInfo) {
         if (appInfo.name && appInfo.name !== formData.display_name) {

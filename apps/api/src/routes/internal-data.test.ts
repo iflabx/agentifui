@@ -15,6 +15,7 @@ import { handleMessageAction } from './internal-data-route/message-actions';
 import { handleProviderAction } from './internal-data-route/provider-actions';
 import { handleServiceInstanceAction } from './internal-data-route/service-instance-actions';
 import { handleSsoAction } from './internal-data-route/sso-actions';
+import { handleTaskExecutionAction } from './internal-data-route/task-execution-actions';
 import { handleUserAction } from './internal-data-route/user-actions';
 
 jest.mock('../lib/error-events', () => ({
@@ -35,6 +36,10 @@ jest.mock('./internal-data-route/message-actions', () => ({
 
 jest.mock('./internal-data-route/app-execution-actions', () => ({
   handleAppExecutionAction: jest.fn(),
+}));
+
+jest.mock('./internal-data-route/task-execution-actions', () => ({
+  handleTaskExecutionAction: jest.fn(),
 }));
 
 jest.mock('./internal-data-route/group-auth-actions', () => ({
@@ -152,6 +157,7 @@ describe('internal data route shell', () => {
     mockedHandleConversationAction.mockResolvedValue(null);
     mockedHandleMessageAction.mockResolvedValue(null);
     mockedHandleAppExecutionAction.mockResolvedValue(null);
+    jest.mocked(handleTaskExecutionAction).mockResolvedValue(null);
     mockedHandleGroupAuthAction.mockResolvedValue(null);
     mockedHandleUserAction.mockResolvedValue(null);
     mockedHandleGroupAdminAction.mockResolvedValue(null);
@@ -161,6 +167,35 @@ describe('internal data route shell', () => {
     mockedHandleSsoAction.mockResolvedValue(null);
     mockedHandleErrorObservabilityAction.mockResolvedValue(null);
   });
+
+  it.each(['appExecutions.reserveTask', 'appExecutions.getByConversation'])(
+    'dispatches authenticated %s to the task handler',
+    async action => {
+      jest.mocked(handleTaskExecutionAction).mockResolvedValueOnce({
+        statusCode: 200,
+        payload: { success: true, data: { replayed: false } },
+        contentType: 'application/json',
+        handler: 'local',
+      });
+      const app = await createApp();
+      try {
+        const response = await app.inject({
+          method: 'POST',
+          url: '/api/internal/data',
+          payload: { action, payload: { title: 'task' } },
+        });
+        expect(response.statusCode).toBe(200);
+        expect(handleTaskExecutionAction).toHaveBeenCalledWith(
+          action,
+          { title: 'task' },
+          '00000000-0000-4000-8000-000000000001'
+        );
+        expect(handleAppExecutionAction).not.toHaveBeenCalled();
+      } finally {
+        await app.close();
+      }
+    }
+  );
 
   it('returns 400 when action is missing', async () => {
     const app = await createApp();

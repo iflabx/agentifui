@@ -1440,6 +1440,19 @@
           }
         },
         "page": {
+          "taskInput": {
+            "label": "任務主文字",
+            "auto": "自動（唯一自由文字欄位）",
+            "parametersOnly": "僅參數",
+            "autoResolved": "自動對應：訊息本文寫入 {variable}。",
+            "explicitResolved": "明確對應：訊息本文寫入 {variable}。",
+            "parametersOnlyNote": "本文已停用，請填寫參數和檔案。",
+            "ambiguous": "有多個自由文字欄位：請選擇主文字變數或僅使用參數。本文已停用。",
+            "noText": "沒有自由文字欄位，本文已停用。",
+            "invalid": "設定的變數 {variable} 不存在或不是自由文字欄位。修正對應前無法執行。",
+            "invalidOption": "無法使用的變數：{variable}",
+            "schemaNote": "依據已儲存的參數結構；從 Dify 同步可重新整理。"
+          },
           "title": {
             "edit": "編輯應用實例",
             "add": "新增應用實例"
@@ -2924,5 +2937,30 @@
     "confirmationUnknown": "結果尚未確認。請查詢狀態，不要重複提交。",
     "confirmationSingleTask": "此 Agent 每個對話只處理一個任務。其他任務請建立新對話。",
     "confirmationNotDispatched": "本次決定尚未傳送。請核對後手動重試。"
+  },
+  "taskChat": {
+    "loading": "正在載入任務…",
+    "loginRequired": "請先登入",
+    "unavailable": "應用程式無法使用",
+    "independent": "每次傳送獨立執行，不會自動將先前任務作為對話記憶。",
+    "placeholder": "輸入任務內容",
+    "parametersOnly": "請填寫上方參數或上傳所需檔案",
+    "taskTitle": "任務執行",
+    "replayed": "此提交已經存在，不會自動再次執行，請檢查已儲存狀態。",
+    "submitFailed": "無法確認提交結果，再次重試會保留提交識別碼。",
+    "loadOlder": "載入更早任務",
+    "historyFailed": "任務歷史無法使用，請檢查權限並重試。",
+    "retry": "重試",
+    "welcome": "使用下方輸入區開始任務。",
+    "parameterTask": "參數或檔案任務",
+    "noProcess": "沒有已儲存的執行詳情",
+    "running": "執行中",
+    "unknown": "結果尚未確認，上游任務可能仍在執行，系統不會自動重新執行。",
+    "completed": "已完成",
+    "failed": "失敗",
+    "stopped": "已停止",
+    "runAgain": "再次使用這些輸入",
+    "viewResult": "查看完整結果",
+    "recoverTask": "標記中斷並準備再次執行"
   }
 }

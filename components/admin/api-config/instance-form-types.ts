@@ -14,6 +14,7 @@ export interface InstanceFormData {
   api_path: string;
   apiKey: string;
   config: {
+    task_input?: { text_variable: string | null };
     backend_type?: 'dify' | 'langchain';
     interaction_protocol?: 'ag-ui/1.0';
     langchain?: {

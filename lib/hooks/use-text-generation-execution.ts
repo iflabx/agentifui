@@ -3,20 +3,24 @@ import { conversationEvents } from '@lib/hooks/use-combined-conversations';
 import { useProfile } from '@lib/hooks/use-profile';
 import { toUserFacingAgentError } from '@lib/services/agent-error/user-facing-error';
 import {
+  type TaskExecutionReservation,
   createExecution,
   getExecutionsByServiceInstance,
   updateExecutionStatus,
 } from '@lib/services/client/app-executions-api';
+import { hasDefinitiveTaskOutcome } from '@lib/services/dify/submission';
 import type {
   DifyCompletionRequestPayload,
   DifyCompletionStreamResponse,
 } from '@lib/services/dify/types';
+import { useChatInputStore } from '@lib/stores/chat-input-store';
 import { useAutoAddFavoriteApp } from '@lib/stores/favorite-apps-store';
 import { useWorkflowExecutionStore } from '@lib/stores/workflow-execution-store';
 import type { AppExecution } from '@lib/types/database';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { taskExecutionIsCurrent } from './task-execution-lifecycle';
 import { useDateFormatter } from './use-date-formatter';
 import { resolveTextGenerationTargetApp } from './use-text-generation-execution/app-instance';
 import {
@@ -39,7 +43,10 @@ import type { CompletionFinalResult } from './use-text-generation-execution/type
  * - Adapts to the completion API characteristics
  * - Provides streaming text generation support
  */
-export function useTextGenerationExecution(instanceId: string) {
+export function useTextGenerationExecution(
+  instanceId: string,
+  taskChat = false
+) {
   const { profile } = useProfile();
   const userId = profile?.id;
   const { formatDate } = useDateFormatter();
@@ -66,6 +73,7 @@ export function useTextGenerationExecution(instanceId: string) {
     []
   );
   const abortControllerRef = useRef<AbortController | null>(null);
+  const activeMount = useRef(true);
 
   const createTitle = useCallback(
     () =>
@@ -74,7 +82,10 @@ export function useTextGenerationExecution(instanceId: string) {
   );
 
   const executeTextGeneration = useCallback(
-    async (nextFormData: Record<string, unknown>) => {
+    async (
+      nextFormData: Record<string, unknown>,
+      reservation?: TaskExecutionReservation
+    ) => {
       if (!userId) {
         getActions().setError('User not logged in, please log in first');
         return false;
@@ -87,6 +98,20 @@ export function useTextGenerationExecution(instanceId: string) {
 
       let streamResponse: DifyCompletionStreamResponse | null = null;
       let currentExecutionId: string | null = null;
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+      const actorEpoch = useChatInputStore.getState().actorEpoch;
+      const isCurrent = () =>
+        activeMount.current &&
+        (reservation
+          ? taskExecutionIsCurrent(
+              controller.signal,
+              userId,
+              actorEpoch,
+              currentExecutionId
+            )
+          : !controller.signal.aborted);
+      let generationDispatched = false;
 
       try {
         getActions().startExecution(nextFormData);
@@ -98,6 +123,7 @@ export function useTextGenerationExecution(instanceId: string) {
           instanceId,
           'execution'
         );
+        if (!isCurrent()) return false;
         if (!targetApp) {
           throw new Error(`App record not found: ${instanceId}`);
         }
@@ -126,7 +152,9 @@ export function useTextGenerationExecution(instanceId: string) {
           },
         };
 
-        const createResult = await createExecution(executionData);
+        const createResult = reservation
+          ? { success: true as const, data: reservation.execution }
+          : await createExecution(executionData);
         if (!createResult.success) {
           throw new Error(
             `Failed to create database record: ${createResult.error.message}`
@@ -134,10 +162,21 @@ export function useTextGenerationExecution(instanceId: string) {
         }
 
         const dbExecution = createResult.data;
+        if (!isCurrent()) return false;
+        if (
+          dbExecution.service_instance_id !== targetApp.id ||
+          dbExecution.execution_type !== 'text-generation' ||
+          (reservation &&
+            dbExecution.submission_id !== reservation.submissionId)
+        )
+          throw new Error('Task reservation does not match this application');
         currentExecutionId = dbExecution.id;
         getActions().setCurrentExecution(dbExecution);
 
-        await updateExecutionStatus(dbExecution.id, 'running');
+        const running = await updateExecutionStatus(dbExecution.id, 'running');
+        if (!isCurrent()) return false;
+        if (!running.success || !running.data)
+          throw new Error('Task is deleted or no longer available');
         getActions().updateCurrentExecution({ status: 'running' });
 
         const difyPayload: DifyCompletionRequestPayload = {
@@ -149,10 +188,12 @@ export function useTextGenerationExecution(instanceId: string) {
         const { streamDifyCompletion } =
           await import('@lib/services/dify/completion-service');
 
-        abortControllerRef.current = new AbortController();
+        if (!isCurrent()) return false;
+        generationDispatched = true;
         streamResponse = await streamDifyCompletion(
           targetApp.instance_id,
-          difyPayload
+          difyPayload,
+          reservation ? { submissionId: reservation.submissionId } : undefined
         );
 
         let accumulatedText = '';
@@ -161,7 +202,7 @@ export function useTextGenerationExecution(instanceId: string) {
         let completionResult: CompletionFinalResult = {};
 
         for await (const textChunk of streamResponse.answerStream) {
-          if (abortControllerRef.current?.signal.aborted) {
+          if (!isCurrent()) {
             console.log(
               '[Text Generation] Abort signal detected, stopping processing'
             );
@@ -196,6 +237,7 @@ export function useTextGenerationExecution(instanceId: string) {
             }
           );
         } catch (completionError) {
+          if (reservation) throw completionError;
           console.error(
             '[Text Generation] Error while waiting for completion:',
             completionError
@@ -211,6 +253,7 @@ export function useTextGenerationExecution(instanceId: string) {
           }
         }
 
+        if (!isCurrent()) return false;
         const saveResult = await saveCompleteTextGenerationData({
           executionId: dbExecution.id,
           finalResult: completionResult,
@@ -218,9 +261,15 @@ export function useTextGenerationExecution(instanceId: string) {
           messageId,
           generatedText: accumulatedText,
           instanceId,
-          updateCurrentExecution: getActions().updateCurrentExecution,
-          addExecutionToHistory: getActions().addExecutionToHistory,
+          ...(reservation ? { preserveStatusOnSaveFailure: true } : {}),
+          updateCurrentExecution: updates => {
+            if (isCurrent()) getActions().updateCurrentExecution(updates);
+          },
+          addExecutionToHistory: execution => {
+            if (isCurrent()) getActions().addExecutionToHistory(execution);
+          },
         });
+        if (!isCurrent()) return false;
 
         if (!saveResult.success) {
           console.error(
@@ -248,6 +297,19 @@ export function useTextGenerationExecution(instanceId: string) {
         );
         return true;
       } catch (error) {
+        if (!isCurrent()) return false;
+        if (
+          reservation &&
+          generationDispatched &&
+          !hasDefinitiveTaskOutcome(error)
+        ) {
+          getActions().setError('TASK_OUTCOME_UNKNOWN');
+          setIsStreaming(false);
+          getActions().stopExecution();
+          getActions().unlockForm();
+          conversationEvents.emit();
+          return false;
+        }
         console.error('[Text Generation] ❌ Execution failed:', error);
         setIsStreaming(false);
 
@@ -277,6 +339,7 @@ export function useTextGenerationExecution(instanceId: string) {
               friendlyErrorMessage,
               completedAt
             );
+            if (!isCurrent()) return false;
 
             getActions().updateCurrentExecution({
               status: 'failed',
@@ -293,7 +356,8 @@ export function useTextGenerationExecution(instanceId: string) {
         }
         return false;
       } finally {
-        cleanupTextGenerationResources(abortControllerRef, false);
+        if (abortControllerRef.current === controller)
+          cleanupTextGenerationResources(abortControllerRef, false);
       }
     },
     [addToFavorites, createTitle, getActions, instanceId, userId]
@@ -301,6 +365,14 @@ export function useTextGenerationExecution(instanceId: string) {
 
   const stopTextGeneration = useCallback(async () => {
     console.log('[Text Generation] Stop execution');
+    const executionId = getActions().currentExecution?.id;
+    const epoch = useChatInputStore.getState().actorEpoch;
+    const canMutate = () =>
+      activeMount.current &&
+      (!taskChat ||
+        (useChatInputStore.getState().actorId === userId &&
+          useChatInputStore.getState().actorEpoch === epoch &&
+          getActions().currentExecution?.id === executionId));
 
     try {
       const state = useWorkflowExecutionStore.getState();
@@ -335,6 +407,7 @@ export function useTextGenerationExecution(instanceId: string) {
         }
       }
 
+      if (!canMutate()) return;
       getActions().stopExecution();
       setIsStreaming(false);
 
@@ -350,8 +423,12 @@ export function useTextGenerationExecution(instanceId: string) {
             taskId: state.difyTaskId,
             generatedText: currentText,
             instanceId,
-            updateCurrentExecution: getActions().updateCurrentExecution,
-            addExecutionToHistory: getActions().addExecutionToHistory,
+            updateCurrentExecution: updates => {
+              if (canMutate()) getActions().updateCurrentExecution(updates);
+            },
+            addExecutionToHistory: execution => {
+              if (canMutate()) getActions().addExecutionToHistory(execution);
+            },
           });
 
           if (updateResult.success) {
@@ -377,6 +454,7 @@ export function useTextGenerationExecution(instanceId: string) {
             'Stopped by user',
             completedAt
           );
+          if (!canMutate()) return;
 
           getActions().updateCurrentExecution({
             status: 'stopped',
@@ -397,11 +475,11 @@ export function useTextGenerationExecution(instanceId: string) {
       }
     } catch (error) {
       console.error('[Text Generation] Failed to stop execution:', error);
-      getActions().setError('Failed to stop execution');
+      if (canMutate()) getActions().setError('Failed to stop execution');
     } finally {
       cleanupTextGenerationResources(abortControllerRef, false);
     }
-  }, [generatedText, getActions, instanceId, userId]);
+  }, [generatedText, getActions, instanceId, userId, taskChat]);
 
   const retryTextGeneration = useCallback(async () => {
     console.log('[Text Generation] Retry execution');
@@ -464,11 +542,17 @@ export function useTextGenerationExecution(instanceId: string) {
   }, [getActions, instanceId, userId]);
 
   useEffect(() => {
-    loadTextGenerationHistory();
-  }, [loadTextGenerationHistory]);
+    if (taskChat) getActions().clearExecutionState();
+  }, [instanceId, taskChat, getActions]);
 
   useEffect(() => {
+    if (!taskChat) loadTextGenerationHistory();
+  }, [loadTextGenerationHistory, taskChat]);
+
+  useEffect(() => {
+    activeMount.current = true;
     return () => {
+      activeMount.current = false;
       cleanupTextGenerationResources(abortControllerRef, true);
     };
   }, []);

@@ -38,6 +38,7 @@ import { handleMessageAction } from './internal-data-route/message-actions';
 import { handleProviderAction } from './internal-data-route/provider-actions';
 import { handleServiceInstanceAction } from './internal-data-route/service-instance-actions';
 import { handleSsoAction } from './internal-data-route/sso-actions';
+import { handleTaskExecutionAction } from './internal-data-route/task-execution-actions';
 import type { ApiActionResponse } from './internal-data-route/types';
 import { handleUserAction } from './internal-data-route/user-actions';
 
@@ -173,6 +174,15 @@ async function handleLocalInternalDataAction(
   const messageResult = await handleMessageAction(action, payload, actorUserId);
   if (messageResult) {
     return messageResult;
+  }
+
+  const taskExecutionResult = await handleTaskExecutionAction(
+    action,
+    payload,
+    actorUserId
+  );
+  if (taskExecutionResult) {
+    return taskExecutionResult;
   }
 
   const executionResult = await handleAppExecutionAction(
