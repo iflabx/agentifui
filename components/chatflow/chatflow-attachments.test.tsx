@@ -177,6 +177,66 @@ describe('Chatflow composer attachments', () => {
     click.mockRestore();
   });
 
+  it('keeps a selection pending during authentication refresh and starts it once afterward', async () => {
+    const { rerender } = render(<Harness authLoading />);
+    const picker = screen.getByLabelText(slot.label, { selector: 'input' });
+    select(slot.label, [file()]);
+    expect(screen.getByText('reference.txt')).toBeInTheDocument();
+    expect(allDraftFiles()[0].status).toBe('pending');
+    expect(snapshot.blocked).toBe(true);
+    expect(uploadDifyFile).not.toHaveBeenCalled();
+    await act(async () => rerender(<Harness />));
+    expect(screen.getByLabelText(slot.label, { selector: 'input' })).toBe(
+      picker
+    );
+    expect(uploadDifyFile).toHaveBeenCalledTimes(1);
+    expect(snapshot.files[0].upload_file_id).toBe('reference.txt-id');
+    await act(async () => rerender(<Harness authLoading />));
+    await act(async () => rerender(<Harness />));
+    expect(uploadDifyFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not duplicate an in-flight upload after authentication refresh', async () => {
+    const pending = deferredUpload();
+    const { rerender } = render(<Harness />);
+    select(slot.label, [file()]);
+    expect(uploadDifyFile).toHaveBeenCalledTimes(1);
+    rerender(<Harness authLoading />);
+    rerender(<Harness />);
+    expect(uploadDifyFile).toHaveBeenCalledTimes(1);
+    await act(async () => pending.resolve({ id: 'one-upload' }));
+    expect(snapshot.files[0].upload_file_id).toBe('one-upload');
+  });
+
+  it('queues an explicit failed-upload retry until authentication refresh completes', async () => {
+    const pending = deferredUpload();
+    const { rerender } = render(<Harness />);
+    select(slot.label, [file()]);
+    await act(async () => pending.reject(new Error('synthetic failure')));
+    rerender(<Harness authLoading />);
+    fireEvent.click(screen.getByRole('button', { name: 'common.ui.retry' }));
+    expect(allDraftFiles()[0].status).toBe('pending');
+    expect(uploadDifyFile).toHaveBeenCalledTimes(1);
+    await act(async () => rerender(<Harness />));
+    expect(uploadDifyFile).toHaveBeenCalledTimes(2);
+    expect(snapshot.files[0].upload_file_id).toBe('reference.txt-id');
+  });
+
+  it('does not resume a queued selection into another actor or draft', async () => {
+    const { rerender } = render(<Harness authLoading />);
+    select(slot.label, [file()]);
+    await act(async () => rerender(<Harness scope="draft-B" />));
+    expect(uploadDifyFile).not.toHaveBeenCalled();
+    expect(snapshot.files).toEqual([]);
+    act(() => {
+      useChatInputStore.getState().setActor('actor-B');
+      useAttachmentStore.getState().resetAll();
+    });
+    await act(async () => rerender(<Harness userId="actor-B" />));
+    expect(uploadDifyFile).not.toHaveBeenCalled();
+    expect(allDraftFiles()).toEqual([]);
+  });
+
   it('requires explicit multi-slot selection and maps original input keys without duplicating files', async () => {
     const single = {
       ...slot,

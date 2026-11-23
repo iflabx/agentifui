@@ -11,7 +11,7 @@ import {
 import { useChatInputStore } from '@lib/stores/chat-input-store';
 import { Paperclip } from 'lucide-react';
 
-import { type ReactNode, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 
@@ -30,6 +30,7 @@ interface ChatflowAttachmentsOptions {
   userId: string | undefined;
   slots: AgentAttachmentSlot[];
   disabled?: boolean;
+  authLoading?: boolean;
   onRequirementsChanged?: () => void;
 }
 
@@ -208,6 +209,7 @@ export function useChatflowAttachments({
   userId,
   slots,
   disabled = false,
+  authLoading = false,
   onRequirementsChanged,
 }: ChatflowAttachmentsOptions): {
   action: ReactNode;
@@ -276,11 +278,40 @@ export function useChatflowAttachments({
       validateInputFile(draft.slot, entry.file) ||
       (entries.length > draft.slot.maxCount ? 'INPUT_TOO_MANY_FILES' : null);
     if (validationError) {
-      setSelectionErrors(previous => ({
-        ...previous,
-        [draft.scope]: validationError,
-      }));
+      current.setFiles(
+        entries.map(file =>
+          file.id === id
+            ? {
+                ...file,
+                status: 'error',
+                error: validationMessage(
+                  validationError,
+                  draft.slot,
+                  translate
+                ),
+              }
+            : file
+        ),
+        draft.scope
+      );
+      setSelectionErrors(previous =>
+        previous[draft.scope] === validationError
+          ? previous
+          : { ...previous, [draft.scope]: validationError }
+      );
       onRequirementsChanged?.();
+      return;
+    }
+    if (authLoading) {
+      if (entry.status === 'error')
+        current.setFiles(
+          entries.map(file =>
+            file.id === id
+              ? { ...file, status: 'pending', error: undefined }
+              : file
+          ),
+          draft.scope
+        );
       return;
     }
     const attempt = current.beginUpload(draft.scope, id);
@@ -328,6 +359,14 @@ export function useChatflowAttachments({
     clearSelectionError(draft);
     reservation.ids.forEach(id => void upload(draft, id));
   };
+  useEffect(() => {
+    if (!enabled || disabled || authLoading || !isCurrentActor()) return;
+    drafts.forEach(draft => {
+      draft.entries.forEach(entry => {
+        if (entry.status === 'pending') void upload(draft, entry.id);
+      });
+    });
+  });
   const inputs: Record<string, unknown> = Object.create(null);
   const files: UploadPayloadFile[] = [];
   const errors: string[] = [];

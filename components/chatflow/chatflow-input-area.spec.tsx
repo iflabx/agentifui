@@ -16,6 +16,7 @@ import { ChatflowInputArea } from './chatflow-input-area';
 
 const showNotification = jest.fn();
 let mockPathname = '/apps/chatflow/app-1';
+let mockAuthLoading = false;
 jest.mock('next/navigation', () => ({
   usePathname: () => mockPathname,
 }));
@@ -33,7 +34,7 @@ const ready = {
 jest.mock('@lib/auth/better-auth/react-hooks', () => ({
   useAuthSession: () => ({
     session: { user: { id: 'actor' } },
-    loading: false,
+    loading: mockAuthLoading,
   }),
 }));
 jest.mock('@lib/services/dify/file-service', () => ({
@@ -96,6 +97,7 @@ describe('Chatflow standard composer', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockPathname = '/apps/chatflow/app-1';
+    mockAuthLoading = false;
     jest.mocked(getConversationByExternalId).mockResolvedValue({
       success: true,
       data: { id: 'saved-1', app_id: 'app-1', user_id: 'actor' },
@@ -131,6 +133,81 @@ describe('Chatflow standard composer', () => {
 
   afterAll(() => {
     global.fetch = originalFetch;
+  });
+
+  it('keeps the open picker and selected file through same-user focus revalidation, then uploads once', async () => {
+    mockedFetch.mockImplementation(
+      async url =>
+        ({
+          ok: true,
+          json: async () =>
+            String(url).includes('input-capabilities')
+              ? {
+                  ...ready,
+                  attachmentSlots: [
+                    {
+                      key: 'file',
+                      label: 'Source',
+                      target: 'inputs',
+                      minCount: 1,
+                      maxCount: 1,
+                      multiple: false,
+                      methods: ['local_file'],
+                      allowedTypes: ['document'],
+                      extensions: ['txt'],
+                      maxBytesByType: { document: 1024 },
+                    },
+                  ],
+                }
+              : { success: true, app: { id: 'uuid-1', instance_id: 'app-1' } },
+        }) as Response
+    );
+    jest
+      .mocked(uploadDifyFile)
+      .mockResolvedValue({ id: 'selected-file' } as never);
+    const onSubmit = jest.fn().mockResolvedValue({ ok: true });
+    const view = render(
+      <ChatflowInputArea instanceId="app-1" onSubmit={onSubmit} />
+    );
+    const picker = await screen.findByLabelText('Source', {
+      selector: 'input',
+    });
+    const input = screen.getByPlaceholderText('form.question.placeholder');
+    fireEvent.change(input, { target: { value: 'summarize' } });
+    mockAuthLoading = true;
+    view.rerender(<ChatflowInputArea instanceId="app-1" onSubmit={onSubmit} />);
+    expect(screen.getByLabelText('Source', { selector: 'input' })).toBe(picker);
+    expect(picker.isConnected).toBe(true);
+    fireEvent.change(picker, {
+      target: {
+        files: [new File(['synthetic'], 'focus.txt', { type: 'text/plain' })],
+      },
+    });
+    expect(await screen.findByText('focus.txt')).toBeInTheDocument();
+    expect(uploadDifyFile).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole('button', { name: 'input.sendMessage' })
+    ).toBeDisabled();
+    mockAuthLoading = false;
+    view.rerender(<ChatflowInputArea instanceId="app-1" onSubmit={onSubmit} />);
+    await waitFor(() => expect(uploadDifyFile).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'input.sendMessage' })
+      ).not.toBeDisabled()
+    );
+    expect(input).toHaveValue('summarize');
+    expect(screen.getByLabelText('Source', { selector: 'input' })).toBe(picker);
+    fireEvent.click(screen.getByRole('button', { name: 'input.sendMessage' }));
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        'summarize',
+        { file: expect.objectContaining({ upload_file_id: 'selected-file' }) },
+        [],
+        undefined,
+        expect.any(Function)
+      )
+    );
   });
 
   it('keeps the common composer without an attachment action for a text-only app', async () => {

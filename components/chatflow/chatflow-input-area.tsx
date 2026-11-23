@@ -93,7 +93,7 @@ function ScopedChatflowInputArea({
   const route = useChatInputRouteSync({
     userId: session?.user.id,
     appId: instanceId,
-    authLoading: loading,
+    authLoading: loading && !session,
   });
   const app = useChatInputApp(instanceId, route.ready);
   const live = useAgentInputCapabilities(app.instance?.id ?? null);
@@ -142,6 +142,7 @@ function ScopedChatflowInputArea({
     userId: session?.user.id,
     slots,
     disabled: !ready || isWaiting || isProcessing,
+    authLoading: loading,
     onRequirementsChanged: live.retry,
   });
   const [pendingScope, setPendingScope] = useState<string | null>(null);
@@ -151,7 +152,7 @@ function ScopedChatflowInputArea({
       state.resolveScope(pendingScope) === state.currentRoute
   );
   const locks = useRef(new Set<string>());
-  const disabled = !ready || !session;
+  const disabled = !ready || !session || loading;
   const waiting = isWaiting || pending;
   const sourceIds = messages.flatMap(item =>
     item.db_id ? [item.id, item.db_id] : [item.id]
