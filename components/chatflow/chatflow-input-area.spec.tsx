@@ -172,7 +172,7 @@ describe('Chatflow standard composer', () => {
     const picker = await screen.findByLabelText('Source', {
       selector: 'input',
     });
-    const input = screen.getByPlaceholderText('form.question.placeholder');
+    const input = screen.getByRole('textbox', { name: 'input.placeholder' });
     fireEvent.change(input, { target: { value: 'summarize' } });
     mockAuthLoading = true;
     view.rerender(<ChatflowInputArea instanceId="app-1" onSubmit={onSubmit} />);
@@ -214,9 +214,10 @@ describe('Chatflow standard composer', () => {
     const view = render(
       <ChatflowInputArea instanceId="app-1" onSubmit={jest.fn()} />
     );
-    const query = await screen.findByPlaceholderText(
-      'form.question.placeholder'
-    );
+    const query = await screen.findByRole('textbox', {
+      name: 'input.placeholder',
+    });
+    expect(query).toHaveAttribute('placeholder', '');
     fireEvent.change(query, { target: { value: 'hello' } });
     await waitFor(() =>
       expect(
@@ -263,9 +264,12 @@ describe('Chatflow standard composer', () => {
     const field = await screen.findByLabelText('Topic', { exact: false });
     expect(field).toBeVisible();
     expect(view.container.querySelector('details, summary')).toBeNull();
-    fireEvent.change(screen.getByPlaceholderText('form.question.placeholder'), {
-      target: { value: 'question' },
-    });
+    fireEvent.change(
+      screen.getByRole('textbox', { name: 'input.placeholder' }),
+      {
+        target: { value: 'question' },
+      }
+    );
     expect(
       screen.getByRole('button', { name: 'input.sendMessage' })
     ).toBeDisabled();
@@ -340,7 +344,7 @@ describe('Chatflow standard composer', () => {
     });
     expect(newTask).toHaveAttribute('href', '/apps/chatflow/app-1');
     expect(
-      screen.queryByPlaceholderText('form.question.placeholder')
+      screen.queryByRole('textbox', { name: 'input.placeholder' })
     ).not.toBeInTheDocument();
     expect(screen.queryByText('Saved topic')).not.toBeInTheDocument();
     expect(view.container.querySelector('input[type="file"]')).toBeNull();
@@ -358,9 +362,9 @@ describe('Chatflow standard composer', () => {
       });
     });
     render(<ChatflowInputArea instanceId="app-1" onSubmit={onSubmit} />);
-    const query = await screen.findByPlaceholderText(
-      'form.question.placeholder'
-    );
+    const query = await screen.findByRole('textbox', {
+      name: 'input.placeholder',
+    });
     fireEvent.change(query, { target: { value: 'submitted' } });
     await waitFor(() =>
       expect(
@@ -385,9 +389,9 @@ describe('Chatflow standard composer', () => {
       surfaced: false,
     });
     render(<ChatflowInputArea instanceId="app-1" onSubmit={onSubmit} />);
-    const query = await screen.findByPlaceholderText(
-      'form.question.placeholder'
-    );
+    const query = await screen.findByRole('textbox', {
+      name: 'input.placeholder',
+    });
     fireEvent.change(query, { target: { value: 'keep this draft' } });
     await waitFor(() =>
       expect(
@@ -415,9 +419,9 @@ describe('Chatflow standard composer', () => {
 
     render(<ChatflowInputArea instanceId="app-1" onSubmit={onSubmit} />);
 
-    const textarea = await screen.findByPlaceholderText(
-      'form.question.placeholder'
-    );
+    const textarea = await screen.findByRole('textbox', {
+      name: 'input.placeholder',
+    });
     fireEvent.change(textarea, {
       target: {
         value: 'unsafe message',
@@ -452,7 +456,7 @@ describe('Chatflow standard composer', () => {
         5000
       );
       expect(
-        screen.getByPlaceholderText('form.question.placeholder')
+        screen.getByRole('textbox', { name: 'input.placeholder' })
       ).toHaveValue('');
     });
   });
@@ -477,9 +481,9 @@ describe('Chatflow standard composer', () => {
 
     render(<ChatflowInputArea instanceId="app-1" onSubmit={onSubmit} />);
 
-    const textarea = await screen.findByPlaceholderText(
-      'form.question.placeholder'
-    );
+    const textarea = await screen.findByRole('textbox', {
+      name: 'input.placeholder',
+    });
     fireEvent.change(textarea, {
       target: {
         value: 'unsafe message',
@@ -504,7 +508,7 @@ describe('Chatflow standard composer', () => {
         5000
       );
       expect(
-        screen.getByPlaceholderText('form.question.placeholder')
+        screen.getByRole('textbox', { name: 'input.placeholder' })
       ).toHaveValue('');
     });
   });
@@ -541,9 +545,9 @@ describe('Chatflow standard composer', () => {
 
     render(<ChatflowInputArea instanceId="app-1" onSubmit={onSubmit} />);
 
-    const textarea = await screen.findByPlaceholderText(
-      'form.question.placeholder'
-    );
+    const textarea = await screen.findByRole('textbox', {
+      name: 'input.placeholder',
+    });
     expect(screen.queryByText('Injected User Id')).not.toBeInTheDocument();
 
     fireEvent.change(textarea, {
@@ -616,9 +620,9 @@ describe('Chatflow standard composer', () => {
     const view = render(
       <ChatflowInputArea instanceId="app-1" onSubmit={onSubmit} />
     );
-    const query = await screen.findByPlaceholderText(
-      'form.question.placeholder'
-    );
+    const query = await screen.findByRole('textbox', {
+      name: 'input.placeholder',
+    });
     fireEvent.change(query, { target: { value: 'read document' } });
     await screen.findByText('fileTypeSelector.attachmentRequired');
     expect(

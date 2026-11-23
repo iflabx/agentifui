@@ -93,6 +93,8 @@ function ScopedChatflowInputArea({
     authLoading: loading && !session,
   });
   const app = useChatInputApp(instanceId, route.ready);
+  const appName = app.instance?.display_name?.trim();
+  const appDescription = app.instance?.description?.trim();
   const live = useAgentInputCapabilities(app.instance?.id ?? null);
   const displayed = useRetainedInputCapabilities(live.capabilities);
   const ready = route.ready && live.capabilities?.status === 'ready';
@@ -276,20 +278,28 @@ function ScopedChatflowInputArea({
   const parameters =
     !continuing || failed || !ready ? (
       <div className="mb-3 space-y-3 text-xs text-stone-500 dark:text-stone-400">
-        {!continuing &&
-          isWelcomeScreen &&
-          app.instance?.description?.trim() && (
-            <header className="mb-6 px-4">
+        {!continuing && isWelcomeScreen && (appName || appDescription) && (
+          <header className="mb-4 space-y-1 px-4">
+            {appName && (
+              <p
+                data-chatflow-name
+                className="text-base font-semibold break-words text-stone-800 dark:text-stone-200"
+              >
+                {appName}
+              </p>
+            )}
+            {appDescription && (
               <div
                 data-chatflow-description
-                className="markdown-body main-content-area assistant-message-content w-full text-base text-stone-800 dark:text-stone-200"
+                className="markdown-body main-content-area assistant-message-content w-full text-base text-stone-500 dark:text-stone-400"
               >
                 <p className="break-words whitespace-pre-wrap">
-                  {app.instance.description}
+                  {app.instance?.description}
                 </p>
               </div>
-            </header>
-          )}
+            )}
+          </header>
+        )}
         {failed ? (
           <div role="alert">
             {tChat('input.capabilitiesUnavailable')}{' '}
@@ -398,7 +408,7 @@ function ScopedChatflowInputArea({
           )}
           embedded={isWelcomeScreen}
           widthClass={widthClass}
-          placeholder={t('form.question.placeholder')}
+          placeholder=""
           beforeInput={parameters}
           attachmentAction={attachments.action}
           attachmentPreview={attachments.preview}
