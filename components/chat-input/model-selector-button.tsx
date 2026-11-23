@@ -258,7 +258,7 @@ export function ModelSelectorButton({ className }: ModelSelectorButtonProps) {
   }
 
   return (
-    <div className={cn('relative', className)}>
+    <div className={cn('relative min-w-0', className)}>
       {/* Main button: borderless, no background, serif font, stone color scheme */}
       {/* Remove width restrictions, allow leftward expansion to show full name */}
       {/* Modified: use custom click handler to ensure focus management */}
@@ -266,8 +266,9 @@ export function ModelSelectorButton({ className }: ModelSelectorButtonProps) {
         onClick={handleToggleDropdown}
         // Add onMouseDown to prevent input box focus loss when button is clicked
         onMouseDown={e => e.preventDefault()}
+        title={currentAppName}
         className={cn(
-          'flex items-center space-x-1 rounded-md px-2 py-1 font-serif text-sm',
+          'flex max-w-full items-center space-x-1 rounded-md px-2 py-1 font-serif text-sm',
           'transition-colors duration-200',
           // Add fixed height and vertical center alignment, ensure serif font is vertically centered
           // Cursor control: only show pointer when dropdown is closed
@@ -277,14 +278,7 @@ export function ModelSelectorButton({ className }: ModelSelectorButtonProps) {
           'dark:text-stone-300 dark:hover:bg-stone-800/50'
         )}
       >
-        {/* App name: remove width restrictions and truncate, allow full name display */}
-        {/* Add vertical center alignment to ensure serif font displays correctly */}
-        <span
-          className={cn(
-            'font-serif whitespace-nowrap',
-            'flex items-center leading-none'
-          )}
-        >
+        <span className={cn('min-w-0 truncate font-serif leading-none')}>
           {currentAppName}
         </span>
 

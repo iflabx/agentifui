@@ -205,6 +205,7 @@
         "filesRequired": "Añade los archivos adjuntos necesarios.",
         "uploadPending": "Espera a que terminen las cargas o elimina los archivos fallidos.",
         "localUploadUnavailable": "Este uso no admite archivos locales.",
+        "chooseAttachmentField": "Use el botón de adjuntos para elegir un campo y después seleccione sus archivos.",
         "retryUpload": "Reintentar subida",
         "removeFile": "Eliminar archivo",
         "fileUploadError": "Error al subir archivo",

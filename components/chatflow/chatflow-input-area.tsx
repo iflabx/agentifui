@@ -1,5 +1,6 @@
 'use client';
 
+import { AppIntroduction } from '@components/chat-input/app-introduction';
 import { ChatContainer } from '@components/chat-input/container';
 import { useRegisterDifyEdit } from '@components/chat-input/edit-resend';
 import { useFocusManager } from '@components/chat-input/focus-manager';
@@ -279,26 +280,10 @@ function ScopedChatflowInputArea({
     !continuing || failed || !ready ? (
       <div className="mb-3 space-y-3 text-xs text-stone-500 dark:text-stone-400">
         {!continuing && isWelcomeScreen && (appName || appDescription) && (
-          <header className="mb-4 space-y-1 px-4">
-            {appName && (
-              <p
-                data-chatflow-name
-                className="text-base font-semibold break-words text-stone-800 dark:text-stone-200"
-              >
-                {appName}
-              </p>
-            )}
-            {appDescription && (
-              <div
-                data-chatflow-description
-                className="markdown-body main-content-area assistant-message-content w-full text-base text-stone-500 dark:text-stone-400"
-              >
-                <p className="break-words whitespace-pre-wrap">
-                  {app.instance?.description}
-                </p>
-              </div>
-            )}
-          </header>
+          <AppIntroduction
+            name={appName}
+            description={app.instance?.description}
+          />
         )}
         {failed ? (
           <div role="alert">

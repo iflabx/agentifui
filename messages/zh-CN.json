@@ -205,6 +205,7 @@
         "filesRequired": "请添加必需的附件。",
         "uploadPending": "请等待上传完成，或删除上传失败的文件。",
         "localUploadUnavailable": "此用途暂不支持本地上传。",
+        "chooseAttachmentField": "请点击附件按钮选择文件用途，再选择要上传的文件。",
         "retryUpload": "重试上传",
         "removeFile": "移除文件",
         "fileUploadError": "文件上传错误",

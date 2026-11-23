@@ -240,6 +240,7 @@ function TaskChatSession({
     executions.some(execution =>
       ['pending', 'running'].includes(execution.status)
     );
+  const welcome = !conversationId && executions.length === 0;
   const prepareAgain = async (execution: AppExecution) => {
     if (busy || loadFailed) return;
     if (['pending', 'running'].includes(execution.status)) {
@@ -326,7 +327,7 @@ function TaskChatSession({
   };
   return (
     <div
-      className="flex h-full min-h-0 flex-col bg-stone-100 text-stone-900 dark:bg-stone-800 dark:text-stone-100"
+      className="relative flex h-full min-h-0 flex-col bg-stone-100 text-stone-900 dark:bg-stone-800 dark:text-stone-100"
       data-task-chat
     >
       <div
@@ -358,11 +359,6 @@ function TaskChatSession({
               <button onClick={() => void load()} className="underline">
                 {t('retry')}
               </button>
-            </p>
-          )}
-          {!executions.length && !loading && (
-            <p className="py-12 text-center font-serif text-stone-500">
-              {t('welcome')}
             </p>
           )}
           {executions.map(execution => {
@@ -450,26 +446,34 @@ function TaskChatSession({
         </div>
       </div>
       <div
-        className={cn('mx-auto w-full shrink-0 pb-4', widthClass, paddingClass)}
-      >
-        {(error || runner.error) && (
-          <p role="alert" className="mb-2 text-sm text-red-600">
-            {error ||
-              (runner.error === 'TASK_OUTCOME_UNKNOWN'
-                ? t('unknown')
-                : runner.error)}
-          </p>
+        className={cn(
+          'mx-auto w-full shrink-0 pb-4',
+          welcome && 'absolute inset-0 flex flex-col overflow-y-auto py-6',
+          widthClass,
+          paddingClass
         )}
-        <WorkflowInputForm
-          ref={form}
-          instanceId={instanceId}
-          chat
-          onExecute={execute}
-          isExecuting={
-            busy || loading || loadFailed || unresolved || !executionEnabled
-          }
-          onStop={runner.isExecuting ? runner.stop : undefined}
-        />
+      >
+        <div className={welcome ? 'my-auto shrink-0' : undefined}>
+          {(error || runner.error) && (
+            <p role="alert" className="mb-2 text-sm text-red-600">
+              {error ||
+                (runner.error === 'TASK_OUTCOME_UNKNOWN'
+                  ? t('unknown')
+                  : runner.error)}
+            </p>
+          )}
+          <WorkflowInputForm
+            ref={form}
+            instanceId={instanceId}
+            chat
+            showIntroduction={welcome}
+            onExecute={execute}
+            isExecuting={
+              busy || loading || loadFailed || unresolved || !executionEnabled
+            }
+            onStop={runner.isExecuting ? runner.stop : undefined}
+          />
+        </div>
       </div>
       {result && (
         <ResultViewer

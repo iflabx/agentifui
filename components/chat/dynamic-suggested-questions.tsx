@@ -13,6 +13,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 interface DynamicSuggestedQuestionsProps {
+  introductionReady?: boolean;
+  inline?: boolean;
   className?: string;
   onQuestionClick?: (messageText: string, files?: unknown[]) => Promise<void>;
 }
@@ -25,6 +27,8 @@ interface DynamicSuggestedQuestionsProps {
 export const DynamicSuggestedQuestions = ({
   className,
   onQuestionClick,
+  introductionReady,
+  inline = false,
 }: DynamicSuggestedQuestionsProps) => {
   const { widthClass, paddingClass } = useChatWidth();
   const { currentAppInstance, isValidating, isLoading } = useCurrentApp();
@@ -91,7 +95,7 @@ export const DynamicSuggestedQuestions = ({
   // Fetch suggested questions, only after typewriter is complete
   useEffect(() => {
     // Must wait for typewriter to finish
-    if (!isWelcomeTypewriterComplete) {
+    if (!(introductionReady ?? isWelcomeTypewriterComplete)) {
       setShouldShowQuestions(false);
       return;
     }
@@ -152,6 +156,7 @@ export const DynamicSuggestedQuestions = ({
 
     return () => clearTimeout(updateTimer);
   }, [
+    introductionReady,
     isWelcomeTypewriterComplete, // Core dependency: typewriter completion status
     currentAppInstance?.config?.dify_parameters?.suggested_questions,
     currentAppInstance?.instance_id,
@@ -206,10 +211,10 @@ export const DynamicSuggestedQuestions = ({
         'mx-auto w-full',
         widthClass,
         paddingClass,
-        'absolute left-1/2',
+        inline ? 'mt-4' : 'absolute left-1/2',
         className
       )}
-      style={questionsPosition}
+      style={inline ? undefined : questionsPosition}
     >
       {/* Question container: uses flexbox layout, supports multi-line wrapping with center alignment on each line */}
       <div className="flex flex-wrap items-start justify-center gap-3">

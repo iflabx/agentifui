@@ -31,6 +31,7 @@ import { useCallback, useRef, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 
+import { AppIntroduction } from './app-introduction';
 import { AttachmentPreviewBar } from './attachment-preview-bar';
 import { ChatButton } from './button';
 import { useEditResend, useRegisterDifyEdit } from './edit-resend';
@@ -58,6 +59,7 @@ interface ChatInputProps {
   isTransitioningToWelcome?: boolean;
   requireModelValidation?: boolean;
   showModelSelector?: boolean;
+  afterInput?: React.ReactNode;
 }
 
 export const ChatInput = ({
@@ -73,6 +75,7 @@ export const ChatInput = ({
   isTransitioningToWelcome = false,
   requireModelValidation = true,
   showModelSelector = true,
+  afterInput,
 }: ChatInputProps) => {
   const t = useTranslations('pages.chat');
   const tModeration = useTranslations('errors.system.moderation');
@@ -100,6 +103,11 @@ export const ChatInput = ({
     retry: retryInputApp,
   } = useChatInputApp(route.appId, route.ready);
   const fileConfig = useFileTypes(inputApp);
+  const accepted = useChatInputStore(state =>
+    Boolean(state.acceptedScopes[state.resolveScope(currentRoute)])
+  );
+  const showIntroduction =
+    !showModelSelector && route.ready && !continuingConversation && !accepted;
   const capabilitiesReady = Boolean(
     inputApp && fileConfig.capabilities?.status === 'ready'
   );
@@ -339,7 +347,24 @@ export const ChatInput = ({
         onStop={onStop}
         isWaiting={waiting || blockedAttachments || submissionBlocked}
         className={className}
-        placeholder={placeholder}
+        placeholder={showModelSelector ? placeholder : ''}
+        scrollableWelcome={!showModelSelector}
+        afterInput={afterInput}
+        beforeInput={
+          showIntroduction && inputApp ? (
+            <div className="max-h-[40dvh] overflow-y-auto">
+              <AppIntroduction
+                name={inputApp.display_name}
+                description={inputApp.description}
+              />
+              {inputApp.config?.dify_parameters?.opening_statement?.trim() && (
+                <p className="mb-4 px-4 text-sm whitespace-pre-wrap text-stone-500 dark:text-stone-400">
+                  {inputApp.config.dify_parameters.opening_statement}
+                </p>
+              )}
+            </div>
+          ) : undefined
+        }
         maxHeight={maxHeight}
         isWelcomeScreen={externalIsWelcomeScreen || isWelcomeScreen}
         widthClass={widthClass}

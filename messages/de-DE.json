@@ -205,6 +205,7 @@
         "filesRequired": "Fügen Sie die erforderlichen Anhänge hinzu.",
         "uploadPending": "Warten Sie auf Uploads oder entfernen Sie fehlgeschlagene Dateien.",
         "localUploadUnavailable": "Für diesen Zweck sind lokale Uploads nicht verfügbar.",
+        "chooseAttachmentField": "Wählen Sie über die Anhang-Schaltfläche ein Feld und anschließend Ihre Dateien aus.",
         "retryUpload": "Upload wiederholen",
         "removeFile": "Datei entfernen",
         "fileUploadError": "Datei-Upload-Fehler",

@@ -15,6 +15,7 @@ export interface AgentApp {
   id: string;
   instanceId: string;
   name: string;
+  description?: string | null;
   baseUrl: string;
   apiKey: string;
   credentialVersion?: string;
@@ -48,6 +49,7 @@ interface AgentAppRow {
   id: string;
   instance_id: string;
   display_name: string | null;
+  description?: string | null;
   base_url: string;
   config: Record<string, unknown> | null;
   key_value: string | null;
@@ -113,7 +115,7 @@ export async function resolveAgentApp(
   options: { allowDify?: boolean } = {}
 ): Promise<AgentApp> {
   const rows = await queryRowsWithPgSystemContext<AgentAppRow>(
-    `SELECT si.id::text, si.instance_id, si.display_name, si.config,
+    `SELECT si.id::text, si.instance_id, si.display_name, si.description, si.config,
        p.base_url, (
          SELECT key_value FROM api_keys
          WHERE service_instance_id = si.id AND is_default = TRUE
@@ -179,6 +181,7 @@ export async function resolveAgentApp(
     id: row.id,
     instanceId: row.instance_id,
     name: row.display_name || row.instance_id,
+    description: row.description ?? null,
     baseUrl,
     apiKey,
     credentialVersion: row.credential_version,

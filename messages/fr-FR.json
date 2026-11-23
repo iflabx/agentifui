@@ -205,6 +205,7 @@
         "filesRequired": "Ajoutez les pièces jointes requises.",
         "uploadPending": "Attendez la fin des envois ou supprimez les fichiers en échec.",
         "localUploadUnavailable": "Cet usage ne permet pas les fichiers locaux.",
+        "chooseAttachmentField": "Choisissez un champ avec le bouton de pièce jointe, puis sélectionnez vos fichiers.",
         "retryUpload": "Réessayer le téléversement",
         "removeFile": "Supprimer le fichier",
         "fileUploadError": "Erreur de téléversement de fichier",

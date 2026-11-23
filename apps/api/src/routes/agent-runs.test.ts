@@ -269,6 +269,34 @@ beforeEach(() => {
   jest.mocked(reserveRun).mockResolvedValue({ run, replayed: false });
 });
 
+it('returns the configured public introduction through authorized app metadata, not runtime credentials', async () => {
+  const app = await resolveAgentApp(APP, 'actor');
+  jest
+    .mocked(resolveAgentApp)
+    .mockResolvedValue({ ...app, description: 'Configured description' });
+  const server = Fastify({ logger: false });
+  await server.register(agentRunsRoutes, {
+    config: { corsAllowedOrigins: [] } as unknown as ApiRuntimeConfig,
+  });
+  try {
+    const response = await server.inject({
+      method: 'GET',
+      url: `/api/internal/apps/${APP}/agent`,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().app).toEqual({
+      id: APP,
+      name: 'Example',
+      description: 'Configured description',
+      backendType: 'langchain',
+    });
+    expect(response.body).not.toContain(app.apiKey);
+    expect(response.body).not.toContain(app.baseUrl);
+  } finally {
+    await server.close();
+  }
+});
+
 async function request(
   method: 'POST' | 'GET' = 'POST',
   language?: string,

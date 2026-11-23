@@ -1,5 +1,6 @@
 'use client';
 
+import { cn } from '@lib/utils';
 import { ArrowUpIcon, Loader2, Square } from 'lucide-react';
 
 import {
@@ -34,6 +35,8 @@ export interface ChatInputViewProps {
   widthClass?: string;
   attachmentPreview?: ReactNode;
   beforeInput?: ReactNode;
+  afterInput?: ReactNode;
+  scrollableWelcome?: boolean;
   editNotice?: ReactNode;
   attachmentAction?: ReactNode;
   modelSelector?: ReactNode;
@@ -62,6 +65,8 @@ export function ChatInputView({
   widthClass = 'max-w-3xl',
   attachmentPreview,
   beforeInput,
+  afterInput,
+  scrollableWelcome = false,
   editNotice,
   attachmentAction,
   modelSelector,
@@ -116,11 +121,13 @@ export function ChatInputView({
   };
   const stopping = isProcessing && Boolean(onStop);
   const busy = isWaiting || pending;
-  return (
+  const welcomeLayout = scrollableWelcome && isWelcomeScreen;
+  const composer = (
     <ChatContainer
-      embedded={embedded}
+      embedded={embedded || welcomeLayout}
       beforeInput={beforeInput}
-      className={className}
+      afterInput={afterInput}
+      className={cn(welcomeLayout && 'mx-auto my-auto shrink-0', className)}
       widthClass={widthClass}
       isWelcomeScreen={isWelcomeScreen}
       isTransitioningToWelcome={isTransitioningToWelcome}
@@ -157,10 +164,10 @@ export function ChatInputView({
         />
       </ChatTextArea>
       <div className="px-4">
-        <ChatButtonArea>
-          <div className="flex-none">{attachmentAction}</div>
-          <div className="flex flex-1 items-center justify-end space-x-2">
-            {modelSelector}
+        <ChatButtonArea className="flex-wrap gap-y-2">
+          <div className="max-w-full min-w-0">{attachmentAction}</div>
+          <div className="ml-auto flex max-w-full items-center justify-end space-x-2">
+            {modelSelector && <div className="min-w-0">{modelSelector}</div>}
             <ChatButton
               icon={
                 stopping ? (
@@ -172,6 +179,7 @@ export function ChatInputView({
                 )
               }
               variant="submit"
+              className="shrink-0"
               onClick={
                 stopping
                   ? onStop
@@ -195,5 +203,15 @@ export function ChatInputView({
         </ChatButtonArea>
       </div>
     </ChatContainer>
+  );
+  return welcomeLayout ? (
+    <div
+      data-chat-welcome
+      className="absolute inset-0 flex flex-col overflow-y-auto px-4 py-6"
+    >
+      {composer}
+    </div>
+  ) : (
+    composer
   );
 }

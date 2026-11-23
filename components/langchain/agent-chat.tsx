@@ -1,5 +1,7 @@
 'use client';
 
+import { AppIntroduction } from '@components/chat-input/app-introduction';
+import { AttachmentAction } from '@components/chat-input/attachment-action';
 import { useEditResend } from '@components/chat-input/edit-resend';
 import { ChatInputView } from '@components/chat-input/view';
 import { ChatInputBackdrop } from '@components/chat/chat-input-backdrop';
@@ -547,7 +549,28 @@ function AgentChatSession({
         onSubmit={submit}
         disabled={disabled || edit.active}
         isProcessing={chat.busy}
-        placeholder={t('placeholder')}
+        placeholder=""
+        scrollableWelcome
+        isWelcomeScreen={
+          chat.ready &&
+          !conversationId &&
+          !chat.view.conversationId &&
+          chat.view.messages.length === 0 &&
+          !chat.busy
+        }
+        beforeInput={
+          chat.ready && !conversationId && !chat.view.conversationId ? (
+            <div className="max-h-[40dvh] overflow-y-auto">
+              <AppIntroduction
+                name={chat.appName}
+                description={chat.appDescription}
+              />
+            </div>
+          ) : undefined
+        }
+        attachmentAction={
+          <AttachmentAction choices={[]} onChoose={() => undefined} />
+        }
         sendButtonAriaLabel={t('send')}
         widthClass={widthClass}
         onHeightChange={setInputHeight}

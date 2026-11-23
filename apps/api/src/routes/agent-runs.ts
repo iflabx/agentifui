@@ -292,6 +292,7 @@ export const agentRunsRoutes: FastifyPluginAsync<{
       app: {
         id: app.id,
         name: app.name,
+        description: app.description ?? null,
         backendType: app.backendType ?? 'langchain',
       },
       ...describeNegotiatedRuntime(app),

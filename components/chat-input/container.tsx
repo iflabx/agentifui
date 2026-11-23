@@ -7,6 +7,7 @@ import { cn } from '@lib/utils';
 interface ChatContainerProps {
   children: React.ReactNode;
   beforeInput?: React.ReactNode;
+  afterInput?: React.ReactNode;
   isWelcomeScreen?: boolean;
   className?: string;
   widthClass: string;
@@ -23,6 +24,7 @@ const INPUT_BOTTOM_MARGIN = '1rem';
 export const ChatContainer = ({
   children,
   beforeInput,
+  afterInput,
   isWelcomeScreen = false,
   className,
   widthClass,
@@ -77,6 +79,7 @@ export const ChatContainer = ({
       >
         {children}
       </div>
+      {afterInput}
     </div>
   );
 };

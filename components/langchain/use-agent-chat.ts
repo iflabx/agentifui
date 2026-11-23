@@ -96,6 +96,7 @@ export function useAgentChat(
   const draftScopes = useRef(new Map<string, string>());
   const newDraftVersion = useRef(0);
   const [appName, setAppName] = useState('');
+  const [appDescription, setAppDescription] = useState<string | null>(null);
   const [textOnly, setTextOnly] = useState(false);
   const [humanInput, setHumanInput] = useState(false);
   const [singleTask, setSingleTask] = useState(false);
@@ -222,7 +223,7 @@ export function useAgentChat(
         setUnconfirmed(false);
         setPendingSubmissionId(null);
         const result = await agentRequest<{
-          app: { name: string };
+          app: { name: string; description?: string | null };
           protocol?: string;
           interactionMode?: string;
           capabilities?: {
@@ -234,6 +235,7 @@ export function useAgentChat(
         }>(appId, '', { signal: lifetime.signal });
         if (lifetime.signal.aborted) return;
         setAppName(result.app.name);
+        setAppDescription(result.app.description ?? null);
         setTextOnly(result.interactionMode === 'text-only');
         setHumanInput(result.capabilities?.humanInput === true);
         setSingleTask(result.singleTask === true);
@@ -775,6 +777,7 @@ export function useAgentChat(
     view,
     draftScope,
     appName,
+    appDescription,
     textOnly,
     humanInput,
     singleTask,

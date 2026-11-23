@@ -125,6 +125,14 @@ prove the upstream task was cancelled.
 
 ### Input And Message Actions
 
+Dedicated application pages share the same composer and introduction: the configured
+application name appears above its muted description, immediately above the input.
+There is no generic visible placeholder. This introduction is not a message or model
+input; it disappears after the first request is accepted, not on a rejected send,
+and returns for a new task or conversation. The model homepage keeps its existing
+greeting and input defaults. A configured Dify opening statement can appear as
+supplementary guidance; it does not replace the application's description.
+
 Chatflow uses the standard chat composer to start a single-turn task. Attach files with the button inside
 the input box; selected files appear as cards there, with upload status, remove
 and retry actions. A single available purpose opens the file picker directly.
@@ -324,6 +332,10 @@ not general file input. See [reports, data and sources](#9-reports-data-and-sour
 1. Open the application from `/apps`, not the model selector. Workflow and
    text-generation applications use the shared chat input and message display.
    Complete any parameters above the input and wait for required file uploads.
+   Choose files with the attachment button inside the composer; uploaded files
+   use the same status, remove and retry cards as chat. Each upload purpose keeps
+   its own limits. Per-task parameters stay available after sending, even when
+   the introductory application name and description are hidden.
    When a main text field is configured or unambiguously detected, the input
    fills that exact upstream variable. Parameter/file-only tasks need no dummy text.
 2. Send once. Each send is an independent task, not a conversational continuation:

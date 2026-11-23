@@ -44,10 +44,11 @@ describe('form upload ownership', () => {
     jest.restoreAllMocks();
   });
 
-  function setup() {
+  function setup(compact = false) {
     const onChange = jest.fn();
     const view = render(
       <FileUploadField
+        compact={compact}
         slot={slot}
         config={{ max_length: 3 }}
         instanceId="app-B"
@@ -109,6 +110,66 @@ describe('form upload ownership', () => {
       expect(uploadDifyFile).not.toHaveBeenCalled();
     }
   );
+
+  it('uses shared compact cards, retries failures and prevents changes during execution', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    jest
+      .mocked(uploadDifyFile)
+      .mockRejectedValueOnce(new Error('Upload failed'));
+    const view = setup(true);
+    await act(async () => {
+      view.select();
+    });
+    expect(view.getByText('b.txt')).toBeInTheDocument();
+    expect(
+      view.getByRole('button', { name: 'common.ui.retry' })
+    ).not.toBeDisabled();
+    expect(view.getByRole('alert')).toHaveTextContent('Upload failed');
+    await act(async () => {
+      fireEvent.click(view.getByRole('button', { name: 'common.ui.retry' }));
+    });
+    expect(uploadDifyFile).toHaveBeenCalledTimes(2);
+    expect(view.onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ upload_file_id: 'uploaded-B' })
+    );
+    view.rerender(
+      <FileUploadField
+        compact
+        disabled
+        slot={slot}
+        config={{}}
+        instanceId="app-B"
+        value={view.onChange.mock.calls.at(-1)![0]}
+        onChange={view.onChange}
+        isSingleFileMode
+      />
+    );
+    expect(
+      view.getByRole('button', { name: 'common.ui.remove' })
+    ).toBeDisabled();
+    expect(view.container.querySelector('input[type=file]')).toBeDisabled();
+  });
+
+  it('discards a late compact upload after the pending card is removed', async () => {
+    let finish!: (result: never) => void;
+    jest.mocked(uploadDifyFile).mockImplementation(
+      () =>
+        new Promise(resolve => {
+          finish = resolve;
+        })
+    );
+    const view = setup(true);
+    act(() => {
+      view.select();
+    });
+    expect(view.getByText('b.txt')).toBeInTheDocument();
+    fireEvent.click(view.getByRole('button', { name: 'common.ui.remove' }));
+    await act(async () => {
+      finish({ id: 'late' } as never);
+    });
+    expect(view.queryByText('b.txt')).not.toBeInTheDocument();
+    expect(view.onChange).not.toHaveBeenCalled();
+  });
 
   it('replaces a fresh uploaded B with controlled A without reuploading or reemitting B', async () => {
     const view = setup();

@@ -1,5 +1,7 @@
 'use client';
 
+import { AppIntroduction } from '@components/chat-input/app-introduction';
+import { AttachmentAction } from '@components/chat-input/attachment-action';
 import { ChatInputView } from '@components/chat-input/view';
 import {
   useAgentInputCapabilities,
@@ -15,6 +17,7 @@ import { Loader2, Play } from 'lucide-react';
 import React, {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -22,7 +25,7 @@ import React, {
 
 import { useTranslations } from 'next-intl';
 
-import { FileUploadField } from './file-upload-field';
+import { FileUploadField, type FileUploadSelection } from './file-upload-field';
 import type { WorkflowUploadOwner } from './file-upload-field/helpers';
 import { FormField } from './form-field';
 import { capabilityFormFields, validateFormData } from './validation';
@@ -35,6 +38,7 @@ interface WorkflowInputFormProps {
   isExecuting: boolean;
   chat?: boolean;
   onStop?: () => void;
+  showIntroduction?: boolean;
 }
 
 export interface WorkflowInputFormRef {
@@ -45,7 +49,15 @@ export interface WorkflowInputFormRef {
 export const WorkflowInputForm = React.forwardRef<
   WorkflowInputFormRef,
   WorkflowInputFormProps
->(({ instanceId, onExecute, isExecuting, chat = false, onStop }, ref) => {
+>((props, ref) => {
+  const {
+    instanceId,
+    onExecute,
+    isExecuting,
+    chat = false,
+    onStop,
+    showIntroduction,
+  } = props;
   const actorEpoch = useChatInputStore(state => state.actorEpoch);
   return (
     <ScopedWorkflowInputForm
@@ -56,6 +68,7 @@ export const WorkflowInputForm = React.forwardRef<
       isExecuting={isExecuting}
       chat={chat}
       onStop={onStop}
+      showIntroduction={showIntroduction}
     />
   );
 });
@@ -63,7 +76,15 @@ export const WorkflowInputForm = React.forwardRef<
 const ScopedWorkflowInputForm = React.forwardRef<
   WorkflowInputFormRef,
   WorkflowInputFormProps
->(({ instanceId, onExecute, isExecuting, chat = false, onStop }, ref) => {
+>((props, ref) => {
+  const {
+    instanceId,
+    onExecute,
+    isExecuting,
+    chat = false,
+    onStop,
+    showIntroduction = false,
+  } = props;
   const t = useTranslations('pages.workflow.form');
   const tCommon = useTranslations('common');
   const tChat = useTranslations('pages.chat');
@@ -83,6 +104,10 @@ const ScopedWorkflowInputForm = React.forwardRef<
   const [uploadBlocked, setUploadBlocked] = useState<Record<string, boolean>>(
     {}
   );
+  const [fileCounts, setFileCounts] = useState<Record<string, number>>({});
+  const inputId = useId();
+  const fileSelections = useRef(new Map<string, FileUploadSelection>());
+  const [dropNotice, setDropNotice] = useState<string | null>(null);
   const [restoreScope, setRestoreScope] = useState<WorkflowUploadOwner>();
   const initialized = useRef(false);
   const submitting = useRef(false);
@@ -152,7 +177,9 @@ const ScopedWorkflowInputForm = React.forwardRef<
   const blocked =
     !ready ||
     isExecuting ||
-    Object.values(uploadBlocked).some(Boolean) ||
+    capabilities?.attachmentSlots.some(
+      slot => slot.target === 'inputs' && uploadBlocked[slot.key]
+    ) ||
     Boolean(
       capabilities?.attachmentSlots.some(
         slot => slot.target === 'files' && slot.minCount > 0
@@ -204,8 +231,74 @@ const ScopedWorkflowInputForm = React.forwardRef<
     ready &&
     Object.keys(validateFormData(formData, userInputForm, t, capabilities))
       .length === 0;
+  const uploadFields = userInputForm.filter(item =>
+    ['file', 'file-list'].includes(getDifyUserInputFormEntry(item).fieldType)
+  );
+  const renderUpload = (formItem: DifyUserInputFormItem) => {
+    const { fieldType, fieldConfig } = getDifyUserInputFormEntry(formItem);
+    if (!fieldConfig) return null;
+    const variable = fieldConfig.variable;
+    const slot = displayedCapabilities?.attachmentSlots.find(
+      item => item.target === 'inputs' && item.key === variable
+    );
+    return (
+      <FileUploadField
+        key={variable}
+        selectionRef={selection => {
+          if (selection) fileSelections.current.set(variable, selection);
+          else fileSelections.current.delete(variable);
+        }}
+        config={{}}
+        compact={chat}
+        inputId={`${inputId}-${variable}`}
+        disabled={isExecuting || !ready}
+        slot={
+          ready
+            ? capabilities.attachmentSlots.find(
+                item => item.target === 'inputs' && item.key === variable
+              )
+            : undefined
+        }
+        value={formData[variable]}
+        restoreScope={restoreScope}
+        onChange={value => {
+          setFormData(previous => ({ ...previous, [variable]: value }));
+          setErrors(previous => ({ ...previous, [variable]: '' }));
+        }}
+        error={errors[variable]}
+        label={fieldConfig.label}
+        instanceId={instanceId}
+        required={slot ? slot.minCount > 0 : fieldConfig.required}
+        isSingleFileMode={fieldType === 'file'}
+        onRequirementsChanged={live.retry}
+        onCountChange={count =>
+          setFileCounts(previous =>
+            previous[variable] === count
+              ? previous
+              : { ...previous, [variable]: count }
+          )
+        }
+        onBlockedChange={value =>
+          setUploadBlocked(previous =>
+            previous[variable] === value
+              ? previous
+              : { ...previous, [variable]: value }
+          )
+        }
+      />
+    );
+  };
   return (
-    <div className="flex h-full flex-col">
+    <div
+      className={cn('flex min-h-0 flex-col', !chat && 'h-full')}
+      data-task-composer={chat ? '' : undefined}
+    >
+      {chat && showIntroduction && (
+        <AppIntroduction
+          name={app.instance?.display_name}
+          description={app.instance?.description}
+        />
+      )}
       {!ready && (
         <div
           role={failed ? 'alert' : 'status'}
@@ -253,37 +346,7 @@ const ScopedWorkflowInputForm = React.forwardRef<
               setErrors(prev => ({ ...prev, [variable]: '' }));
             };
             if (fieldType === 'file' || fieldType === 'file-list') {
-              const slot = displayedCapabilities?.attachmentSlots.find(
-                slot => slot.target === 'inputs' && slot.key === variable
-              );
-              const liveSlot = ready
-                ? capabilities.attachmentSlots.find(
-                    slot => slot.target === 'inputs' && slot.key === variable
-                  )
-                : undefined;
-              return (
-                <FileUploadField
-                  key={variable}
-                  config={{}}
-                  slot={liveSlot}
-                  value={formData[variable]}
-                  restoreScope={restoreScope}
-                  onChange={onChange}
-                  error={errors[variable]}
-                  label={fieldConfig.label}
-                  instanceId={instanceId}
-                  required={slot ? slot.minCount > 0 : fieldConfig.required}
-                  isSingleFileMode={fieldType === 'file'}
-                  onRequirementsChanged={live.retry}
-                  onBlockedChange={value =>
-                    setUploadBlocked(prev =>
-                      prev[variable] === value
-                        ? prev
-                        : { ...prev, [variable]: value }
-                    )
-                  }
-                />
-              );
+              return chat ? null : renderUpload(formItem);
             }
             return (
               <FormField
@@ -303,10 +366,53 @@ const ScopedWorkflowInputForm = React.forwardRef<
           })}
         </fieldset>
         {chat ? (
-          <div className="mt-3">
+          <div
+            className="mt-3"
+            onDragOver={event => {
+              if (!event.dataTransfer.types.includes('Files')) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect =
+                ready && !isExecuting ? 'copy' : 'none';
+            }}
+            onDrop={event => {
+              const files = Array.from(event.dataTransfer.files);
+              if (!files.length && !event.dataTransfer.types.includes('Files'))
+                return;
+              event.preventDefault();
+              event.stopPropagation();
+              if (isExecuting) return;
+              if (!ready) {
+                setDropNotice(tChat('input.capabilitiesUnavailable'));
+                return;
+              }
+              const slots = capabilities.attachmentSlots.filter(
+                slot =>
+                  slot.target === 'inputs' &&
+                  slot.methods.includes('local_file') &&
+                  slot.maxCount > 0
+              );
+              if (slots.length !== 1) {
+                setDropNotice(
+                  tChat(
+                    slots.length
+                      ? 'input.chooseAttachmentField'
+                      : 'fileTypeSelector.notSupported'
+                  )
+                );
+                return;
+              }
+              setDropNotice(null);
+              fileSelections.current.get(slots[0].key)?.selectFiles(files);
+            }}
+          >
             <p className="mb-2 px-2 text-xs text-stone-500">
               {tTask('independent')}
             </p>
+            {dropNotice && (
+              <p role="status" className="mb-2 px-2 text-xs text-stone-500">
+                {dropNotice}
+              </p>
+            )}
             <ChatInputView
               embedded
               value={textValue}
@@ -324,8 +430,23 @@ const ScopedWorkflowInputForm = React.forwardRef<
               isProcessing={isExecuting}
               onStop={onStop}
               stopDisabled={false}
-              placeholder={
-                textTarget ? tTask('placeholder') : tTask('parametersOnly')
+              placeholder=""
+              attachmentPreview={uploadFields.map(renderUpload)}
+              attachmentAction={
+                <AttachmentAction
+                  disabled={!ready || isExecuting}
+                  choices={(displayedCapabilities?.attachmentSlots ?? [])
+                    .filter(slot => slot.target === 'inputs')
+                    .map(slot => ({
+                      id: `${inputId}-${slot.key}`,
+                      slot,
+                      count: fileCounts[slot.key] ?? 0,
+                    }))}
+                  onChoose={choice => {
+                    setDropNotice(null);
+                    document.getElementById(choice.id)?.click();
+                  }}
+                />
               }
               sendButtonAriaLabel={t('startExecution')}
             />

@@ -208,24 +208,32 @@ backend semantics; do not promise capabilities an Agent does not provide.
 
 1. **One chat surface.** Reuse the message list, composer, attachment controls
    and execution-process views. Backend adapters supply capabilities and data,
-   not a separate visual system or an inner sidebar.
+   not a separate visual system or an inner sidebar. Backend-specific parameters
+   can remain in a controlled area; do not make a separate large form card the
+   primary interaction instead of the shared chat surface.
 2. **Identify the application before input.** Show its configured display name
    on one line and description below it, directly above the composer. Use
    body-sized, moderately bold text for the name and a muted description;
    omit empty values. Hide this introduction after the first request is
    accepted and restore it for a new task. It is not a saved message or model
-   input. Keep required fields, errors and retry actions available as needed.
+   input. Introduction visibility does not determine parameter visibility:
+   freeze session-initialization parameters after acceptance, but keep required
+   per-run parameters available for each independent task. Keep errors and retry
+   actions available as needed.
 3. **Keep the composer quiet.** Avoid generic placeholder instructions when the
    introduction already explains the task. Keep an accessible input name,
-   consistent send/stop controls and keyboard/composition behavior. Chatflow
-   currently has no visible placeholder; other callers keep their existing
-   defaults until separately changed.
+   consistent send/stop controls and keyboard/composition behavior. Dedicated
+   application chat surfaces have no generic visible placeholder; the model
+   homepage retains its existing greeting and composer defaults.
 4. **Let capabilities govern attachments.** Keep the attachment action inside
    the composer, enabled only when adding a supported file is possible. Use a
    disabled action when unsupported or full; distinguish loading or failure
    from lack of support. Explain required/optional counts, remaining capacity,
-   file restrictions and upload failures in readable language. Preserve each
-   input slot's limits and server-side validation.
+   file restrictions and upload failures in readable language, for example
+   "Up to 3 files; 1 added", without repeated counters or warning panels for a
+   normal supported state. Offer a purpose selector only when several upload
+   slots need disambiguation; do not merge their limits into one generic slot.
+   Preserve each input slot's limits and server-side validation.
 5. **Keep state transitions continuous.** Make sending, waiting, streaming,
    completion and failure understandable without a page refresh or a broken
    message stream when saving or replacing a temporary conversation URL.
@@ -238,15 +246,23 @@ backend semantics; do not promise capabilities an Agent does not provide.
    distinct from process details.
 7. **Restore history without inventing continuity.** Reloading or signing in
    again should recover authorized messages, stored process records and
-   attachments. Single-turn applications offer a new-task action; a common chat
-   layout does not give independent tasks upstream conversational memory.
+   attachments. Single-turn versus multi-turn behavior follows the application's
+   declared type/configuration and supported semantics, not its visual layout.
+   Single-turn applications offer a new-task action; multi-turn applications
+   continue the bound conversation. A local task history may group independent
+   Workflow runs without giving them upstream conversational memory. Treating
+   Chatflow as single-turn is a current product convention, not a universal
+   property of Dify Chatflow or evidence that the backend enforces one turn.
 8. **Use a consistent result-reading interaction.** Ordinary replies stay inline;
    long documents, files and structured artifacts can open from a result card
    in the shared preview shell. The target is a right-side desktop panel and a
    full-screen mobile panel, with consistent close/copy/download actions only
-   where supported. Closing returns to the originating conversation and focus
-   without rerunning, refreshing or clearing results. Preserve authenticated
-   reads, backend-specific parsing and explicit unavailable-result errors.
+   where supported. Do not automatically open every completed result or require
+   a panel to read an ordinary reply. A file opened from a result returns to
+   that result when closed; closing the result returns to the originating
+   conversation and focus without rerunning, refreshing or clearing results.
+   Preserve authenticated reads, backend-specific parsing and explicit
+   unavailable-result errors.
 
 Workflow result viewing reuses `components/file-preview/preview-shell.tsx`, as do
 file and Agent artifact previews. Workflow retains its own result parsing,

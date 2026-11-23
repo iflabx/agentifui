@@ -1,15 +1,16 @@
 'use client';
 
+import {
+  AttachmentAction as SharedAttachmentAction,
+  attachmentAccept,
+} from '@components/chat-input/attachment-action';
 import { AttachmentPreviewItem } from '@components/chat-input/attachment-preview-item';
-import { ChatButton } from '@components/chat-input/button';
-import { Popover } from '@components/ui/popover';
 import { uploadDifyFile } from '@lib/services/dify/file-service';
 import {
   type AttachmentFile,
   useAttachmentStore,
 } from '@lib/stores/attachment-store';
 import { useChatInputStore } from '@lib/stores/chat-input-store';
-import { Paperclip } from 'lucide-react';
 
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 
@@ -17,7 +18,6 @@ import { useTranslations } from 'next-intl';
 
 import {
   type AgentAttachmentSlot,
-  INPUT_FILE_EXTENSIONS,
   inputFileType,
   validateInputFile,
   validateInputFileCount,
@@ -68,47 +68,6 @@ function validationMessage(
   }
 }
 
-function slotAccept(slot: AgentAttachmentSlot) {
-  const extensions = slot.extensions.length
-    ? slot.extensions
-    : slot.allowedTypes.flatMap(type => INPUT_FILE_EXTENSIONS[type]);
-  return [...new Set(extensions)].map(extension => `.${extension}`).join(',');
-}
-
-function attachmentHint(drafts: SlotDraft[], translate: Translate) {
-  const count = drafts.reduce(
-    (total, draft) => total + draft.entries.length,
-    0
-  );
-  const minCount = drafts.reduce(
-    (total, draft) => total + draft.slot.minCount,
-    0
-  );
-  const maxCount = drafts.reduce(
-    (total, draft) => total + draft.slot.maxCount,
-    0
-  );
-  if (count > 0) {
-    const selected = translate('fileTypeSelector.attachmentSelected', {
-      count,
-      maxCount,
-    });
-    const remaining = drafts.reduce(
-      (total, draft) =>
-        total + Math.max(0, draft.slot.minCount - draft.entries.length),
-      0
-    );
-    return remaining > 0
-      ? `${selected} · ${translate('fileTypeSelector.attachmentRemaining', { count: remaining })}`
-      : selected;
-  }
-  if (minCount > 0)
-    return minCount === maxCount
-      ? translate('fileTypeSelector.attachmentRequired', { count: minCount })
-      : translate('fileTypeSelector.attachmentRange', { minCount, maxCount });
-  return translate('fileTypeSelector.maxUpload', { maxFiles: maxCount });
-}
-
 function AttachmentAction({
   drafts,
   disabled,
@@ -118,46 +77,11 @@ function AttachmentAction({
   disabled: boolean;
   onSelect: (draft: SlotDraft, files: File[]) => void;
 }) {
-  const translate = useTranslations('pages.chat');
-  const [open, setOpen] = useState(false);
   const inputs = useRef<Record<string, HTMLInputElement | null>>({});
-  const local = drafts.filter(draft =>
-    draft.slot.methods.includes('local_file')
-  );
   const available = (draft: SlotDraft) =>
     !disabled && draft.entries.length < draft.slot.maxCount;
-  const canChoose = local.some(available);
-  const hint = local.length ? attachmentHint(local, translate) : undefined;
-  const title = local.length
-    ? local.some(draft => draft.entries.length < draft.slot.maxCount)
-      ? hint
-      : translate('fileTypeSelector.maxFilesReached', {
-          maxFiles: local.reduce(
-            (total, draft) => total + draft.slot.maxCount,
-            0
-          ),
-        })
-    : translate(
-        drafts.length
-          ? 'input.localUploadUnavailable'
-          : 'fileTypeSelector.notSupported'
-      );
-  const choose = (draft: SlotDraft) => {
-    if (!available(draft)) return;
-    inputs.current[draft.scope]?.click();
-    setOpen(false);
-  };
-  const trigger = (
-    <ChatButton
-      icon={<Paperclip className="h-4 w-4" />}
-      ariaLabel={translate('fileTypeSelector.ariaLabel')}
-      disabled={!canChoose}
-      onClick={local.length === 1 ? () => choose(local[0]) : undefined}
-    />
-  );
-
   return (
-    <div className="flex min-w-0 items-center gap-2">
+    <>
       {drafts.map(draft => (
         <input
           key={draft.scope}
@@ -167,7 +91,7 @@ function AttachmentAction({
           type="file"
           className="hidden"
           aria-label={draft.slot.label}
-          accept={slotAccept(draft.slot)}
+          accept={attachmentAccept(draft.slot)}
           multiple={draft.slot.maxCount > 1}
           disabled={
             !draft.slot.methods.includes('local_file') || !available(draft)
@@ -179,53 +103,16 @@ function AttachmentAction({
           }}
         />
       ))}
-      {local.length <= 1 ? (
-        <span title={title}>{trigger}</span>
-      ) : (
-        <Popover
-          trigger={<span title={title}>{trigger}</span>}
-          placement="top"
-          isOpen={open && canChoose}
-          onOpenChange={value => setOpen(value && canChoose)}
-          offsetX={0}
-          offsetY={0}
-        >
-          <div className="max-h-64 max-w-[calc(100vw-2rem)] overflow-y-auto px-1">
-            {drafts.map(draft => (
-              <button
-                key={draft.scope}
-                type="button"
-                className="block w-full rounded-lg px-3 py-2 text-left font-serif text-sm hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-stone-600"
-                disabled={
-                  !draft.slot.methods.includes('local_file') ||
-                  !available(draft)
-                }
-                onClick={() => choose(draft)}
-              >
-                <span className="block break-words">{draft.slot.label}</span>
-                {!draft.slot.methods.includes('local_file') ? (
-                  <span className="block text-xs">
-                    {translate('input.localUploadUnavailable')}
-                  </span>
-                ) : (
-                  <span className="block text-xs text-stone-500 dark:text-stone-400">
-                    {attachmentHint([draft], translate)}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        </Popover>
-      )}
-      {hint && (
-        <span
-          role="status"
-          className="max-w-40 text-xs leading-relaxed break-words text-stone-500 sm:max-w-64 dark:text-stone-400"
-        >
-          {hint}
-        </span>
-      )}
-    </div>
+      <SharedAttachmentAction
+        choices={drafts.map(draft => ({
+          id: draft.scope,
+          slot: draft.slot,
+          count: draft.entries.length,
+        }))}
+        disabled={disabled}
+        onChoose={choice => inputs.current[choice.id]?.click()}
+      />
+    </>
   );
 }
 

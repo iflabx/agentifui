@@ -10,6 +10,8 @@ export interface DraftSnapshot {
 }
 
 interface ChatInputState {
+  acceptedScopes: Record<string, boolean>;
+  markAccepted: (scope: string) => void;
   editSources: Record<string, MessageEditSource | undefined>;
   setEditSource: (source?: MessageEditSource) => void;
   messagesByRoute: Record<string, string>;
@@ -50,6 +52,14 @@ export function chatInputScope(
 }
 
 export const useChatInputStore = create<ChatInputState>((set, get) => ({
+  acceptedScopes: {},
+  markAccepted: scope =>
+    set(state => ({
+      acceptedScopes: {
+        ...state.acceptedScopes,
+        [state.resolveScope(scope)]: true,
+      },
+    })),
   editSources: {},
   setEditSource: source =>
     set(state => ({
@@ -102,6 +112,7 @@ export const useChatInputStore = create<ChatInputState>((set, get) => ({
   },
   clearAllMessages: () =>
     set({
+      acceptedScopes: {},
       editSources: {},
       messagesByRoute: {},
       revisionsByRoute: {},
@@ -139,6 +150,7 @@ export const useChatInputStore = create<ChatInputState>((set, get) => ({
       actorId,
       actorSessionId: sessionId ?? null,
       actorEpoch: state.actorEpoch + 1,
+      acceptedScopes: {},
       editSources: {},
       messagesByRoute: {},
       revisionsByRoute: {},
@@ -178,6 +190,12 @@ export const useChatInputStore = create<ChatInputState>((set, get) => ({
     delete messagesByRoute[source];
     set({
       messagesByRoute,
+      acceptedScopes: {
+        ...state.acceptedScopes,
+        [target]: Boolean(
+          state.acceptedScopes[source] || state.acceptedScopes[target]
+        ),
+      },
       editSources: {
         ...state.editSources,
         [source]: undefined,

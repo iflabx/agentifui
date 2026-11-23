@@ -52,11 +52,17 @@ jest.mock('@components/chat-input/view', () => ({
     onValueChange,
     onSubmit,
     disabled,
+    beforeInput,
+    attachmentAction,
+    placeholder,
   }: {
     value: string;
     onValueChange: (text: string) => void;
     onSubmit: () => void;
     disabled?: boolean;
+    beforeInput?: React.ReactNode;
+    attachmentAction?: React.ReactNode;
+    placeholder?: string;
   }) => (
     <form
       data-testid="shared-input"
@@ -65,7 +71,10 @@ jest.mock('@components/chat-input/view', () => ({
         onSubmit();
       }}
     >
+      {beforeInput}
+      {attachmentAction}
       <textarea
+        placeholder={placeholder}
         value={value}
         onChange={event => onValueChange(event.target.value)}
         disabled={disabled}
@@ -149,6 +158,7 @@ describe('Agent chat draft', () => {
       view: { messages: [], tools: [] },
       draftScope: 'new:0',
       appName: 'Agent',
+      appDescription: 'Agent description',
       textOnly: false,
       humanInput: false,
       singleTask: false,
@@ -176,6 +186,35 @@ describe('Agent chat draft', () => {
   it('reserves space for fixed desktop and mobile shell navigation', () => {
     render(<AgentChat appId="app" conversationId={null} />);
     expect(screen.getByRole('main')).toHaveClass('pt-16', 'md:pt-12');
+  });
+
+  it('shares the configured introduction and quiet composer without promising unsupported uploads', () => {
+    const base = useAgentChat('app', null, 'user');
+    const view = render(<AgentChat appId="app" conversationId={null} />);
+    expect(screen.getByText('Agent description')).toBeInTheDocument();
+    expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', '');
+    expect(
+      screen.getByRole('button', { name: 'fileTypeSelector.ariaLabel' })
+    ).toBeDisabled();
+    jest.mocked(useAgentChat).mockReturnValue({
+      ...base,
+      busy: true,
+      view: {
+        ...base.view,
+        messages: [{ id: 'optimistic', role: 'user', content: 'Request' }],
+      },
+    });
+    view.rerender(<AgentChat appId="app" conversationId={null} />);
+    expect(screen.getByText('Agent description')).toBeInTheDocument();
+    jest.mocked(useAgentChat).mockReturnValue({
+      ...base,
+      view: { ...base.view, conversationId: 'accepted' },
+    });
+    view.rerender(<AgentChat appId="app" conversationId={null} />);
+    expect(screen.queryByText('Agent description')).not.toBeInTheDocument();
+    jest.mocked(useAgentChat).mockReturnValue(base);
+    view.rerender(<AgentChat appId="app" conversationId={null} />);
+    expect(screen.getByText('Agent description')).toBeInTheDocument();
   });
 
   it('edits in the original message and preserves the bottom draft on rejection and acceptance', async () => {
