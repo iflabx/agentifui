@@ -127,6 +127,10 @@ it('shows the admin description above the composer using assistant text styles a
   const { container } = render(<ChatflowInputArea {...props} />);
   const beforeInput = screen.getByTestId('before-input');
   expect(beforeInput).toHaveTextContent('Example initialization guidance');
+  expect(screen.getAllByText('Example initialization guidance')).toHaveLength(
+    1
+  );
+  expect(screen.queryByText('Example agent')).not.toBeInTheDocument();
   expect(screen.getByLabelText('Topic')).toBeVisible();
   expect(screen.getByLabelText('Topic')).toHaveValue('General');
   expect(container.querySelector('details, summary')).toBeNull();
@@ -153,9 +157,8 @@ it.each([null, '', '   '])(
     mockDescription = description;
     const { container } = render(<ChatflowInputArea {...props} />);
     expect(container.querySelector('[data-chatflow-description]')).toBeNull();
-    expect(
-      screen.getByRole('heading', { name: 'Example agent' })
-    ).toBeVisible();
+    expect(container.querySelector('header')).toBeNull();
+    expect(screen.queryByText('Example agent')).not.toBeInTheDocument();
     expect(useChatStore.getState().messages).toEqual([]);
   }
 );

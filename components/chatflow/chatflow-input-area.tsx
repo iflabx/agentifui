@@ -276,23 +276,20 @@ function ScopedChatflowInputArea({
   const parameters =
     !continuing || failed || !ready ? (
       <div className="mb-3 space-y-3 text-xs text-stone-500 dark:text-stone-400">
-        {!continuing && isWelcomeScreen && (
-          <header className="mb-6 px-4">
-            <h1 className="font-serif text-sm font-normal">
-              {app.instance?.display_name}
-            </h1>
-            {app.instance?.description?.trim() && (
+        {!continuing &&
+          isWelcomeScreen &&
+          app.instance?.description?.trim() && (
+            <header className="mb-6 px-4">
               <div
                 data-chatflow-description
-                className="markdown-body main-content-area assistant-message-content mt-3 w-full text-base text-stone-800 dark:text-stone-200"
+                className="markdown-body main-content-area assistant-message-content w-full text-base text-stone-800 dark:text-stone-200"
               >
                 <p className="break-words whitespace-pre-wrap">
                   {app.instance.description}
                 </p>
               </div>
-            )}
-          </header>
-        )}
+            </header>
+          )}
         {failed ? (
           <div role="alert">
             {tChat('input.capabilitiesUnavailable')}{' '}
