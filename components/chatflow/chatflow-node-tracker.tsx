@@ -4,9 +4,9 @@ import {
   difyProcessItem,
   visibleDifyNodes,
 } from '@components/execution-process/adapters';
+import { ExecutionProcessPanel } from '@components/execution-process/panel';
 import { ExecutionProcessView } from '@components/execution-process/view';
 import { useChatflowExecutionStore } from '@lib/stores/chatflow-execution-store';
-import { cn } from '@lib/utils';
 
 import { ChatflowExecutionBar } from './chatflow-execution-bar';
 
@@ -39,12 +39,7 @@ export function ChatflowNodeTracker({
   );
   if (!isVisible) return null;
   return (
-    <div
-      className={cn(
-        'max-h-[calc(100dvh-12rem)] w-[min(24rem,calc(100vw-2rem))] overflow-y-auto overscroll-contain rounded-lg border border-stone-200 bg-white/95 p-4 shadow-lg dark:border-stone-700 dark:bg-stone-800/95',
-        className
-      )}
-    >
+    <ExecutionProcessPanel className={className}>
       <ExecutionProcessView
         items={visibleNodes.map(node => difyProcessItem(node, scope))}
         completedCount={
@@ -61,6 +56,6 @@ export function ChatflowNodeTracker({
           />
         )}
       />
-    </div>
+    </ExecutionProcessPanel>
   );
 }

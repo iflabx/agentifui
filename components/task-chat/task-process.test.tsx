@@ -46,6 +46,10 @@ it('restores each round hierarchy without borrowing live nodes or showing histor
     </>
   );
   fireEvent.click(screen.getAllByRole('button', { name: 'view' })[0]);
+  expect(document.querySelector('[data-execution-process-panel]')).toHaveClass(
+    'fixed',
+    'right-4'
+  );
   expect(screen.queryByText('Unrelated live process')).not.toBeInTheDocument();
   fireEvent.click(
     screen.getByRole('button', { name: /iteration.*status.unknown/ })

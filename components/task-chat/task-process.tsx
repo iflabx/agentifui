@@ -51,9 +51,13 @@ export function savedTaskNodes(
 export function TaskProcess({
   execution,
   live,
+  open,
+  onOpenChange,
 }: {
   execution: AppExecution;
   live: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const t = useTranslations('taskChat');
   const current = useWorkflowExecutionStore(state => state.nodes);
@@ -82,13 +86,15 @@ export function TaskProcess({
         )
       )
     : workflowSnapshotItems(execution.metadata, execution.id);
-  if (!items.length)
-    return live ? null : (
-      <p className="mb-2 text-xs text-stone-500">{t('noProcess')}</p>
-    );
+  if (!items.length && !live)
+    return <p className="mb-2 text-xs text-stone-500">{t('noProcess')}</p>;
   return (
     <ExecutionProcessDisclosure
       items={items}
+      placement="panel"
+      open={open}
+      onOpenChange={onOpenChange}
+      title={execution.title || t('taskTitle')}
       historical={!live}
       executing={live}
       renderItem={

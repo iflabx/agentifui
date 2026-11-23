@@ -1,6 +1,7 @@
 import type { AppExecution } from '@lib/types/database';
 
 import {
+  hasDetailedTaskResult,
   mergeTaskExecutions,
   taskInputText,
   taskOutputText,
@@ -10,6 +11,17 @@ const execution = (id: string, created_at: string, status = 'completed') =>
   ({ id, created_at, status }) as AppExecution;
 
 describe('task chat projection', () => {
+  it('only offers a detailed result for structured or multi-field output', () => {
+    expect(hasDetailedTaskResult(null)).toBe(false);
+    expect(hasDetailedTaskResult({})).toBe(false);
+    expect(hasDetailedTaskResult({ result: '# Complete answer' })).toBe(false);
+    expect(hasDetailedTaskResult({ generated_text: 'answer' })).toBe(false);
+    expect(hasDetailedTaskResult({ result1: 'one', result2: 'two' })).toBe(
+      true
+    );
+    expect(hasDetailedTaskResult({ files: [{ url: '/file' }] })).toBe(true);
+    expect(hasDetailedTaskResult({ count: 0 })).toBe(true);
+  });
   it('does not let a delayed running snapshot regress a completed task', () => {
     const completed = {
       ...execution('1', '2026-01-01'),

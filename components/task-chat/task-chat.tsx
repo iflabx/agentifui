@@ -30,10 +30,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 import {
+  hasDetailedTaskResult,
   mergeTaskExecutions,
   taskInputText,
   taskOutputText,
 } from './projection';
+import { TaskActions } from './task-actions';
 import { TaskProcess } from './task-process';
 
 interface TaskChatProps {
@@ -182,6 +184,7 @@ function TaskChatSession({
     null
   );
   const [result, setResult] = useState<AppExecution | null>(null);
+  const [processId, setProcessId] = useState<string | null>(null);
   const form = useRef<WorkflowInputFormRef>(null);
   const mounted = useRef(false);
   const request = useRef(0);
@@ -389,7 +392,14 @@ function TaskChatSession({
                   conversationAppId={instanceId}
                 />
                 <div className="min-w-0">
-                  <TaskProcess execution={execution} live={live} />
+                  <TaskProcess
+                    execution={execution}
+                    live={live}
+                    open={processId === execution.id}
+                    onOpenChange={open =>
+                      setProcessId(open ? execution.id : null)
+                    }
+                  />
                   {output && (
                     <AssistantMessage
                       id={`task-${execution.id}-output`}
@@ -418,19 +428,23 @@ function TaskChatSession({
                         {execution.error_message}
                       </p>
                     )}
-                  <div className="mt-2 flex gap-4 text-xs">
-                    <button
-                      disabled={busy || loadFailed}
-                      onClick={() => void prepareAgain(execution)}
-                      className="underline"
-                    >
-                      {t(
-                        ['pending', 'running'].includes(execution.status)
-                          ? 'recoverTask'
-                          : 'runAgain'
-                      )}
-                    </button>
-                    {execution.outputs && (
+                  <div className="mt-2 flex items-center gap-4 text-xs">
+                    {['pending', 'running'].includes(execution.status) ? (
+                      <button
+                        type="button"
+                        disabled={busy || loadFailed}
+                        onClick={() => void prepareAgain(execution)}
+                        className="underline"
+                      >
+                        {t('recoverTask')}
+                      </button>
+                    ) : (
+                      <TaskActions
+                        disabled={busy || loadFailed}
+                        onReuse={() => void prepareAgain(execution)}
+                      />
+                    )}
+                    {hasDetailedTaskResult(execution.outputs) && (
                       <button
                         onClick={() => setResult(execution)}
                         className="underline"
@@ -477,7 +491,7 @@ function TaskChatSession({
       </div>
       {result && (
         <ResultViewer
-          result={result.outputs}
+          result={{ outputs: result.outputs }}
           execution={result}
           appId={instanceId}
           onClose={() => setResult(null)}

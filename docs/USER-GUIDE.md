@@ -341,7 +341,9 @@ not general file input. See [reports, data and sources](#9-reports-data-and-sour
 2. Send once. Each send is an independent task, not a conversational continuation:
    previous results are not automatically sent upstream as memory. Each round
    retains its input, result and available execution-process details.
-3. Open the result viewer when available. Its copy/download controls export the
+3. Read ordinary text results directly in the reply. Structured or multi-field
+   results retain a **View full result** entry; its viewer preserves all output
+   fields. Its copy/download controls export the
    displayed result: workflow output can be Markdown/JSON text and text-generation
    output can be a `.txt` download. This is not a universal export of conversation
    history, original uploaded files or an Agent's external state.
@@ -349,7 +351,8 @@ not general file input. See [reports, data and sources](#9-reports-data-and-sour
    view saved rounds, and load earlier tasks when more history is available.
    Older unlinked execution records remain readable through their original
    execution-history links; they are not converted or duplicated automatically.
-5. Use **Use these inputs again** to prepare another run, then submit explicitly.
+5. Open a round's **More options** menu and choose **Use these inputs again** to
+   prepare another run, then submit explicitly.
    This creates a new task rather than editing or branching a completed run.
    Reopening history never runs a task. Deleting a local task conversation also
    removes its linked executions from accessible history.
@@ -365,6 +368,13 @@ If a workflow stop/detail or file-preview action is denied for an ordinary user,
 the current Dify proxy may intentionally restrict that operation to administrators.
 Do not interpret every disabled follow-up action as a failed task submission.
 The node tracker is a display of supported events, not a workflow editor.
+
+Choose **View execution process** on a task round to open its right-side panel,
+using the same panel and activity display as Chatflow. Only one task's process
+panel is open at a time; its task heading identifies the selected round. Live
+activity updates while that task runs; reopening older rounds shows their saved
+process rather than another task's live activity. Close it with the close button
+or Escape. On small screens the panel stays within the viewport.
 
 ### Execution Process
 

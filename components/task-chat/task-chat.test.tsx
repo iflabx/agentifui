@@ -1,6 +1,7 @@
 import {
   getConversationExecutions,
   reserveTaskExecution,
+  updateExecutionStatus,
 } from '@lib/services/client/app-executions-api';
 import type { AppExecution } from '@lib/types/database';
 import {
@@ -18,6 +19,7 @@ import { TaskChat } from './task-chat';
 const mockExecute = jest.fn();
 const mockFetch = jest.fn();
 const mockMounts = jest.fn();
+const mockRestore = jest.fn();
 const mockAuth: {
   session: { user: { id: string } } | null;
   loading: boolean;
@@ -65,6 +67,7 @@ jest.mock('@lib/hooks/use-text-generation-execution', () => ({
 jest.mock('@lib/hooks/use-chat-width', () => ({
   useChatWidth: () => ({ widthClass: '', paddingClass: '' }),
 }));
+jest.mock('@lib/hooks/use-mobile', () => ({ useMobile: () => false }));
 jest.mock('@lib/hooks/use-combined-conversations', () => ({
   conversationEvents: { emit: jest.fn() },
 }));
@@ -76,13 +79,17 @@ jest.mock('@lib/services/client/app-executions-api', () => ({
 jest.mock('@components/workflow/workflow-input-form', () => {
   const React = jest.requireActual('react');
   return {
-    WorkflowInputForm: React.forwardRef(function MockWorkflowInputForm({
-      onExecute,
-      isExecuting,
-    }: {
-      onExecute: (input: unknown) => void;
-      isExecuting: boolean;
-    }) {
+    WorkflowInputForm: React.forwardRef(function MockWorkflowInputForm(
+      {
+        onExecute,
+        isExecuting,
+      }: {
+        onExecute: (input: unknown) => void;
+        isExecuting: boolean;
+      },
+      ref: React.Ref<unknown>
+    ) {
+      React.useImperativeHandle(ref, () => ({ restoreInputs: mockRestore }));
       return (
         <>
           <input type="file" aria-label="Task attachment" />
@@ -113,7 +120,9 @@ jest.mock('@components/file-preview/file-preview-canvas', () => ({
   FilePreviewCanvas: () => null,
 }));
 jest.mock('@components/workflow/workflow-tracker/result-viewer', () => ({
-  ResultViewer: () => null,
+  ResultViewer: ({ result }: { result: unknown }) => (
+    <pre>{JSON.stringify(result)}</pre>
+  ),
 }));
 
 function execution(id: string): AppExecution {
@@ -146,6 +155,9 @@ beforeEach(() => {
   mockAuth.loading = false;
   mockApps[0].config.app_metadata.dify_apptype = 'workflow';
   mockExecute.mockResolvedValue(true);
+  jest
+    .mocked(updateExecutionStatus)
+    .mockResolvedValue({ success: true, data: true });
   jest.mocked(getConversationExecutions).mockResolvedValue({
     success: true,
     data: { executions: [], hasMore: false, nextCursor: null },
@@ -366,4 +378,88 @@ it('blocks new executions when saved conversation access is rejected', async () 
   );
   expect(screen.getByRole('button', { name: 'submit task' })).toBeDisabled();
   expect(mockExecute).not.toHaveBeenCalled();
+});
+
+it('moves input reuse into more options without automatically executing', async () => {
+  jest.mocked(getConversationExecutions).mockResolvedValue({
+    success: true,
+    data: { executions: [execution('1')], hasMore: false, nextCursor: null },
+  });
+  render(
+    <TaskChat
+      instanceId="task-app"
+      conversationId="conversation"
+      taskType="workflow"
+    />
+  );
+  await screen.findByText('topic: 1');
+  expect(
+    screen.queryByRole('button', { name: 'runAgain' })
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: 'viewResult' })
+  ).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'ariaLabel' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'runAgain' }));
+  await waitFor(() => expect(mockRestore).toHaveBeenCalledWith({ topic: '1' }));
+  expect(mockExecute).not.toHaveBeenCalled();
+  expect(reserveTaskExecution).not.toHaveBeenCalled();
+});
+
+it('retains explicit interrupted task recovery and restores inputs only after the status update succeeds', async () => {
+  jest.mocked(getConversationExecutions).mockResolvedValue({
+    success: true,
+    data: {
+      executions: [{ ...execution('1'), status: 'running' }],
+      hasMore: false,
+      nextCursor: null,
+    },
+  });
+  render(
+    <TaskChat
+      instanceId="task-app"
+      conversationId="conversation"
+      taskType="workflow"
+    />
+  );
+  await screen.findByText('topic: 1');
+  expect(screen.getByRole('button', { name: 'submit task' })).toBeDisabled();
+  jest
+    .mocked(updateExecutionStatus)
+    .mockResolvedValueOnce({ success: false, error: new Error('denied') });
+  fireEvent.click(screen.getByRole('button', { name: 'recoverTask' }));
+  await screen.findByText(/historyFailed/);
+  expect(mockRestore).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'recoverTask' }));
+  await waitFor(() => expect(mockRestore).toHaveBeenCalledWith({ topic: '1' }));
+  expect(
+    screen.getByRole('button', { name: 'submit task' })
+  ).not.toBeDisabled();
+  expect(mockExecute).not.toHaveBeenCalled();
+});
+
+it('keeps the result viewer available for every field of a complex result', async () => {
+  const outputs = {
+    result1: 'first answer',
+    result2: 'second answer',
+    files: [{ url: '/file' }],
+  };
+  jest.mocked(getConversationExecutions).mockResolvedValue({
+    success: true,
+    data: {
+      executions: [{ ...execution('1'), outputs }],
+      hasMore: false,
+      nextCursor: null,
+    },
+  });
+  render(
+    <TaskChat
+      instanceId="task-app"
+      conversationId="conversation"
+      taskType="workflow"
+    />
+  );
+  await screen.findByText('topic: 1');
+  fireEvent.click(screen.getByRole('button', { name: 'viewResult' }));
+  expect(screen.getByText(JSON.stringify({ outputs }))).toBeInTheDocument();
 });

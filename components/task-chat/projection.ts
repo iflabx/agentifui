@@ -47,3 +47,11 @@ export function taskOutputText(
     )
     .join('\n\n');
 }
+
+export function hasDetailedTaskResult(
+  outputs: Record<string, unknown> | null
+): boolean {
+  if (!outputs) return false;
+  const values = Object.values(outputs);
+  return values.length > 1 || values.some(value => typeof value !== 'string');
+}

@@ -13,6 +13,58 @@ const items: ExecutionProcessItem[] = [
 ];
 
 describe('shared execution process UI', () => {
+  it('opens one controlled right-side panel at a time and returns focus on Escape', () => {
+    function Panels() {
+      const [selected, setSelected] = useState<string | null>(null);
+      return (
+        <>
+          {['first', 'second'].map(id => (
+            <ExecutionProcessDisclosure
+              key={id}
+              items={[{ ...items[0], title: `Activity ${id}` }]}
+              placement="panel"
+              title={`Task ${id}`}
+              open={selected === id}
+              onOpenChange={open => setSelected(open ? id : null)}
+            />
+          ))}
+        </>
+      );
+    }
+    const { container } = render(<Panels />);
+    fireEvent.click(
+      screen.getAllByRole('button', { name: 'executionProcess.view' })[0]
+    );
+    expect(screen.getByText('Task first')).toBeInTheDocument();
+    expect(
+      container.querySelector('[data-execution-process-panel]')
+    ).toHaveClass('fixed', 'right-4');
+    fireEvent.click(
+      screen.getByRole('button', { name: 'executionProcess.view' })
+    );
+    expect(screen.queryByText('Task first')).not.toBeInTheDocument();
+    expect(screen.getByText('Task second')).toBeInTheDocument();
+    expect(
+      container.querySelectorAll('[data-execution-process-panel]')
+    ).toHaveLength(1);
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    expect(
+      container.querySelector('[data-execution-process-panel]')
+    ).toBeNull();
+    expect(
+      screen.getAllByRole('button', { name: 'executionProcess.view' })[1]
+    ).toHaveFocus();
+  });
+
+  it('allows a running panel to wait for its first activity', () => {
+    render(
+      <ExecutionProcessDisclosure items={[]} executing placement="panel" />
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'executionProcess.view' })
+    );
+    expect(screen.getByText('executionProcess.waiting')).toBeInTheDocument();
+  });
   it('shows activities and controlled states without a fictional percentage', () => {
     const { container } = render(<ExecutionProcessView items={items} />);
     expect(

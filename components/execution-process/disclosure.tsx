@@ -1,9 +1,10 @@
 'use client';
 
-import { type ReactNode, useId, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 
+import { ExecutionProcessPanel } from './panel';
 import type { ExecutionProcessItem } from './types';
 import { ExecutionProcessView } from './view';
 
@@ -13,6 +14,10 @@ interface ExecutionProcessDisclosureProps {
   unordered?: boolean;
   executing?: boolean;
   renderItem?: (item: ExecutionProcessItem, index: number) => ReactNode;
+  placement?: 'inline' | 'panel';
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  title?: string;
 }
 
 export function ExecutionProcessDisclosure({
@@ -21,12 +26,27 @@ export function ExecutionProcessDisclosure({
   unordered,
   executing,
   renderItem,
+  placement = 'inline',
+  open: controlledOpen,
+  onOpenChange,
+  title,
 }: ExecutionProcessDisclosureProps) {
   const translate = useTranslations('executionProcess');
-  const [open, setOpen] = useState(false);
+  const [localOpen, setLocalOpen] = useState(false);
+  const open = controlledOpen ?? localOpen;
+  const setOpen = (next: boolean) => {
+    setLocalOpen(next);
+    onOpenChange?.(next);
+  };
   const trigger = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
   const contentId = useId();
-  if (items.length === 0) return null;
+  useEffect(() => {
+    if (open && placement === 'panel')
+      panel.current?.focus({ preventScroll: true });
+  }, [open, placement]);
+  if (items.length === 0 && !executing) return null;
+  const Container = placement === 'panel' ? ExecutionProcessPanel : 'div';
   return (
     <div className="my-2">
       <button
@@ -40,9 +60,15 @@ export function ExecutionProcessDisclosure({
         {translate(open ? 'hide' : 'view')}
       </button>
       {open && (
-        <div
+        <Container
+          ref={panel}
+          tabIndex={-1}
           id={contentId}
-          className="mt-2 max-h-[min(28rem,60dvh)] overflow-y-auto overscroll-contain rounded-lg border border-stone-200 p-3 dark:border-stone-700"
+          className={
+            placement === 'panel'
+              ? 'fixed right-4 bottom-40 z-30'
+              : 'mt-2 max-h-[min(28rem,60dvh)] overflow-y-auto overscroll-contain rounded-lg border border-stone-200 p-3 dark:border-stone-700'
+          }
           onKeyDown={event => {
             if (event.key === 'Escape') {
               event.stopPropagation();
@@ -51,6 +77,11 @@ export function ExecutionProcessDisclosure({
             }
           }}
         >
+          {title && (
+            <p className="mb-2 truncate text-xs text-stone-500" title={title}>
+              {title}
+            </p>
+          )}
           <ExecutionProcessView
             items={items}
             historical={historical}
@@ -62,7 +93,7 @@ export function ExecutionProcessDisclosure({
               trigger.current?.focus();
             }}
           />
-        </div>
+        </Container>
       )}
     </div>
   );
