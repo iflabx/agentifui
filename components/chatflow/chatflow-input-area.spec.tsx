@@ -232,7 +232,7 @@ describe('Chatflow standard composer', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('expands required settings, associates labels and sends only initialized fields', async () => {
+  it('shows required settings directly, associates labels and sends only initialized fields', async () => {
     mockedFetch.mockImplementation(
       async url =>
         ({
@@ -258,7 +258,8 @@ describe('Chatflow standard composer', () => {
       <ChatflowInputArea instanceId="app-1" onSubmit={onSubmit} />
     );
     const field = await screen.findByLabelText('Topic', { exact: false });
-    expect(view.container.querySelector('details')).toHaveAttribute('open');
+    expect(field).toBeVisible();
+    expect(view.container.querySelector('details, summary')).toBeNull();
     fireEvent.change(screen.getByPlaceholderText('form.question.placeholder'), {
       target: { value: 'question' },
     });
@@ -278,7 +279,7 @@ describe('Chatflow standard composer', () => {
     );
   });
 
-  it('does not require initialization files again when reopening native conversation history', async () => {
+  it('keeps native history read-only without requiring initialization files again', async () => {
     mockPathname = '/chat/native-id';
     mockedFetch.mockImplementation(
       async url =>
@@ -331,28 +332,17 @@ describe('Chatflow standard composer', () => {
         isWelcomeScreen={false}
       />
     );
-    fireEvent.change(
-      await screen.findByPlaceholderText('form.question.placeholder'),
-      { target: { value: 'continue' } }
-    );
-    await waitFor(() =>
-      expect(
-        screen.getByRole('button', { name: 'input.sendMessage' })
-      ).not.toBeDisabled()
-    );
-    expect(screen.getByText('Saved topic')).toBeInTheDocument();
+    const newTask = await screen.findByRole('link', {
+      name: 'composer.newTask',
+    });
+    expect(newTask).toHaveAttribute('href', '/apps/chatflow/app-1');
+    expect(
+      screen.queryByPlaceholderText('form.question.placeholder')
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Saved topic')).not.toBeInTheDocument();
     expect(view.container.querySelector('input[type="file"]')).toBeNull();
     expect(screen.queryByLabelText('Topic')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'input.sendMessage' }));
-    await waitFor(() =>
-      expect(onSubmit).toHaveBeenCalledWith(
-        'continue',
-        {},
-        [],
-        undefined,
-        expect.any(Function)
-      )
-    );
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 
   it('clears an accepted snapshot immediately but never clears a newer draft on late completion', async () => {

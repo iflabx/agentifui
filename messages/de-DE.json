@@ -275,6 +275,8 @@
     },
     "chatflow": {
       "composer": {
+        "singleTurn": "Diese App führt eine Aufgabe pro Gespräch aus. Starten Sie für eine weitere Ausführung eine neue Aufgabe.",
+        "newTask": "Neue Aufgabe starten",
         "parameters": "Gesprächseinstellungen",
         "requiredRemaining": "{count} Pflichtfelder fehlen",
         "initialized": "Diese Einstellungen gelten für dieses Gespräch. Für Änderungen ein neues Gespräch starten.",

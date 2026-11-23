@@ -275,6 +275,8 @@
     },
     "chatflow": {
       "composer": {
+        "singleTurn": "本應用每個對話執行一次任務。如需再次執行，請開始新任務。",
+        "newTask": "開始新任務",
         "parameters": "對話設定",
         "requiredRemaining": "尚有 {count} 個必填項目",
         "initialized": "這些設定適用於目前對話，如需變更請建立新對話。",

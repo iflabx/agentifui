@@ -275,6 +275,8 @@
     },
     "chatflow": {
       "composer": {
+        "singleTurn": "Questa app esegue un’attività per conversazione. Avvia una nuova attività per eseguirla di nuovo.",
+        "newTask": "Avvia nuova attività",
         "parameters": "Impostazioni conversazione",
         "requiredRemaining": "Mancano {count} campi obbligatori",
         "initialized": "Queste impostazioni valgono per questa conversazione. Avviane una nuova per modificarle.",

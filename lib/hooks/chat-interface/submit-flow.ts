@@ -241,9 +241,7 @@ export async function executeChatSubmit(
     input.appConfig.appId
   );
   const deferFormTransition =
-    input.isWelcomeScreen &&
-    input.inputs !== undefined &&
-    !input.difyConversationId;
+    input.inputs !== undefined && !input.difyConversationId;
   const userMessageData: Omit<ChatMessage, 'id'> = {
     text: input.message,
     isUser: true,

@@ -275,6 +275,8 @@
     },
     "chatflow": {
       "composer": {
+        "singleTurn": "このアプリは会話ごとに1つのタスクを実行します。再実行するには新しいタスクを開始してください。",
+        "newTask": "新しいタスクを開始",
         "parameters": "会話の設定",
         "requiredRemaining": "必須項目があと {count} 個あります",
         "initialized": "この会話の設定は固定です。変更するには新しい会話を開始してください。",

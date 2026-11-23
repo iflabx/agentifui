@@ -1,9 +1,7 @@
 'use client';
 
-import {
-  useEditResend,
-  useRegisterDifyEdit,
-} from '@components/chat-input/edit-resend';
+import { ChatContainer } from '@components/chat-input/container';
+import { useRegisterDifyEdit } from '@components/chat-input/edit-resend';
 import { useFocusManager } from '@components/chat-input/focus-manager';
 import { ChatInputView } from '@components/chat-input/view';
 import { FormField } from '@components/workflow/workflow-input-form/form-field';
@@ -28,7 +26,6 @@ import {
   useChatInputRouteSync,
 } from '@lib/hooks/use-chat-input-route-sync';
 import { useChatWidth } from '@lib/hooks/use-chat-width';
-import { useChatflowInitialInputs } from '@lib/hooks/use-chatflow-initial-inputs';
 import { getDifyUserInputFormEntry } from '@lib/services/dify/user-input-form';
 import { useChatInputStore } from '@lib/stores/chat-input-store';
 import { useChatLayoutStore } from '@lib/stores/chat-layout-store';
@@ -130,10 +127,7 @@ function ScopedChatflowInputArea({
     ? {}
     : validateFormData(formData, userInputForm, tWorkflow);
   const slots = useMemo(
-    () =>
-      (displayed?.attachmentSlots ?? []).filter(
-        slot => !continuing || slot.target === 'files'
-      ),
+    () => (displayed?.attachmentSlots ?? []).filter(() => !continuing),
     [displayed, continuing]
   );
   const attachments = useChatflowAttachments({
@@ -154,54 +148,13 @@ function ScopedChatflowInputArea({
   const locks = useRef(new Set<string>());
   const disabled = !ready || !session || loading;
   const waiting = isWaiting || pending;
-  const sourceIds = messages.flatMap(item =>
-    item.db_id ? [item.id, item.db_id] : [item.id]
-  );
-  const editScope = continuing && route.ready ? currentRoute : null;
-  const edit = useEditResend({
-    sourceIds,
-    scope: editScope,
-    blocked: disabled || waiting || isProcessing,
-    onSubmit: async (text, source) => {
-      const state = useChatInputStore.getState();
-      if (
-        !editScope ||
-        state.currentRoute !== editScope ||
-        state.actorId !== session?.user.id ||
-        locks.current.has(editScope)
-      )
-        return false;
-      const saved = useChatStore
-        .getState()
-        .messages.find(
-          item => item.id === source.id || item.db_id === source.id
-        );
-      locks.current.add(editScope);
-      setPendingScope(editScope);
-      const unregister = registerChatInputSubmission(editScope);
-      try {
-        const result = await onSubmit(
-          text,
-          {},
-          undefined,
-          saved?.db_id || source.id
-        );
-        return isChatSubmitResult(result)
-          ? (result.editResult ?? result.ok)
-          : false;
-      } finally {
-        unregister();
-        locks.current.delete(editScope);
-        setPendingScope(scope => (scope === editScope ? null : scope));
-      }
-    },
-  });
-  useRegisterDifyEdit(editScope ? edit.controls : null);
+  useRegisterDifyEdit(null);
   useEffect(() => {
     onFormConfigChange?.(fields.length > 0 || slots.length > 0);
   }, [fields.length, slots.length, onFormConfigChange]);
 
   const inputNode = useRef<HTMLTextAreaElement | null>(null);
+  const composerNode = useRef<HTMLDivElement | null>(null);
   const registeredRef = useRef<{ current: HTMLTextAreaElement } | null>(null);
   const inputRef = useCallback((node: HTMLTextAreaElement | null) => {
     inputNode.current = node;
@@ -214,7 +167,9 @@ function ScopedChatflowInputArea({
     }
   }, []);
   useEffect(() => {
-    const container = inputNode.current?.closest('[data-chat-input-container]');
+    const container = composerNode.current?.querySelector(
+      '[data-chat-input-container]'
+    );
     if (!container) return;
     const measure = () =>
       useChatLayoutStore
@@ -224,12 +179,12 @@ function ScopedChatflowInputArea({
     const observer = new ResizeObserver(measure);
     observer.observe(container);
     return () => observer.disconnect();
-  }, []);
+  }, [continuing, isProcessing, waiting]);
 
   const validQuery = !displayed?.text.required || Boolean(message.trim());
   const canSubmit =
     !disabled &&
-    !edit.active &&
+    !continuing &&
     !attachments.blocked &&
     !Object.keys(validation).length &&
     validQuery &&
@@ -318,175 +273,144 @@ function ScopedChatflowInputArea({
     app.failed ||
     live.error ||
     (live.capabilities && live.capabilities.status !== 'ready');
-  const localInitialInputs = messages.find(
-    item => item.isUser && item.metadata?.chatflow_initial_inputs
-  )?.metadata?.chatflow_initial_inputs;
-  const hasInitialSettings =
-    fields.length > 0 ||
-    displayed?.attachmentSlots.some(slot => slot.target === 'inputs');
-  const initial = useChatflowInitialInputs(
-    continuing && hasInitialSettings ? currentRoute : null,
-    localInitialInputs
-  );
-  const initialInputs = initial.value;
-  const parameters = (
-    <div className="mb-3 space-y-3 text-sm text-stone-600 dark:text-stone-300">
-      {isWelcomeScreen && (
-        <header className="mb-6 text-center">
-          <h1 className="font-serif text-2xl text-stone-900 dark:text-stone-100">
-            {app.instance?.display_name}
-          </h1>
-          {app.instance?.description && (
-            <p className="mt-2">{app.instance.description}</p>
-          )}
-        </header>
-      )}
-      {failed ? (
-        <div role="alert">
-          {tChat('input.capabilitiesUnavailable')}{' '}
-          <button
-            type="button"
-            className="underline"
-            onClick={app.failed ? app.retry : live.retry}
-          >
-            {tCommon('ui.retry')}
-          </button>
-        </div>
-      ) : !ready ? (
-        <p role="status">{tCommon('ui.loading')}</p>
-      ) : null}
-      {continuing && hasInitialSettings ? (
-        <details>
-          <summary className="cursor-pointer">
-            {t('composer.parameters')}
-          </summary>
-          <p className="mt-2">{t('composer.initialized')}</p>
-          {initialInputs &&
-          typeof initialInputs === 'object' &&
-          !Array.isArray(initialInputs) ? (
-            <dl>
-              {fields.map(item => {
-                const { fieldConfig } = getDifyUserInputFormEntry(item);
-                if (!fieldConfig) return null;
-                const value = (initialInputs as Record<string, unknown>)[
-                  fieldConfig.variable
-                ];
-                return typeof value === 'string' ||
-                  typeof value === 'number' ? (
-                  <div key={fieldConfig.variable} className="mt-1 flex gap-2">
-                    <dt>{fieldConfig.label}:</dt>
-                    <dd className="break-words">{String(value)}</dd>
-                  </div>
-                ) : null;
-              })}
-            </dl>
-          ) : initial.loading ? (
-            <p role="status">{tCommon('ui.loading')}</p>
-          ) : initial.failed ? (
-            <p role="alert">
-              {tChat('input.capabilitiesUnavailable')}{' '}
-              <button
-                type="button"
-                className="underline"
-                onClick={initial.retry}
-              >
-                {tCommon('ui.retry')}
-              </button>
+  const parameters =
+    !continuing || failed || !ready ? (
+      <div className="mb-3 space-y-3 text-xs text-stone-500 dark:text-stone-400">
+        {!continuing && isWelcomeScreen && (
+          <header className="mb-6 text-center">
+            <h1 className="font-serif text-sm font-normal">
+              {app.instance?.display_name}
+            </h1>
+            {app.instance?.description && (
+              <p className="mt-2">{app.instance.description}</p>
+            )}
+          </header>
+        )}
+        {failed ? (
+          <div role="alert">
+            {tChat('input.capabilitiesUnavailable')}{' '}
+            <button
+              type="button"
+              className="underline"
+              onClick={app.failed ? app.retry : live.retry}
+            >
+              {tCommon('ui.retry')}
+            </button>
+          </div>
+        ) : !ready ? (
+          <p role="status">{tCommon('ui.loading')}</p>
+        ) : null}
+        {!continuing && fields.length > 0 ? (
+          <section aria-label={t('composer.parameters')}>
+            <p>
+              {t('composer.parameters')}
+              {Object.keys(validation).length > 0 &&
+                ` (${t('composer.requiredRemaining', { count: Object.keys(validation).length })})`}
             </p>
-          ) : (
-            <p>{t('composer.initialMissing')}</p>
-          )}
-          {displayed?.attachmentSlots.some(
-            slot => slot.target === 'inputs'
-          ) && <p>{t('composer.initialFiles')}</p>}
-        </details>
-      ) : !continuing && fields.length > 0 ? (
-        <details open={Object.keys(validation).length > 0 || undefined}>
-          <summary className="cursor-pointer">
-            {t('composer.parameters')}
-            {Object.keys(validation).length > 0 &&
-              ` (${t('composer.requiredRemaining', { count: Object.keys(validation).length })})`}
-          </summary>
-          <fieldset
-            disabled={disabled || waiting || isProcessing}
-            className="mt-3 max-h-[30vh] space-y-3 overflow-y-auto"
-          >
-            {userInputForm.map(item => {
-              const { fieldType, fieldConfig } =
-                getDifyUserInputFormEntry(item);
-              if (!fieldConfig) return null;
-              return (
-                <FormField
-                  key={fieldConfig.variable}
-                  type={
-                    fieldType as React.ComponentProps<typeof FormField>['type']
-                  }
-                  config={fieldConfig}
-                  value={
-                    formData[fieldConfig.variable] as React.ComponentProps<
-                      typeof FormField
-                    >['value']
-                  }
-                  onChange={value =>
-                    setDrafts(previous => ({
-                      ...previous,
-                      [currentRoute]: {
-                        ...previous[currentRoute],
-                        [fieldConfig.variable]: value,
-                      },
-                    }))
-                  }
-                  error={validation[fieldConfig.variable]}
-                />
-              );
-            })}
-          </fieldset>
-        </details>
-      ) : null}
-    </div>
-  );
+            <fieldset
+              disabled={disabled || waiting || isProcessing}
+              className="mt-3 space-y-3"
+            >
+              {userInputForm.map(item => {
+                const { fieldType, fieldConfig } =
+                  getDifyUserInputFormEntry(item);
+                if (!fieldConfig) return null;
+                return (
+                  <FormField
+                    key={fieldConfig.variable}
+                    type={
+                      fieldType as React.ComponentProps<
+                        typeof FormField
+                      >['type']
+                    }
+                    config={fieldConfig}
+                    value={
+                      formData[fieldConfig.variable] as React.ComponentProps<
+                        typeof FormField
+                      >['value']
+                    }
+                    onChange={value =>
+                      setDrafts(previous => ({
+                        ...previous,
+                        [currentRoute]: {
+                          ...previous[currentRoute],
+                          [fieldConfig.variable]: value,
+                        },
+                      }))
+                    }
+                    error={validation[fieldConfig.variable]}
+                  />
+                );
+              })}
+            </fieldset>
+          </section>
+        ) : null}
+      </div>
+    ) : undefined;
 
   return (
     <div
+      ref={composerNode}
       data-chatflow-composer
       className={cn(
         isWelcomeScreen &&
-          'absolute inset-0 flex flex-col justify-center overflow-y-auto px-4 py-6'
+          'absolute inset-0 flex flex-col overflow-y-auto px-4 py-6'
       )}
     >
-      <ChatInputView
-        value={route.ready ? message : ''}
-        onValueChange={setMessage}
-        onSubmit={submit}
-        disabled={disabled || edit.active}
-        stopDisabled={!route.ready || !session}
-        canSubmit={canSubmit}
-        isProcessing={isProcessing}
-        onStop={onStop}
-        isWaiting={waiting}
-        className={cn(
-          'w-[calc(100%-2rem)]',
-          isWelcomeScreen && 'mx-auto w-full',
-          className
-        )}
-        embedded={isWelcomeScreen}
-        widthClass={widthClass}
-        placeholder={t('form.question.placeholder')}
-        beforeInput={parameters}
-        attachmentAction={attachments.action}
-        attachmentPreview={attachments.preview}
-        onInputRef={inputRef}
-        editNotice={
-          attachments.errors.length > 0 ? (
-            <p
-              role="alert"
-              className="px-4 py-2 text-sm text-amber-700 dark:text-amber-300"
-            >
-              {attachments.errors.join(' ')}
+      {continuing && !waiting && !isProcessing ? (
+        <ChatContainer
+          className={cn('w-[calc(100%-2rem)]', className)}
+          widthClass={widthClass}
+          beforeInput={parameters}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
+            <p role="status" className="text-stone-500 dark:text-stone-400">
+              {t('composer.singleTurn')}
             </p>
-          ) : undefined
-        }
-      />
+            <a
+              href={`/apps/chatflow/${encodeURIComponent(instanceId)}`}
+              className="rounded-lg border border-stone-300 px-3 py-2 text-stone-700 hover:bg-stone-50 dark:border-stone-600 dark:text-stone-200 dark:hover:bg-stone-800"
+            >
+              {t('composer.newTask')}
+            </a>
+          </div>
+        </ChatContainer>
+      ) : (
+        <ChatInputView
+          value={route.ready ? message : ''}
+          onValueChange={setMessage}
+          onSubmit={submit}
+          disabled={disabled}
+          textDisabled={continuing}
+          stopDisabled={!route.ready || !session}
+          canSubmit={canSubmit}
+          isProcessing={isProcessing}
+          onStop={onStop}
+          isWaiting={waiting}
+          className={cn(
+            'w-[calc(100%-2rem)]',
+            isWelcomeScreen && 'mx-auto my-auto w-full shrink-0',
+            className
+          )}
+          embedded={isWelcomeScreen}
+          widthClass={widthClass}
+          placeholder={t('form.question.placeholder')}
+          beforeInput={parameters}
+          attachmentAction={attachments.action}
+          attachmentPreview={attachments.preview}
+          onInputRef={inputRef}
+          editNotice={
+            attachments.errors.length > 0 ? (
+              <p
+                role="alert"
+                className="px-4 py-2 text-sm text-amber-700 dark:text-amber-300"
+              >
+                {attachments.errors.join(' ')}
+              </p>
+            ) : undefined
+          }
+        />
+      )}
     </div>
   );
 }

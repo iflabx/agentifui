@@ -68,15 +68,31 @@ and current-message attachments remain subject to their own limits. If history
 or an old upload's trusted metadata is unavailable, the request fails rather than
 silently guessing inputs or resending the task.
 
-The Chatflow browser adapter uses the same composer for first sends, follow-ups
-and reopened native history. Initialization `inputs` slots are only editable
-before the first accepted request; message `files` slots are offered per turn.
+The Chatflow browser adapter uses the standard composer for the initial request.
+The product currently treats each Chatflow conversation as a single-turn task:
+after acceptance, further sends and edit-and-resend are not offered. While the
+request runs, the stop action remains; afterwards, a new-task link opens a fresh
+conversation without reusing its parameters or upload references. Reopened
+history is read-only, including older multi-turn conversations. Requests rejected
+before acceptance keep editable inputs. Initialization `inputs` and message
+`files` slots retain their native payload semantics on the initial request.
 Multiple slots require explicit purpose selection. Single-file variables remain
 objects and file-list variables remain arrays, preserving exact keys without
-duplicating input files in message `files`. Scalar initialization summaries use
-existing user-message metadata; upload references and execution snapshots retain
-their existing persistence paths. This does not convert Chatflow into a new task
+duplicating input files in message `files`. Initialization fields are shown
+directly above the first-message composer, without a disclosure; guidance and
+fields disappear after the conversation starts, including when reopening
+history. Stored scalar initialization metadata is retained but no longer fetched
+for a composer summary. Upload references and execution snapshots retain their
+existing persistence paths. This does not convert Chatflow into a new task
 backend or alter its native conversation memory.
+
+The configured `app_metadata.dify_apptype` determines task versus conversation
+mode: Workflow and Text Generation run independent tasks; Chatflow still uses
+the native conversation API. Its single-turn presentation is currently a product
+UI convention, not a server-enforced API maximum-turns policy. Native continuation
+compatibility remains in the backend; declaring a Chatflow as Workflow to change
+its UI would select the wrong endpoint. The declared type must match the upstream
+application and API endpoint.
 
 - The authenticated proxy lives in `apps/api/src/routes/dify-proxy.ts` and
   `apps/api/src/routes/dify-proxy-route/`. The legacy Next.js Dify route is a

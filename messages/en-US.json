@@ -275,6 +275,8 @@
     },
     "chatflow": {
       "composer": {
+        "singleTurn": "This app runs one task per conversation. Start a new task to run it again.",
+        "newTask": "Start new task",
         "parameters": "Conversation settings",
         "requiredRemaining": "{count} required fields remaining",
         "initialized": "These settings apply to this conversation. Start a new chat to change them.",

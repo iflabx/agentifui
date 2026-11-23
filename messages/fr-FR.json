@@ -275,6 +275,8 @@
     },
     "chatflow": {
       "composer": {
+        "singleTurn": "Cette application exécute une tâche par conversation. Démarrez une nouvelle tâche pour la relancer.",
+        "newTask": "Nouvelle tâche",
         "parameters": "Paramètres de conversation",
         "requiredRemaining": "{count} champs requis restants",
         "initialized": "Ces paramètres restent fixes pour cette conversation. Créez-en une autre pour les modifier.",

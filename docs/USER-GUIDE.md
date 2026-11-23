@@ -125,22 +125,33 @@ prove the upstream task was cancelled.
 
 ### Input And Message Actions
 
-Chatflow uses the standard chat composer on its first screen, during a
-conversation and when reopening history. Attach files with the button inside
+Chatflow uses the standard chat composer to start a single-turn task. Attach files with the button inside
 the input box; selected files appear as cards there, with upload status, remove
 and retry actions. A single available purpose opens the file picker directly.
 When several purposes are available, choose the purpose first; each has its own
 file count and limit. Unsupported local-upload purposes are explained instead of
 opening a picker that cannot work.
 
-Required non-file Chatflow settings appear in an expandable **Conversation
-settings** area above the composer. Once the conversation starts, initialization
-settings are fixed for that conversation; start another to change them. You do
-not need to reattach initialization files for each follow-up. Applications that
-also support per-message attachments still allow those on later messages.
-Reopened conversations show a saved initial-settings summary when available;
-older conversations without one do not require refilling it. Initial files remain
+Non-file Chatflow settings appear directly above the composer before the first
+message, with subdued guidance and no expand action. Required fields must still
+be completed before sending. Once the conversation starts, the guidance and
+settings disappear to leave room for messages; initialization values remain fixed
+for that conversation. Start another conversation to change them. Reopening
+history does not show the initialization form again. Initial files remain
 accessible from their original messages.
+
+The application type configured by an administrator determines native execution
+semantics: Workflow and Text Generation perform an independent task per send.
+For now, the product also presents Chatflow as one task per conversation: while
+running, the stop action remains available; afterwards, **Start new task** replaces
+the composer. Chatflow follow-ups and edit-and-resend are not offered. Starting a
+new task opens a fresh conversation and requires its own parameters and files.
+Existing history, including older multi-turn conversations, remains readable.
+The notice does not imply that a failed or stopped task completed successfully;
+requests rejected before acceptance retain their editable inputs for retry.
+This is a product UI convention, not a Dify API limitation or server-enforced
+maximum-turns policy. Ordinary chat and LangChain agents are unaffected. Declared
+application types must still match their actual backend API.
 
 In the shared chat input, **Enter** submits when sending is available and
 **Shift+Enter** inserts a newline. Composition with an input method is not a

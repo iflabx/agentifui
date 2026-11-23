@@ -275,6 +275,8 @@
     },
     "chatflow": {
       "composer": {
+        "singleTurn": "本应用每个会话执行一次任务。如需再次运行，请开始新任务。",
+        "newTask": "开始新任务",
         "parameters": "会话设置",
         "requiredRemaining": "还有 {count} 个必填项",
         "initialized": "这些设置用于当前会话，如需更改请新建对话。",

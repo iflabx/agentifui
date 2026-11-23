@@ -330,28 +330,31 @@ describe('executeChatSubmit', () => {
     expect(mockHandleChatSubmitStreamError).not.toHaveBeenCalled();
   });
 
-  it('keeps the first structured form mounted until acceptance and preserves a refused draft', async () => {
-    const { input } = createInput();
-    mockStartNewChatConversation.mockImplementationOnce(async () => {
+  it.each([true, false])(
+    'keeps the first structured form mounted until acceptance and preserves a refused draft (welcome=%s)',
+    async isWelcomeScreen => {
+      const { input } = createInput();
+      mockStartNewChatConversation.mockImplementationOnce(async () => {
+        expect(input.addMessage).not.toHaveBeenCalled();
+        expect(input.setIsWelcomeScreen).not.toHaveBeenCalled();
+        throw new AppRequestError('Input requirements changed', 400);
+      });
+      const result = await executeChatSubmit({
+        ...input,
+        isWelcomeScreen,
+        inputs: { Exact_Key: 'keep' },
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        surfaced: false,
+        errorMessage: expect.any(String),
+      });
       expect(input.addMessage).not.toHaveBeenCalled();
       expect(input.setIsWelcomeScreen).not.toHaveBeenCalled();
-      throw new AppRequestError('Input requirements changed', 400);
-    });
-    const result = await executeChatSubmit({
-      ...input,
-      isWelcomeScreen: true,
-      inputs: { Exact_Key: 'keep' },
-    });
-    expect(result).toMatchObject({
-      ok: false,
-      surfaced: false,
-      errorMessage: expect.any(String),
-    });
-    expect(input.addMessage).not.toHaveBeenCalled();
-    expect(input.setIsWelcomeScreen).not.toHaveBeenCalled();
-    expect(mockHandleChatSubmitStreamError).not.toHaveBeenCalled();
-    expect(mockFinalizeChatSubmitStream).not.toHaveBeenCalled();
-  });
+      expect(mockHandleChatSubmitStreamError).not.toHaveBeenCalled();
+      expect(mockFinalizeChatSubmitStream).not.toHaveBeenCalled();
+    }
+  );
 
   it('adds the structured user message with display attachments only after acceptance', async () => {
     const { input } = createInput();
@@ -385,6 +388,10 @@ describe('executeChatSubmit', () => {
 
   it('saves only initial scalar Chatflow settings in message metadata, not upload internals', async () => {
     const { input } = createInput();
+    mockStartNewChatConversation.mockImplementationOnce(async options => {
+      options.onAccepted({ externalId: 'native', taskId: 'task' });
+      return { answerStream: (async function* () {})() };
+    });
     await executeChatSubmit({
       ...input,
       appConfig: {

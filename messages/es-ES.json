@@ -275,6 +275,8 @@
     },
     "chatflow": {
       "composer": {
+        "singleTurn": "Esta aplicación ejecuta una tarea por conversación. Inicia una tarea nueva para volver a ejecutarla.",
+        "newTask": "Iniciar nueva tarea",
         "parameters": "Ajustes de conversación",
         "requiredRemaining": "Faltan {count} campos obligatorios",
         "initialized": "Estos ajustes se aplican a esta conversación. Inicia otra para cambiarlos.",
