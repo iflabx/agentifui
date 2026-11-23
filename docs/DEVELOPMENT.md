@@ -200,6 +200,61 @@ another process; use a separate source directory when needed.
 - Check narrow/mobile layouts, keyboard behavior, labels, focus, loading/error
   states and the affected ordinary-user path, not just administrator access.
 
+### Chat Interaction Principles
+
+These are design and review rules, not a claim that every existing application
+already implements the same interface. Reuse product components and preserve
+backend semantics; do not promise capabilities an Agent does not provide.
+
+1. **One chat surface.** Reuse the message list, composer, attachment controls
+   and execution-process views. Backend adapters supply capabilities and data,
+   not a separate visual system or an inner sidebar.
+2. **Identify the application before input.** Show its configured display name
+   on one line and description below it, directly above the composer. Use
+   body-sized, moderately bold text for the name and a muted description;
+   omit empty values. Hide this introduction after the first request is
+   accepted and restore it for a new task. It is not a saved message or model
+   input. Keep required fields, errors and retry actions available as needed.
+3. **Keep the composer quiet.** Avoid generic placeholder instructions when the
+   introduction already explains the task. Keep an accessible input name,
+   consistent send/stop controls and keyboard/composition behavior. Chatflow
+   currently has no visible placeholder; other callers keep their existing
+   defaults until separately changed.
+4. **Let capabilities govern attachments.** Keep the attachment action inside
+   the composer, enabled only when adding a supported file is possible. Use a
+   disabled action when unsupported or full; distinguish loading or failure
+   from lack of support. Explain required/optional counts, remaining capacity,
+   file restrictions and upload failures in readable language. Preserve each
+   input slot's limits and server-side validation.
+5. **Keep state transitions continuous.** Make sending, waiting, streaming,
+   completion and failure understandable without a page refresh or a broken
+   message stream when saving or replacing a temporary conversation URL.
+   Distinguish execution, connection and persistence status; unknown is not
+   success and must not trigger an automatic duplicate run.
+6. **Separate process from output.** Reuse the process interaction for workflow
+   steps and tool activity, scoped to the correct run. Do not clear completed
+   records. Restore available snapshots in history, and explain missing legacy
+   records rather than inventing them. Keep results and human approval controls
+   distinct from process details.
+7. **Restore history without inventing continuity.** Reloading or signing in
+   again should recover authorized messages, stored process records and
+   attachments. Single-turn applications offer a new-task action; a common chat
+   layout does not give independent tasks upstream conversational memory.
+8. **Use a consistent result-reading interaction.** Ordinary replies stay inline;
+   long documents, files and structured artifacts can open from a result card
+   in the shared preview shell. The target is a right-side desktop panel and a
+   full-screen mobile panel, with consistent close/copy/download actions only
+   where supported. Closing returns to the originating conversation and focus
+   without rerunning, refreshing or clearing results. Preserve authenticated
+   reads, backend-specific parsing and explicit unavailable-result errors.
+
+Workflow result viewing reuses `components/file-preview/preview-shell.tsx`, as do
+file and Agent artifact previews. Workflow retains its own result parsing,
+reasoning disclosure, input-attachment references, copy and download behavior.
+The shell supplies responsive layout, dismissal and focus restoration; it does
+not replace authenticated data loading or create a universal result-storage
+system. Other legacy viewers are not implicitly migrated by sharing this shell.
+
 ### API, Authentication And Persistence
 
 - Next owns auth and selected server-rendering endpoints. Fastify owns business

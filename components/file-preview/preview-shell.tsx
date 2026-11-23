@@ -34,6 +34,9 @@ export function PreviewShell({
   const focusTarget = returnFocusRef ?? previousFocus;
   useEffect(() => {
     isOpen.current = open;
+    return () => {
+      isOpen.current = false;
+    };
   }, [open]);
 
   return (
