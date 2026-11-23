@@ -11,6 +11,30 @@ import { useChatflowAttachments } from './chatflow-attachments';
 jest.mock('@lib/services/dify/file-service', () => ({
   uploadDifyFile: jest.fn(),
 }));
+jest.mock('next-intl', () => ({
+  useTranslations: (namespace: string) => {
+    const messages = jest.requireActual('../../messages/zh-CN.json');
+    return (key: string, values?: Record<string, number>) => {
+      if (
+        namespace === 'pages.chat' &&
+        [
+          'fileTypeSelector.maxUpload',
+          'fileTypeSelector.attachmentRequired',
+          'fileTypeSelector.attachmentRemaining',
+          'fileTypeSelector.attachmentRange',
+          'fileTypeSelector.attachmentSelected',
+        ].includes(key)
+      ) {
+        const template =
+          messages.pages.chat.fileTypeSelector[key.split('.')[1]];
+        return template.replace(/\{(\w+)\}/g, (_match: string, name: string) =>
+          String(values?.[name])
+        );
+      }
+      return `${namespace}.${key}`;
+    };
+  },
+}));
 jest.mock('@components/chat-input/button', () => ({
   ChatButton: ({
     ariaLabel,
@@ -124,16 +148,25 @@ describe('Chatflow composer attachments', () => {
     );
   });
 
-  it('renders no action or preview without slots and explains remote-only slots', () => {
+  it('keeps a disabled attachment icon without slots or local upload support', () => {
     const { rerender } = render(<Harness slots={[]} />);
-    expect(snapshot.action).toBeNull();
+    const button = screen.getByRole('button', {
+      name: 'pages.chat.fileTypeSelector.ariaLabel',
+    });
+    expect(button).toBeDisabled();
+    expect(button.parentElement).toHaveAttribute(
+      'title',
+      'pages.chat.fileTypeSelector.notSupported'
+    );
     expect(snapshot.preview).toBeNull();
     expect(snapshot.blocked).toBe(false);
     rerender(<Harness slots={[{ ...slot, methods: ['remote_url'] }]} />);
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent(
+    expect(button).toBeDisabled();
+    expect(button.parentElement).toHaveAttribute(
+      'title',
       'pages.chat.input.localUploadUnavailable'
     );
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(snapshot.blocked).toBe(false);
     rerender(
       <Harness slots={[{ ...slot, methods: ['remote_url'], minCount: 1 }]} />
@@ -173,7 +206,10 @@ describe('Chatflow composer attachments', () => {
         actor_epoch: useChatInputStore.getState().actorEpoch,
       },
     ]);
-    expect(screen.getAllByText('Message files 1/3')).toHaveLength(2);
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '已添加 1 个附件 · 最多 3 个'
+    );
+    expect(screen.queryByText('Message files 1/3')).not.toBeInTheDocument();
     click.mockRestore();
   });
 
@@ -272,7 +308,7 @@ describe('Chatflow composer attachments', () => {
     expect(primaryClick).not.toHaveBeenCalled();
     expect(messageClick).not.toHaveBeenCalled();
     fireEvent.click(
-      screen.getByRole('button', { name: 'Primary source * 0/1' })
+      screen.getByRole('button', { name: 'Primary source 请添加 1 个附件' })
     );
     expect(primaryClick).toHaveBeenCalledTimes(1);
     expect(messageClick).not.toHaveBeenCalled();
@@ -300,16 +336,102 @@ describe('Chatflow composer attachments', () => {
       })
     );
     expect(
-      screen.getByRole('button', { name: /Primary source \* 1\/1/ })
+      screen.getByRole('button', { name: /Primary source 已添加 1 个附件/ })
     ).toBeDisabled();
     expect(
-      screen.getByRole('button', { name: /Message files 1\/1/ })
+      screen.getByRole('button', { name: /Message files 已添加 1 个附件/ })
     ).toBeDisabled();
     expect(
-      screen.getByRole('button', { name: 'Supporting sources 2/3' })
+      screen.getByRole('button', {
+        name: 'Supporting sources 已添加 2 个附件 · 最多 3 个',
+      })
     ).not.toBeDisabled();
     primaryClick.mockRestore();
     messageClick.mockRestore();
+  });
+
+  it('shows a readable optional limit and restores the icon after removing a full selection', async () => {
+    render(<Harness slots={[{ ...slot, maxCount: 1 }]} />);
+    const button = screen.getByRole('button', {
+      name: 'pages.chat.fileTypeSelector.ariaLabel',
+    });
+    expect(button).toBeEnabled();
+    expect(screen.getByRole('status')).toHaveTextContent('最多上传 1 个文件');
+    await act(async () => select(slot.label, [file()]));
+    expect(button).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '已添加 1 个附件 · 最多 1 个'
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'common.ui.remove' }));
+    expect(button).toBeEnabled();
+    expect(screen.getByRole('status')).toHaveTextContent('最多上传 1 个文件');
+  });
+
+  it.each([
+    [1, 1, '请添加 1 个附件'],
+    [2, 4, '请添加 2–4 个附件'],
+  ])(
+    'describes required limits %i–%i without a duplicate error',
+    (minCount, maxCount, hint) => {
+      render(<Harness slots={[{ ...slot, minCount, maxCount }]} />);
+      expect(screen.getByRole('status')).toHaveTextContent(hint);
+      expect(snapshot.blocked).toBe(true);
+      expect(snapshot.errors).toEqual([]);
+    }
+  );
+
+  it('keeps missing required counts visible even when another purpose has enough files', async () => {
+    const required = {
+      ...slot,
+      key: 'required',
+      label: 'Required sources',
+      minCount: 2,
+      maxCount: 2,
+      target: 'inputs' as const,
+      multiple: true,
+    };
+    render(<Harness slots={[required, slot]} />);
+    await act(async () =>
+      select(slot.label, [file('one.txt'), file('two.txt')])
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('还需添加 2 个附件');
+    expect(snapshot.blocked).toBe(true);
+    await act(async () => select(required.label, [file('required-one.txt')]));
+    expect(screen.getByRole('status')).toHaveTextContent('还需添加 1 个附件');
+    expect(snapshot.blocked).toBe(true);
+    await act(async () => select(required.label, [file('required-two.txt')]));
+    expect(screen.getByRole('status')).not.toHaveTextContent('还需添加');
+    expect(snapshot.blocked).toBe(false);
+  });
+
+  it('disables a full multi-slot picker rather than opening an unusable menu', async () => {
+    const second = {
+      ...slot,
+      key: 'source',
+      label: 'Source',
+      target: 'inputs' as const,
+    };
+    render(
+      <Harness
+        slots={[
+          { ...slot, maxCount: 1 },
+          { ...second, maxCount: 1 },
+        ]}
+      />
+    );
+    await act(async () => select(slot.label, [file('one.txt')]));
+    await act(async () => select(second.label, [file('two.txt')]));
+    const button = screen.getByRole('button', {
+      name: 'pages.chat.fileTypeSelector.ariaLabel',
+    });
+    expect(button).toBeDisabled();
+    fireEvent.click(button.parentElement!);
+    expect(
+      screen.queryByRole('button', { name: /Source 已添加/ })
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '已添加 2 个附件 · 最多 2 个'
+    );
   });
 
   it.each(['success', 'failure'])(

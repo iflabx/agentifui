@@ -75,8 +75,38 @@ function slotAccept(slot: AgentAttachmentSlot) {
   return [...new Set(extensions)].map(extension => `.${extension}`).join(',');
 }
 
-function slotLabel({ slot, entries }: SlotDraft) {
-  return `${slot.label}${slot.minCount > 0 ? ' *' : ''} ${entries.length}/${slot.maxCount}`;
+function attachmentHint(drafts: SlotDraft[], translate: Translate) {
+  const count = drafts.reduce(
+    (total, draft) => total + draft.entries.length,
+    0
+  );
+  const minCount = drafts.reduce(
+    (total, draft) => total + draft.slot.minCount,
+    0
+  );
+  const maxCount = drafts.reduce(
+    (total, draft) => total + draft.slot.maxCount,
+    0
+  );
+  if (count > 0) {
+    const selected = translate('fileTypeSelector.attachmentSelected', {
+      count,
+      maxCount,
+    });
+    const remaining = drafts.reduce(
+      (total, draft) =>
+        total + Math.max(0, draft.slot.minCount - draft.entries.length),
+      0
+    );
+    return remaining > 0
+      ? `${selected} · ${translate('fileTypeSelector.attachmentRemaining', { count: remaining })}`
+      : selected;
+  }
+  if (minCount > 0)
+    return minCount === maxCount
+      ? translate('fileTypeSelector.attachmentRequired', { count: minCount })
+      : translate('fileTypeSelector.attachmentRange', { minCount, maxCount });
+  return translate('fileTypeSelector.maxUpload', { maxFiles: maxCount });
 }
 
 function AttachmentAction({
@@ -96,6 +126,22 @@ function AttachmentAction({
   );
   const available = (draft: SlotDraft) =>
     !disabled && draft.entries.length < draft.slot.maxCount;
+  const canChoose = local.some(available);
+  const hint = local.length ? attachmentHint(local, translate) : undefined;
+  const title = local.length
+    ? local.some(draft => draft.entries.length < draft.slot.maxCount)
+      ? hint
+      : translate('fileTypeSelector.maxFilesReached', {
+          maxFiles: local.reduce(
+            (total, draft) => total + draft.slot.maxCount,
+            0
+          ),
+        })
+    : translate(
+        drafts.length
+          ? 'input.localUploadUnavailable'
+          : 'fileTypeSelector.notSupported'
+      );
   const choose = (draft: SlotDraft) => {
     if (!available(draft)) return;
     inputs.current[draft.scope]?.click();
@@ -105,22 +151,10 @@ function AttachmentAction({
     <ChatButton
       icon={<Paperclip className="h-4 w-4" />}
       ariaLabel={translate('fileTypeSelector.ariaLabel')}
-      disabled={disabled || (local.length === 1 && !available(local[0]))}
+      disabled={!canChoose}
       onClick={local.length === 1 ? () => choose(local[0]) : undefined}
     />
   );
-
-  if (!local.length) {
-    return (
-      <span
-        role="status"
-        className="block max-w-40 font-serif text-xs break-words text-stone-500 sm:max-w-64"
-      >
-        {drafts.map(draft => draft.slot.label).join(', ')}:{' '}
-        {translate('input.localUploadUnavailable')}
-      </span>
-    );
-  }
 
   return (
     <div className="flex min-w-0 items-center gap-2">
@@ -145,28 +179,14 @@ function AttachmentAction({
           }}
         />
       ))}
-      {local.length === 1 ? (
-        <>
-          {trigger}
-          <span
-            className="max-w-28 truncate font-serif text-xs text-stone-500 sm:max-w-48"
-            title={
-              available(local[0])
-                ? slotLabel(local[0])
-                : translate('fileTypeSelector.maxFilesReached', {
-                    maxFiles: local[0].slot.maxCount,
-                  })
-            }
-          >
-            {slotLabel(local[0])}
-          </span>
-        </>
+      {local.length <= 1 ? (
+        <span title={title}>{trigger}</span>
       ) : (
         <Popover
-          trigger={trigger}
+          trigger={<span title={title}>{trigger}</span>}
           placement="top"
-          isOpen={open && !disabled}
-          onOpenChange={setOpen}
+          isOpen={open && canChoose}
+          onOpenChange={value => setOpen(value && canChoose)}
           offsetX={0}
           offsetY={0}
         >
@@ -182,22 +202,28 @@ function AttachmentAction({
                 }
                 onClick={() => choose(draft)}
               >
-                <span className="block">{slotLabel(draft)}</span>
+                <span className="block break-words">{draft.slot.label}</span>
                 {!draft.slot.methods.includes('local_file') ? (
                   <span className="block text-xs">
                     {translate('input.localUploadUnavailable')}
                   </span>
-                ) : draft.entries.length >= draft.slot.maxCount ? (
-                  <span className="block text-xs">
-                    {translate('fileTypeSelector.maxFilesReached', {
-                      maxFiles: draft.slot.maxCount,
-                    })}
+                ) : (
+                  <span className="block text-xs text-stone-500 dark:text-stone-400">
+                    {attachmentHint([draft], translate)}
                   </span>
-                ) : null}
+                )}
               </button>
             ))}
           </div>
         </Popover>
+      )}
+      {hint && (
+        <span
+          role="status"
+          className="max-w-40 text-xs leading-relaxed break-words text-stone-500 sm:max-w-64 dark:text-stone-400"
+        >
+          {hint}
+        </span>
       )}
     </div>
   );
@@ -386,7 +412,10 @@ export function useChatflowAttachments({
     );
     if (validationError || unfinished) blocked = true;
     const draftErrors = [
-      validationError && validationMessage(validationError, slot, translate),
+      validationError &&
+        (validationError !== 'INPUT_FILES_REQUIRED' ||
+          !slot.methods.includes('local_file')) &&
+        validationMessage(validationError, slot, translate),
       unfinished && translate('input.uploadPending'),
       selectionErrors[draft.scope] &&
         validationMessage(selectionErrors[draft.scope], slot, translate),
@@ -423,60 +452,47 @@ export function useChatflowAttachments({
         (slot.multiple ?? slot.maxCount !== 1) ? payload : payload[0];
   }
 
-  const remoteLabels = drafts
-    .filter(draft => !draft.slot.methods.includes('local_file'))
-    .map(draft => draft.slot.label);
-  const showRemoteNotice =
-    remoteLabels.length > 0 && remoteLabels.length < drafts.length;
-
   return {
-    action: drafts.length ? (
+    action: (
       <AttachmentAction
         key={JSON.stringify([userId, actorEpoch, instanceId, draftScope])}
         drafts={drafts}
         disabled={disabled || !enabled}
         onSelect={select}
       />
-    ) : null,
-    preview:
-      drafts.some(draft => draft.entries.length) || showRemoteNotice ? (
-        <div className="space-y-2 px-3 pt-3 pb-2">
-          {showRemoteNotice && (
-            <p role="status" className="font-serif text-xs text-stone-500">
-              {remoteLabels.join(', ')}:{' '}
-              {translate('input.localUploadUnavailable')}
-            </p>
-          )}
-          {drafts
-            .filter(draft => draft.entries.length)
-            .map(draft => (
-              <div key={draft.scope} role="group" aria-label={draft.slot.label}>
-                <p className="mb-1 font-serif text-xs text-stone-500">
-                  {slotLabel(draft)}
+    ),
+    preview: drafts.some(draft => draft.entries.length) ? (
+      <div className="space-y-2 px-3 pt-3 pb-2">
+        {drafts
+          .filter(draft => draft.entries.length)
+          .map(draft => (
+            <div key={draft.scope} role="group" aria-label={draft.slot.label}>
+              {drafts.length > 1 && (
+                <p className="mb-1 text-xs break-words text-stone-500 dark:text-stone-400">
+                  {draft.slot.label}
                 </p>
-                <div className="flex flex-wrap gap-2">
-                  {draft.entries.map(entry => (
-                    <AttachmentPreviewItem
-                      key={entry.id}
-                      attachment={entry}
-                      onRemove={id => {
-                        if (disabled || !isCurrentActor()) return;
-                        useAttachmentStore
-                          .getState()
-                          .removeFile(id, draft.scope);
-                        clearSelectionError(draft);
-                      }}
-                      onRetry={id => {
-                        clearSelectionError(draft);
-                        void upload(draft, id);
-                      }}
-                    />
-                  ))}
-                </div>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {draft.entries.map(entry => (
+                  <AttachmentPreviewItem
+                    key={entry.id}
+                    attachment={entry}
+                    onRemove={id => {
+                      if (disabled || !isCurrentActor()) return;
+                      useAttachmentStore.getState().removeFile(id, draft.scope);
+                      clearSelectionError(draft);
+                    }}
+                    onRetry={id => {
+                      clearSelectionError(draft);
+                      void upload(draft, id);
+                    }}
+                  />
+                ))}
               </div>
-            ))}
-        </div>
-      ) : null,
+            </div>
+          ))}
+      </div>
+    ) : null,
     inputs,
     files,
     blocked,

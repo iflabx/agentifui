@@ -11,6 +11,8 @@ import type { ComponentProps } from 'react';
 import type { AgentInputCapabilities } from '../../packages/shared/src/agent-input';
 import { ChatflowInputArea } from './chatflow-input-area';
 
+let mockDescription: string | null;
+
 jest.mock('@lib/auth/better-auth/react-hooks', () => ({
   useAuthSession: () => ({
     session: { user: { id: 'actor' } },
@@ -26,7 +28,7 @@ jest.mock('@lib/hooks/use-chat-input-app', () => ({
     instance: {
       id: 'service',
       display_name: 'Example agent',
-      description: 'Example initialization guidance',
+      description: mockDescription,
     },
     failed: false,
     retry: jest.fn(),
@@ -90,6 +92,7 @@ const props = { instanceId: 'app', onSubmit: jest.fn() };
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockDescription = 'Example initialization guidance';
   useChatInputStore.getState().setActor('actor');
   useChatInputStore.getState().clearAllMessages();
   useChatInputStore
@@ -120,7 +123,7 @@ beforeEach(() => {
   }));
 });
 
-it('shows initialization above the composer without a disclosure and uses muted guidance', () => {
+it('shows the admin description above the composer using assistant text styles and muted settings', () => {
   const { container } = render(<ChatflowInputArea {...props} />);
   const beforeInput = screen.getByTestId('before-input');
   expect(beforeInput).toHaveTextContent('Example initialization guidance');
@@ -131,8 +134,40 @@ it('shows initialization above the composer without a disclosure and uses muted 
     'text-xs',
     'text-stone-500'
   );
+  const description = container.querySelector('[data-chatflow-description]');
+  expect(description).toHaveTextContent('Example initialization guidance');
+  expect(description).toHaveClass(
+    'markdown-body',
+    'assistant-message-content',
+    'text-base',
+    'text-stone-800',
+    'dark:text-stone-200'
+  );
+  expect(description?.closest('header')).not.toHaveClass('text-center');
+  expect(useChatStore.getState().messages).toEqual([]);
 });
 
+it.each([null, '', '   '])(
+  'omits an empty app description (%s) without adding a fake message',
+  description => {
+    mockDescription = description;
+    const { container } = render(<ChatflowInputArea {...props} />);
+    expect(container.querySelector('[data-chatflow-description]')).toBeNull();
+    expect(
+      screen.getByRole('heading', { name: 'Example agent' })
+    ).toBeVisible();
+    expect(useChatStore.getState().messages).toEqual([]);
+  }
+);
+
+it('preserves description line breaks and treats admin content as text, not HTML', () => {
+  mockDescription = 'First line\nSecond line\n<script>alert("test")</script>';
+  const { container } = render(<ChatflowInputArea {...props} />);
+  const description = container.querySelector('[data-chatflow-description]');
+  expect(description?.textContent).toBe(mockDescription);
+  expect(description?.querySelector('p')).toHaveClass('whitespace-pre-wrap');
+  expect(description?.querySelector('script')).toBeNull();
+});
 it('keeps required fields editable and validates them before submission', async () => {
   capabilities.fields[0].required = true;
   capabilities.fields[0].default = '';
@@ -169,6 +204,9 @@ it('removes initialization entirely once a conversation starts and restores it f
   );
   expect(screen.getByTestId('before-input')).toBeEmptyDOMElement();
   expect(screen.queryByLabelText('Topic')).not.toBeInTheDocument();
+  expect(
+    screen.queryByText('Example initialization guidance')
+  ).not.toBeInTheDocument();
   act(() => useChatStore.getState().clearMessages());
   rerender(<ChatflowInputArea {...props} />);
   expect(screen.getByLabelText('Topic')).toBeVisible();
@@ -181,6 +219,9 @@ it('does not show initialization when reopening a saved conversation without loa
   render(<ChatflowInputArea {...props} isWelcomeScreen={false} />);
   expect(screen.queryByLabelText('Message')).not.toBeInTheDocument();
   expect(screen.queryByLabelText('Topic')).not.toBeInTheDocument();
+  expect(
+    screen.queryByText('Example initialization guidance')
+  ).not.toBeInTheDocument();
   expect(
     screen.getByRole('link', { name: 'pages.chatflow.composer.newTask' })
   ).toHaveAttribute('href', '/apps/chatflow/app');

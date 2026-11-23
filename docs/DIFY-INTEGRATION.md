@@ -81,7 +81,11 @@ objects and file-list variables remain arrays, preserving exact keys without
 duplicating input files in message `files`. Initialization fields are shown
 directly above the first-message composer, without a disclosure; guidance and
 fields disappear after the conversation starts, including when reopening
-history. Stored scalar initialization metadata is retained but no longer fetched
+history. The application `description` is shown above the first composer with
+assistant-response typography, without creating a message or adding model input.
+Attachment controls show a disabled icon for unsupported local uploads and
+human-readable per-purpose requirements/counts; required counts still block sending
+but are not duplicated as an initial error. Stored scalar initialization metadata is retained but no longer fetched
 for a composer summary. Upload references and execution snapshots retain their
 existing persistence paths. This does not convert Chatflow into a new task
 backend or alter its native conversation memory.

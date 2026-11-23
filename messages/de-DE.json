@@ -241,6 +241,10 @@
         "loadError": "Laden der Dateitypen fehlgeschlagen",
         "reachedLimit": "Limit erreicht ({currentFiles}/{maxFiles})",
         "maxUpload": "Bis zu {maxFiles} Dateien hochladen",
+        "attachmentRequired": "Zum Fortfahren {count, plural, one {# Anhang} other {# Anhänge}} hinzufügen",
+        "attachmentRemaining": "Noch {count, plural, one {# Anhang} other {# Anhänge}} hinzufügen",
+        "attachmentRange": "Zum Fortfahren {minCount}–{maxCount} Anhänge hinzufügen",
+        "attachmentSelected": "{count, plural, one {# Anhang} other {# Anhänge}} hinzugefügt · Maximal {maxCount}",
         "noUploadLimit": "Kein Upload-Limit"
       },
       "modelSelector": {

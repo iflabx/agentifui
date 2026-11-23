@@ -241,6 +241,10 @@
         "loadError": "Не удалось загрузить типы файлов",
         "reachedLimit": "Достигнут лимит ({currentFiles}/{maxFiles})",
         "maxUpload": "Загрузите до {maxFiles} файлов",
+        "attachmentRequired": "Для продолжения добавьте {count, plural, one {# вложение} few {# вложения} many {# вложений} other {# вложения}}",
+        "attachmentRemaining": "Добавьте ещё {count, plural, one {# вложение} few {# вложения} many {# вложений} other {# вложения}}",
+        "attachmentRange": "Для продолжения добавьте от {minCount} до {maxCount} вложений",
+        "attachmentSelected": "Добавлено {count, plural, one {# вложение} few {# вложения} many {# вложений} other {# вложения}} · Не более {maxCount}",
         "noUploadLimit": "Нет лимита на загрузку"
       },
       "modelSelector": {

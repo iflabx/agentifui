@@ -241,6 +241,10 @@
         "loadError": "Échec du chargement des types de fichiers",
         "reachedLimit": "Limite atteinte ({currentFiles}/{maxFiles})",
         "maxUpload": "Téléversez jusqu'à {maxFiles} fichiers",
+        "attachmentRequired": "Ajoutez {count, plural, one {# pièce jointe} other {# pièces jointes}} pour continuer",
+        "attachmentRemaining": "Ajoutez encore {count, plural, one {# pièce jointe} other {# pièces jointes}} pour continuer",
+        "attachmentRange": "Ajoutez entre {minCount} et {maxCount} pièces jointes pour continuer",
+        "attachmentSelected": "{count, plural, one {# pièce jointe ajoutée} other {# pièces jointes ajoutées}} · Maximum {maxCount}",
         "noUploadLimit": "Aucune limite de téléversement"
       },
       "modelSelector": {

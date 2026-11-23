@@ -241,6 +241,10 @@
         "loadError": "ファイルタイプの読み込みに失敗しました",
         "reachedLimit": "制限に達しました ({currentFiles}/{maxFiles})",
         "maxUpload": "最大{maxFiles}個のファイルをアップロード",
+        "attachmentRequired": "添付ファイルを{count}件追加してください",
+        "attachmentRemaining": "添付ファイルをあと{count}件追加してください",
+        "attachmentRange": "添付ファイルを{minCount}～{maxCount}件追加してください",
+        "attachmentSelected": "{count}件の添付ファイルを追加済み · 最大{maxCount}件",
         "noUploadLimit": "アップロード制限なし"
       },
       "modelSelector": {

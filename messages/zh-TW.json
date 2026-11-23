@@ -241,6 +241,10 @@
         "loadError": "載入檔案類型失敗",
         "reachedLimit": "已達上限 ({currentFiles}/{maxFiles})",
         "maxUpload": "最多上傳 {maxFiles} 個檔案",
+        "attachmentRequired": "請新增 {count} 個附件",
+        "attachmentRemaining": "還需新增 {count} 個附件",
+        "attachmentRange": "請新增 {minCount}–{maxCount} 個附件",
+        "attachmentSelected": "已新增 {count} 個附件 · 最多 {maxCount} 個",
         "noUploadLimit": "無上傳限制"
       },
       "modelSelector": {

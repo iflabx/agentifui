@@ -241,6 +241,10 @@
         "loadError": "Error al cargar tipos de archivo",
         "reachedLimit": "Límite alcanzado ({currentFiles}/{maxFiles})",
         "maxUpload": "Subir hasta {maxFiles} archivos",
+        "attachmentRequired": "Añade {count, plural, one {# archivo adjunto} other {# archivos adjuntos}} para continuar",
+        "attachmentRemaining": "Añade {count, plural, one {# archivo adjunto más} other {# archivos adjuntos más}} para continuar",
+        "attachmentRange": "Añade entre {minCount} y {maxCount} archivos adjuntos para continuar",
+        "attachmentSelected": "{count, plural, one {# archivo adjunto añadido} other {# archivos adjuntos añadidos}} · Máximo {maxCount}",
         "noUploadLimit": "Sin límite de carga"
       },
       "modelSelector": {

@@ -210,7 +210,7 @@ describe('Chatflow standard composer', () => {
     );
   });
 
-  it('keeps the common composer without an attachment action for a text-only app', async () => {
+  it('keeps the common composer with a disabled attachment icon for a text-only app', async () => {
     const view = render(
       <ChatflowInputArea instanceId="app-1" onSubmit={jest.fn()} />
     );
@@ -227,6 +227,9 @@ describe('Chatflow standard composer', () => {
       view.container.querySelector('[data-chat-input-container] textarea')
     ).toBe(query);
     expect(view.container.querySelector('input[type="file"]')).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'fileTypeSelector.ariaLabel' })
+    ).toBeDisabled();
     expect(
       screen.queryByText('form.startConversation')
     ).not.toBeInTheDocument();
@@ -617,7 +620,7 @@ describe('Chatflow standard composer', () => {
       'form.question.placeholder'
     );
     fireEvent.change(query, { target: { value: 'read document' } });
-    await screen.findByText('Required document * 0/1');
+    await screen.findByText('fileTypeSelector.attachmentRequired');
     expect(
       screen.getByRole('button', { name: 'input.sendMessage' })
     ).toBeDisabled();

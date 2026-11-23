@@ -129,12 +129,16 @@ Chatflow uses the standard chat composer to start a single-turn task. Attach fil
 the input box; selected files appear as cards there, with upload status, remove
 and retry actions. A single available purpose opens the file picker directly.
 When several purposes are available, choose the purpose first; each has its own
-file count and limit. Unsupported local-upload purposes are explained instead of
-opening a picker that cannot work.
+file count and limit. The attachment icon stays visible and is disabled when local
+uploads are unsupported, unavailable, or the current draft is full. A short hint
+states the required or maximum count and how many files have been added; removing
+an item makes room to select another. Multiple purposes retain separate limits.
 
 Non-file Chatflow settings appear directly above the composer before the first
-message, with subdued guidance and no expand action. Required fields must still
-be completed before sending. Once the conversation starts, the guidance and
+message, with subdued guidance and no expand action. The administrator's application
+description appears above the input using the same typography as assistant replies;
+it is introductory text, not a saved or upstream message. Required fields must still
+be completed before sending. Once the conversation starts, the description, guidance and
 settings disappear to leave room for messages; initialization values remain fixed
 for that conversation. Start another conversation to change them. Reopening
 history does not show the initialization form again. Initial files remain

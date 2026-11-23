@@ -241,6 +241,10 @@
         "loadError": "Failed to load file types",
         "reachedLimit": "Limit reached ({currentFiles}/{maxFiles})",
         "maxUpload": "Upload up to {maxFiles} files",
+        "attachmentRequired": "Add {count, plural, one {# attachment} other {# attachments}} to continue",
+        "attachmentRemaining": "Add {count, plural, one {# more attachment} other {# more attachments}} to continue",
+        "attachmentRange": "Add {minCount}–{maxCount} attachments to continue",
+        "attachmentSelected": "{count, plural, one {# attachment} other {# attachments}} added · Up to {maxCount}",
         "noUploadLimit": "No upload limit"
       },
       "modelSelector": {

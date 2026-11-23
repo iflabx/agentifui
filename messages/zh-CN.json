@@ -241,6 +241,10 @@
         "loadError": "加载文件类型失败",
         "reachedLimit": "已达上限 ({currentFiles}/{maxFiles})",
         "maxUpload": "最多上传 {maxFiles} 个文件",
+        "attachmentRequired": "请添加 {count} 个附件",
+        "attachmentRemaining": "还需添加 {count} 个附件",
+        "attachmentRange": "请添加 {minCount}–{maxCount} 个附件",
+        "attachmentSelected": "已添加 {count} 个附件 · 最多 {maxCount} 个",
         "noUploadLimit": "无上传限制"
       },
       "modelSelector": {
