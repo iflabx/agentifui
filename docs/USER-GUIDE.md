@@ -388,10 +388,12 @@ For Dify, expanding or collapsing nested details does not change the completed
 count; iteration and branch summaries are not counted again as extra steps.
 
 - In a LangChain conversation, use **View execution process** beside the first
-  tool activity of a run to expand that run's activities inline. Other tool hints
-  keep their original positions among messages. Close the list with its close
-  button, the entry button or Escape inside the list; closing restores focus to
-  the entry. This inline area is separate from file-preview drawers and does not
+  tool activity of a run to open that run's activities in the shared right-side
+  panel. Only one run's panel is open at a time; selecting another run replaces
+  its contents without mixing activities. Other tool hints keep their original
+  positions among messages. Close the panel with its close button, the entry
+  button or Escape inside the panel; closing restores focus to the entry.
+  Switching conversations or applications closes it. This panel does not
   start or resume a task. Unfinished tools in saved or ended runs show an unknown
   state rather than continuing to animate; confirmed final tool states remain
   unchanged.

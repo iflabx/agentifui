@@ -113,6 +113,17 @@ function AgentChatSession({
   const actorEpoch = useLangchainDraftStore(state =>
     state.actorId === actorId ? state.actorEpoch : null
   );
+  const processScope = JSON.stringify([
+    actorId,
+    actorEpoch,
+    appId,
+    conversationId,
+    chat.draftScope,
+  ]);
+  const [processSelection, setProcessSelection] = useState<{
+    scope: string;
+    runKey: string;
+  } | null>(null);
   const [selection, setSelection] = useState<{
     epoch: number;
     target: string;
@@ -210,6 +221,13 @@ function AgentChatSession({
     processRuns.set(key, [...(processRuns.get(key) || []), entry.tool]);
   }
   const renderedProcessRuns = new Set<string>();
+  const selectedProcessKey =
+    processSelection?.scope === processScope &&
+    processRuns.has(processSelection.runKey)
+      ? processSelection.runKey
+      : null;
+  if (processSelection && selectedProcessKey === null)
+    setProcessSelection(null);
 
   useLayoutEffect(() => {
     if (actorEpoch === null || authLoading) return;
@@ -362,6 +380,14 @@ function AgentChatSession({
                         chat.draftScope,
                         runKey,
                       ])}
+                      placement="panel"
+                      open={selectedProcessKey === runKey}
+                      onOpenChange={open =>
+                        setProcessSelection(
+                          open ? { scope: processScope, runKey } : null
+                        )
+                      }
+                      title={tool.name}
                       items={activities.map(activity =>
                         toolProcessItem(activity, historicalProcess)
                       )}
