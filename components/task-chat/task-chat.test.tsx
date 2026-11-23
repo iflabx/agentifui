@@ -18,6 +18,10 @@ import { TaskChat } from './task-chat';
 const mockExecute = jest.fn();
 const mockFetch = jest.fn();
 const mockMounts = jest.fn();
+const mockAuth: {
+  session: { user: { id: string } } | null;
+  loading: boolean;
+} = { session: { user: { id: 'actor' } }, loading: false };
 const mockApps = [
   {
     id: 'app-uuid',
@@ -27,10 +31,7 @@ const mockApps = [
 ];
 jest.mock('next-intl', () => ({ useTranslations: () => (key: string) => key }));
 jest.mock('@lib/auth/better-auth/react-hooks', () => ({
-  useAuthSession: () => ({
-    session: { user: { id: 'actor' } },
-    loading: false,
-  }),
+  useAuthSession: () => mockAuth,
 }));
 jest.mock('@lib/stores/app-list-store', () => ({
   useAppListStore: (selector: (state: unknown) => unknown) =>
@@ -83,12 +84,15 @@ jest.mock('@components/workflow/workflow-input-form', () => {
       isExecuting: boolean;
     }) {
       return (
-        <button
-          disabled={isExecuting}
-          onClick={() => onExecute({ topic: 'test' })}
-        >
-          submit task
-        </button>
+        <>
+          <input type="file" aria-label="Task attachment" />
+          <button
+            disabled={isExecuting}
+            onClick={() => onExecute({ topic: 'test' })}
+          >
+            submit task
+          </button>
+        </>
       );
     }),
   };
@@ -138,6 +142,8 @@ function execution(id: string): AppExecution {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockAuth.session = { user: { id: 'actor' } };
+  mockAuth.loading = false;
   mockApps[0].config.app_metadata.dify_apptype = 'workflow';
   mockExecute.mockResolvedValue(true);
   jest.mocked(getConversationExecutions).mockResolvedValue({
@@ -154,6 +160,40 @@ beforeEach(() => {
   });
   window.history.replaceState({}, '', '/apps/workflow/task-app');
 });
+
+it.each(['workflow', 'text-generation'] as const)(
+  'keeps the %s file input mounted during same-user session refresh',
+  async taskType => {
+    mockApps[0].config.app_metadata.dify_apptype = taskType;
+    const props = { instanceId: 'task-app', taskType };
+    const view = render(<TaskChat {...props} />);
+    const input = screen.getByLabelText('Task attachment');
+    mockAuth.loading = true;
+    view.rerender(<TaskChat {...props} />);
+    expect(input.isConnected).toBe(true);
+    expect(screen.getByLabelText('Task attachment')).toBe(input);
+    mockAuth.loading = false;
+    view.rerender(<TaskChat {...props} />);
+    expect(screen.getByLabelText('Task attachment')).toBe(input);
+  }
+);
+
+it.each(['logout', 'different-user'])(
+  'discards the previous file input after %s',
+  change => {
+    const props = { instanceId: 'task-app', taskType: 'workflow' as const };
+    const view = render(<TaskChat {...props} />);
+    const input = screen.getByLabelText('Task attachment');
+    mockAuth.session = change === 'logout' ? null : { user: { id: 'other' } };
+    view.rerender(<TaskChat {...props} />);
+    expect(input.isConnected).toBe(false);
+    if (change === 'logout')
+      expect(
+        screen.queryByLabelText('Task attachment')
+      ).not.toBeInTheDocument();
+    else expect(screen.getByLabelText('Task attachment')).not.toBe(input);
+  }
+);
 
 it('adopts a reserved URL without unmounting the active runner', async () => {
   let finish!: (accepted: boolean) => void;

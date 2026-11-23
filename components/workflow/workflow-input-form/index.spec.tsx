@@ -112,6 +112,7 @@ describe('WorkflowInputForm system-injected fields', () => {
       );
       await screen.findByText('Configured task description');
       expect(screen.getByText('Task name')).toBeInTheDocument();
+      expect(screen.queryByText('independent')).not.toBeInTheDocument();
       const composer = screen.getByRole('textbox', {
         name: 'input.placeholder',
       });

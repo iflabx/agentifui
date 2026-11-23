@@ -88,7 +88,6 @@ const ScopedWorkflowInputForm = React.forwardRef<
   const t = useTranslations('pages.workflow.form');
   const tCommon = useTranslations('common');
   const tChat = useTranslations('pages.chat');
-  const tTask = useTranslations('taskChat');
   const app = useChatInputApp(instanceId, true);
   const live = useAgentInputCapabilities(app.instance?.id ?? null);
   const capabilities = live.capabilities;
@@ -405,9 +404,6 @@ const ScopedWorkflowInputForm = React.forwardRef<
               fileSelections.current.get(slots[0].key)?.selectFiles(files);
             }}
           >
-            <p className="mb-2 px-2 text-xs text-stone-500">
-              {tTask('independent')}
-            </p>
             {dropNotice && (
               <p role="status" className="mb-2 px-2 text-xs text-stone-500">
                 {dropNotice}

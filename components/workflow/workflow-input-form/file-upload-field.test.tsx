@@ -441,37 +441,44 @@ describe('form upload ownership', () => {
     expect(uploadDifyFile).not.toHaveBeenCalled();
   });
 
-  it('preserves files selected during same-actor authentication refresh and uploads once it finishes', async () => {
-    const view = setup();
-    const refresh = (loading: boolean) => {
-      mockAuth.loading = loading;
-      view.rerender(
-        <FileUploadField
-          slot={slot}
-          config={{ max_length: 3 }}
-          instanceId="app-B"
-          value={null}
-          onChange={view.onChange}
-          isSingleFileMode
-        />
+  it.each([false, true])(
+    'preserves files selected during same-actor authentication refresh and uploads once it finishes (compact=%s)',
+    async compact => {
+      const view = setup(compact);
+      const input = view.container.querySelector('input[type="file"]');
+      const refresh = (loading: boolean) => {
+        mockAuth.loading = loading;
+        view.rerender(
+          <FileUploadField
+            compact={compact}
+            slot={slot}
+            config={{ max_length: 3 }}
+            instanceId="app-B"
+            value={null}
+            onChange={view.onChange}
+            isSingleFileMode
+          />
+        );
+      };
+      refresh(true);
+      expect(view.container.querySelector('input[type="file"]')).toBe(input);
+      expect(input).not.toBeDisabled();
+      await act(async () => {
+        view.select();
+        jest.advanceTimersByTime(100);
+      });
+      expect(view.getByText('b.txt')).toBeInTheDocument();
+      expect(uploadDifyFile).not.toHaveBeenCalled();
+      await act(async () => {
+        refresh(false);
+        jest.advanceTimersByTime(100);
+      });
+      expect(uploadDifyFile).toHaveBeenCalledTimes(1);
+      expect(view.onChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ upload_file_id: 'uploaded-B' })
       );
-    };
-    refresh(true);
-    await act(async () => {
-      view.select();
-      jest.advanceTimersByTime(100);
-    });
-    expect(view.getByText('b.txt')).toBeInTheDocument();
-    expect(uploadDifyFile).not.toHaveBeenCalled();
-    await act(async () => {
-      refresh(false);
-      jest.advanceTimersByTime(100);
-    });
-    expect(uploadDifyFile).toHaveBeenCalledTimes(1);
-    expect(view.onChange).toHaveBeenLastCalledWith(
-      expect.objectContaining({ upload_file_id: 'uploaded-B' })
-    );
-  });
+    }
+  );
 
   it('does not repeat an in-flight upload when authentication refresh completes', async () => {
     let finishUpload!: (value: never) => void;

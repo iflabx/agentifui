@@ -62,7 +62,7 @@ export function TaskChat(props: TaskChatProps) {
   useEffect(() => {
     if (session && apps.length === 0) void fetchApps();
   }, [session, apps.length, fetchApps]);
-  if (loading) return <p role="status">{t('loading')}</p>;
+  if (loading && !session) return <p role="status">{t('loading')}</p>;
   if (!session) return <a href="/login">{t('loginRequired')}</a>;
   const app = apps.find(item =>
     props.appId

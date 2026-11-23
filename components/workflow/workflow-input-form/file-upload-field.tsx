@@ -490,7 +490,7 @@ function ScopedFileUploadField({
           aria-label={label}
           accept={fileTypeInfo.accept}
           multiple={!isSingleFileMode && maxFiles - uploadFiles.length > 1}
-          disabled={disabled || loading || !owner || !canUploadMore}
+          disabled={disabled || !owner || !canUploadMore}
           onChange={handleFileInputChange}
         />
         {uploadFiles.length > 0 && (
