@@ -13,9 +13,13 @@ jest.mock('@components/chat/markdown-block', () => ({
   MarkdownTableContainer: () => null,
 }));
 jest.mock('@components/chat/markdown-block/think-block-content', () => ({
-  ThinkBlockContent: ({ markdownContent }: { markdownContent: string }) => (
-    <div>{markdownContent}</div>
-  ),
+  ThinkBlockContent: ({
+    markdownContent,
+    isOpen,
+  }: {
+    markdownContent: string;
+    isOpen: boolean;
+  }) => (isOpen ? <div>{markdownContent}</div> : null),
 }));
 jest.mock('@components/chat/markdown-block/think-block-header', () => ({
   ThinkBlockHeader: ({ onToggle }: { onToggle: () => void }) => (
@@ -156,6 +160,53 @@ it('preserves collapsible reasoning and input attachments without changing app c
   expect(
     screen.getByRole('button', { name: 'Preview file source.txt' })
   ).toBeInTheDocument();
+});
+
+it('preserves text around multiple thought blocks and toggles each independently', () => {
+  render(
+    <ResultViewer
+      result={{
+        text: 'Before<THINK>first</THINK>Middle<details>second</details>After',
+      }}
+      execution={{}}
+      onClose={jest.fn()}
+    />
+  );
+  const toggles = screen.getAllByRole('button', { name: 'Toggle reasoning' });
+  expect(toggles).toHaveLength(2);
+  const paragraphs = Array.from(
+    screen.getByRole('dialog').querySelectorAll('pre')
+  ).map(element => element.textContent);
+  expect(paragraphs).toEqual(['Before', 'Middle', 'After']);
+  fireEvent.click(toggles[1]);
+  expect(screen.getByText('second')).toBeInTheDocument();
+  expect(screen.queryByText('first')).not.toBeInTheDocument();
+});
+
+it('deduplicates reasoning in completed workflow results', () => {
+  render(
+    <ResultViewer
+      result={{ text: '<think>same</think><think>same</think>Answer' }}
+      execution={{}}
+      onClose={jest.fn()}
+    />
+  );
+  expect(
+    screen.getAllByRole('button', { name: 'Toggle reasoning' })
+  ).toHaveLength(1);
+});
+
+it('recovers an explicitly marked answer from an unclosed workflow thought', () => {
+  render(
+    <ResultViewer
+      result={{ text: '<think>Plan\n\n最终回复：\nVisible answer' }}
+      execution={{}}
+      onClose={jest.fn()}
+    />
+  );
+  expect(screen.getByRole('dialog').querySelector('pre')?.textContent).toBe(
+    'Visible answer'
+  );
 });
 
 it('retains download content and filename behavior', async () => {

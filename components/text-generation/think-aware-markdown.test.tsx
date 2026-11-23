@@ -59,6 +59,47 @@ jest.mock('@components/chat/markdown-block/think-block-content', () => ({
 describe('ThinkAwareMarkdown', () => {
   const markdownComponents = {};
 
+  it('deduplicates completed reasoning while preserving legitimate interleaved steps', () => {
+    render(
+      <ThinkAwareMarkdown
+        content="<think>first</think><think>first</think>Answer<think>second</think>Final"
+        markdownComponents={markdownComponents}
+      />
+    );
+    expect(screen.getAllByTestId('think-header')).toHaveLength(2);
+    expect(
+      screen.getAllByTestId('think-content').map(element => element.textContent)
+    ).toEqual(['first', 'second']);
+  });
+
+  it('passes code examples to Markdown unchanged without false thought blocks', () => {
+    const content = 'Example:\n```xml\n<think>sample</think>\n```';
+    render(
+      <ThinkAwareMarkdown
+        content={content}
+        markdownComponents={markdownComponents}
+      />
+    );
+    expect(screen.queryByTestId('think-header')).not.toBeInTheDocument();
+    expect(screen.getByTestId('react-markdown').textContent).toBe(content);
+  });
+
+  it('shows an incomplete answer notice for thought-only finished output', () => {
+    render(
+      <ThinkAwareMarkdown
+        content="<think>Unfinished thought"
+        markdownComponents={markdownComponents}
+      />
+    );
+    expect(screen.getByTestId('think-header')).toHaveAttribute(
+      'data-status',
+      'completed'
+    );
+    expect(screen.getByTestId('react-markdown')).toHaveTextContent(
+      'pages.chat.messages.incompleteAnswer'
+    );
+  });
+
   it('extracts main text from think-aware content', () => {
     expect(
       extractMainTextFromThinkAwareContent(

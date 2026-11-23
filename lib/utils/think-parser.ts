@@ -1,3 +1,5 @@
+import { scanThinkMarkup } from './think-markup';
+
 export type ThinkBlockStatus = 'open' | 'closed';
 
 export interface MessageBlock {
@@ -100,29 +102,6 @@ function shouldCollapseComparableContainedThink(
     isComparablePrefixText(containedContent, containerContent) ||
     isComparableContainedText(containedContent, containerContent)
   );
-}
-
-function countTag(content: string, tag: 'think' | 'details', close = false) {
-  if (close) {
-    return (content.match(new RegExp(`</${tag}>`, 'gi')) || []).length;
-  }
-
-  return (content.match(new RegExp(`<${tag}(?:\\s[^>]*)?>`, 'gi')) || [])
-    .length;
-}
-
-function isLikelyReplyText(content: string): boolean {
-  const trimmed = content.trim();
-
-  if (!trimmed) {
-    return false;
-  }
-
-  if (/^(?:[-*+]\s|\d+[.)]\s)/.test(trimmed)) {
-    return false;
-  }
-
-  return true;
 }
 
 function getFirstParagraph(content: string): string {
@@ -231,7 +210,7 @@ function extractReplyFromOpenThinkHeuristically(content: string): {
     }
   }
 
-  for (let index = boundaries.length - 1; index >= 0; index -= 1) {
+  for (let index = 0; index < boundaries.length; index += 1) {
     const replySplit = tryExtractReplyAtBoundary(normalized, boundaries[index]);
 
     if (replySplit) {
@@ -245,27 +224,41 @@ function extractReplyFromOpenThinkHeuristically(content: string): {
     : tryExtractReplyAtBoundary(normalized, lineBoundary);
 }
 
-function extractReplyFromOpenThink(content: string): {
+function extractReplyFromOpenThink(
+  content: string,
+  allowHeuristic = true
+): {
   thinkContent: string;
   answerText: string;
 } | null {
   let markerIndex = -1;
   let markerLength = 0;
+  const { codeRanges } = scanThinkMarkup(content);
 
   for (const marker of REPLY_MARKERS) {
-    const index = content.lastIndexOf(marker);
-    if (index > markerIndex) {
-      markerIndex = index;
-      markerLength = marker.length;
+    for (
+      let index = content.lastIndexOf(marker);
+      index >= 0;
+      index = index > 0 ? content.lastIndexOf(marker, index - 1) : -1
+    ) {
+      if (codeRanges.some(range => index >= range.start && index < range.end))
+        continue;
+      if (index > markerIndex) {
+        markerIndex = index;
+        markerLength = marker.length;
+      }
+      break;
     }
   }
 
   if (markerIndex < 0) {
-    return extractReplyFromOpenThinkHeuristically(content);
+    return allowHeuristic
+      ? extractReplyFromOpenThinkHeuristically(content)
+      : null;
   }
 
   const answerText = content.slice(markerIndex + markerLength).trim();
-  if (!isLikelyReplyText(answerText)) {
+  if (!answerText) {
     return null;
   }
 
@@ -405,21 +398,22 @@ function pruneRedundantThinkBlocks(blocks: MessageBlock[]): {
   };
 }
 
-function parseThinkBlocksRaw(content: string): MessageBlock[] {
+function parseThinkBlocksRaw(
+  content: string,
+  streaming = false
+): MessageBlock[] {
   const blocks: MessageBlock[] = [];
-  const tagRegex = /<\/?(think|details)(?:\s[^>]*)?>/gi;
+  const { tags } = scanThinkMarkup(content, streaming);
 
   let lastIndex = 0;
   let depth = 0;
   let activeTagType: ThinkTagType | null = null; // 'think' or 'details'
   let blockStartIndex = 0; // Where the current Think block content started
 
-  let match;
-  while ((match = tagRegex.exec(content)) !== null) {
-    const tagFull = match[0];
-    const tagName = match[1].toLowerCase() as ThinkTagType;
-    const isCloseTag = tagFull.startsWith('</');
-    const matchIndex = match.index;
+  for (const tag of tags) {
+    const tagName = tag.name;
+    const isCloseTag = tag.closing;
+    const matchIndex = tag.index;
 
     if (activeTagType === null) {
       if (!isCloseTag) {
@@ -430,7 +424,7 @@ function parseThinkBlocksRaw(content: string): MessageBlock[] {
 
         activeTagType = tagName;
         depth = 1;
-        blockStartIndex = tagRegex.lastIndex;
+        blockStartIndex = tag.end;
       }
     } else if (tagName === activeTagType) {
       if (!isCloseTag) {
@@ -448,7 +442,7 @@ function parseThinkBlocksRaw(content: string): MessageBlock[] {
         });
 
         activeTagType = null;
-        lastIndex = tagRegex.lastIndex;
+        lastIndex = tag.end;
       }
     }
   }
@@ -466,12 +460,9 @@ function parseThinkBlocksRaw(content: string): MessageBlock[] {
 
 export function analyzeThinkAwareContent(content: string): ThinkAwareAnalysis {
   const rawBlocks = parseThinkBlocksRaw(content);
-  const openThinkCount = countTag(content, 'think');
-  const closeThinkCount = countTag(content, 'think', true);
-  const openDetailsCount = countTag(content, 'details');
-  const closeDetailsCount = countTag(content, 'details', true);
-  const hasUnbalancedThink =
-    openThinkCount > closeThinkCount || openDetailsCount > closeDetailsCount;
+  const hasUnbalancedThink = rawBlocks.some(
+    block => block.type === 'think' && block.status === 'open'
+  );
 
   let usedReplyMarkerFallback = false;
   const blocks = [...rawBlocks];
@@ -522,7 +513,7 @@ function serializeThinkAwareBlocks(blocks: MessageBlock[]): string {
   return blocks.reduce((result, block, index) => {
     const serializedBlock =
       block.type === 'think'
-        ? `<think>${block.content}</think>`
+        ? `<think>${block.content}${scanThinkMarkup(block.content).codeClosure}</think>`
         : block.content;
 
     if (index === 0) {
@@ -555,7 +546,11 @@ function replaceFallbackWithRecoveredThinkAnswer(
     return { content, changed: false };
   }
 
-  if (trimmedFallback !== undefined && analysis.mainText !== trimmedFallback) {
+  if (
+    trimmedFallback !== undefined &&
+    analysis.mainText &&
+    analysis.mainText !== trimmedFallback
+  ) {
     return { content, changed: false };
   }
 
@@ -570,8 +565,9 @@ function replaceFallbackWithRecoveredThinkAnswer(
     return { content, changed: false };
   }
 
-  const replySplit = extractReplyFromOpenThinkHeuristically(
-    lastThinkBlock.content
+  const replySplit = extractReplyFromOpenThink(
+    lastThinkBlock.content,
+    Boolean(analysis.mainText)
   );
   if (!replySplit) {
     return { content, changed: false };
@@ -722,7 +718,7 @@ export function parseThinkBlocks(content: string): MessageBlock[] {
  * think tail inside the think block prevents temporary body text flicker.
  */
 export function parseStreamingThinkBlocks(content: string): MessageBlock[] {
-  return parseThinkBlocksRaw(content);
+  return parseThinkBlocksRaw(content, true);
 }
 
 export function normalizeIncompleteFallbackAssistantSnapshot(content: string): {

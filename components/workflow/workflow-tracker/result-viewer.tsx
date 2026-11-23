@@ -7,13 +7,15 @@ import {
   MarkdownBlockquote,
   MarkdownTableContainer,
 } from '@components/chat/markdown-block';
-import { ThinkBlockContent } from '@components/chat/markdown-block/think-block-content';
-// --- Import ThinkBlock components ---
-import { ThinkBlockHeader } from '@components/chat/markdown-block/think-block-header';
 import { FileAttachmentDisplay } from '@components/chat/messages/user-message/file-attachment-display';
 import { PreviewShell } from '@components/file-preview/preview-shell';
+import { ThinkAwareMarkdown } from '@components/text-generation/think-aware-markdown';
 import { useFilePreviewStore } from '@lib/stores/ui/file-preview-store';
 import { cn } from '@lib/utils';
+import {
+  normalizeCompletedAssistantReply,
+  parseThinkBlocks,
+} from '@lib/utils/think-parser';
 import 'katex/dist/katex.min.css';
 import { Copy, Download } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -22,7 +24,7 @@ import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 
 import { useTranslations } from 'next-intl';
 
@@ -35,61 +37,28 @@ interface ResultViewerProps {
   onClose: () => void;
 }
 
-/**
- * Parse the think tag content in the workflow result
- * @param content Original content string
- * @returns Parsed result containing think content and main content
- */
 const parseThinkContent = (
-  content: string
+  content: string,
+  fallbackText: string
 ): {
   hasThinkBlock: boolean;
   thinkContent: string;
   mainContent: string;
-  isThinkComplete: boolean;
 } => {
-  const thinkStartTag = '<think>';
-  const thinkEndTag = '</think>';
-
-  // Check if it contains think tags
-  if (content.includes(thinkStartTag)) {
-    const startIndex = content.indexOf(thinkStartTag);
-    const endIndex = content.indexOf(thinkEndTag, startIndex);
-
-    if (endIndex !== -1) {
-      // Think block complete
-      const thinkContent = content.substring(
-        startIndex + thinkStartTag.length,
-        endIndex
-      );
-      const mainContent = content
-        .substring(endIndex + thinkEndTag.length)
-        .trim();
-
-      return {
-        hasThinkBlock: true,
-        thinkContent: thinkContent.trim(),
-        mainContent,
-        isThinkComplete: true,
-      };
-    } else {
-      // Think block incomplete (theoretically should not appear in the result viewer)
-      const thinkContent = content.substring(startIndex + thinkStartTag.length);
-      return {
-        hasThinkBlock: true,
-        thinkContent: thinkContent.trim(),
-        mainContent: '',
-        isThinkComplete: false,
-      };
-    }
-  }
-
-  // No think tags
+  const blocks = parseThinkBlocks(
+    normalizeCompletedAssistantReply(content, fallbackText).content
+  );
   return {
-    hasThinkBlock: false,
-    thinkContent: '',
-    mainContent: content,
-    isThinkComplete: true,
+    hasThinkBlock: blocks.some(block => block.type === 'think'),
+    thinkContent: blocks
+      .filter(block => block.type === 'think')
+      .map(block => block.content)
+      .join('\n\n'),
+    mainContent: blocks
+      .filter(block => block.type === 'text')
+      .map(block => block.content)
+      .join('')
+      .trim(),
   };
 };
 
@@ -100,6 +69,9 @@ export function ResultViewer({
   onClose,
 }: ResultViewerProps) {
   const t = useTranslations('pages.workflow.resultViewer');
+  const chatT = useTranslations('pages.chat');
+  const parseResultContent = (content: string) =>
+    parseThinkContent(content, chatT('messages.incompleteAnswer'));
   const executionRecord =
     execution && typeof execution === 'object'
       ? (execution as {
@@ -116,9 +88,6 @@ export function ResultViewer({
     [appId, executionRecord?.inputs, executionRecord?.service_instance_id]
   );
 
-  // --- ThinkBlock status management ---
-  const [isThinkOpen, setIsThinkOpen] = useState(false); // Default folded
-
   const formatResult = (
     data: unknown
   ): {
@@ -131,7 +100,7 @@ export function ResultViewer({
     try {
       if (!data || typeof data !== 'object') {
         const content = String(data || '');
-        const parsed = parseThinkContent(content);
+        const parsed = parseResultContent(content);
         return {
           content,
           isMarkdown: false,
@@ -154,7 +123,7 @@ export function ResultViewer({
 
         if (typeof resultContent === 'string') {
           // 🎯 Key modification: no longer delete think blocks, but parse them
-          const parsed = parseThinkContent(resultContent);
+          const parsed = parseResultContent(resultContent);
 
           // Check if the main content contains markdown
           const markdownContent = parsed.mainContent || parsed.thinkContent;
@@ -178,7 +147,7 @@ export function ResultViewer({
         typeof dataRecord.text === 'string' &&
         dataRecord.text.trim().length > 0
       ) {
-        const parsed = parseThinkContent(dataRecord.text);
+        const parsed = parseResultContent(dataRecord.text);
         const isMarkdown = dataRecord.text.includes('```');
 
         return {
@@ -214,7 +183,7 @@ export function ResultViewer({
     } catch (error) {
       console.error('[Result viewer] Data formatting failed:', error);
       const content = String(data);
-      const parsed = parseThinkContent(content);
+      const parsed = parseResultContent(content);
       return {
         content,
         isMarkdown: false,
@@ -229,7 +198,6 @@ export function ResultViewer({
     content: formattedContent,
     isMarkdown,
     hasThinkBlock,
-    thinkContent,
     mainContent,
   } = formatResult(result);
 
@@ -407,23 +375,6 @@ export function ResultViewer({
           <Download className="h-4 w-4" />
         </button>
       </div>
-      {/* 🎯 Think Block area */}
-      {hasThinkBlock && thinkContent && (
-        <div className="mb-4">
-          <ThinkBlockHeader
-            status="completed"
-            isOpen={isThinkOpen}
-            onToggle={() => setIsThinkOpen(!isThinkOpen)}
-          />
-          {isThinkOpen && (
-            <ThinkBlockContent
-              markdownContent={thinkContent}
-              isOpen={isThinkOpen}
-            />
-          )}
-        </div>
-      )}
-
       {/* Main content area */}
       {inputAttachments.length > 0 && (
         <section className="mb-5">
@@ -438,32 +389,40 @@ export function ResultViewer({
         </section>
       )}
 
-      {(mainContent || (!hasThinkBlock && formattedContent)) && (
-        <div
-          className={cn(
-            'markdown-body w-full',
-            'text-gray-900 dark:text-gray-100'
-          )}
-        >
-          {isMarkdown ? (
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm, remarkMath]}
-              rehypePlugins={[rehypeKatex]}
-              components={markdownComponents}
-            >
-              {hasThinkBlock ? mainContent : formattedContent}
-            </ReactMarkdown>
-          ) : (
-            <pre
-              className={cn(
-                'font-mono text-sm break-words whitespace-pre-wrap',
-                'text-gray-700 dark:text-gray-300'
-              )}
-            >
-              {hasThinkBlock ? mainContent : formattedContent}
-            </pre>
-          )}
-        </div>
+      {hasThinkBlock ? (
+        <ThinkAwareMarkdown
+          content={formattedContent}
+          markdownComponents={markdownComponents}
+          plainText={!isMarkdown}
+        />
+      ) : (
+        formattedContent && (
+          <div
+            className={cn(
+              'markdown-body w-full',
+              'text-gray-900 dark:text-gray-100'
+            )}
+          >
+            {isMarkdown ? (
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm, remarkMath]}
+                rehypePlugins={[rehypeKatex]}
+                components={markdownComponents}
+              >
+                {hasThinkBlock ? mainContent : formattedContent}
+              </ReactMarkdown>
+            ) : (
+              <pre
+                className={cn(
+                  'font-mono text-sm break-words whitespace-pre-wrap',
+                  'text-gray-700 dark:text-gray-300'
+                )}
+              >
+                {hasThinkBlock ? mainContent : formattedContent}
+              </pre>
+            )}
+          </div>
+        )
       )}
       {!formattedContent && (
         <p role="status" className="text-sm text-stone-500 dark:text-stone-400">
