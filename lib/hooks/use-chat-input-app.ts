@@ -8,7 +8,6 @@ import type { ServiceInstance } from '@lib/types/database';
 import { useCallback, useEffect, useState } from 'react';
 
 export function useChatInputApp(appId: string | null, ready: boolean) {
-  const { currentAppId, currentAppInstance } = useCurrentAppStore();
   const actorEpoch = useChatInputStore(state => state.actorEpoch);
   const [resolved, setResolved] = useState<{
     appId: string;
@@ -17,12 +16,8 @@ export function useChatInputApp(appId: string | null, ready: boolean) {
     failed?: boolean;
   } | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const selected =
-    ready && appId === currentAppId && currentAppInstance?.instance_id === appId
-      ? currentAppInstance
-      : null;
   useEffect(() => {
-    if (!ready || !appId || selected) return;
+    if (!ready || !appId) return;
     let active = true;
     const failed = () => {
       if (active && useChatInputStore.getState().actorEpoch === actorEpoch)
@@ -34,24 +29,26 @@ export function useChatInputApp(appId: string | null, ready: boolean) {
           active &&
           instance?.instance_id === appId &&
           useChatInputStore.getState().actorEpoch === actorEpoch
-        )
+        ) {
           setResolved({ appId, actorEpoch, instance });
-        else if (!instance || instance.instance_id !== appId) failed();
+          if (useCurrentAppStore.getState().currentAppId === appId) {
+            useCurrentAppStore.setState({ currentAppInstance: instance });
+          }
+        } else if (!instance || instance.instance_id !== appId) failed();
       })
       .catch(failed);
     return () => {
       active = false;
     };
-  }, [appId, ready, selected, actorEpoch, attempt]);
+  }, [appId, ready, actorEpoch, attempt]);
   const retry = useCallback(() => {
     setResolved(null);
     setAttempt(value => value + 1);
   }, []);
   const instance =
-    selected ||
-    (ready && resolved?.appId === appId && resolved.actorEpoch === actorEpoch
+    ready && resolved?.appId === appId && resolved.actorEpoch === actorEpoch
       ? resolved.instance
-      : null);
+      : null;
   return {
     instance,
     failed: Boolean(

@@ -14,6 +14,7 @@ function respond(instanceId: string) {
 describe('history input app ownership', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.mocked(fetch).mockReset();
     syncChatDraftActor('actor');
     useCurrentAppStore.setState({
       currentAppId: 'app-B',
@@ -37,6 +38,7 @@ describe('history input app ownership', () => {
           finish = resolve;
         })
     );
+    jest.mocked(fetch).mockResolvedValueOnce(respond('app-B'));
     const { result, rerender } = renderHook(
       ({ appId }) => useChatInputApp(appId, true),
       { initialProps: { appId: 'app-A' } }
@@ -46,6 +48,54 @@ describe('history input app ownership', () => {
       finish(respond('app-A'));
     });
     expect(result.current.instance?.instance_id).toBe('app-B');
+  });
+
+  it('refreshes selected metadata and keeps it in memory without refetching on rerender', async () => {
+    jest.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        app: { instance_id: 'app-B', description: 'Current description' },
+      }),
+    } as Response);
+    const { result, rerender } = renderHook(() =>
+      useChatInputApp('app-B', true)
+    );
+    expect(result.current.instance).toBeNull();
+    await act(async () => {});
+    expect(result.current.instance?.description).toBe('Current description');
+    expect(useCurrentAppStore.getState().currentAppInstance?.description).toBe(
+      'Current description'
+    );
+    rerender();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledWith('/api/internal/apps?instanceId=app-B', {
+      method: 'GET',
+      credentials: 'include',
+      cache: 'no-store',
+    });
+  });
+
+  it('fetches metadata again when reopening the same application', async () => {
+    jest.mocked(fetch).mockResolvedValue(respond('app-B'));
+    const first = renderHook(() => useChatInputApp('app-B', true));
+    await act(async () => {});
+    first.unmount();
+    renderHook(() => useChatInputApp('app-B', true));
+    await act(async () => {});
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('offers retry instead of using stale selected metadata after failure', async () => {
+    jest.mocked(fetch).mockRejectedValueOnce(new Error('Synthetic offline'));
+    jest.mocked(fetch).mockResolvedValueOnce(respond('app-B'));
+    const { result } = renderHook(() => useChatInputApp('app-B', true));
+    await act(async () => {});
+    expect(result.current.instance).toBeNull();
+    expect(result.current.failed).toBe(true);
+    await act(async () => result.current.retry());
+    expect(result.current.instance?.instance_id).toBe('app-B');
+    expect(result.current.failed).toBe(false);
   });
 
   it('does not adopt a prior login configuration after logout', async () => {
