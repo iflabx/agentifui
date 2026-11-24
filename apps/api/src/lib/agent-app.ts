@@ -5,6 +5,8 @@ import {
   LANGCHAIN_CAPABILITIES,
   resolveBackendType,
 } from './agent-backends';
+import { langChainInputPath } from './langchain/input-profile';
+import type { LangChainConfig } from './langchain/transport';
 import { queryRowsWithPgSystemContext } from './pg-context';
 
 export const AGENT_CAPABILITIES = LANGCHAIN_CAPABILITIES;
@@ -23,6 +25,15 @@ export interface AgentApp {
   fingerprint: string;
   humanInput?: boolean;
   resultProfileEnabled?: boolean;
+}
+
+export function langChainConfigForActor(
+  app: AgentApp,
+  actorId: string
+): LangChainConfig {
+  return app.backendType !== 'dify' && langChainInputPath(app.assistantId)
+    ? { ...app, scope: { actorId, appId: app.id } }
+    : app;
 }
 
 export function agentConfigFingerprint(

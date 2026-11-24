@@ -1,4 +1,18 @@
+import { type InputFileType, validateInputFileCount } from '@agentifui/shared';
+
 import type { AgentApp } from '../agent-app';
+import { normalizeDifyInputCapabilities } from '../dify-input-capabilities';
+
+export interface DifyInputFile {
+  type: InputFileType;
+  transfer_method: 'local_file';
+  upload_file_id: string;
+}
+
+export type DifyChatInputs = Record<
+  string,
+  string | number | DifyInputFile | DifyInputFile[]
+>;
 
 export class DifyRuntimeError extends Error {
   constructor(
@@ -47,7 +61,8 @@ async function checkedFetch(app: AgentApp, path: string, init: RequestInit) {
 
 async function readDifyApplication(
   app: AgentApp,
-  path: 'info' | 'parameters'
+  path: 'info' | 'parameters' | 'files/upload',
+  form?: FormData
 ): Promise<Record<string, unknown>> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15000);
@@ -58,7 +73,8 @@ async function readDifyApplication(
   controller.signal.addEventListener('abort', abort, { once: true });
   try {
     const response = await checkedFetch(app, path, {
-      method: 'GET',
+      method: form ? 'POST' : 'GET',
+      body: form,
       signal: controller.signal,
       headers: { Accept: 'application/json' },
     });
@@ -99,13 +115,85 @@ async function readDifyApplication(
   }
 }
 
-export async function verifyDifyChatbot(
-  app: AgentApp,
-  inputs: Record<string, string> = {}
-): Promise<void> {
+async function readDifyChatbotParameters(app: AgentApp) {
   if ((await readDifyApplication(app, 'info')).mode !== 'chat')
     throw new DifyRuntimeError('DIFY_MODE_UNSUPPORTED');
   const parameters = await readDifyApplication(app, 'parameters');
+  if (!Array.isArray(parameters.user_input_form))
+    throw new DifyRuntimeError('DIFY_PARAMETERS_UNSUPPORTED');
+  return parameters;
+}
+
+export async function resolveDifyChatbotInputs(
+  app: AgentApp,
+  platformMaxBytes: number
+) {
+  const parameters = await readDifyChatbotParameters(app);
+  const upload = parameters.file_upload;
+  let capabilities = normalizeDifyInputCapabilities(
+    parameters,
+    'chatbot',
+    platformMaxBytes
+  );
+  if (
+    capabilities.status !== 'ready' &&
+    upload &&
+    typeof upload === 'object' &&
+    !Array.isArray(upload) &&
+    Reflect.get(upload, 'required') !== true &&
+    !capabilities.attachmentSlots.some(slot => slot.target === 'files')
+  ) {
+    const imageOnly = normalizeDifyInputCapabilities(
+      { ...parameters, file_upload: { image: Reflect.get(upload, 'image') } },
+      'chatbot',
+      platformMaxBytes
+    );
+    capabilities =
+      imageOnly.status === 'ready'
+        ? imageOnly
+        : normalizeDifyInputCapabilities(
+            { ...parameters, file_upload: undefined },
+            'chatbot',
+            platformMaxBytes
+          );
+  }
+  capabilities.fields = capabilities.fields.filter(
+    field => !field.key.startsWith('agentifui_user_')
+  );
+  return capabilities;
+}
+
+export async function uploadDifyChatbotFile(
+  app: AgentApp,
+  userId: string,
+  file: File
+): Promise<string> {
+  const form = new FormData();
+  form.set('file', file);
+  form.set('user', userId);
+  const { id } = await readDifyApplication(app, 'files/upload', form);
+  if (typeof id !== 'string' || !/^[a-zA-Z0-9_-]{1,255}$/.test(id))
+    throw new DifyRuntimeError('DIFY_UPLOAD_RESPONSE_INVALID');
+  return id;
+}
+
+export async function verifyDifyChatbot(
+  app: AgentApp,
+  inputs: DifyChatInputs = {},
+  files: readonly DifyInputFile[] = []
+): Promise<void> {
+  const parameters = await readDifyChatbotParameters(app);
+  const capabilities = normalizeDifyInputCapabilities(parameters, 'chatbot');
+  for (const slot of capabilities.attachmentSlots) {
+    const value = slot.target === 'files' ? files : inputs[slot.key];
+    const count = Array.isArray(value)
+      ? value.length
+      : typeof value === 'object' && value !== null
+        ? 1
+        : 0;
+    if (validateInputFileCount(slot, count))
+      throw new DifyRuntimeError('DIFY_PARAMETERS_UNSUPPORTED');
+  }
   if (!Array.isArray(parameters.user_input_form))
     throw new DifyRuntimeError('DIFY_PARAMETERS_UNSUPPORTED');
   for (const field of parameters.user_input_form) {
@@ -117,8 +205,16 @@ export async function verifyDifyChatbot(
       const parameter = value as Record<string, unknown>;
       if (
         parameter.required === true &&
-        !parameter.default &&
-        !(typeof parameter.variable === 'string' && inputs[parameter.variable])
+        (parameter.default === undefined ||
+          parameter.default === null ||
+          parameter.default === '') &&
+        !(
+          typeof parameter.variable === 'string' &&
+          Object.hasOwn(inputs, parameter.variable) &&
+          inputs[parameter.variable] !== '' &&
+          (!Array.isArray(inputs[parameter.variable]) ||
+            (inputs[parameter.variable] as DifyInputFile[]).length > 0)
+        )
       )
         throw new DifyRuntimeError('DIFY_PARAMETERS_UNSUPPORTED');
     }
@@ -209,7 +305,8 @@ export async function* streamDifyChatbot(input: {
   app: AgentApp;
   userId: string;
   content: string;
-  inputs: Record<string, string>;
+  inputs: DifyChatInputs;
+  files?: DifyInputFile[];
   nativeConversationId: string | null;
   beforeDispatch: () => Promise<void>;
   onDispatch: () => void;
@@ -231,6 +328,7 @@ export async function* streamDifyChatbot(input: {
       body: JSON.stringify({
         query: input.content,
         inputs: input.inputs,
+        ...(input.files?.length ? { files: input.files } : {}),
         user: input.userId,
         conversation_id: input.nativeConversationId ?? '',
         response_mode: 'streaming',

@@ -1,8 +1,7 @@
 'use client';
 
-import { AssistantMessage } from '@components/chat/messages/assistant-message/assistant-message';
-import { UserMessage } from '@components/chat/messages/user-message/user-message';
-import { FilePreviewCanvas } from '@components/file-preview/file-preview-canvas';
+import { ChatMessage } from '@components/chat/session/chat-message';
+import { ChatSessionView } from '@components/chat/session/chat-session-view';
 import {
   WorkflowInputForm,
   type WorkflowInputFormRef,
@@ -329,19 +328,63 @@ function TaskChatSession({
     }
   };
   return (
-    <div
-      className="relative flex h-full min-h-0 flex-col bg-stone-100 text-stone-900 dark:bg-stone-800 dark:text-stone-100"
-      data-task-chat
-    >
-      <div
-        ref={scroll}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
-        onScroll={event => {
+    <ChatSessionView
+      contentClassName=""
+      jumpToBottom={false}
+      backdrop={false}
+      filePreview
+      scrollProps={{
+        ref: scroll,
+        onScroll: event => {
           const area = event.currentTarget;
           following.current =
             area.scrollHeight - area.scrollTop - area.clientHeight < 100;
-        }}
-      >
+        },
+      }}
+      composer={
+        <div
+          className={cn(
+            'mx-auto w-full shrink-0 pb-4',
+            welcome && 'absolute inset-0 flex flex-col overflow-y-auto py-6',
+            widthClass,
+            paddingClass
+          )}
+        >
+          <div className={welcome ? 'my-auto shrink-0' : undefined}>
+            {(error || runner.error) && (
+              <p role="alert" className="mb-2 text-sm text-red-600">
+                {error ||
+                  (runner.error === 'TASK_OUTCOME_UNKNOWN'
+                    ? t('unknown')
+                    : runner.error)}
+              </p>
+            )}
+            <WorkflowInputForm
+              ref={form}
+              instanceId={instanceId}
+              chat
+              showIntroduction={welcome}
+              onExecute={execute}
+              isExecuting={
+                busy || loading || loadFailed || unresolved || !executionEnabled
+              }
+              onStop={runner.isExecuting ? runner.stop : undefined}
+            />
+          </div>
+        </div>
+      }
+      preview={
+        result && (
+          <ResultViewer
+            result={{ outputs: result.outputs }}
+            execution={result}
+            appId={instanceId}
+            onClose={() => setResult(null)}
+          />
+        )
+      }
+    >
+      <div data-task-chat>
         {!executionEnabled && <p role="alert">{t('unavailable')}</p>}
         <div className={cn('mx-auto w-full py-6', widthClass, paddingClass)}>
           {hasMore && (
@@ -380,7 +423,8 @@ function TaskChatSession({
                 data-execution-id={execution.id}
                 className="mb-8 min-w-0"
               >
-                <UserMessage
+                <ChatMessage
+                  role="user"
                   id={`task-${execution.id}-input`}
                   content={
                     taskInputText(execution.inputs) || t('parameterTask')
@@ -401,7 +445,8 @@ function TaskChatSession({
                     }
                   />
                   {output && (
-                    <AssistantMessage
+                    <ChatMessage
+                      role="assistant"
                       id={`task-${execution.id}-output`}
                       content={output}
                       isStreaming={live}
@@ -459,45 +504,6 @@ function TaskChatSession({
           })}
         </div>
       </div>
-      <div
-        className={cn(
-          'mx-auto w-full shrink-0 pb-4',
-          welcome && 'absolute inset-0 flex flex-col overflow-y-auto py-6',
-          widthClass,
-          paddingClass
-        )}
-      >
-        <div className={welcome ? 'my-auto shrink-0' : undefined}>
-          {(error || runner.error) && (
-            <p role="alert" className="mb-2 text-sm text-red-600">
-              {error ||
-                (runner.error === 'TASK_OUTCOME_UNKNOWN'
-                  ? t('unknown')
-                  : runner.error)}
-            </p>
-          )}
-          <WorkflowInputForm
-            ref={form}
-            instanceId={instanceId}
-            chat
-            showIntroduction={welcome}
-            onExecute={execute}
-            isExecuting={
-              busy || loading || loadFailed || unresolved || !executionEnabled
-            }
-            onStop={runner.isExecuting ? runner.stop : undefined}
-          />
-        </div>
-      </div>
-      {result && (
-        <ResultViewer
-          result={{ outputs: result.outputs }}
-          execution={result}
-          appId={instanceId}
-          onClose={() => setResult(null)}
-        />
-      )}
-      <FilePreviewCanvas />
-    </div>
+    </ChatSessionView>
   );
 }

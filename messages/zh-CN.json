@@ -622,7 +622,7 @@
             "generation": "文本生成",
             "text": "文本交互"
           },
-          "textOnlyLimit": "纯文本入口：不支持附件、引用、语音和自定义变量。",
+          "configuredInputs": "输入参数和附件按应用配置提供。",
           "noDescription": "暂无描述",
           "defaultType": "应用"
         },
@@ -1563,7 +1563,7 @@
             "resultProfileLabel": "启用 Deep Agent 结果产物",
             "resultProfileNote": "仅对已验证支持 phase4.result.v1 的助手启用，不限制助手名称。关闭后暂停新的结果任务，已有结果仍可读取。",
             "aguiLabel": "新建应用对话使用公共 AG-UI 聊天",
-            "aguiNote": "仅限应用市场中的 chatbot 应用新建纯文本应用对话，不支持文件、引用、语音及自定义变量；不影响默认模型和模型选择器。原有旧会话继续使用兼容路径，已绑定公共会话不会回退。",
+            "aguiNote": "适用于应用市场中 Chatbot 的新会话。输入参数和附件按应用配置提供。已有会话保留原交互方式。",
             "langchainNote": "填写服务暴露的 Assistant 标识。首批仅支持文本及只读工具，服务凭证仅由服务端使用。",
             "validation": {
               "instanceIdRequired": "请填写应用标识。",
@@ -2909,7 +2909,7 @@
       "copied": "已复制来源。",
       "copyFailed": "无法复制来源，请选中文字手动复制。"
     },
-    "textOnlyNote": "此会话仅支持纯文本，不支持文件、引用、语音及自定义变量。原有旧会话保留兼容功能。",
+    "textOnlyNote": "此应用的当前会话不接收附件。",
     "cancelled": "已取消",
     "interrupted": "已中断",
     "loadMore": "加载更早消息",

@@ -20,6 +20,7 @@ export interface MessageAttachment {
   preview_url?: string;
   /** Dify application ID for API calls (optional for backward compatibility) */
   app_id?: string;
+  source?: 'agent-input';
 }
 
 /**

@@ -10,7 +10,7 @@ import { cn } from '@lib/utils';
 import React, { useEffect, useRef } from 'react';
 
 import { MessageSkeleton } from './message-skeleton';
-import { AssistantMessage, UserMessage } from './messages';
+import { ChatMessage as SessionMessage } from './session/chat-message';
 
 /**
  * ChatLoader component props
@@ -166,7 +166,8 @@ export const ChatLoader = ({
           <>
             {displayedMessages.map(msg =>
               msg.isUser ? (
-                <UserMessage
+                <SessionMessage
+                  role="user"
                   key={msg.id}
                   content={msg.text}
                   attachments={
@@ -196,7 +197,8 @@ export const ChatLoader = ({
                   }
                 />
               ) : (
-                <AssistantMessage
+                <SessionMessage
+                  role="assistant"
                   key={msg.id}
                   content={msg.text}
                   isStreaming={msg.isStreaming ?? false}

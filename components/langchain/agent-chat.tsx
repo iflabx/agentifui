@@ -1,12 +1,10 @@
 'use client';
 
 import { AppIntroduction } from '@components/chat-input/app-introduction';
-import { AttachmentAction } from '@components/chat-input/attachment-action';
 import { useEditResend } from '@components/chat-input/edit-resend';
 import { ChatInputView } from '@components/chat-input/view';
-import { ChatInputBackdrop } from '@components/chat/chat-input-backdrop';
-import { AssistantMessage } from '@components/chat/messages/assistant-message/assistant-message';
-import { UserMessage } from '@components/chat/messages/user-message/user-message';
+import { ChatMessage } from '@components/chat/session/chat-message';
+import { ChatSessionView } from '@components/chat/session/chat-session-view';
 import { toolProcessItem } from '@components/execution-process/adapters';
 import { ExecutionProcessDisclosure } from '@components/execution-process/disclosure';
 import { ExecutionProcessRow } from '@components/execution-process/row';
@@ -14,7 +12,10 @@ import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
 import { formatUiErrorMessage, toUiError } from '@lib/errors/ui-error';
 import { localizeChatModerationMessage } from '@lib/hooks/chat-interface/error-utils';
 import { useChatWidth } from '@lib/hooks/use-chat-width';
-import { agentRunSaved } from '@lib/services/client/langchain-api';
+import {
+  agentInputFiles,
+  agentRunSaved,
+} from '@lib/services/client/langchain-api';
 import { useLangchainDraftStore } from '@lib/stores/langchain-draft-store';
 import { cn } from '@lib/utils';
 
@@ -26,6 +27,7 @@ import { AgentInteractionCard } from './agent-interaction-card';
 import { AgentResultCard } from './agent-result-card';
 import { agentTimeline } from './state';
 import { editViewPrefix, useAgentChat } from './use-agent-chat';
+import { useAgentComposerInput } from './use-agent-composer-input';
 import { useAgentInteractions } from './use-agent-interactions';
 
 interface AgentChatProps {
@@ -152,6 +154,14 @@ function AgentChatSession({
     chat.unconfirmed ||
     (chat.humanInput && interactions.blocked) ||
     (chat.singleTask && Boolean(chat.view.conversationId));
+  const composerInput = useAgentComposerInput({
+    appId,
+    actorId,
+    scope,
+    enabled: chat.acceptsInputCapabilities === true,
+    disabled,
+    content,
+  });
   const edit = useEditResend({
     sourceIds: chat.view.messages.map(message => message.id),
     scope:
@@ -268,339 +278,356 @@ function AgentChatSession({
   ]);
 
   const submit = async () => {
-    if (disabled || edit.active || !content.trim() || !draft) return;
-    const snapshot = draft;
-    const accepted = await chat.send(content, snapshot);
-    if (accepted === true)
-      useLangchainDraftStore.getState().consumeSnapshot(snapshot);
+    if (disabled || edit.active || !composerInput.canSubmit) return;
+    const text = composerInput.textDisabled ? '' : content;
+    const configured = composerInput.configuredInput();
+    const accepted = configured
+      ? await chat.send(text, draft, undefined, configured)
+      : await chat.send(text, draft);
+    if (accepted === true && draft)
+      useLangchainDraftStore.getState().consumeSnapshot(draft);
   };
 
   return (
-    <main className="relative flex h-full min-h-0 w-full flex-col pt-16 text-stone-800 md:pt-12 dark:text-stone-200">
-      <header
-        className={cn(
-          'mx-auto flex w-full shrink-0 items-center justify-between gap-3 py-3',
-          widthClass,
-          paddingClass
-        )}
-      >
-        <h1 className="text-sm font-medium">{chat.appName || t('title')}</h1>
-        <button
-          type="button"
-          className="text-xs text-stone-500 disabled:opacity-50"
-          disabled={
-            authLoading ||
-            chat.busy ||
-            chat.historyLoading ||
-            chat.unconfirmed ||
-            (chat.humanInput && interactions.blocked) ||
-            !chat.view.conversationId
-          }
-          onClick={() => {
-            if (window.confirm(t('confirmDelete'))) void chat.remove();
-          }}
+    <ChatSessionView
+      as="main"
+      className="pt-16 md:pt-12"
+      contentClassName=""
+      jumpToBottom={false}
+      filePreview
+      header={
+        <header
+          className={cn(
+            'mx-auto flex w-full shrink-0 items-center justify-between gap-3 py-3',
+            widthClass,
+            paddingClass
+          )}
         >
-          {t('deleteConversation')}
-        </button>
-      </header>
-      <div
-        ref={scrollArea}
-        className="min-h-0 flex-1 overflow-y-auto"
-        style={{ paddingBottom: inputHeight + 96 }}
-        aria-live="polite"
-        aria-busy={chat.busy || chat.historyLoading}
-        onScroll={() => {
-          const area = scrollArea.current;
-          if (area)
-            following.current =
-              area.scrollHeight - area.scrollTop - area.clientHeight < 100;
-        }}
-      >
-        <div className={cn('mx-auto w-full pt-4', widthClass, paddingClass)}>
-          {chat.historyLoading && <p role="status">{t('loading')}</p>}
-          {chat.textOnly && (
-            <p role="note" className="mb-3 text-sm text-stone-500">
-              {t('textOnlyNote')}
-            </p>
-          )}
-          {chat.newConversationsEnabled === false &&
-            !chat.view.conversationId && (
-              <p role="status">{t('unavailable')}</p>
-            )}
-          {chat.nextCursor && (
-            <button
-              type="button"
-              disabled={chat.loadingMore || chat.busy}
-              onClick={() => void chat.loadMore()}
-              className="my-2 text-sm underline"
-            >
-              {t(chat.loadingMore ? 'loading' : 'loadMore')}
-            </button>
-          )}
-          {errorMessage && (
-            <p
-              role="alert"
-              className="rounded-lg bg-amber-50 p-3 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
-            >
-              {errorMessage}
-            </p>
-          )}
-          {timeline.map(item => {
-            if (item.type === 'tool') {
-              const tool = item.tool;
-              const runKey =
-                tool.runId || JSON.stringify(['unscoped', tool.toolCallId]);
-              const showProcessEntry = !renderedProcessRuns.has(runKey);
-              renderedProcessRuns.add(runKey);
-              const activities = processRuns.get(runKey) || [tool];
-              const historicalProcess =
-                chat.historyLoading ||
-                !chat.busy ||
-                !tool.runId ||
-                tool.runId !== chat.view.runId;
-              return (
-                <div
-                  key={JSON.stringify([tool.runId, tool.toolCallId])}
-                  className="my-3"
-                >
-                  <ExecutionProcessRow
-                    item={toolProcessItem(tool, historicalProcess)}
-                  />
-                  {tool.order === undefined && (
-                    <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
-                      {t('toolSummary')}
-                    </p>
-                  )}
-                  {showProcessEntry && (
-                    <ExecutionProcessDisclosure
-                      key={JSON.stringify([
-                        actorId,
-                        appId,
-                        conversationId,
-                        chat.draftScope,
-                        runKey,
-                      ])}
-                      placement="panel"
-                      open={selectedProcessKey === runKey}
-                      onOpenChange={open =>
-                        setProcessSelection(
-                          open ? { scope: processScope, runKey } : null
-                        )
-                      }
-                      title={tool.name}
-                      items={activities.map(activity =>
-                        toolProcessItem(activity, historicalProcess)
-                      )}
-                      historical={historicalProcess}
-                      unordered={activities.some(
-                        activity => activity.order === undefined
-                      )}
-                    />
-                  )}
-                </div>
-              );
+          <h1 className="text-sm font-medium">{chat.appName || t('title')}</h1>
+          <button
+            type="button"
+            className="text-xs text-stone-500 disabled:opacity-50"
+            disabled={
+              authLoading ||
+              chat.busy ||
+              chat.historyLoading ||
+              chat.unconfirmed ||
+              (chat.humanInput && interactions.blocked) ||
+              !chat.view.conversationId
             }
-            const { message } = item;
-            const index = presentation.messages.indexOf(message);
-            return message.role === 'user' ? (
-              <UserMessage
-                key={message.id}
+            onClick={() => {
+              if (window.confirm(t('confirmDelete'))) void chat.remove();
+            }}
+          >
+            {t('deleteConversation')}
+          </button>
+        </header>
+      }
+      scrollProps={{
+        ref: scrollArea,
+        style: { paddingBottom: inputHeight + 96 },
+        'aria-live': 'polite',
+        'aria-busy': chat.busy || chat.historyLoading,
+        onScroll: event => {
+          const area = event.currentTarget;
+          following.current =
+            area.scrollHeight - area.scrollTop - area.clientHeight < 100;
+        },
+      }}
+      composer={
+        <ChatInputView
+          key={chat.draftScope}
+          value={content}
+          onValueChange={text => {
+            if (scope) useLangchainDraftStore.getState().setText(scope, text);
+          }}
+          onSubmit={submit}
+          disabled={disabled || edit.active}
+          textDisabled={composerInput.textDisabled}
+          canSubmit={composerInput.canSubmit}
+          isProcessing={chat.busy}
+          placeholder=""
+          scrollableWelcome
+          isWelcomeScreen={
+            chat.ready &&
+            !conversationId &&
+            !chat.view.conversationId &&
+            chat.view.messages.length === 0 &&
+            !chat.busy
+          }
+          beforeInput={
+            <div className="max-h-[40dvh] overflow-y-auto">
+              {chat.ready && !conversationId && !chat.view.conversationId && (
+                <AppIntroduction
+                  name={chat.appName}
+                  description={chat.appDescription}
+                />
+              )}
+              {composerInput.parameters}
+            </div>
+          }
+          attachmentAction={composerInput.action}
+          attachmentPreview={composerInput.preview}
+          editNotice={composerInput.notice}
+          sendButtonAriaLabel={t('send')}
+          widthClass={widthClass}
+          onHeightChange={setInputHeight}
+        />
+      }
+    >
+      <div className={cn('mx-auto w-full pt-4', widthClass, paddingClass)}>
+        {chat.historyLoading && <p role="status">{t('loading')}</p>}
+        {chat.textOnly && (
+          <p role="note" className="mb-3 text-sm text-stone-500">
+            {t('textOnlyNote')}
+          </p>
+        )}
+        {chat.newConversationsEnabled === false &&
+          !chat.view.conversationId && <p role="status">{t('unavailable')}</p>}
+        {chat.nextCursor && (
+          <button
+            type="button"
+            disabled={chat.loadingMore || chat.busy}
+            onClick={() => void chat.loadMore()}
+            className="my-2 text-sm underline"
+          >
+            {t(chat.loadingMore ? 'loading' : 'loadMore')}
+          </button>
+        )}
+        {errorMessage && (
+          <p
+            role="alert"
+            className="rounded-lg bg-amber-50 p-3 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+          >
+            {errorMessage}
+          </p>
+        )}
+        {timeline.map(item => {
+          if (item.type === 'tool') {
+            const tool = item.tool;
+            const runKey =
+              tool.runId || JSON.stringify(['unscoped', tool.toolCallId]);
+            const showProcessEntry = !renderedProcessRuns.has(runKey);
+            renderedProcessRuns.add(runKey);
+            const activities = processRuns.get(runKey) || [tool];
+            const historicalProcess =
+              chat.historyLoading ||
+              !chat.busy ||
+              !tool.runId ||
+              tool.runId !== chat.view.runId;
+            return (
+              <div
+                key={JSON.stringify([tool.runId, tool.toolCallId])}
+                className="my-3"
+              >
+                <ExecutionProcessRow
+                  item={toolProcessItem(tool, historicalProcess)}
+                />
+                {tool.order === undefined && (
+                  <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
+                    {t('toolSummary')}
+                  </p>
+                )}
+                {showProcessEntry && (
+                  <ExecutionProcessDisclosure
+                    key={JSON.stringify([
+                      actorId,
+                      appId,
+                      conversationId,
+                      chat.draftScope,
+                      runKey,
+                    ])}
+                    placement="panel"
+                    open={selectedProcessKey === runKey}
+                    onOpenChange={open =>
+                      setProcessSelection(
+                        open ? { scope: processScope, runKey } : null
+                      )
+                    }
+                    title={tool.name}
+                    items={activities.map(activity =>
+                      toolProcessItem(activity, historicalProcess)
+                    )}
+                    historical={historicalProcess}
+                    unordered={activities.some(
+                      activity => activity.order === undefined
+                    )}
+                  />
+                )}
+              </div>
+            );
+          }
+          const { message } = item;
+          const index = presentation.messages.indexOf(message);
+          const files = agentInputFiles(message);
+          return message.role === 'user' ? (
+            <ChatMessage
+              role="user"
+              key={message.id}
+              id={message.id}
+              content={message.content}
+              conversationAppId={appId}
+              attachments={files.map(file => ({
+                ...file,
+                upload_file_id: file.id,
+                app_id: appId,
+                source: 'agent-input',
+              }))}
+              onEdit={
+                chat.view.conversationId &&
+                !chat.singleTask &&
+                !files.length &&
+                message.content.trim()
+                  ? () =>
+                      edit.controls.start({
+                        id: message.id,
+                        text: message.content,
+                      })
+                  : undefined
+              }
+              editDisabled={edit.controls.disabled}
+              editor={
+                edit.controls.sourceId === message.id
+                  ? edit.controls.editor
+                  : undefined
+              }
+            />
+          ) : message.role === 'assistant' && message.content ? (
+            <Fragment key={message.id}>
+              <ChatMessage
+                role="assistant"
                 id={message.id}
                 content={message.content}
-                conversationAppId={appId}
-                onEdit={
-                  chat.view.conversationId &&
-                  !chat.singleTask &&
-                  message.content.trim()
-                    ? () =>
-                        edit.controls.start({
-                          id: message.id,
-                          text: message.content,
-                        })
-                    : undefined
+                isStreaming={
+                  index > lastUserIndex &&
+                  chat.busy &&
+                  (!run || ['pending', 'running'].includes(run.executionStatus))
                 }
-                editDisabled={edit.controls.disabled}
-                editor={
-                  edit.controls.sourceId === message.id
-                    ? edit.controls.editor
-                    : undefined
-                }
+                wasManuallyStopped={false}
               />
-            ) : message.role === 'assistant' && message.content ? (
-              <Fragment key={message.id}>
-                <AssistantMessage
-                  id={message.id}
-                  content={message.content}
-                  isStreaming={
-                    index > lastUserIndex &&
-                    chat.busy &&
-                    (!run ||
-                      ['pending', 'running'].includes(run.executionStatus))
-                  }
-                  wasManuallyStopped={false}
-                />
-                {(() => {
-                  const runId = message.metadata?.backend_run_id;
-                  const next = presentation.messages[index + 1];
-                  if (
-                    typeof runId !== 'string' ||
-                    (next?.metadata?.backend_run_id === runId &&
-                      next.role === 'assistant')
-                  )
-                    return null;
-                  const results = (presentation.resultRuns ?? []).filter(
-                    resultRun => (resultRun.id || resultRun.runId) === runId
-                  );
-                  results.forEach(resultRun =>
-                    renderedResultIds.add(resultRun.id || resultRun.runId || '')
-                  );
-                  return results.map(resultRun => (
-                    <AgentResultCard
-                      key={`result-${resultRun.id || resultRun.runId}`}
-                      appId={appId}
-                      run={resultRun}
-                      autoQuery={
-                        liveResultRunId === (resultRun.id || resultRun.runId)
-                      }
-                    />
-                  ));
-                })()}
-              </Fragment>
-            ) : null;
-          })}
-          {(presentation.resultRuns ?? [])
-            .filter(
-              resultRun =>
-                !renderedResultIds.has(resultRun.id || resultRun.runId || '')
-            )
-            .map(resultRun => (
-              <AgentResultCard
-                key={`result-${resultRun.id || resultRun.runId}`}
-                appId={appId}
-                run={resultRun}
-                autoQuery={
-                  liveResultRunId === (resultRun.id || resultRun.runId)
-                }
-              />
-            ))}
-          {runLabel && (
-            <p role="status" className="text-sm text-stone-500">
-              {t(runLabel)}
-            </p>
-          )}
-          {interactions.items.map(interaction => (
-            <AgentInteractionCard
-              key={JSON.stringify([actorId, appId, interaction.id])}
-              interaction={interaction}
-              disabled={
-                authLoading ||
-                chat.busy ||
-                chat.historyLoading ||
-                interactions.loading ||
-                interactions.error ||
-                Boolean(interactions.submittingId || interactions.uncertainId)
-              }
-              uncertain={interactions.uncertainId === interaction.id}
-              onRespond={interactions.respond}
+              {(() => {
+                const runId = message.metadata?.backend_run_id;
+                const next = presentation.messages[index + 1];
+                if (
+                  typeof runId !== 'string' ||
+                  (next?.metadata?.backend_run_id === runId &&
+                    next.role === 'assistant')
+                )
+                  return null;
+                const results = (presentation.resultRuns ?? []).filter(
+                  resultRun => (resultRun.id || resultRun.runId) === runId
+                );
+                results.forEach(resultRun =>
+                  renderedResultIds.add(resultRun.id || resultRun.runId || '')
+                );
+                return results.map(resultRun => (
+                  <AgentResultCard
+                    key={`result-${resultRun.id || resultRun.runId}`}
+                    appId={appId}
+                    run={resultRun}
+                    autoQuery={
+                      liveResultRunId === (resultRun.id || resultRun.runId)
+                    }
+                  />
+                ));
+              })()}
+            </Fragment>
+          ) : null;
+        })}
+        {(presentation.resultRuns ?? [])
+          .filter(
+            resultRun =>
+              !renderedResultIds.has(resultRun.id || resultRun.runId || '')
+          )
+          .map(resultRun => (
+            <AgentResultCard
+              key={`result-${resultRun.id || resultRun.runId}`}
+              appId={appId}
+              run={resultRun}
+              autoQuery={liveResultRunId === (resultRun.id || resultRun.runId)}
             />
           ))}
-          {interactions.notDispatched && (
-            <p
-              role="status"
-              className="my-3 text-sm text-amber-700 dark:text-amber-300"
-            >
-              {t('confirmationNotDispatched')}
-            </p>
-          )}
-          {chat.humanInput &&
-            (interactions.error ||
-              interactions.exhausted ||
-              interactions.uncertainId ||
-              interactions.processing ||
-              interactions.items.some(
-                item =>
-                  ['submitting', 'unknown', 'expired'].includes(item.status) ||
-                  (item.status === 'pending' && item.expiresAt !== null)
-              )) && (
-              <div className="my-3 text-sm">
-                <p role="status">{t('confirmationUnknown')}</p>
-                <button
-                  type="button"
-                  onClick={interactions.check}
-                  disabled={interactions.loading}
-                  className="mt-2 underline disabled:opacity-50"
-                >
-                  {t('retryStatus')}
-                </button>
-              </div>
-            )}
-          {chat.resultSingleBatch && (
-            <p className="mt-3 text-sm text-stone-500">
-              {t('resultSingleBatch')}
-            </p>
-          )}
-          {chat.singleTask && chat.view.conversationId && (
-            <p className="mt-3 text-sm text-stone-500">
-              {t('confirmationSingleTask')}
-            </p>
-          )}
-          {chat.unconfirmed && (
-            <p className="text-sm text-amber-700 dark:text-amber-300">
-              {t('noAutomaticRetry')}
-            </p>
-          )}
-          {chat.unconfirmed && !chat.busy && (
-            <div>
-              {chat.statusCheckExhausted && (
-                <p role="status">{t('statusCheckExhausted')}</p>
-              )}
+        {runLabel && (
+          <p role="status" className="text-sm text-stone-500">
+            {t(runLabel)}
+          </p>
+        )}
+        {interactions.items.map(interaction => (
+          <AgentInteractionCard
+            key={JSON.stringify([actorId, appId, interaction.id])}
+            interaction={interaction}
+            disabled={
+              authLoading ||
+              chat.busy ||
+              chat.historyLoading ||
+              interactions.loading ||
+              interactions.error ||
+              Boolean(interactions.submittingId || interactions.uncertainId)
+            }
+            uncertain={interactions.uncertainId === interaction.id}
+            onRespond={interactions.respond}
+          />
+        ))}
+        {interactions.notDispatched && (
+          <p
+            role="status"
+            className="my-3 text-sm text-amber-700 dark:text-amber-300"
+          >
+            {t('confirmationNotDispatched')}
+          </p>
+        )}
+        {chat.humanInput &&
+          (interactions.error ||
+            interactions.exhausted ||
+            interactions.uncertainId ||
+            interactions.processing ||
+            interactions.items.some(
+              item =>
+                ['submitting', 'unknown', 'expired'].includes(item.status) ||
+                (item.status === 'pending' && item.expiresAt !== null)
+            )) && (
+            <div className="my-3 text-sm">
+              <p role="status">{t('confirmationUnknown')}</p>
               <button
                 type="button"
-                onClick={chat.retryStatus}
-                className="my-2 text-sm underline"
+                onClick={interactions.check}
+                disabled={interactions.loading}
+                className="mt-2 underline disabled:opacity-50"
               >
                 {t('retryStatus')}
               </button>
             </div>
           )}
-        </div>
+        {chat.resultSingleBatch && (
+          <p className="mt-3 text-sm text-stone-500">
+            {t('resultSingleBatch')}
+          </p>
+        )}
+        {chat.singleTask && chat.view.conversationId && (
+          <p className="mt-3 text-sm text-stone-500">
+            {t('confirmationSingleTask')}
+          </p>
+        )}
+        {chat.unconfirmed && (
+          <p className="text-sm text-amber-700 dark:text-amber-300">
+            {t('noAutomaticRetry')}
+          </p>
+        )}
+        {chat.unconfirmed && !chat.busy && (
+          <div>
+            {chat.statusCheckExhausted && (
+              <p role="status">{t('statusCheckExhausted')}</p>
+            )}
+            <button
+              type="button"
+              onClick={chat.retryStatus}
+              className="my-2 text-sm underline"
+            >
+              {t('retryStatus')}
+            </button>
+          </div>
+        )}
       </div>
-      <ChatInputBackdrop />
-      <ChatInputView
-        key={chat.draftScope}
-        value={content}
-        onValueChange={text => {
-          if (scope) useLangchainDraftStore.getState().setText(scope, text);
-        }}
-        onSubmit={submit}
-        disabled={disabled || edit.active}
-        isProcessing={chat.busy}
-        placeholder=""
-        scrollableWelcome
-        isWelcomeScreen={
-          chat.ready &&
-          !conversationId &&
-          !chat.view.conversationId &&
-          chat.view.messages.length === 0 &&
-          !chat.busy
-        }
-        beforeInput={
-          chat.ready && !conversationId && !chat.view.conversationId ? (
-            <div className="max-h-[40dvh] overflow-y-auto">
-              <AppIntroduction
-                name={chat.appName}
-                description={chat.appDescription}
-              />
-            </div>
-          ) : undefined
-        }
-        attachmentAction={
-          <AttachmentAction choices={[]} onChoose={() => undefined} />
-        }
-        sendButtonAriaLabel={t('send')}
-        widthClass={widthClass}
-        onHeightChange={setInputHeight}
-      />
-    </main>
+    </ChatSessionView>
   );
 }

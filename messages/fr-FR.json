@@ -622,7 +622,7 @@
             "generation": "Génération de texte",
             "text": "Interaction textuelle"
           },
-          "textOnlyLimit": "Texte uniquement : sans pièces jointes, citations, voix ni variables personnalisées.",
+          "configuredInputs": "Les champs et pièces jointes dépendent de la configuration de l'application.",
           "noDescription": "Aucune description",
           "defaultType": "Application"
         },
@@ -1563,7 +1563,7 @@
             "resultProfileLabel": "Enable Deep Agent result artifacts",
             "resultProfileNote": "Enable only for an assistant verified to support phase4.result.v1, regardless of its name. Disabling pauses new profile tasks; existing results remain readable.",
             "aguiLabel": "Utiliser le chat AG-UI commun pour les nouvelles conversations d’application",
-            "aguiNote": "Uniquement les nouvelles conversations textuelles des applications chatbot du marché. Les fichiers, citations, fonctions vocales et variables personnalisées ne sont pas pris en charge. Le modèle par défaut et le sélecteur restent inchangés. Les anciennes conversations gardent le parcours compatible ; les conversations publiques liées ne reviennent pas en arrière.",
+            "aguiNote": "S'applique aux nouvelles conversations des chatbots du catalogue. Les champs et pièces jointes dépendent de la configuration de l'application. Les conversations existantes gardent leur mode d'origine.",
             "langchainNote": "Use the assistant exposed by this service. Text and read-only tools only; service credentials stay on the server.",
             "validation": {
               "instanceIdRequired": "Enter an application identifier.",
@@ -2909,7 +2909,7 @@
       "copied": "Source copied.",
       "copyFailed": "Could not copy the source. Please select and copy its text."
     },
-    "textOnlyNote": "Cette conversation est limitée au texte, sans fichiers, citations, fonctions vocales ni variables personnalisées. Les anciennes conversations conservent leurs fonctions compatibles.",
+    "textOnlyNote": "Cette application n'accepte pas de pièces jointes dans cette conversation.",
     "cancelled": "Annulé",
     "interrupted": "Interrompu",
     "loadMore": "Charger les messages précédents",

@@ -46,6 +46,9 @@ jest.mock('@lib/hooks/use-chat-width', () => ({
 jest.mock('@components/chat/chat-input-backdrop', () => ({
   ChatInputBackdrop: () => null,
 }));
+jest.mock('@components/file-preview/file-preview-canvas', () => ({
+  FilePreviewCanvas: () => null,
+}));
 jest.mock('@components/chat-input/view', () => ({
   ChatInputView: ({
     value,
@@ -160,6 +163,7 @@ describe('Agent chat draft', () => {
       appName: 'Agent',
       appDescription: 'Agent description',
       textOnly: false,
+      acceptsInputCapabilities: false,
       humanInput: false,
       singleTask: false,
       resultSingleBatch: false,

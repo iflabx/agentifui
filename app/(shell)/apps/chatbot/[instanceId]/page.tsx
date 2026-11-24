@@ -1,13 +1,10 @@
 'use client';
 
-import {
-  ChatInputBackdrop,
-  ChatLoader,
-  ScrollToBottomButton,
-} from '@components/chat';
+import { ChatLoader } from '@components/chat';
 import { ChatInput } from '@components/chat-input';
 import { DifyEditProvider } from '@components/chat-input/edit-resend';
 import { DynamicSuggestedQuestions } from '@components/chat/dynamic-suggested-questions';
+import { ChatSessionView } from '@components/chat/session/chat-session-view';
 import { AgentAppEntry } from '@components/langchain/agent-app-entry';
 import { useChatInterface, useChatScroll, useWelcomeScreen } from '@lib/hooks';
 import { useCurrentApp } from '@lib/hooks/use-current-app';
@@ -62,7 +59,6 @@ function LegacyAppDetailPage() {
 
   // get chat layout status, used for input box height management
   const { inputHeight } = useChatLayoutStore();
-  const chatInputHeightVar = `${inputHeight || 80}px`;
 
   // local state management
   const [, setIsSubmitting] = useState(false);
@@ -358,48 +354,12 @@ function LegacyAppDetailPage() {
 
   return (
     <DifyEditProvider>
-      <div
-        className={cn(
-          'relative flex h-full w-full flex-col',
-          'bg-stone-100 dark:bg-stone-800',
-          'text-stone-900 dark:text-gray-100'
-        )}
-      >
-        {/* Main content area with simplified layout */}
-        <div
-          className={cn(
-            'relative flex min-h-0 flex-1 flex-col overflow-hidden',
-            'pt-10'
-          )}
-          style={
-            { '--chat-input-height': chatInputHeightVar } as React.CSSProperties
-          }
-        >
-          {/* main content */}
-          <div className="min-h-0 flex-1">
-            {/* Simplified display logic using useWelcomeScreen */}
-            {isWelcomeScreen && messages.length === 0 ? null : (
-              <div
-                ref={scrollRef}
-                className="chat-scroll-container h-full overflow-y-auto scroll-smooth"
-              >
-                <ChatLoader
-                  messages={messages}
-                  conversationAppId={conversationAppId}
-                  isWaitingForResponse={isWaitingForResponse}
-                  isLoadingInitial={false}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* scroll to bottom button */}
-          <ScrollToBottomButton />
-
-          {/* input box background */}
-          <ChatInputBackdrop />
-
-          {/* Chat input with simplified configuration */}
+      <ChatSessionView
+        inputHeight={inputHeight || 80}
+        contentClassName="overflow-hidden pt-10"
+        showWelcome={isWelcomeScreen && messages.length === 0}
+        scrollProps={{ ref: scrollRef, className: 'scroll-smooth' }}
+        composer={
           <ChatInput
             onSubmit={handleSubmit}
             placeholder=""
@@ -418,8 +378,14 @@ function LegacyAppDetailPage() {
               ) : undefined
             }
           />
-        </div>
-      </div>
+        }
+      >
+        <ChatLoader
+          messages={messages}
+          conversationAppId={conversationAppId}
+          isWaitingForResponse={isWaitingForResponse}
+        />
+      </ChatSessionView>
     </DifyEditProvider>
   );
 }

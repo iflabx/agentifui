@@ -622,7 +622,7 @@
             "generation": "Генерация текста",
             "text": "Текстовое взаимодействие"
           },
-          "textOnlyLimit": "Только текст: без вложений, цитат, голоса и пользовательских переменных.",
+          "configuredInputs": "Поля и вложения определяются настройками приложения.",
           "noDescription": "Нет описания",
           "defaultType": "Приложение"
         },
@@ -1563,7 +1563,7 @@
             "resultProfileLabel": "Enable Deep Agent result artifacts",
             "resultProfileNote": "Enable only for an assistant verified to support phase4.result.v1, regardless of its name. Disabling pauses new profile tasks; existing results remain readable.",
             "aguiLabel": "Использовать общий чат AG-UI для новых диалогов приложений",
-            "aguiNote": "Только новые текстовые диалоги в приложениях chatbot из каталога. Файлы, цитирование, голос и пользовательские переменные не поддерживаются. Модель по умолчанию и выбор модели не меняются. Старые диалоги сохраняют совместимый маршрут; связанные общие диалоги не возвращаются к прежнему маршруту.",
+            "aguiNote": "Применяется к новым диалогам чат-ботов из каталога. Поля и вложения определяются настройками приложения. Существующие диалоги сохраняют исходный режим.",
             "langchainNote": "Use the assistant exposed by this service. Text and read-only tools only; service credentials stay on the server.",
             "validation": {
               "instanceIdRequired": "Enter an application identifier.",
@@ -2909,7 +2909,7 @@
       "copied": "Source copied.",
       "copyFailed": "Could not copy the source. Please select and copy its text."
     },
-    "textOnlyNote": "Этот диалог поддерживает только текст, без файлов, цитирования, голоса и пользовательских переменных. Старые диалоги сохраняют совместимые функции.",
+    "textOnlyNote": "Это приложение не принимает вложения в данном диалоге.",
     "cancelled": "Отменено",
     "interrupted": "Прервано",
     "loadMore": "Загрузить более ранние сообщения",

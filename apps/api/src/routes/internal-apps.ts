@@ -3,7 +3,9 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import type { ApiRuntimeConfig } from '../config';
 import { runAuditedAdminMutation } from '../lib/admin-audit';
 import { AGENT_APP_VISIBILITY_SQL } from '../lib/agent-app';
+import { isDifyAguiSelected, resolveAgentApp } from '../lib/agent-app';
 import { AgentPolicyError, describeBackend } from '../lib/agent-backends';
+import { resolveSharedAgentInputCapabilities } from '../lib/agent-input';
 import { getSubmissionForActor } from '../lib/agent-submissions';
 import { resolveDifyConfig } from '../lib/dify-config';
 import {
@@ -312,11 +314,21 @@ export const internalAppsRoutes: FastifyPluginAsync<
             userMessage: 'App instance not found',
           })
         );
-      if (row.config?.backend_type === 'langchain')
-        return {
-          ...unavailableInputCapabilities('INPUT_ADAPTER_UNSUPPORTED'),
-          status: 'unsupported',
-        };
+      if (
+        row.config?.backend_type === 'langchain' ||
+        isDifyAguiSelected(row.config)
+      ) {
+        try {
+          const agent = await resolveAgentApp(
+            request.params.appId,
+            actor.actor.userId,
+            { allowDify: true }
+          );
+          return await resolveSharedAgentInputCapabilities(agent);
+        } catch {
+          return unavailableInputCapabilities();
+        }
+      }
       const target = await resolveDifyConfig(row.instance_id, {
         actorUserId: actor.actor.userId,
         actorRole: actor.actor.role,

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 import type { MessageEditSource } from '../../packages/shared/src/message-edit';
+import { type AttachmentFile, useAttachmentStore } from './attachment-store';
 
 export interface LangchainDraftSnapshot {
   editSource?: MessageEditSource;
@@ -16,6 +17,8 @@ export interface PendingAgentSubmission {
   submissionId: string;
   content: string;
   snapshot?: LangchainDraftSnapshot;
+  fileDrafts?: { scope: string; files: AttachmentFile[] }[];
+  inputFiles?: { id: string; name: string; size: number; type: string }[];
 }
 
 interface LangchainDraftState {
@@ -89,6 +92,9 @@ export const useLangchainDraftStore = create<LangchainDraftState>(
       );
       if (!pending) return;
       if (accepted && pending.snapshot) state.consumeSnapshot(pending.snapshot);
+      if (accepted)
+        for (const entry of pending.fileDrafts ?? [])
+          useAttachmentStore.getState().consumeFiles(entry.scope, entry.files);
       const next = { ...get().pendingSubmissions };
       delete next[JSON.stringify([pending.appId, pending.target])];
       set({ pendingSubmissions: next });

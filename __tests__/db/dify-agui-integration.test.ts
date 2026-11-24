@@ -1012,17 +1012,16 @@ it.each([
   async value => {
     parameters = value;
     const response = await submit('unsupported-parameters');
-    const run = await stored(response);
-    expect(run).toMatchObject({
-      execution_status: 'error',
-      persistence_status: 'saved',
-      error_code: 'DIFY_PARAMETERS_UNSUPPORTED',
-    });
+    expect([400, 409]).toContain(response.statusCode);
+    expect(response.json().app_error.code).toMatch(
+      /INPUT_FIELD_REQUIRED|DIFY_PARAMETERS_UNSUPPORTED/
+    );
+    expect(await stored(response)).toBeUndefined();
     expect(generations()).toHaveLength(0);
   }
 );
 
-it('keeps optional native media unavailable in the explicitly selected text-only interaction, without changing the old Dify path', async () => {
+it('accepts text when optional native media has no declared file constraints', async () => {
   parameters = {
     user_input_form: [],
     file_upload: { enabled: true },
@@ -1036,7 +1035,8 @@ it('keeps optional native media unavailable in the explicitly selected text-only
     headers: { cookie: `session_token=${tokens[0]}` },
   });
   expect(descriptor.json()).toMatchObject({
-    interactionMode: 'text-only',
+    interactionMode: 'configured',
+    acceptsInputCapabilities: true,
     newConversationsEnabled: true,
     capabilities: { files: false, cancellation: false, humanInput: false },
   });

@@ -1,11 +1,8 @@
 'use client';
 
-import {
-  ChatInputBackdrop,
-  ChatLoader,
-  ScrollToBottomButton,
-} from '@components/chat';
+import { ChatLoader } from '@components/chat';
 import { DifyEditProvider } from '@components/chat-input/edit-resend';
+import { ChatSessionView } from '@components/chat/session/chat-session-view';
 import { ChatflowFloatingController } from '@components/chatflow/chatflow-floating-controller';
 import { ChatflowInputArea } from '@components/chatflow/chatflow-input-area';
 import { ChatflowNodeTracker } from '@components/chatflow/chatflow-node-tracker';
@@ -69,7 +66,6 @@ export default function AppDetailPage() {
 
   // get chat layout state, used for input box height management
   const { inputHeight } = useChatLayoutStore();
-  const chatInputHeightVar = `${inputHeight || 80}px`;
 
   // remove duplicate automatic display logic, now managed by useChatflowState
   // Support intelligent behavior where users can manually close and no longer automatically open
@@ -349,60 +345,21 @@ export default function AppDetailPage() {
 
   return (
     <DifyEditProvider>
-      <div
-        className={cn(
-          'relative flex h-full w-full flex-col',
-          'bg-stone-100 dark:bg-stone-800',
-          'text-stone-900 dark:text-gray-100'
-        )}
-      >
-        <div
-          className={cn(
-            'relative flex min-h-0 flex-1 flex-col overflow-hidden',
-            'pt-10'
-          )}
-          style={
-            { '--chat-input-height': chatInputHeightVar } as React.CSSProperties
-          }
-        >
-          <div className="min-h-0 flex-1">
-            {!(isWelcomeScreen && messages.length === 0) && (
-              <div
-                ref={scrollRef}
-                className="chat-scroll-container h-full overflow-y-auto scroll-smooth"
-              >
-                <ChatLoader
-                  messages={messages}
-                  isWaitingForResponse={isWaitingForResponse}
-                  isLoadingInitial={false}
-                />
-
-                <ChatflowNodeTracker
-                  isVisible={showNodeTracker}
-                  scope={JSON.stringify([instanceId, formIdentity])}
-                  onClose={() => {
-                    setShowNodeTracker(false);
-                    trackerButtonRef.current?.focus();
-                  }}
-                  className={cn(
-                    'fixed right-4 bottom-40 z-30 max-w-sm',
-                    'transition-all duration-300'
-                  )}
-                />
-              </div>
-            )}
-          </div>
-
-          <ScrollToBottomButton />
-
+      <ChatSessionView
+        inputHeight={inputHeight || 80}
+        contentClassName="overflow-hidden pt-10"
+        showWelcome={isWelcomeScreen && messages.length === 0}
+        scrollProps={{ ref: scrollRef, className: 'scroll-smooth' }}
+        backdrop={!isWelcomeScreen}
+        processAction={
           <ChatflowFloatingController
             buttonRef={trackerButtonRef}
             isVisible={showFloatingController}
             isTrackerVisible={showNodeTracker}
             onToggleTracker={() => setShowNodeTracker(!showNodeTracker)}
           />
-
-          {!isWelcomeScreen && <ChatInputBackdrop />}
+        }
+        composer={
           <ChatflowInputArea
             key={formIdentity}
             instanceId={instanceId}
@@ -412,8 +369,23 @@ export default function AppDetailPage() {
             onStop={handleStopProcessing}
             isWelcomeScreen={isWelcomeScreen && messages.length === 0}
           />
-        </div>
-      </div>
+        }
+      >
+        <ChatLoader
+          messages={messages}
+          conversationAppId={instanceId}
+          isWaitingForResponse={isWaitingForResponse}
+        />
+        <ChatflowNodeTracker
+          isVisible={showNodeTracker}
+          scope={JSON.stringify([instanceId, formIdentity])}
+          onClose={() => {
+            setShowNodeTracker(false);
+            trackerButtonRef.current?.focus();
+          }}
+          className="fixed right-4 bottom-40 z-30 max-w-sm transition-all duration-300"
+        />
+      </ChatSessionView>
     </DifyEditProvider>
   );
 }

@@ -622,7 +622,7 @@
             "generation": "テキスト生成",
             "text": "テキスト対話"
           },
-          "textOnlyLimit": "テキスト専用：添付、引用、音声、カスタム変数は利用できません。",
+          "configuredInputs": "入力項目と添付はアプリの設定に従います。",
           "noDescription": "説明なし",
           "defaultType": "アプリ"
         },
@@ -1563,7 +1563,7 @@
             "resultProfileLabel": "Enable Deep Agent result artifacts",
             "resultProfileNote": "Enable only for an assistant verified to support phase4.result.v1, regardless of its name. Disabling pauses new profile tasks; existing results remain readable.",
             "aguiLabel": "新しいアプリ会話で共通 AG-UI チャットを使用",
-            "aguiNote": "マーケットプレイスの chatbot アプリで新しいテキスト専用会話のみ有効にします。ファイル、引用、音声、カスタム変数には対応しません。既定モデルとモデル選択は変更しません。既存の旧会話は互換経路を維持し、紐付け済みの共通会話は旧経路に戻りません。",
+            "aguiNote": "マーケットプレイスの Chatbot で新しい会話に適用されます。入力項目と添付はアプリの設定に従います。既存の会話は元の方式を維持します。",
             "langchainNote": "Use the assistant exposed by this service. Text and read-only tools only; service credentials stay on the server.",
             "validation": {
               "instanceIdRequired": "Enter an application identifier.",
@@ -2909,7 +2909,7 @@
       "copied": "Source copied.",
       "copyFailed": "Could not copy the source. Please select and copy its text."
     },
-    "textOnlyNote": "この会話はテキスト専用です。ファイル、引用、音声、カスタム変数には対応しません。既存の旧会話では従来の機能を引き続き利用できます。",
+    "textOnlyNote": "このアプリの現在の会話では添付ファイルを使用できません。",
     "cancelled": "キャンセル済み",
     "interrupted": "中断",
     "loadMore": "以前のメッセージを読み込む",

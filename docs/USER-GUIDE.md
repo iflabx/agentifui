@@ -92,8 +92,8 @@ account-wide synchronized preference.
 | Regular model chat           | General questions and follow-up conversation           | Chat input and a configured Dify model selector                                 |
 | Dify chatbot or legacy Agent | A published conversational application                 | Messages, plus enabled application-specific controls                            |
 | Dify chatflow                | Conversation backed by a workflow                      | Chat and supported input fields; execution/node progress where available        |
-| Dify workflow                | A task submitted with structured inputs                | Input form, execution status, result and application execution history          |
-| Dify text generation         | Generate text from a configured input form             | Inputs, generated text and execution records                                    |
+| Dify workflow                | A task submitted with structured inputs                | Chat composer, task parameters, execution progress and task history             |
+| Dify text generation         | Generate text from a configured input form             | Chat composer, generated text and task history                                  |
 | LangChain Agent              | Conversation with a compatible externally hosted Agent | Shared chat/history, supported tool activities and optional native confirmation |
 
 An application's name or tag is descriptive, not a guarantee of capability.
@@ -291,15 +291,15 @@ identical across backends:
 | Application path              | Current boundary                                                                                                                                                     |
 | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Existing Dify modes           | Input forms, attachments, speech and other controls depend on the mode and configuration; some file-preview and workflow follow-up operations are administrator-only |
-| Dify shared AG-UI chatbot     | Explicitly enabled text-only chat; no files, human confirmation or native stop/run-query capability on this path                                                     |
-| Ordinary LangChain Agent      | Text chat and supported tool activity summaries; no general file input, execution cancellation or durable stream recovery                                            |
+| Dify shared AG-UI chatbot     | Explicitly enabled chat. The compatible chatbot configuration determines file and input fields. Human confirmation and native cancellation are unavailable.          |
+| Ordinary LangChain Agent      | Text chat and supported tool activity summaries. File input follows the selected assistant's supported input profile.                                                |
 | LangChain human-input profile | Controlled approve/reject interaction, not arbitrary forms or a general approval workflow                                                                            |
 
 A backend may have more features than AgentifUI exposes. A disabled or missing
 control is not fixed by adding a service token in the browser. A stopped display,
 network interruption and confirmed upstream cancellation are different states.
 
-### Attach A File On A Supported Dify Path
+### Attach A File In A Supported Application
 
 1. Open an application that exposes an attachment control or a file input field.
    Its configuration determines accepted file types, count and size.
@@ -314,15 +314,17 @@ network interruption and confirmed upstream cancellation are different states.
    uploads and failed items still occupy a place; retry the same item or remove it
    before selecting another file. Existing draft files are not silently discarded.
 3. Submit the message/form only after required uploads and other fields are ready.
-4. Use the response's available attachment controls to view or download results.
+4. Open attachments from their saved user messages. Use the response's available
+   result controls to view or download outputs.
    If preview is denied, do not try another user's file ID or assume you can
    bypass the restriction with a direct service URL; ask the administrator.
 
 The application, AgentifUI API, reverse proxy and upstream service can impose
 different limits. A file accepted by the browser can still be rejected during
-upload. Shared text-only Dify/LangChain chat does not currently expose general
-file handling. An export of displayed text/code is not a durable Agent-generated
-file artifact with a managed lifecycle.
+upload. For shared Agent chats, available file types and counts come from the
+selected Dify app or compatible LangChain assistant. Input attachments appear
+on the message that used them. The application may limit how long a saved
+attachment can be opened.
 
 The separately enabled frozen-result profile provides bounded report/CSV delivery,
 not general file input. See [reports, data and sources](#9-reports-data-and-sources).

@@ -27,6 +27,32 @@ export interface AgentMessage {
   metadata?: Record<string, unknown>;
 }
 
+export interface AgentInputFile {
+  id: string;
+  name: string;
+  size: number;
+  type: string;
+}
+
+export interface AgentTurnInputs {
+  inputs?: Record<string, string | number>;
+  attachments?: { fileId: string; slotKey: string }[];
+}
+
+export function agentInputFiles(message: AgentMessage): AgentInputFile[] {
+  const files = message.metadata?.input_attachments;
+  if (!Array.isArray(files)) return [];
+  return files.filter(
+    (file): file is AgentInputFile =>
+      file !== null &&
+      typeof file === 'object' &&
+      typeof file.id === 'string' &&
+      typeof file.name === 'string' &&
+      typeof file.size === 'number' &&
+      typeof file.type === 'string'
+  );
+}
+
 export interface AgentRun {
   id?: string;
   runId?: string;
@@ -124,13 +150,15 @@ export function agentPath(appId: string, suffix = ''): string {
 
 export function agentMessageFitsRequest(
   content: string,
-  conversationId?: string | null
+  conversationId?: string | null,
+  turnInputs?: AgentTurnInputs
 ) {
   const upstreamEnvelopeReserveBytes = 1024;
   const body = {
     submissionId: '00000000-0000-0000-0000-000000000000',
     content: content.trim(),
     ...(conversationId ? { conversationId } : {}),
+    ...turnInputs,
   };
   return (
     body.content.length <= 16000 &&

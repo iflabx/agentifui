@@ -202,9 +202,16 @@ another process; use a separate source directory when needed.
 
 ### Chat Interaction Principles
 
-These are design and review rules, not a claim that every existing application
-already implements the same interface. Reuse product components and preserve
-backend semantics; do not promise capabilities an Agent does not provide.
+`components/chat/session/` owns the shared conversation layout and message
+rendering. Application routes select their controller, then use the shared
+session view and composer. Controllers supply messages, input requirements,
+supported actions and execution details. The API owns authorization, input
+validation, upstream calls and the existing persistence path for each runtime.
+
+When integrating another Agent service, implement its input and execution
+adapter first. Expose the effective capabilities of the selected application.
+Reuse the existing message, process and preview components to render its data.
+Preserve the runtime recorded on existing conversations when reopening history.
 
 1. **One chat surface.** Reuse the message list, composer, attachment controls
    and execution-process views. Backend adapters supply capabilities and data,
@@ -309,8 +316,9 @@ When adding an operation or backend, trace the whole path:
 5. Server/browser persistence ownership for that specific path, idempotency,
    saved-result lookup, timeout/disconnect/unknown-outcome behavior and tests.
 
-The negotiated Dify chatbot path is explicitly text-only and server-managed;
-legacy Dify paths retain their compatible behavior. LangChain human input is a
+The negotiated Dify chatbot path persists on the server and supports configured
+text fields and compatible input attachments. Legacy Dify paths keep their
+original execution and persistence behavior. LangChain human input is a
 separate opt-in, single-task approve/reject profile. AG-UI schema validity alone
 does not authorize a tool or implement arbitrary input forms, cancellation or
 crash recovery. Never blindly retry a generation/resume POST after an unknown

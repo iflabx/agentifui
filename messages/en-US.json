@@ -622,7 +622,7 @@
             "generation": "Text generation",
             "text": "Text interaction"
           },
-          "textOnlyLimit": "Text-only entry: no attachments, citations, voice or custom variables.",
+          "configuredInputs": "Available inputs and attachments follow the application configuration.",
           "noDescription": "No description",
           "defaultType": "App"
         },
@@ -1563,7 +1563,7 @@
             "resultProfileLabel": "Enable Deep Agent result artifacts",
             "resultProfileNote": "Enable only for an assistant verified to support phase4.result.v1, regardless of its name. Disabling pauses new profile tasks; existing results remain readable.",
             "aguiLabel": "Use public AG-UI chat for new app conversations",
-            "aguiNote": "Only new text-only app conversations in marketplace chatbot apps are enabled. Files, citations, speech and custom variables are not supported. The default model and model selector are unchanged. Existing legacy conversations keep their compatibility path; bound public conversations never fall back.",
+            "aguiNote": "Applies to new marketplace Chatbot conversations. Available inputs and attachments follow the application configuration. Existing conversations keep their original interaction mode.",
             "langchainNote": "Use the assistant exposed by this service. Text and read-only tools only; service credentials stay on the server.",
             "validation": {
               "instanceIdRequired": "Enter an application identifier.",
@@ -2885,7 +2885,7 @@
   "langchain": {
     "resultSingleBatch": "This app publishes one batch of results per conversation. Start a new conversation to generate another batch.",
     "resultProfilePaused": "New tasks are currently paused for this app. You can still view existing records.",
-    "textOnlyNote": "This conversation is text-only. Files, citations, speech and custom variables are not supported. Existing legacy conversations retain their compatible features.",
+    "textOnlyNote": "This application does not accept attachments in this conversation.",
     "cancelled": "Cancelled",
     "interrupted": "Interrupted",
     "loadMore": "Load earlier messages",

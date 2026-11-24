@@ -622,7 +622,7 @@
             "generation": "Generación de texto",
             "text": "Interacción de texto"
           },
-          "textOnlyLimit": "Solo texto: sin adjuntos, citas, voz ni variables personalizadas.",
+          "configuredInputs": "Las entradas y los adjuntos dependen de la configuración de la aplicación.",
           "noDescription": "Sin descripción",
           "defaultType": "Aplicación"
         },
@@ -1563,7 +1563,7 @@
             "resultProfileLabel": "Enable Deep Agent result artifacts",
             "resultProfileNote": "Enable only for an assistant verified to support phase4.result.v1, regardless of its name. Disabling pauses new profile tasks; existing results remain readable.",
             "aguiLabel": "Usar el chat AG-UI común para nuevas conversaciones de aplicaciones",
-            "aguiNote": "Solo nuevas conversaciones de texto en aplicaciones chatbot del mercado. No se admiten archivos, citas, voz ni variables personalizadas. El modelo predeterminado y el selector no cambian. Las conversaciones antiguas conservan la ruta compatible; las conversaciones públicas vinculadas no vuelven a la ruta anterior.",
+            "aguiNote": "Se aplica a nuevas conversaciones de Chatbot del catálogo. Las entradas y los adjuntos dependen de la configuración de la aplicación. Las conversaciones existentes conservan su modo original.",
             "langchainNote": "Use the assistant exposed by this service. Text and read-only tools only; service credentials stay on the server.",
             "validation": {
               "instanceIdRequired": "Enter an application identifier.",
@@ -2909,7 +2909,7 @@
       "copied": "Source copied.",
       "copyFailed": "Could not copy the source. Please select and copy its text."
     },
-    "textOnlyNote": "Esta conversación es solo de texto, sin archivos, citas, voz ni variables personalizadas. Las conversaciones antiguas conservan sus funciones compatibles.",
+    "textOnlyNote": "Esta aplicación no acepta adjuntos en esta conversación.",
     "cancelled": "Cancelado",
     "interrupted": "Interrumpido",
     "loadMore": "Cargar mensajes anteriores",

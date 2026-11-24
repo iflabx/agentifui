@@ -58,6 +58,7 @@ const app: AgentApp = {
 const initial = {
   id: 'local-run',
   conversation_id: 'local-conversation',
+  user_id: 'actor',
   user_message_id: 'user-message',
   thread_id: null,
   execution_status: 'reserved',
@@ -365,6 +366,98 @@ it('creates and binds a thread before one new user input, saves only current-run
   });
   expect(JSON.stringify(events)).not.toContain('native-run');
 });
+
+it('uses the reserved actor to scope attachment execution and records the true native run ID', async () => {
+  const attachmentApp = { ...app, assistantId: 'attachment-agent' };
+  const inputFiles = [
+    { fileId: '0123456789abcdef0123456789abcdef', slotKey: 'reference' },
+  ];
+  jest
+    .mocked(streamTurn)
+    .mockImplementationOnce(async function* (_config, turn) {
+      await turn.beforeDispatch?.();
+      turn.onDispatch?.();
+      yield {
+        type: 'RUN_STARTED',
+        threadId: 'native-thread',
+        runId: initial.id,
+      };
+      expect(confirmSubmission).not.toHaveBeenCalled();
+      yield* textEvents;
+      yield {
+        type: 'RUN_FINISHED',
+        threadId: 'native-thread',
+        runId: initial.id,
+      };
+    });
+  await executeAgentRun({
+    app: attachmentApp,
+    run: initial,
+    rootTaskId: 'root-task',
+    content: '',
+    inputFiles,
+    emit: jest.fn(),
+    report: jest.fn(),
+  });
+  const config = {
+    ...attachmentApp,
+    scope: { actorId: initial.user_id, appId: app.id },
+  };
+  expect(createThread).toHaveBeenCalledWith(config);
+  expect(streamTurn).toHaveBeenCalledWith(
+    config,
+    expect.objectContaining({ content: '', inputFiles })
+  );
+  expect(recordNativeRun).toHaveBeenCalledWith(initial.id, 'native-run');
+  expect(confirmSubmission).toHaveBeenNthCalledWith(1, 'root-task', 'accepted');
+  expect(confirmSubmission).toHaveBeenLastCalledWith('root-task', 'finished');
+});
+
+it('keeps a scoped run unknown if the bridge starts but the native ID is never observed', async () => {
+  stream(
+    [{ type: 'RUN_STARTED', threadId: 'native-thread', runId: initial.id }],
+    new LangChainUpstreamError('UPSTREAM_INCOMPLETE')
+  );
+  await executeAgentRun({
+    app: { ...app, assistantId: 'attachment-agent' },
+    run: { ...initial, thread_id: 'native-thread' },
+    rootTaskId: 'root-task',
+    content: 'New question',
+    inputFiles: [],
+    emit: jest.fn(),
+    report: jest.fn(),
+  });
+  expect(createThread).not.toHaveBeenCalled();
+  expect(recordNativeRun).not.toHaveBeenCalled();
+  expect(streamTurn).toHaveBeenCalledTimes(1);
+  expect(confirmSubmission).toHaveBeenCalledTimes(1);
+  expect(confirmSubmission).toHaveBeenCalledWith('root-task', 'unknown');
+});
+
+it.each([
+  { assistantId: 'attachment-agent', inputFiles: undefined },
+  { assistantId: 'agent', inputFiles: [] },
+  { assistantId: 'hitl-agent', humanInput: true, inputFiles: [] },
+])(
+  'rejects mismatched attachment input before creating a thread: %p',
+  async ({ inputFiles, ...mode }) => {
+    await executeAgentRun({
+      app: { ...app, ...mode },
+      run: initial,
+      rootTaskId: 'root-task',
+      content: 'New question',
+      inputFiles,
+      emit: jest.fn(),
+      report: jest.fn(),
+    });
+    expect(createThread).not.toHaveBeenCalled();
+    expect(streamTurn).not.toHaveBeenCalled();
+    expect(rejectSubmission).toHaveBeenCalledWith(
+      'root-task',
+      'AGENT_NOT_DISPATCHED'
+    );
+  }
+);
 
 it('durably claims a governed turn before dispatch and confirms usage before forwarding events', async () => {
   await run({}, 'root-task');

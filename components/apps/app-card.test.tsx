@@ -76,7 +76,7 @@ it('shows only the configured text-only entry restriction', () => {
       onClick={jest.fn()}
     />
   );
-  expect(screen.getByText('textOnlyLimit')).toBeInTheDocument();
+  expect(screen.getByText('configuredInputs')).toBeInTheDocument();
 });
 
 it('does not infer capabilities from the LangChain brand', () => {
@@ -89,7 +89,7 @@ it('does not infer capabilities from the LangChain brand', () => {
   );
   expect(screen.queryByText('entryModes.text')).not.toBeInTheDocument();
   expect(screen.queryByText('entryModes.conversation')).not.toBeInTheDocument();
-  expect(screen.queryByText('textOnlyLimit')).not.toBeInTheDocument();
+  expect(screen.queryByText('configuredInputs')).not.toBeInTheDocument();
 });
 
 it('uses the existing safe platform text capability without claiming files or results', () => {

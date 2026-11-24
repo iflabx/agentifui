@@ -1,20 +1,18 @@
 'use client';
 
 import {
-  ChatInputBackdrop,
   ChatLoader,
   MessagesLoadingIndicator,
   PageLoadingSpinner,
-  ScrollToBottomButton,
   WelcomeScreen,
 } from '@components/chat';
 import { ChatInput } from '@components/chat-input';
 import { DifyEditProvider } from '@components/chat-input/edit-resend';
 import { DynamicSuggestedQuestions } from '@components/chat/dynamic-suggested-questions';
+import { ChatSessionView } from '@components/chat/session/chat-session-view';
 import { ChatflowFloatingController } from '@components/chatflow/chatflow-floating-controller';
 import { ChatflowInputArea } from '@components/chatflow/chatflow-input-area';
 import { ChatflowNodeTracker } from '@components/chatflow/chatflow-node-tracker';
-import { FilePreviewCanvas } from '@components/file-preview/file-preview-canvas';
 import { AgentChat } from '@components/langchain/agent-chat';
 import { TaskChat } from '@components/task-chat/task-chat';
 import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
@@ -35,7 +33,6 @@ import { useChatStore } from '@lib/stores/chat-store';
 import { useChatflowExecutionStore } from '@lib/stores/chatflow-execution-store';
 import { readChatflowExecutionMetadata } from '@lib/stores/chatflow-execution-store/history';
 import { useFilePreviewStore } from '@lib/stores/ui/file-preview-store';
-import { cn } from '@lib/utils';
 
 import React from 'react';
 import { useEffect, useLayoutEffect, useState } from 'react';
@@ -247,8 +244,6 @@ function LegacyChatPage({
     state => state.isWaitingForResponse
   );
 
-  const chatInputHeightVar = `${inputHeight || 80}px`;
-
   // Merge scrollRef and setMessagesContainer
   // scrollRef is RefObject type, directly set current property
   const setScrollRef = (element: HTMLDivElement | null) => {
@@ -272,113 +267,34 @@ function LegacyChatPage({
     messages,
   });
 
+  const showWelcome =
+    messages.length === 0 && (isNewChat || (!isSubmitting && isWelcomeScreen));
+
   return (
     <DifyEditProvider>
-      <div
-        className={cn(
-          'relative flex h-full w-full flex-col',
-          'bg-stone-100 dark:bg-stone-800',
-          'text-stone-900 dark:text-gray-100'
-        )}
-      >
-        <div
-          className={cn(
-            'relative flex min-h-0 flex-1 flex-col overflow-hidden',
-            'pt-10',
-            'transition-[width] duration-300 ease-in-out',
-            isPreviewOpen ? 'w-[50%] lg:w-[60%]' : 'w-full'
-          )}
-          style={
-            { '--chat-input-height': chatInputHeightVar } as React.CSSProperties
-          }
-        >
-          {/* Page-level loading, use PageLoadingSpinner component to ensure full-screen coverage
-             Only show loading state on /chat/new route
-             Only show page-level loading when profile is still in initial loading */}
+      <ChatSessionView
+        inputHeight={inputHeight || 80}
+        contentClassName="overflow-hidden pt-10"
+        filePreview
+        previewOpen={isPreviewOpen}
+        header={
           <PageLoadingSpinner isLoading={isNewChat && isProfileLoading} />
-
-          {/* main content */}
-          <div className="min-h-0 flex-1">
-            {/* Conditions for showing welcome screen:
-               1. New chat page with no messages
-               2. Or welcome state with no messages and not submitting */}
-            {/* Use full name instead of username (nickname) for now, because username may be empty */}
-            {isNewChat && messages.length === 0 ? (
-              <WelcomeScreen username={profile?.username} />
-            ) : messages.length === 0 && !isSubmitting && isWelcomeScreen ? (
-              <WelcomeScreen username={profile?.username} />
-            ) : (
-              <div
-                ref={setScrollRef}
-                className="chat-scroll-container h-full overflow-y-auto scroll-smooth"
-              >
-                {/* Conditions for showing "load more" button or loading indicator:
-                   1. Not in initial loading state (avoid overlap with initial skeleton)
-                   2. Not new conversation or temporary conversation path
-                   3. Actually have more messages to load
-                   4. Already have messages displayed (non-empty message list)
-                   5. Not in loading more state (avoid flickering) */}
-                {!isLoadingInitial &&
-                  hasMoreMessages &&
-                  messages.length > 0 &&
-                  !isLoadingMore &&
-                  conversationIdFromUrl &&
-                  conversationIdFromUrl !== 'new' &&
-                  !conversationIdFromUrl.includes('temp-') && (
-                    <MessagesLoadingIndicator
-                      loadingState={loading.state}
-                      isLoadingMore={isLoadingMore}
-                      hasMoreMessages={hasMoreMessages}
-                      error={error}
-                      onRetry={loadMoreMessages}
-                    />
-                  )}
-
-                <ChatLoader
-                  messages={messages}
-                  conversationAppId={conversationAppId}
-                  isWaitingForResponse={isWaitingForResponse}
-                  isLoadingInitial={isLoadingInitial}
-                />
-
-                {/* New: Chatflow node tracker - only show for chatflow apps
-                   Popup controlled by user clicking floating ball, or auto-popup when sending messages */}
-                {isChatflowApp && showNodeTracker && (
-                  <ChatflowNodeTracker
-                    isVisible={showNodeTracker && !isPreviewOpen}
-                    scope={
-                      executionScope ??
-                      JSON.stringify([conversationAppId, conversationIdFromUrl])
-                    }
-                    onClose={() => {
-                      setShowNodeTracker(false);
-                      trackerButtonRef.current?.focus();
-                    }}
-                    className={cn(
-                      'fixed right-4 bottom-40 z-30 max-w-sm',
-                      'transition-all duration-300'
-                    )}
-                  />
-                )}
-              </div>
-            )}
-          </div>
-
-          <ScrollToBottomButton />
-
-          {/* New: Chatflow floating controller - only show for chatflow apps */}
-          {isChatflowApp && (
+        }
+        showWelcome={showWelcome}
+        welcome={<WelcomeScreen username={profile?.username} />}
+        scrollProps={{ ref: setScrollRef, className: 'scroll-smooth' }}
+        processAction={
+          isChatflowApp && (
             <ChatflowFloatingController
               buttonRef={trackerButtonRef}
               isVisible={showFloatingController}
               isTrackerVisible={showNodeTracker}
               onToggleTracker={() => setShowNodeTracker(!showNodeTracker)}
             />
-          )}
-
-          <ChatInputBackdrop />
-
-          {isChatflowApp && currentConversationApp ? (
+          )
+        }
+        composer={
+          isChatflowApp && currentConversationApp ? (
             <ChatflowInputArea
               instanceId={currentConversationApp.instance_id}
               onSubmit={chatflowInterface.handleChatflowSubmit}
@@ -398,24 +314,52 @@ function LegacyChatPage({
               isTransitioningToWelcome={isTransitioningToWelcome}
               showModelSelector={isNewChat && messages.length === 0}
             />
-          )}
-
-          {/* Conditions for showing dynamic suggested questions:
-             1. New chat page with no messages
-             2. Or welcome state with no messages and not submitting */}
-          {isNewChat && messages.length === 0 && (
+          )
+        }
+        afterComposer={
+          showWelcome && (
             <DynamicSuggestedQuestions onQuestionClick={sendDirectMessage} />
+          )
+        }
+      >
+        {!isLoadingInitial &&
+          hasMoreMessages &&
+          messages.length > 0 &&
+          !isLoadingMore &&
+          conversationIdFromUrl &&
+          conversationIdFromUrl !== 'new' &&
+          !conversationIdFromUrl.includes('temp-') && (
+            <MessagesLoadingIndicator
+              loadingState={loading.state}
+              isLoadingMore={isLoadingMore}
+              hasMoreMessages={hasMoreMessages}
+              error={error}
+              onRetry={loadMoreMessages}
+            />
           )}
-          {!isSubmitting &&
-            isWelcomeScreen &&
-            messages.length === 0 &&
-            conversationIdFromUrl !== 'new' && (
-              <DynamicSuggestedQuestions onQuestionClick={sendDirectMessage} />
-            )}
-        </div>
 
-        <FilePreviewCanvas />
-      </div>
+        <ChatLoader
+          messages={messages}
+          conversationAppId={conversationAppId}
+          isWaitingForResponse={isWaitingForResponse}
+          isLoadingInitial={isLoadingInitial}
+        />
+
+        {isChatflowApp && showNodeTracker && (
+          <ChatflowNodeTracker
+            isVisible={showNodeTracker && !isPreviewOpen}
+            scope={
+              executionScope ??
+              JSON.stringify([conversationAppId, conversationIdFromUrl])
+            }
+            onClose={() => {
+              setShowNodeTracker(false);
+              trackerButtonRef.current?.focus();
+            }}
+            className="fixed right-4 bottom-40 z-30 max-w-sm transition-all duration-300"
+          />
+        )}
+      </ChatSessionView>
     </DifyEditProvider>
   );
 }

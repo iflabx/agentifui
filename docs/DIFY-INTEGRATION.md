@@ -45,9 +45,8 @@ enable local upload.
 
 Native generation endpoints enforce aggregate slot counts and registered file
 ownership/type/size before admission. Upload validation alone does not authorize
-a later generation request. This does not route Workflow or text generation
-through the text-only shared AG-UI transport; those execution adapters retain
-their native execution semantics. New Workflow/text-generation sessions use the
+a later generation request. Workflow and text generation retain their native
+execution adapters. New Workflow/text-generation sessions use the
 shared chat interface with local task grouping; they do not gain upstream chat
 memory. Each round is one independent `app_executions` record. Legacy execution
 links remain readable without automatically creating conversations.
