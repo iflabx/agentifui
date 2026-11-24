@@ -12,6 +12,14 @@ import type {
 // Points to our backend proxy API
 const DIFY_API_BASE_URL = '/api/dify';
 
+export function difyResultFilePath(
+  appId: string,
+  messageId: string,
+  fileId: string
+): string {
+  return `${DIFY_API_BASE_URL}/${encodeURIComponent(appId)}/result-files/${encodeURIComponent(messageId)}/${encodeURIComponent(fileId)}`;
+}
+
 /**
  * Upload a single file to Dify (via backend proxy).
  *
@@ -87,7 +95,7 @@ export async function previewDifyFile(
   fileId: string,
   options: DifyFilePreviewOptions = {}
 ): Promise<DifyFilePreviewResponse> {
-  const { as_attachment = false } = options;
+  const { as_attachment = false, resultMessageId } = options;
 
   // Build query parameters
   const searchParams = new URLSearchParams();
@@ -96,8 +104,10 @@ export async function previewDifyFile(
   }
 
   const queryString = searchParams.toString();
-  const slug = `files/${encodeURIComponent(fileId)}/preview${queryString ? `?${queryString}` : ''}`;
-  const apiUrl = `${DIFY_API_BASE_URL}/${encodeURIComponent(appId)}/${slug}`;
+  const filePath = resultMessageId
+    ? difyResultFilePath(appId, resultMessageId, fileId)
+    : `${DIFY_API_BASE_URL}/${encodeURIComponent(appId)}/files/${encodeURIComponent(fileId)}/preview`;
+  const apiUrl = `${filePath}${queryString ? `?${queryString}` : ''}`;
 
   try {
     const response = await fetch(apiUrl, {

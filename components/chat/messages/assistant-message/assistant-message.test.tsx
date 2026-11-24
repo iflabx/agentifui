@@ -1,6 +1,6 @@
 import { act, render, screen } from '@testing-library/react';
 
-import type { ReactNode } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 
 import { AssistantMessage } from './assistant-message';
 
@@ -90,6 +90,21 @@ jest.mock('@components/chat/message-actions', () => ({
   AssistantMessageActions: () => <div data-testid="assistant-actions" />,
 }));
 
+jest.mock(
+  '@components/chat/messages/user-message/file-attachment-display',
+  () => ({
+    FileAttachmentDisplay: ({
+      attachments,
+    }: {
+      attachments: { name: string }[];
+    }) => (
+      <div data-testid="result-files">
+        {attachments.map(file => file.name).join(', ')}
+      </div>
+    ),
+  })
+);
+
 jest.mock('./streaming-markdown', () => ({
   StreamingText: ({
     content,
@@ -103,6 +118,64 @@ jest.mock('./streaming-markdown', () => ({
 describe('AssistantMessage think block behavior', () => {
   beforeEach(() => {
     reactMarkdownMock.mockClear();
+  });
+
+  it('renders bound result files without exposing their native Markdown links', () => {
+    const key = '00000000-0000-4000-8000-000000000002.png';
+    const signedUrl = `http://internal.example/files/tools/${key}?timestamp=1&nonce=test&sign=test`;
+    const props: ComponentProps<typeof AssistantMessage> = {
+      id: 'msg-1',
+      content: 'Generated chart',
+      isStreaming: false,
+      wasManuallyStopped: false,
+      resultAppId: 'app-1',
+    };
+    const renderMarkdownLinks = () => {
+      const markdownProps = reactMarkdownMock.mock.lastCall?.[0] as unknown as {
+        components: {
+          a: (input: { href: string; children: ReactNode }) => ReactNode;
+        };
+      };
+      const Link = markdownProps.components.a;
+      return (
+        <>
+          <Link href={signedUrl}>chart</Link>
+          <Link href="https://example.com/docs">docs</Link>
+        </>
+      );
+    };
+    const message = render(<AssistantMessage {...props} />);
+    const links = render(renderMarkdownLinks());
+    expect(
+      screen.queryByRole('link', { name: 'chart' })
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'docs' })).toHaveAttribute(
+      'href',
+      'https://example.com/docs'
+    );
+
+    message.rerender(
+      <AssistantMessage
+        {...props}
+        resultFiles={[
+          {
+            id: key,
+            upload_file_id: key,
+            name: 'chart.png',
+            size: 4,
+            type: 'image/*',
+            source: 'dify-output',
+            resultMessageId: 'local-message',
+          },
+        ]}
+      />
+    );
+    links.rerender(renderMarkdownLinks());
+    expect(screen.getByTestId('result-files')).toHaveTextContent('chart.png');
+    expect(screen.getByRole('link', { name: 'chart' })).toHaveAttribute(
+      'href',
+      `/api/dify/app-1/result-files/local-message/${key}`
+    );
   });
 
   it('should keep think blocks collapsed by default', () => {

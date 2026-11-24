@@ -95,15 +95,15 @@ export function findDifyFileUrl(
   return null;
 }
 
-async function readConversationFile(
+export async function readDifySignedFile(
   target: DifyProxyTargetConfig,
-  fileId: string,
+  filePath: string,
   signedUrl: string
 ) {
   const signature = new URL(signedUrl).searchParams;
   const fileUrl = new URL(target.difyApiUrl);
   const prefix = fileUrl.pathname.replace(/\/+$/, '').replace(/\/v1$/, '');
-  fileUrl.pathname = `${prefix}/files/${encodeURIComponent(fileId)}/file-preview`;
+  fileUrl.pathname = `${prefix}${filePath}`;
   fileUrl.search = '';
   fileUrl.hash = '';
   for (const name of ['timestamp', 'nonce', 'sign']) {
@@ -171,6 +171,18 @@ function fileReply(reply: FastifyReply, contentType: string | null) {
       'Content-Type',
       activeType || !contentType ? 'application/octet-stream' : contentType
     );
+}
+
+export async function sendDifyFileStream(
+  reply: FastifyReply,
+  file: NonNullable<Awaited<ReturnType<typeof readDifySignedFile>>>
+) {
+  fileReply(reply, file.contentType).send(
+    Readable.from(boundedFileBytes(file.body, file.limit), {
+      objectMode: false,
+    })
+  );
+  await reply;
 }
 
 async function refreshConversationFileUrl(
@@ -311,7 +323,11 @@ export async function handleOwnedDifyFilePreview(
       fileId
     );
     if (url) {
-      const file = await readConversationFile(target, fileId, url);
+      const file = await readDifySignedFile(
+        target,
+        `/files/${encodeURIComponent(fileId)}/file-preview`,
+        url
+      );
       if (file) {
         try {
           await confirmLegacyOwnership();
@@ -319,12 +335,7 @@ export async function handleOwnedDifyFilePreview(
           await file.body.cancel().catch(() => undefined);
           throw error;
         }
-        fileReply(reply, file.contentType).send(
-          Readable.from(boundedFileBytes(file.body, file.limit), {
-            objectMode: false,
-          })
-        );
-        await reply;
+        await sendDifyFileStream(reply, file);
         return true;
       }
     }

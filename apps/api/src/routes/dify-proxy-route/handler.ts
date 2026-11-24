@@ -27,6 +27,7 @@ import { runInputModeration } from './input-moderation';
 import { resolveDifyMessageEdit, stageDifyMessageEdit } from './message-edits';
 import { resolveProxyRequestContext } from './request-context';
 import { requiresDifyResourceAdmin } from './resource-access';
+import { handleDifyResultFile } from './result-files';
 import { resolveDifyTargetConfig } from './target-config';
 import { dispatchDifyUpstreamRequest } from './upstream';
 
@@ -83,12 +84,18 @@ async function handleDifyProxyRequest(
   }
 
   if (
-    await handleOwnedDifyFilePreview(
+    (await handleDifyResultFile(
       request,
       reply,
       contextResult.context,
       targetConfigResult.targetConfig
-    )
+    )) ||
+    (await handleOwnedDifyFilePreview(
+      request,
+      reply,
+      contextResult.context,
+      targetConfigResult.targetConfig
+    ))
   )
     return;
 

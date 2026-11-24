@@ -141,15 +141,17 @@ export const FileAttachmentDisplay: React.FC<FileAttachmentDisplayProps> = ({
               >
                 {attachment.name}
               </p>
-              <p
-                className={cn(
-                  'text-xs',
-                  'whitespace-nowrap',
-                  'text-stone-600 dark:text-stone-400'
-                )}
-              >
-                {formatBytes(attachment.size)}
-              </p>
+              {(attachment.source !== 'dify-output' || attachment.size > 0) && (
+                <p
+                  className={cn(
+                    'text-xs',
+                    'whitespace-nowrap',
+                    'text-stone-600 dark:text-stone-400'
+                  )}
+                >
+                  {formatBytes(attachment.size)}
+                </p>
+              )}
             </div>
           </button>
         );

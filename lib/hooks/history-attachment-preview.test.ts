@@ -1,11 +1,17 @@
+import { getConversationMessages } from '@lib/services/dify/message-service';
 import type { ConversationMessage } from '@lib/services/dify/types';
 import type { ChatMessage } from '@lib/stores/chat-store';
 
 import {
   applyAttachmentPreviewIds,
+  fetchAttachmentPreviewIds,
   hasPendingAttachmentPreviewSync,
   resolveHistoryAttachmentPreviewUserId,
 } from './history-attachment-preview';
+
+jest.mock('@lib/services/dify/message-service');
+
+const toolKey = '00000000-0000-4000-8000-000000000002.png';
 
 function createUserMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
   return {
@@ -183,5 +189,71 @@ describe('history attachment preview helpers', () => {
         preview_file_id: 'preview-file-2',
       }),
     ]);
+  });
+
+  it('hydrates only the saved assistant reply matched by native message ID', () => {
+    const reply = createAssistantMessage({ db_id: 'local-message' });
+    const files = [{ key: toolKey, image: true, name: 'chart.png', size: 4 }];
+    const messages = applyAttachmentPreviewIds(
+      [
+        reply,
+        createAssistantMessage({
+          id: 'other',
+          db_id: 'other-local',
+          dify_message_id: 'other-native',
+        }),
+      ],
+      [createDifyMessage({ result_files: [null!, ...files] })]
+    );
+    expect(messages[0].difyResultFiles).toEqual([
+      {
+        id: toolKey,
+        upload_file_id: toolKey,
+        name: 'chart.png',
+        size: 4,
+        type: 'image/*',
+        source: 'dify-output',
+        resultMessageId: 'local-message',
+      },
+    ]);
+    expect(messages[1].difyResultFiles).toEqual([]);
+    expect(hasPendingAttachmentPreviewSync(messages)).toBe(false);
+  });
+
+  it('looks up a saved result on an older history page', async () => {
+    const load = jest.mocked(getConversationMessages);
+    load
+      .mockReset()
+      .mockResolvedValueOnce({
+        data: [createDifyMessage({ id: 'cursor' })],
+        has_more: true,
+        limit: 20,
+      })
+      .mockResolvedValueOnce({
+        data: [
+          createDifyMessage({
+            result_files: [
+              { key: toolKey, image: true, name: 'chart.png', size: 4 },
+            ],
+          }),
+        ],
+        has_more: false,
+        limit: 100,
+      });
+    const messages = await fetchAttachmentPreviewIds({
+      appId: 'app',
+      conversationId: 'conv-1',
+      userId: 'owner',
+      chatMessages: [createAssistantMessage({ db_id: 'local-message' })],
+    });
+    expect(load).toHaveBeenNthCalledWith(
+      2,
+      'app',
+      expect.objectContaining({ first_id: 'cursor' })
+    );
+    expect(messages[0].difyResultFiles?.[0]).toMatchObject({
+      resultMessageId: 'local-message',
+      name: 'chart.png',
+    });
   });
 });

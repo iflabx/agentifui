@@ -42,6 +42,7 @@ import {
   acceptDifyMessageEdit,
   sanitizeDifyMessageHistory,
 } from './message-edits';
+import { projectDifyResultFiles } from './result-files';
 import { sendUpstreamStream } from './stream';
 import {
   injectTrustedUserContext,
@@ -233,7 +234,10 @@ async function sendUpstreamResponse(input: {
       input.loadHistoryPage,
       target.searchParams.get('first_id') ?? undefined
     );
-    reply.type('application/json').status(upstream.status).send(visible);
+    reply
+      .type('application/json')
+      .status(upstream.status)
+      .send(projectDifyResultFiles(visible, input.targetConfig));
     return;
   }
 

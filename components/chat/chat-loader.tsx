@@ -210,6 +210,8 @@ export const ChatLoader = ({
                   wasManuallyStopped={msg.wasManuallyStopped ?? false}
                   metadata={msg.metadata}
                   id={msg.id}
+                  resultFiles={msg.difyResultFiles}
+                  resultAppId={conversationAppId ?? undefined}
                 />
               )
             )}

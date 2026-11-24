@@ -44,6 +44,9 @@ async function fetchPreview(
   if (file.source !== 'agent-input')
     return previewDifyFile(appId, fileId, {
       as_attachment: download,
+      ...(file.source === 'dify-output'
+        ? { resultMessageId: file.resultMessageId }
+        : {}),
     });
   const response = await fetch(
     agentPath(appId, `/files/${encodeURIComponent(fileId)}`),
@@ -86,7 +89,11 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
     // Preserve the file's original app context first; only fall back to the caller appId.
     const finalAppId = file.app_id || appId;
 
-    if (!finalAppId || !previewFileId) {
+    if (
+      !finalAppId ||
+      !previewFileId ||
+      (file.source === 'dify-output' && !file.resultMessageId)
+    ) {
       set({
         error: !finalAppId
           ? 'No application ID available for file preview'
@@ -106,8 +113,7 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
     const cacheStore = useFilePreviewCacheStore.getState();
 
     // Try to get from cache first
-    const cachedEntry =
-      file.source === 'agent-input' ? undefined : cacheStore.get(cacheKey);
+    const cachedEntry = file.source ? undefined : cacheStore.get(cacheKey);
 
     if (cachedEntry) {
       // Cache hit - use cached content
@@ -144,7 +150,7 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
 
       // Store in cache
       const cached =
-        file.source !== 'agent-input' &&
+        !file.source &&
         cacheStore.set(cacheKey, response.content, response.headers);
 
       // Log cache status for debugging (only in development)
@@ -201,7 +207,12 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
       '';
 
     const finalAppId = currentPreviewFile.app_id;
-    if (!finalAppId || !previewFileId) {
+    if (
+      !finalAppId ||
+      !previewFileId ||
+      (currentPreviewFile.source === 'dify-output' &&
+        !currentPreviewFile.resultMessageId)
+    ) {
       set({
         error: !finalAppId
           ? 'No application ID available for file download'

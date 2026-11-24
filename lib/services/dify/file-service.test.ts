@@ -49,4 +49,26 @@ describe('Dify file preview service', () => {
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it.each([false, true])(
+    'binds result file reads to the local reply (download: %s)',
+    async asAttachment => {
+      const fetchMock = jest
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(new Response('file'));
+      await previewDifyFile('app-1', 'tool.png', {
+        resultMessageId: 'local-message',
+        as_attachment: asAttachment,
+      });
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/dify/app-1/result-files/local-message/tool.png' +
+          (asAttachment ? '?as_attachment=true' : ''),
+        expect.objectContaining({
+          credentials: 'same-origin',
+          redirect: 'error',
+          cache: 'no-store',
+        })
+      );
+    }
+  );
 });
