@@ -230,21 +230,20 @@ export async function prepareAgentRunInput(input: {
     invalid('INPUT_TEXT_INVALID');
 
   const fields = new Map(capabilities.fields.map(field => [field.key, field]));
-  const difyInputs: DifyChatInputs = { ...trusted };
+  const messageInputFields: Record<string, Scalar> = {};
   for (const [key, value] of Object.entries(request.inputs ?? {})) {
     const field = fields.get(key);
     if (!field) invalid('INPUT_FIELD_INVALID');
     if (typeof value === 'string' && !value.trim()) continue;
-    difyInputs[key] = normalizeField(field, value);
+    messageInputFields[key] = normalizeField(field, value);
   }
   for (const field of fields.values()) {
-    if (
-      field.required &&
-      (field.default === undefined || field.default === '') &&
-      !Object.hasOwn(difyInputs, field.key)
-    )
-      invalid('INPUT_FIELD_REQUIRED');
+    if (Object.hasOwn(messageInputFields, field.key)) continue;
+    if (field.default !== undefined && field.default !== '')
+      messageInputFields[field.key] = normalizeField(field, field.default);
+    else if (field.required) invalid('INPUT_FIELD_REQUIRED');
   }
+  const difyInputs: DifyChatInputs = { ...messageInputFields, ...trusted };
 
   const slots = new Map(
     capabilities.attachmentSlots.map(slot => [slot.key, slot])
@@ -313,6 +312,7 @@ export async function prepareAgentRunInput(input: {
   }
   return {
     inputs: difyInputs,
+    ...(Object.keys(messageInputFields).length ? { messageInputFields } : {}),
     ...(difyFiles.length ? { files: difyFiles } : {}),
     ...(hasLangChainFiles ? { inputFiles } : {}),
   };

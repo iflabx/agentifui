@@ -1,4 +1,4 @@
-import { type InputFileType, validateInputFileCount } from '@agentifui/shared';
+import type { InputFileType } from '@agentifui/shared';
 
 import type { AgentApp } from '../agent-app';
 import { normalizeDifyInputCapabilities } from '../dify-input-capabilities';
@@ -175,50 +175,6 @@ export async function uploadDifyChatbotFile(
   if (typeof id !== 'string' || !/^[a-zA-Z0-9_-]{1,255}$/.test(id))
     throw new DifyRuntimeError('DIFY_UPLOAD_RESPONSE_INVALID');
   return id;
-}
-
-export async function verifyDifyChatbot(
-  app: AgentApp,
-  inputs: DifyChatInputs = {},
-  files: readonly DifyInputFile[] = []
-): Promise<void> {
-  const parameters = await readDifyChatbotParameters(app);
-  const capabilities = normalizeDifyInputCapabilities(parameters, 'chatbot');
-  for (const slot of capabilities.attachmentSlots) {
-    const value = slot.target === 'files' ? files : inputs[slot.key];
-    const count = Array.isArray(value)
-      ? value.length
-      : typeof value === 'object' && value !== null
-        ? 1
-        : 0;
-    if (validateInputFileCount(slot, count))
-      throw new DifyRuntimeError('DIFY_PARAMETERS_UNSUPPORTED');
-  }
-  if (!Array.isArray(parameters.user_input_form))
-    throw new DifyRuntimeError('DIFY_PARAMETERS_UNSUPPORTED');
-  for (const field of parameters.user_input_form) {
-    if (!field || typeof field !== 'object' || Array.isArray(field))
-      throw new DifyRuntimeError('DIFY_PARAMETERS_UNSUPPORTED');
-    for (const value of Object.values(field)) {
-      if (!value || typeof value !== 'object' || Array.isArray(value))
-        throw new DifyRuntimeError('DIFY_PARAMETERS_UNSUPPORTED');
-      const parameter = value as Record<string, unknown>;
-      if (
-        parameter.required === true &&
-        (parameter.default === undefined ||
-          parameter.default === null ||
-          parameter.default === '') &&
-        !(
-          typeof parameter.variable === 'string' &&
-          Object.hasOwn(inputs, parameter.variable) &&
-          inputs[parameter.variable] !== '' &&
-          (!Array.isArray(inputs[parameter.variable]) ||
-            (inputs[parameter.variable] as DifyInputFile[]).length > 0)
-        )
-      )
-        throw new DifyRuntimeError('DIFY_PARAMETERS_UNSUPPORTED');
-    }
-  }
 }
 
 export async function* parseDifyRuntimeStream(

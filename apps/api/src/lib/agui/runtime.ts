@@ -58,6 +58,7 @@ export async function executeNegotiatedAgentRun(input: {
   content: string;
   inputs: DifyChatInputs;
   files?: DifyInputFile[];
+  difyModeUnsupported?: boolean;
   inputFiles?: AgentInputFileReference[];
   emit: (event: Event) => void;
   report: (context: { runId: string; code: string }) => void;

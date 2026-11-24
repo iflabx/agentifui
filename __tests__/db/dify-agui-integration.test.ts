@@ -533,6 +533,48 @@ it('keeps edited Dify user text separate from the implicit upstream query', asyn
   ).toBe(6);
 });
 
+it('saves the effective Dify fields and restores them when a turn is edited', async () => {
+  parameters = {
+    user_input_form: [
+      { 'text-input': { variable: 'topic', required: true } },
+      { 'text-input': { variable: 'style', default: 'brief' } },
+    ],
+  };
+  const first = await stored(
+    await submit('first', { extra: { inputs: { topic: 'Synthetic topic' } } })
+  );
+  expect(calls.map(call => call.path)).toEqual([
+    '/info',
+    '/parameters',
+    '/chat-messages',
+  ]);
+  const original = (await get(`conversations/${first.conversation_id}`)).json();
+  expect(original.messages[0].metadata.input_fields).toEqual({
+    topic: 'Synthetic topic',
+    style: 'brief',
+  });
+  parameters = {
+    user_input_form: [
+      { 'text-input': { variable: 'topic', required: true } },
+      { 'text-input': { variable: 'style', default: 'detailed' } },
+    ],
+  };
+  const edited = await submit('replacement', {
+    conversationId: first.conversation_id,
+    extra: { editSourceId: first.user_message_id },
+  });
+  expect((await stored(edited)).execution_status).toBe('success');
+  expect(generations().at(-1)?.body.inputs).toMatchObject({
+    topic: 'Synthetic topic',
+    style: 'brief',
+  });
+  expect(calls.filter(call => call.path === '/parameters')).toHaveLength(2);
+  const history = (await get(`conversations/${first.conversation_id}`)).json();
+  expect(history.messages[0].metadata.input_fields).toEqual(
+    original.messages[0].metadata.input_fields
+  );
+});
+
 it('saves two negotiated turns once with trusted native identity and complete local history across API replicas', async () => {
   const first = await submit('first');
   expect(first.statusCode).toBe(200);

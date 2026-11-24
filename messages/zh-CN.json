@@ -201,6 +201,7 @@
         "uploading": "上传中...",
         "uploadFailed": "上传失败",
         "capabilitiesUnavailable": "暂时无法获取输入要求，请重试。",
+        "capabilitiesChanged": "输入要求已变化。请检查参数和附件后再发送。",
         "capabilitiesUnsupported": "暂不支持此应用的输入要求，请检查应用配置。",
         "filesRequired": "请添加必需的附件。",
         "uploadPending": "请等待上传完成，或删除上传失败的文件。",

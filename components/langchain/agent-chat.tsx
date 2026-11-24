@@ -5,6 +5,10 @@ import { useEditResend } from '@components/chat-input/edit-resend';
 import { ChatInputView } from '@components/chat-input/view';
 import { ChatMessage } from '@components/chat/session/chat-message';
 import { ChatSessionView } from '@components/chat/session/chat-session-view';
+import {
+  useFollowChatOutput,
+  useRunProcessSelection,
+} from '@components/chat/session/use-session-presentation';
 import { toolProcessItem } from '@components/execution-process/adapters';
 import { ExecutionProcessDisclosure } from '@components/execution-process/disclosure';
 import { ExecutionProcessRow } from '@components/execution-process/row';
@@ -122,10 +126,6 @@ function AgentChatSession({
     conversationId,
     chat.draftScope,
   ]);
-  const [processSelection, setProcessSelection] = useState<{
-    scope: string;
-    runKey: string;
-  } | null>(null);
   const [selection, setSelection] = useState<{
     epoch: number;
     target: string;
@@ -140,8 +140,6 @@ function AgentChatSession({
     scope ? state.drafts[scope] : undefined
   );
   const content = draft?.text || '';
-  const scrollArea = useRef<HTMLDivElement>(null);
-  const following = useRef(true);
   const [inputHeight, setInputHeight] = useState(160);
   const disabled =
     authLoading ||
@@ -161,6 +159,7 @@ function AgentChatSession({
     enabled: chat.acceptsInputCapabilities === true,
     disabled,
     content,
+    submissionError: chat.error,
   });
   const edit = useEditResend({
     sourceIds: chat.view.messages.map(message => message.id),
@@ -231,13 +230,9 @@ function AgentChatSession({
     processRuns.set(key, [...(processRuns.get(key) || []), entry.tool]);
   }
   const renderedProcessRuns = new Set<string>();
-  const selectedProcessKey =
-    processSelection?.scope === processScope &&
-    processRuns.has(processSelection.runKey)
-      ? processSelection.runKey
-      : null;
-  if (processSelection && selectedProcessKey === null)
-    setProcessSelection(null);
+  const process = useRunProcessSelection(processScope, key =>
+    processRuns.has(key)
+  );
 
   useLayoutEffect(() => {
     if (actorEpoch === null || authLoading) return;
@@ -266,16 +261,12 @@ function AgentChatSession({
         .bindConversation(scope, appId, chat.view.conversationId);
   }, [scope, appId, chat.draftScope, chat.view.conversationId]);
 
-  useEffect(() => {
-    const area = scrollArea.current;
-    if (area && following.current && !edit.controls.pending)
-      area.scrollTop = area.scrollHeight;
-  }, [
-    chat.view.messages,
-    chat.view.tools,
-    chat.draftScope,
-    edit.controls.pending,
-  ]);
+  const scroll = useFollowChatOutput({
+    scope: chat.draftScope,
+    messages: chat.view.messages,
+    activity: chat.view.tools,
+    paused: Boolean(edit.controls.pending),
+  });
 
   const submit = async () => {
     if (disabled || edit.active || !composerInput.canSubmit) return;
@@ -324,15 +315,10 @@ function AgentChatSession({
         </header>
       }
       scrollProps={{
-        ref: scrollArea,
+        ...scroll,
         style: { paddingBottom: inputHeight + 96 },
         'aria-live': 'polite',
         'aria-busy': chat.busy || chat.historyLoading,
-        onScroll: event => {
-          const area = event.currentTarget;
-          following.current =
-            area.scrollHeight - area.scrollTop - area.clientHeight < 100;
-        },
       }}
       composer={
         <ChatInputView
@@ -438,12 +424,8 @@ function AgentChatSession({
                       runKey,
                     ])}
                     placement="panel"
-                    open={selectedProcessKey === runKey}
-                    onOpenChange={open =>
-                      setProcessSelection(
-                        open ? { scope: processScope, runKey } : null
-                      )
-                    }
+                    open={process.selected === runKey}
+                    onOpenChange={open => process.setOpen(runKey, open)}
                     title={tool.name}
                     items={activities.map(activity =>
                       toolProcessItem(activity, historicalProcess)

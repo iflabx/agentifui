@@ -95,6 +95,7 @@ export interface ReserveAgentRunInput {
   submissionId: string;
   content: string;
   inputs?: Record<string, string | number>;
+  messageInputFields?: Record<string, string | number>;
   attachments?: AgentInputFileReference[];
   conversationId?: string;
   editSourceId?: string;
@@ -268,6 +269,22 @@ export async function assertAgentInputConversation(
     ]
   );
   if (!rows[0]) throw new AgentRunError(409, 'AGENT_CONVERSATION_UNAVAILABLE');
+}
+
+export async function loadAgentEditInputFields(
+  conversationId: string,
+  userId: string,
+  messageId: string
+) {
+  const rows = await queryRowsWithPgSystemContext<{ fields: unknown }>(
+    `SELECT metadata->'input_fields' AS fields FROM messages
+     WHERE id = $1::uuid AND conversation_id = $2::uuid
+       AND user_id = $3::uuid AND role = 'user'
+       AND COALESCE(metadata->>'edit_hidden', 'false') <> 'true'`,
+    [messageId, conversationId, userId]
+  );
+  if (!rows[0]) throw new AgentRunError(409, 'AGENT_EDIT_SOURCE_UNAVAILABLE');
+  return rows[0].fields ?? undefined;
 }
 
 export async function reserveRun(input: ReserveAgentRunInput): Promise<{
@@ -490,6 +507,9 @@ export async function reserveRun(input: ReserveAgentRunInput): Promise<{
           backendType,
           JSON.stringify({
             ...(editSourceId ? { edit_source_id: editSourceId } : {}),
+            ...(input.messageInputFields
+              ? { input_fields: input.messageInputFields }
+              : {}),
             ...(inputFiles.length
               ? { input_attachments: inputFiles.map(messageInputFile) }
               : {}),

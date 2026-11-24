@@ -46,6 +46,7 @@ import {
   type AgentRunRecord,
   assertAgentInputConversation,
   getRunForActor,
+  loadAgentEditInputFields,
   recordRunDeliverables,
   reserveRun,
   saveRunResult,
@@ -600,6 +601,8 @@ export const agentRunsRoutes: FastifyPluginAsync<{
         throw new AgentAppError(400, 'INVALID_AGENT_REQUEST');
       if (editSourceId && requestedInput.attachments?.length)
         throw new AgentAppError(409, 'AGENT_EDIT_ATTACHMENTS_UNSUPPORTED');
+      if (editSourceId && !conversationId)
+        throw new AgentAppError(400, 'INVALID_AGENT_REQUEST');
       if (
         app.backendType === 'dify' &&
         (!conversationId ||
@@ -636,15 +639,14 @@ export const agentRunsRoutes: FastifyPluginAsync<{
       let prepared: Awaited<ReturnType<typeof prepareAgentRunInput>> = {
         inputs: {},
       };
+      let difyModeUnsupported = false;
       let reservation;
       try {
         if (!registration.replayed) {
-          const configuredDify =
-            app.backendType === 'dify' &&
-            app.interactionProtocol === 'ag-ui/1.0';
+          const isDify = app.backendType === 'dify';
           if (
             conversationId &&
-            (scopedLangChain || configuredDify || hasConfiguredInput)
+            (scopedLangChain || isDify || hasConfiguredInput)
           )
             await assertAgentInputConversation(conversationId, {
               userId: actor.userId,
@@ -652,20 +654,54 @@ export const agentRunsRoutes: FastifyPluginAsync<{
               configFingerprint: app.fingerprint,
               backendType: app.backendType ?? 'langchain',
             });
-          const trusted =
-            app.backendType === 'dify'
-              ? buildTrustedUserInputs(
-                  actor,
-                  await loadTrustedUserProfile(actor.userId)
-                )
-              : {};
+          const trusted = isDify
+            ? buildTrustedUserInputs(
+                actor,
+                await loadTrustedUserProfile(actor.userId)
+              )
+            : {};
+          const sourceFields =
+            isDify && editSourceId && conversationId
+              ? parseAgentRunInputs({
+                  inputs: await loadAgentEditInputFields(
+                    conversationId,
+                    actor.userId,
+                    editSourceId
+                  ),
+                }).inputs
+              : undefined;
+          const effectiveInput = sourceFields
+            ? {
+                ...requestedInput,
+                inputs: { ...sourceFields, ...requestedInput.inputs },
+              }
+            : requestedInput;
+          prepared = { inputs: trusted };
+          if (scopedLangChain || isDify || hasConfiguredInput) {
+            const capabilities = await resolveSharedAgentInputCapabilities(app);
+            difyModeUnsupported =
+              isDify &&
+              !effectiveInput.inputs &&
+              !effectiveInput.attachments &&
+              capabilities.reason === 'DIFY_MODE_UNSUPPORTED';
+            if (!difyModeUnsupported)
+              prepared = await prepareAgentRunInput({
+                app,
+                userId: actor.userId,
+                content,
+                agui,
+                capabilities,
+                request: effectiveInput,
+                trusted,
+              });
+          }
           const moderation = await moderateInputText({
             request,
             config: options.config,
             userId: actor.userId,
             text: [
               content,
-              ...Object.values(requestedInput.inputs ?? {}).map(String),
+              ...Object.values(prepared.messageInputFields ?? {}).map(String),
               ...Object.values(trusted),
             ].join('\n'),
           });
@@ -679,24 +715,6 @@ export const agentRunsRoutes: FastifyPluginAsync<{
                 ? 'CONTENT_MODERATION_BLOCKED'
                 : 'CONTENT_MODERATION_UNAVAILABLE'
             );
-          prepared = { inputs: trusted };
-          if (scopedLangChain || configuredDify || hasConfiguredInput) {
-            const capabilities = await resolveSharedAgentInputCapabilities(app);
-            const preserveNativeModeError =
-              configuredDify &&
-              !hasConfiguredInput &&
-              capabilities.reason === 'DIFY_MODE_UNSUPPORTED';
-            if (!preserveNativeModeError)
-              prepared = await prepareAgentRunInput({
-                app,
-                userId: actor.userId,
-                content,
-                agui,
-                capabilities,
-                request: requestedInput,
-                trusted,
-              });
-          }
         }
         reservation = await reserveRun({
           governanceTaskId: rootTaskId,
@@ -709,6 +727,9 @@ export const agentRunsRoutes: FastifyPluginAsync<{
           conversationId,
           content,
           ...requestedInput,
+          ...(prepared.messageInputFields
+            ? { messageInputFields: prepared.messageInputFields }
+            : {}),
           ...readAgentAdmissionLimits(),
           ...(editSourceId ? { editSourceId } : {}),
         });
@@ -779,7 +800,15 @@ export const agentRunsRoutes: FastifyPluginAsync<{
       };
       const task = (
         agui
-          ? executeNegotiatedAgentRun({ ...execution, ...prepared })
+          ? executeNegotiatedAgentRun({
+              ...execution,
+              inputs: prepared.inputs,
+              ...(prepared.files ? { files: prepared.files } : {}),
+              ...(prepared.inputFiles
+                ? { inputFiles: prepared.inputFiles }
+                : {}),
+              ...(difyModeUnsupported ? { difyModeUnsupported } : {}),
+            })
           : executeAgentRun(execution)
       )
         .catch(() => {

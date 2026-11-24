@@ -3,6 +3,10 @@
 import { ChatMessage } from '@components/chat/session/chat-message';
 import { ChatSessionView } from '@components/chat/session/chat-session-view';
 import {
+  useFollowChatOutput,
+  useRunProcessSelection,
+} from '@components/chat/session/use-session-presentation';
+import {
   WorkflowInputForm,
   type WorkflowInputFormRef,
 } from '@components/workflow/workflow-input-form';
@@ -183,14 +187,20 @@ function TaskChatSession({
     null
   );
   const [result, setResult] = useState<AppExecution | null>(null);
-  const [processId, setProcessId] = useState<string | null>(null);
   const form = useRef<WorkflowInputFormRef>(null);
   const mounted = useRef(false);
   const request = useRef(0);
   const submission = useRef<{ id: string; signature: string } | null>(null);
-  const scroll = useRef<HTMLDivElement>(null);
-  const following = useRef(true);
   const nodes = useWorkflowExecutionStore(state => state.nodes);
+  const scroll = useFollowChatOutput({
+    scope: conversationId,
+    messages: executions,
+    activity: nodes,
+    streamedText: runner.generatedText,
+  });
+  const process = useRunProcessSelection(conversationId, id =>
+    executions.some(execution => execution.id === id)
+  );
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -232,10 +242,6 @@ function TaskChatSession({
     )
       setExecutions(previous => mergeTaskExecutions(previous, [current]));
   }, [runner.currentExecution, conversationId, actorId]);
-  useEffect(() => {
-    if (following.current && scroll.current)
-      scroll.current.scrollTop = scroll.current.scrollHeight;
-  }, [executions, runner.generatedText, nodes]);
   const busy = submitting || runner.isExecuting;
   const unresolved =
     !busy &&
@@ -333,14 +339,7 @@ function TaskChatSession({
       jumpToBottom={false}
       backdrop={false}
       filePreview
-      scrollProps={{
-        ref: scroll,
-        onScroll: event => {
-          const area = event.currentTarget;
-          following.current =
-            area.scrollHeight - area.scrollTop - area.clientHeight < 100;
-        },
-      }}
+      scrollProps={scroll}
       composer={
         <div
           className={cn(
@@ -439,10 +438,8 @@ function TaskChatSession({
                   <TaskProcess
                     execution={execution}
                     live={live}
-                    open={processId === execution.id}
-                    onOpenChange={open =>
-                      setProcessId(open ? execution.id : null)
-                    }
+                    open={process.selected === execution.id}
+                    onOpenChange={open => process.setOpen(execution.id, open)}
                   />
                   {output && (
                     <ChatMessage

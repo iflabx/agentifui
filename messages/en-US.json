@@ -201,6 +201,7 @@
         "uploading": "Uploading...",
         "uploadFailed": "Upload failed",
         "capabilitiesUnavailable": "Unable to load input requirements. Retry.",
+        "capabilitiesChanged": "Input requirements have changed. Review the fields and attachments before sending again.",
         "capabilitiesUnsupported": "Input requirements are not supported. Check the app configuration.",
         "filesRequired": "Add the required attachments.",
         "uploadPending": "Wait for uploads or remove failed files.",

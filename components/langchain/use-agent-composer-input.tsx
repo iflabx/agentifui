@@ -9,8 +9,15 @@ import {
   uploadScopedAttachment,
   uploadValidationMessage,
 } from '@components/chat-input/use-uploads';
-import { useAgentInputCapabilities } from '@lib/hooks/use-agent-input-capabilities';
-import { agentRequest } from '@lib/services/client/langchain-api';
+import {
+  useAgentInputCapabilities,
+  useRetainedInputCapabilities,
+} from '@lib/hooks/use-agent-input-capabilities';
+import {
+  AgentRequestError,
+  agentInputRequirementsChanged,
+  agentRequest,
+} from '@lib/services/client/langchain-api';
 import type {
   AgentInputFile,
   AgentTurnInputs,
@@ -21,13 +28,14 @@ import {
 } from '@lib/stores/attachment-store';
 import { useLangchainDraftStore } from '@lib/stores/langchain-draft-store';
 
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 
-import type {
-  AgentAttachmentSlot,
-  AgentInputField,
+import {
+  type AgentAttachmentSlot,
+  type AgentInputField,
+  validateInputFile,
 } from '../../packages/shared/src/agent-input';
 
 const noFiles: AttachmentFile[] = [];
@@ -108,6 +116,7 @@ export function useAgentComposerInput({
   enabled,
   disabled,
   content,
+  submissionError,
 }: {
   appId: string;
   actorId: string;
@@ -115,6 +124,7 @@ export function useAgentComposerInput({
   enabled: boolean;
   disabled: boolean;
   content: string;
+  submissionError?: AgentRequestError | null;
 }) {
   const t = useTranslations('pages.chat');
   const tCommon = useTranslations('common.ui');
@@ -122,6 +132,14 @@ export function useAgentComposerInput({
   const actorEpoch = useLangchainDraftStore(state => state.actorEpoch);
   const input = useAgentInputCapabilities(enabled ? appId : null);
   const capabilities = input.capabilities;
+  const displayedCapabilities = useRetainedInputCapabilities(capabilities);
+  const refreshCapabilities = input.retry;
+  const requirementsChanged = agentInputRequirementsChanged(
+    submissionError?.detail?.code
+  );
+  useEffect(() => {
+    if (enabled && requirementsChanged) refreshCapabilities();
+  }, [enabled, requirementsChanged, submissionError, refreshCapabilities]);
   const filesByScope = useAttachmentStore(state => state.filesByScope);
   const [parameterDraft, setParameterDraft] = useState<{
     scope: string;
@@ -134,7 +152,7 @@ export function useAgentComposerInput({
   const activeScope = scope ?? '';
   const values =
     parameterDraft?.scope === activeScope ? parameterDraft.values : noFields;
-  const slots = capabilities?.attachmentSlots ?? [];
+  const slots = displayedCapabilities?.attachmentSlots ?? [];
   const choices = slots.map((slot, index) => {
     const key = JSON.stringify([
       'agent-input',
@@ -160,8 +178,14 @@ export function useAgentComposerInput({
   const transfer = (
     entry: { scope: string; slot: AgentAttachmentSlot },
     draftId: string
-  ) =>
-    uploadScopedAttachment({
+  ) => {
+    const current = useAttachmentStore
+      .getState()
+      .getFiles(entry.scope)
+      .find(file => file.id === draftId);
+    if (!ready || !current || validateInputFile(entry.slot, current.file))
+      return;
+    return uploadScopedAttachment({
       scope: entry.scope,
       draftId,
       appId,
@@ -177,8 +201,16 @@ export function useAgentComposerInput({
           body: form,
         });
       },
-      onError: () => t('input.uploadFailed'),
+      onError: error => {
+        if (
+          error instanceof AgentRequestError &&
+          agentInputRequirementsChanged(error.detail?.code)
+        )
+          refreshCapabilities();
+        return t('input.uploadFailed');
+      },
     });
+  };
   const textDisabled = ready && capabilities.text.enabled === false;
   const hasText = !textDisabled && Boolean(content.trim());
   const fieldInputs = Object.fromEntries(
@@ -200,7 +232,10 @@ export function useAgentComposerInput({
             entry.count >= entry.slot.minCount &&
             entry.count <= entry.slot.maxCount &&
             entry.files.every(
-              file => file.status === 'success' && file.uploadedId
+              file =>
+                file.status === 'success' &&
+                file.uploadedId &&
+                !validateInputFile(entry.slot, file.file)
             )
         ) &&
         (hasText ||
@@ -337,17 +372,23 @@ export function useAgentComposerInput({
       </div>
     ) : null,
     notice:
-      enabled && !ready && !input.isLoading ? (
+      enabled && (!ready || requirementsChanged) && !input.isLoading ? (
         <p
           role="alert"
           className="px-3 py-2 text-sm text-amber-700 dark:text-amber-300"
         >
           {t(
-            capabilities?.status === 'unsupported'
-              ? 'input.capabilitiesUnsupported'
-              : 'input.capabilitiesUnavailable'
+            ready
+              ? 'input.capabilitiesChanged'
+              : capabilities?.status === 'unsupported'
+                ? 'input.capabilitiesUnsupported'
+                : 'input.capabilitiesUnavailable'
           )}{' '}
-          <button type="button" className="underline" onClick={input.retry}>
+          <button
+            type="button"
+            className="underline"
+            onClick={refreshCapabilities}
+          >
             {tCommon('retry')}
           </button>
         </p>

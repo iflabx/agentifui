@@ -4,6 +4,7 @@ import { conversationEvents } from '@lib/hooks/use-combined-conversations';
 import { consumeAguiStream } from '@lib/services/client/agui-stream';
 import {
   AgentRequestError,
+  agentInputRequirementsChanged,
   agentMessageFitsRequest,
   agentPath,
   agentRequest,
@@ -700,18 +701,20 @@ export function useAgentChat(
       );
       if (failure instanceof AgentRequestError && !latest.runId) {
         if (
-          failure.status >= 400 &&
-          failure.status < 500 &&
-          failure.status !== 408 &&
-          (failure.status !== 409 ||
-            [
-              'AGENT_RESULT_PROFILE_DISABLED',
-              'AGENT_EDIT_SOURCE_UNAVAILABLE',
-              'INPUT_FILE_CHANGED',
-              'INPUT_PROFILE_UNSUPPORTED',
-              'INPUT_CAPABILITIES_UNSUPPORTED',
-              'DIFY_MODE_UNSUPPORTED',
-            ].includes(failure.detail?.code ?? ''))
+          agentInputRequirementsChanged(failure.detail?.code) ||
+          (failure.status >= 400 &&
+            failure.status < 500 &&
+            failure.status !== 408 &&
+            (failure.status !== 409 ||
+              [
+                'AGENT_RESULT_PROFILE_DISABLED',
+                'AGENT_EDIT_SOURCE_UNAVAILABLE',
+                'AGENT_EDIT_ATTACHMENTS_UNSUPPORTED',
+                'INPUT_FILE_CHANGED',
+                'INPUT_PROFILE_UNSUPPORTED',
+                'INPUT_CAPABILITIES_UNSUPPORTED',
+                'DIFY_MODE_UNSUPPORTED',
+              ].includes(failure.detail?.code ?? '')))
         ) {
           editResult = false;
           setView(view);

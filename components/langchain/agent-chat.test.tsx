@@ -221,6 +221,57 @@ describe('Agent chat draft', () => {
     expect(screen.getByText('Agent description')).toBeInTheDocument();
   });
 
+  it('refreshes changed input requirements and preserves the text draft', async () => {
+    const base = useAgentChat('app', null, 'user');
+    jest.mocked(useAgentChat).mockReturnValue({
+      ...base,
+      acceptsInputCapabilities: true,
+    });
+    const capabilities = (label: string) => ({
+      version: 1,
+      status: 'ready',
+      text: { enabled: true, required: true, target: 'query' },
+      fields: [{ key: 'topic', label, type: 'text-input', required: true }],
+      attachmentSlots: [],
+    });
+    let label = 'Original topic';
+    syncChatDraftActor('user');
+    const fetchMock = jest
+      .spyOn(global, 'fetch')
+      .mockImplementation(
+        async () =>
+          ({ ok: true, json: async () => capabilities(label) }) as Response
+      );
+    try {
+      const view = render(<AgentChat appId="app" conversationId={null} />);
+      await screen.findByLabelText('Original topic');
+      const input = screen.getByRole('textbox', { name: '' });
+      fireEvent.change(input, { target: { value: 'Keep this question' } });
+      const initialCalls = fetchMock.mock.calls.length;
+      label = 'Updated topic';
+      jest.mocked(useAgentChat).mockReturnValue({
+        ...base,
+        acceptsInputCapabilities: true,
+        error: new AgentRequestError(400, {
+          code: 'INPUT_FIELD_INVALID',
+          userMessage: 'Requirements changed',
+          source: 'frontend',
+          severity: 'warn',
+          retryable: false,
+          requestId: '',
+          occurredAt: '2026-01-01T00:00:00.000Z',
+        }),
+      });
+      view.rerender(<AgentChat appId="app" conversationId={null} />);
+      await screen.findByLabelText('Updated topic');
+      expect(fetchMock).toHaveBeenCalledTimes(initialCalls + 1);
+      expect(input).toHaveValue('Keep this question');
+      expect(send).not.toHaveBeenCalled();
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
   it('edits in the original message and preserves the bottom draft on rejection and acceptance', async () => {
     const base = useAgentChat('app', null, 'user');
     const messages = [

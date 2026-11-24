@@ -201,6 +201,7 @@
         "uploading": "A carregar...",
         "uploadFailed": "Falha no carregamento",
         "capabilitiesUnavailable": "Não foi possível carregar os requisitos de entrada. Tente novamente.",
+        "capabilitiesChanged": "Os requisitos de entrada mudaram. Reveja os campos e anexos antes de voltar a enviar.",
         "capabilitiesUnsupported": "Requisitos de entrada não suportados. Verifique a configuração da aplicação.",
         "filesRequired": "Adicione os anexos necessários.",
         "uploadPending": "Aguarde os carregamentos ou remova os ficheiros com falha.",

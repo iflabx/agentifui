@@ -201,6 +201,7 @@
         "uploading": "Caricamento in corso...",
         "uploadFailed": "Caricamento fallito",
         "capabilitiesUnavailable": "Impossibile caricare i requisiti di input. Riprova.",
+        "capabilitiesChanged": "I requisiti di input sono cambiati. Controlla i campi e gli allegati prima di inviare di nuovo.",
         "capabilitiesUnsupported": "Requisiti di input non supportati. Controlla la configurazione dell'app.",
         "filesRequired": "Aggiungi gli allegati richiesti.",
         "uploadPending": "Attendi i caricamenti o rimuovi i file non riusciti.",
