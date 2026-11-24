@@ -1558,6 +1558,17 @@
             "title": "Dify-Parameterkonfiguration",
             "appTypeNote": "Anwendungen mit \"Modell\"-Typ erscheinen im Chat-Interface-Modellwähler"
           },
+          "conversationTurns": {
+            "label": "Dialogmodus (optional)",
+            "default": "Anwendungsstandard",
+            "single": "Einzeldialog",
+            "multi": "Mehrstufiger Dialog",
+            "independent": "Unabhängige Ausführungen",
+            "note": "Wählen Sie den mehrstufigen Dialog nur, wenn die vorgelagerte Anwendung früheren Kontext verwendet.",
+            "independentNote": "Im selben Fenster sind mehrere unabhängige Ausführungen ohne gemeinsamen Kontext möglich.",
+            "humanInputNote": "Ein Agent mit menschlicher Bestätigung bearbeitet pro Unterhaltung eine Aufgabe.",
+            "typeMismatch": "Dify meldet {type}. Der gespeicherte Anwendungstyp wurde nicht geändert."
+          },
           "backend": {
             "label": "Backend",
             "assistantId": "Assistant ID",

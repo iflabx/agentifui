@@ -1,6 +1,7 @@
 'use client';
 
 import { ChatMessage } from '@components/chat/session/chat-message';
+import { ChatSessionHeader } from '@components/chat/session/chat-session-header';
 import { ChatSessionView } from '@components/chat/session/chat-session-view';
 import {
   useFollowChatOutput,
@@ -24,6 +25,8 @@ import {
   updateExecutionStatus,
 } from '@lib/services/client/app-executions-api';
 import { useAppListStore } from '@lib/stores/app-list-store';
+import { moveTaskDraft, taskDraftKey } from '@lib/stores/chat-draft-session';
+import { useChatInputStore } from '@lib/stores/chat-input-store';
 import { useWorkflowExecutionStore } from '@lib/stores/workflow-execution-store';
 import type { AppExecution, ExecutionType } from '@lib/types/database';
 import { cn } from '@lib/utils';
@@ -61,6 +64,11 @@ export function TaskChat(props: TaskChatProps) {
     generation: number;
   } | null>(null);
   const { session, loading } = useAuthSession();
+  const sessionId = useChatInputStore(state =>
+    state.actorId === session?.user.id
+      ? (state.actorSessionId ?? undefined)
+      : undefined
+  );
   const apps = useAppListStore(state => state.apps);
   const fetchApps = useAppListStore(state => state.fetchApps);
   const t = useTranslations('taskChat');
@@ -99,8 +107,10 @@ export function TaskChat(props: TaskChatProps) {
   const common = {
     ...props,
     appId: app.id,
+    appName: app.display_name || app.instance_id,
     instanceId: app.instance_id,
     actorId: session.user.id,
+    sessionId,
     executionEnabled: app.config?.app_metadata?.dify_apptype === props.taskType,
     onReserved: (id: string) => {
       if (!props.conversationId)
@@ -117,8 +127,10 @@ export function TaskChat(props: TaskChatProps) {
 
 type ResolvedProps = TaskChatProps & {
   appId: string;
+  appName: string;
   instanceId: string;
   actorId: string;
+  sessionId?: string;
   executionEnabled: boolean;
   onReserved: (id: string) => void;
 };
@@ -164,9 +176,11 @@ function CompletionTaskChat(props: ResolvedProps) {
 
 function TaskChatSession({
   appId,
+  appName,
   instanceId,
   conversationId: initialConversationId,
   actorId,
+  sessionId,
   executionEnabled,
   onReserved,
   runner,
@@ -176,6 +190,7 @@ function TaskChatSession({
   const [conversationId, setConversationId] = useState(
     initialConversationId ?? null
   );
+  const draftKey = taskDraftKey(actorId, sessionId, appId, conversationId);
   const [executions, setExecutions] = useState<AppExecution[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -248,7 +263,8 @@ function TaskChatSession({
     executions.some(execution =>
       ['pending', 'running'].includes(execution.status)
     );
-  const welcome = !conversationId && executions.length === 0;
+  const welcome =
+    executionEnabled && !conversationId && executions.length === 0;
   const prepareAgain = async (execution: AppExecution) => {
     if (busy || loadFailed) return;
     if (['pending', 'running'].includes(execution.status)) {
@@ -295,6 +311,10 @@ function TaskChatSession({
       if (!mounted.current) return false;
       if (!reserved.success) throw reserved.error;
       const saved = reserved.data;
+      moveTaskDraft(
+        draftKey,
+        taskDraftKey(actorId, sessionId, appId, saved.conversationId)
+      );
       onReserved(saved.conversationId);
       setConversationId(saved.conversationId);
       const url = new URL(window.location.href);
@@ -335,16 +355,21 @@ function TaskChatSession({
   };
   return (
     <ChatSessionView
+      as="main"
+      className="pt-16 md:pt-12"
       contentClassName=""
       jumpToBottom={false}
       backdrop={false}
       filePreview
+      header={<ChatSessionHeader title={appName} />}
+      showWelcome={welcome}
       scrollProps={scroll}
       composer={
         <div
+          data-task-chat={welcome ? '' : undefined}
           className={cn(
             'mx-auto w-full shrink-0 pb-4',
-            welcome && 'absolute inset-0 flex flex-col overflow-y-auto py-6',
+            welcome && 'flex min-h-0 flex-1 flex-col overflow-y-auto py-6',
             widthClass,
             paddingClass
           )}
@@ -362,6 +387,7 @@ function TaskChatSession({
               ref={form}
               instanceId={instanceId}
               chat
+              draftKey={draftKey}
               showIntroduction={welcome}
               onExecute={execute}
               isExecuting={

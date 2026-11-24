@@ -1558,6 +1558,17 @@
             "title": "Dify パラメータ設定",
             "appTypeNote": "「モデル」タイプのアプリケーションはチャットインターフェースのモデルセレクターに表示されます"
           },
+          "conversationTurns": {
+            "label": "会話ターン（任意）",
+            "default": "アプリの既定値",
+            "single": "単一ターン",
+            "multi": "複数ターン",
+            "independent": "独立した実行",
+            "note": "上流のアプリが以前の文脈を利用するように設計されている場合のみ、複数ターンを選択してください。",
+            "independentNote": "同じウィンドウで何度でも実行できますが、文脈は引き継ぎません。",
+            "humanInputNote": "人による確認が必要なエージェントは、会話ごとに1つのタスクを処理します。",
+            "typeMismatch": "Dify の判定は {type} です。保存済みのアプリタイプは変更されていません。"
+          },
           "backend": {
             "label": "Backend",
             "assistantId": "Assistant ID",

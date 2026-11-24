@@ -1558,6 +1558,17 @@
             "title": "Dify Parameter Configuration",
             "appTypeNote": "Applications with \"Model\" type will appear in the chat interface model selector"
           },
+          "conversationTurns": {
+            "label": "Conversation turns (optional)",
+            "default": "Application default",
+            "single": "Single turn",
+            "multi": "Multi-turn",
+            "independent": "Independent runs",
+            "note": "Only select multi-turn if the upstream application is designed to use prior context.",
+            "independentNote": "This application supports multiple independent runs in one window, without carrying context forward.",
+            "humanInputNote": "An agent with human confirmation handles one task per conversation.",
+            "typeMismatch": "Dify reports {type}. The saved application type was not changed."
+          },
           "backend": {
             "label": "Backend",
             "assistantId": "Assistant ID",

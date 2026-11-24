@@ -2,8 +2,10 @@
 
 import { AppIntroduction } from '@components/chat-input/app-introduction';
 import { useEditResend } from '@components/chat-input/edit-resend';
+import { SingleTurnEnd } from '@components/chat-input/single-turn-end';
 import { ChatInputView } from '@components/chat-input/view';
 import { ChatMessage } from '@components/chat/session/chat-message';
+import { ChatSessionHeader } from '@components/chat/session/chat-session-header';
 import { ChatSessionView } from '@components/chat/session/chat-session-view';
 import {
   useFollowChatOutput,
@@ -19,7 +21,9 @@ import { useChatWidth } from '@lib/hooks/use-chat-width';
 import {
   agentInputFiles,
   agentRunSaved,
+  agentRunSettled,
 } from '@lib/services/client/langchain-api';
+import { syncChatDraftActor } from '@lib/stores/chat-draft-lifecycle';
 import { useLangchainDraftStore } from '@lib/stores/langchain-draft-store';
 import { cn } from '@lib/utils';
 
@@ -45,7 +49,7 @@ export function AgentChat(props: AgentChatProps) {
   const t = useTranslations('langchain');
   const actorId = session?.user.id ?? null;
   useLayoutEffect(() => {
-    if (!loading) useLangchainDraftStore.getState().setActor(actorId);
+    if (!loading) syncChatDraftActor(actorId);
   }, [actorId, loading]);
   if (!session)
     return loading ? (
@@ -141,6 +145,18 @@ function AgentChatSession({
   );
   const content = draft?.text || '';
   const [inputHeight, setInputHeight] = useState(160);
+  const singleTurnFinished =
+    chat.singleTask &&
+    Boolean(chat.view.conversationId) &&
+    !authLoading &&
+    !chat.busy &&
+    !chat.historyLoading &&
+    !chat.historyFailed &&
+    !chat.unconfirmed &&
+    (!chat.view.run ||
+      (agentRunSettled(chat.view.run) &&
+        chat.view.run.executionStatus !== 'waiting')) &&
+    !(chat.humanInput && interactions.blocked);
   const disabled =
     authLoading ||
     !scope ||
@@ -287,14 +303,7 @@ function AgentChatSession({
       jumpToBottom={false}
       filePreview
       header={
-        <header
-          className={cn(
-            'mx-auto flex w-full shrink-0 items-center justify-between gap-3 py-3',
-            widthClass,
-            paddingClass
-          )}
-        >
-          <h1 className="text-sm font-medium">{chat.appName || t('title')}</h1>
+        <ChatSessionHeader title={chat.appName || t('title')}>
           <button
             type="button"
             className="text-xs text-stone-500 disabled:opacity-50"
@@ -312,7 +321,7 @@ function AgentChatSession({
           >
             {t('deleteConversation')}
           </button>
-        </header>
+        </ChatSessionHeader>
       }
       scrollProps={{
         ...scroll,
@@ -321,44 +330,52 @@ function AgentChatSession({
         'aria-busy': chat.busy || chat.historyLoading,
       }}
       composer={
-        <ChatInputView
-          key={chat.draftScope}
-          value={content}
-          onValueChange={text => {
-            if (scope) useLangchainDraftStore.getState().setText(scope, text);
-          }}
-          onSubmit={submit}
-          disabled={disabled || edit.active}
-          textDisabled={composerInput.textDisabled}
-          canSubmit={composerInput.canSubmit}
-          isProcessing={chat.busy}
-          placeholder=""
-          scrollableWelcome
-          isWelcomeScreen={
-            chat.ready &&
-            !conversationId &&
-            !chat.view.conversationId &&
-            chat.view.messages.length === 0 &&
-            !chat.busy
-          }
-          beforeInput={
-            <div className="max-h-[40dvh] overflow-y-auto">
-              {chat.ready && !conversationId && !chat.view.conversationId && (
-                <AppIntroduction
-                  name={chat.appName}
-                  description={chat.appDescription}
-                />
-              )}
-              {composerInput.parameters}
-            </div>
-          }
-          attachmentAction={composerInput.action}
-          attachmentPreview={composerInput.preview}
-          editNotice={composerInput.notice}
-          sendButtonAriaLabel={t('send')}
-          widthClass={widthClass}
-          onHeightChange={setInputHeight}
-        />
+        singleTurnFinished ? (
+          <SingleTurnEnd
+            href={`/apps/agent-chat/${encodeURIComponent(appId)}`}
+            widthClass={widthClass}
+            onHeightChange={setInputHeight}
+          />
+        ) : (
+          <ChatInputView
+            key={chat.draftScope}
+            value={content}
+            onValueChange={text => {
+              if (scope) useLangchainDraftStore.getState().setText(scope, text);
+            }}
+            onSubmit={submit}
+            disabled={disabled || edit.active}
+            textDisabled={composerInput.textDisabled}
+            canSubmit={composerInput.canSubmit}
+            isProcessing={chat.busy}
+            placeholder=""
+            scrollableWelcome
+            isWelcomeScreen={
+              chat.ready &&
+              !conversationId &&
+              !chat.view.conversationId &&
+              chat.view.messages.length === 0 &&
+              !chat.busy
+            }
+            beforeInput={
+              <div className="max-h-[40dvh] overflow-y-auto">
+                {chat.ready && !conversationId && !chat.view.conversationId && (
+                  <AppIntroduction
+                    name={chat.appName}
+                    description={chat.appDescription}
+                  />
+                )}
+                {composerInput.parameters}
+              </div>
+            }
+            attachmentAction={composerInput.action}
+            attachmentPreview={composerInput.preview}
+            editNotice={composerInput.notice}
+            sendButtonAriaLabel={t('send')}
+            widthClass={widthClass}
+            onHeightChange={setInputHeight}
+          />
+        )
       }
     >
       <div className={cn('mx-auto w-full pt-4', widthClass, paddingClass)}>
@@ -583,11 +600,6 @@ function AgentChatSession({
         {chat.resultSingleBatch && (
           <p className="mt-3 text-sm text-stone-500">
             {t('resultSingleBatch')}
-          </p>
-        )}
-        {chat.singleTask && chat.view.conversationId && (
-          <p className="mt-3 text-sm text-stone-500">
-            {t('confirmationSingleTask')}
           </p>
         )}
         {chat.unconfirmed && (

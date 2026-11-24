@@ -1,3 +1,4 @@
+import { readConversationTurns } from '@agentifui/shared';
 import type { PoolClient } from 'pg';
 
 import { systemQueryForClient } from '../../lib/pg-context';
@@ -18,7 +19,12 @@ import {
   type ServiceInstanceRow,
 } from './types';
 
-function validateInteractionProtocol(config: Record<string, unknown>) {
+function validateInteractionConfig(config: Record<string, unknown>) {
+  if (
+    config.conversation_turns !== undefined &&
+    !readConversationTurns(config.conversation_turns)
+  )
+    return toErrorResponse('INVALID_CONVERSATION_TURNS', 400);
   if (config.interaction_protocol === undefined) return null;
   if (config.interaction_protocol !== 'ag-ui/1.0')
     return toErrorResponse('INVALID_INTERACTION_PROTOCOL', 400);
@@ -108,7 +114,7 @@ export async function handleServiceInstanceAction(
       return toErrorResponse('Missing required fields', 400);
     }
     const config = readObject(serviceInstance.config);
-    const protocolError = validateInteractionProtocol(config);
+    const protocolError = validateInteractionConfig(config);
     if (protocolError) return protocolError;
 
     const isDefault = readBoolean(serviceInstance.is_default, false);
@@ -225,7 +231,7 @@ export async function handleServiceInstanceAction(
     }
 
     if (Object.prototype.hasOwnProperty.call(updates, 'config')) {
-      const protocolError = validateInteractionProtocol(
+      const protocolError = validateInteractionConfig(
         readObject(updates.config)
       );
       if (protocolError) return protocolError;

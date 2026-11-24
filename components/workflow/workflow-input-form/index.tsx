@@ -10,6 +10,7 @@ import {
 import { useChatInputApp } from '@lib/hooks/use-chat-input-app';
 import type { DifyUserInputFormItem } from '@lib/services/dify/types';
 import { getDifyUserInputFormEntry } from '@lib/services/dify/user-input-form';
+import { readTaskDraft, writeTaskDraft } from '@lib/stores/chat-draft-session';
 import { useChatInputStore } from '@lib/stores/chat-input-store';
 import { cn } from '@lib/utils';
 import { Loader2, Play } from 'lucide-react';
@@ -18,6 +19,7 @@ import React, {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -26,7 +28,11 @@ import React, {
 import { useTranslations } from 'next-intl';
 
 import { FileUploadField, type FileUploadSelection } from './file-upload-field';
-import type { WorkflowUploadOwner } from './file-upload-field/helpers';
+import {
+  type WorkflowUploadOwner,
+  getSuccessfulFilesPayload,
+  restoreUploadFiles,
+} from './file-upload-field/helpers';
 import { FormField } from './form-field';
 import { capabilityFormFields, validateFormData } from './validation';
 
@@ -39,6 +45,7 @@ interface WorkflowInputFormProps {
   chat?: boolean;
   onStop?: () => void;
   showIntroduction?: boolean;
+  draftKey?: string;
 }
 
 export interface WorkflowInputFormRef {
@@ -57,6 +64,7 @@ export const WorkflowInputForm = React.forwardRef<
     chat = false,
     onStop,
     showIntroduction,
+    draftKey,
   } = props;
   const actorEpoch = useChatInputStore(state => state.actorEpoch);
   return (
@@ -69,6 +77,7 @@ export const WorkflowInputForm = React.forwardRef<
       chat={chat}
       onStop={onStop}
       showIntroduction={showIntroduction}
+      draftKey={draftKey}
     />
   );
 });
@@ -84,6 +93,7 @@ const ScopedWorkflowInputForm = React.forwardRef<
     chat = false,
     onStop,
     showIntroduction = false,
+    draftKey,
   } = props;
   const t = useTranslations('pages.workflow.form');
   const tCommon = useTranslations('common');
@@ -108,7 +118,7 @@ const ScopedWorkflowInputForm = React.forwardRef<
   const fileSelections = useRef(new Map<string, FileUploadSelection>());
   const [dropNotice, setDropNotice] = useState<string | null>(null);
   const [restoreScope, setRestoreScope] = useState<WorkflowUploadOwner>();
-  const initialized = useRef(false);
+  const [initialized, setInitialized] = useState(false);
   const submitting = useRef(false);
   const defaults = useMemo(
     () =>
@@ -121,11 +131,58 @@ const ScopedWorkflowInputForm = React.forwardRef<
     [userInputForm]
   );
   useEffect(() => {
-    if (ready && !initialized.current) {
-      initialized.current = true;
-      setFormData(defaults);
+    if (!ready || initialized) return;
+    const actor = useChatInputStore.getState();
+    if (draftKey && !actor.actorId) return;
+    const saved = draftKey ? readTaskDraft(draftKey) : undefined;
+    const restored: WorkflowFormData = { ...defaults };
+    if (saved && actor.actorId) {
+      const owner = {
+        app_id: instanceId,
+        actor_id: actor.actorId,
+        actor_epoch: actor.actorEpoch,
+      };
+      for (const field of capabilities.fields) {
+        const value = saved[field.key];
+        if (typeof value === 'string' || typeof value === 'number')
+          restored[field.key] = value;
+      }
+      for (const slot of capabilities.attachmentSlots) {
+        if (slot.target !== 'inputs') continue;
+        const value = saved[slot.key];
+        const files = restoreUploadFiles(
+          Array.isArray(value) ? value : [value],
+          owner,
+          owner
+        );
+        if (files.length) {
+          const single = !(slot.multiple ?? slot.maxCount !== 1);
+          restored[slot.key] = getSuccessfulFilesPayload(
+            files,
+            single,
+            owner
+          ).value;
+        }
+      }
     }
-  }, [ready, defaults]);
+    setFormData(restored);
+    setInitialized(true);
+  }, [ready, initialized, defaults, draftKey, instanceId, capabilities]);
+  useLayoutEffect(() => {
+    if (!draftKey || !initialized) return;
+    const draft = Object.fromEntries(
+      Object.keys(defaults).flatMap(key => {
+        const value = formData[key];
+        const initial = defaults[key];
+        if (Array.isArray(initial)) {
+          if (value == null || (Array.isArray(value) && !value.length))
+            return [];
+        } else if (value === undefined || value === initial) return [];
+        return [[key, value]];
+      })
+    );
+    writeTaskDraft(draftKey, draft);
+  }, [draftKey, initialized, defaults, formData]);
   const reset = useCallback(() => {
     setFormData(
       Object.fromEntries(
@@ -209,12 +266,20 @@ const ScopedWorkflowInputForm = React.forwardRef<
           )
         )
       );
-      if (result === false) live.retry();
-      else if (chat && capabilities?.text.enabled)
-        setFormData(previous => ({
-          ...previous,
-          [capabilities.text.target]: '',
-        }));
+      if (result === false) {
+        live.retry();
+      } else if (chat) {
+        setFormData(previous => {
+          const next = { ...previous };
+          if (capabilities.text.enabled) next[capabilities.text.target] = '';
+          for (const slot of capabilities.attachmentSlots) {
+            if (slot.target === 'inputs') next[slot.key] = null;
+          }
+          return next;
+        });
+        setDropNotice(null);
+        setRestoreScope(undefined);
+      }
     } catch {
       live.retry();
     } finally {
@@ -249,6 +314,7 @@ const ScopedWorkflowInputForm = React.forwardRef<
         }}
         config={{}}
         compact={chat}
+        showCompactLabel={uploadFields.length > 1}
         inputId={`${inputId}-${variable}`}
         disabled={isExecuting || !ready}
         slot={

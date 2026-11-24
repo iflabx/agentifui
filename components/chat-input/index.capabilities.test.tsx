@@ -27,6 +27,7 @@ let mockError: string | null = null;
 let mockAuthLoading = false;
 let mockRealPicker = false;
 let mockView: ChatInputViewProps;
+let mockTurns: 'single' | 'multi' | undefined;
 jest.mock('@lib/auth/better-auth/react-hooks', () => ({
   useAuthSession: () => ({
     session: { user: { id: 'actor' } },
@@ -43,6 +44,10 @@ jest.mock('@lib/hooks/use-chat-input-app', () => ({
       instance_id: 'app',
       display_name: 'App name',
       description: 'App description',
+      config: {
+        conversation_turns: mockTurns,
+        app_metadata: { app_type: 'marketplace', dify_apptype: 'agent' },
+      },
     },
     failed: false,
   }),
@@ -172,6 +177,7 @@ describe('composer capability gate', () => {
   });
   beforeEach(() => {
     jest.clearAllMocks();
+    mockTurns = undefined;
     mockCapabilities = ready;
     mockError = null;
     useChatInputStore.getState().setActor('actor');
@@ -179,6 +185,25 @@ describe('composer capability gate', () => {
     useChatInputStore.getState().setCurrentRoute('default');
     useChatInputStore.getState().setMessage('saved draft');
     useAttachmentStore.getState().resetAll();
+  });
+
+  it('replaces the single-turn input after acceptance, not while generation is running', () => {
+    mockTurns = 'single';
+    const onSubmit = jest.fn();
+    const view = render(
+      <ChatInput onSubmit={onSubmit} showModelSelector={false} isProcessing />
+    );
+    act(() => useChatInputStore.getState().markAccepted('default'));
+    expect(
+      screen.queryByRole('link', { name: /newTask$/ })
+    ).not.toBeInTheDocument();
+    view.rerender(<ChatInput onSubmit={onSubmit} showModelSelector={false} />);
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /newTask$/ })).toHaveAttribute(
+      'href',
+      '/apps/agent/app'
+    );
+    expect(onSubmit).not.toHaveBeenCalled();
   });
   it.each(['same', 'replacement'])(
     'retains file selection across %s session refresh without crossing actor epochs',

@@ -142,7 +142,7 @@ describe('Agent chat draft', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    useLangchainDraftStore.getState().setActor(null);
+    syncChatDraftActor(null);
     mockActorId = 'user';
     mockAuthLoading = false;
     jest.mocked(useAgentInteractions).mockReturnValue({
@@ -579,8 +579,8 @@ describe('Agent chat draft', () => {
         mockActorId = 'other-user';
       } else if (target === 'epoch') {
         act(() => {
-          useLangchainDraftStore.getState().setActor(null);
-          useLangchainDraftStore.getState().setActor('user');
+          syncChatDraftActor(null);
+          syncChatDraftActor('user');
         });
       }
       rerender(
@@ -933,9 +933,7 @@ describe('Agent chat draft', () => {
         expect(screen.getByText('resultSingleBatch')).toBeVisible();
       else
         expect(screen.queryByText('resultSingleBatch')).not.toBeInTheDocument();
-      expect(
-        screen.queryByText('confirmationSingleTask')
-      ).not.toBeInTheDocument();
+      expect(screen.queryByText('singleTurn')).not.toBeInTheDocument();
     }
   );
 
@@ -1071,33 +1069,68 @@ describe('Agent chat draft', () => {
     );
   });
 
-  it('keeps completed single-task conversations readable and deletable without another question', () => {
-    const original = jest.mocked(useAgentChat).getMockImplementation()!(
-      'app',
-      null
-    );
-    jest.mocked(useAgentChat).mockReturnValue({
-      ...original,
-      humanInput: true,
-      singleTask: true,
-      view: {
-        conversationId: 'conversation',
-        messages: [
-          { id: 'answer', role: 'assistant', content: 'Task complete' },
-        ],
-        tools: [],
-      },
-    });
-    render(<AgentChat appId="app" conversationId="conversation" />);
-    expect(screen.getByTestId('shared-assistant')).toHaveTextContent(
-      'Task complete'
-    );
-    expect(screen.getByRole('button', { name: 'send' })).toBeDisabled();
-    expect(
-      screen.getByRole('button', { name: 'deleteConversation' })
-    ).toBeEnabled();
-    expect(screen.getByText('confirmationSingleTask')).toBeVisible();
-  });
+  it.each([false, true])(
+    'uses the single-turn end panel once the task ends (human input: %s)',
+    humanInput => {
+      const original = jest.mocked(useAgentChat).getMockImplementation()!(
+        'app',
+        null
+      );
+      const saved = {
+        ...original,
+        humanInput,
+        singleTask: true,
+        view: {
+          conversationId: 'conversation',
+          messages: [
+            {
+              id: 'answer',
+              role: 'assistant' as const,
+              content: 'Task complete',
+            },
+          ],
+          tools: [],
+        },
+      };
+      jest.mocked(useAgentChat).mockReturnValue({ ...saved, busy: true });
+      const view = render(
+        <AgentChat appId="app" conversationId="conversation" />
+      );
+      expect(
+        screen.queryByRole('link', { name: 'newTask' })
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'send' })).toBeDisabled();
+
+      const interactionState = useAgentInteractions({} as never);
+      jest.mocked(useAgentChat).mockReturnValue(saved);
+      if (humanInput) {
+        jest
+          .mocked(useAgentInteractions)
+          .mockReturnValue({ ...interactionState, blocked: true });
+        view.rerender(<AgentChat appId="app" conversationId="conversation" />);
+        expect(
+          screen.queryByRole('link', { name: 'newTask' })
+        ).not.toBeInTheDocument();
+        jest.mocked(useAgentInteractions).mockReturnValue(interactionState);
+      }
+      view.rerender(<AgentChat appId="app" conversationId="conversation" />);
+      expect(screen.getByTestId('shared-assistant')).toHaveTextContent(
+        'Task complete'
+      );
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'send' })
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'deleteConversation' })
+      ).toBeEnabled();
+      expect(screen.getByText('singleTurn')).toBeVisible();
+      expect(screen.getByRole('link', { name: 'newTask' })).toHaveAttribute(
+        'href',
+        '/apps/agent-chat/app'
+      );
+    }
+  );
 
   it.each([
     [

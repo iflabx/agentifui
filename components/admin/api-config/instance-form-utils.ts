@@ -3,6 +3,7 @@ import type { Provider, ServiceInstance } from '@lib/stores/api-config-store';
 import type { DifyAppType } from '@lib/types/dify-app-types';
 import type { DifyParametersSimplifiedConfig } from '@lib/types/dify-parameters';
 
+import { readConversationTurns } from '../../../packages/shared/src/conversation-turns';
 import type {
   InstanceFormData,
   InstanceIdValidationMessages,
@@ -33,6 +34,9 @@ export function createInstanceFormDataFromInstance(
   providers: Provider[]
 ): InstanceFormData {
   const isLangChain = instance.config?.backend_type === 'langchain';
+  const conversationTurns = readConversationTurns(
+    instance.config?.conversation_turns
+  );
   const data: InstanceFormData = {
     instance_id: instance.instance_id || '',
     display_name: instance.display_name || '',
@@ -40,6 +44,7 @@ export function createInstanceFormDataFromInstance(
     api_path: instance.api_path || '',
     apiKey: '',
     config: {
+      ...(conversationTurns ? { conversation_turns: conversationTurns } : {}),
       backend_type: isLangChain ? 'langchain' : 'dify',
       ...(!isLangChain &&
       instance.config?.interaction_protocol === 'ag-ui/1.0' &&
@@ -113,6 +118,9 @@ export function changeInstanceBackend(
       is_default: false,
       config: {
         backend_type: 'langchain',
+        ...(data.config.conversation_turns
+          ? { conversation_turns: data.config.conversation_turns }
+          : {}),
         api_url: data.config.api_url,
         langchain: {
           assistant_id: data.config.langchain?.assistant_id || 'agent',
@@ -194,6 +202,8 @@ export function prepareInstanceFormForSave(
     normalized.config.langchain.assistant_id =
       data.config.langchain?.assistant_id.trim() || '';
   }
+  if (instanceTurnPolicy(normalized.config))
+    delete normalized.config.conversation_turns;
   return {
     ...normalized,
     instance_id: data.instance_id.trim(),
@@ -206,6 +216,58 @@ export function prepareInstanceFormForSave(
       },
     },
   };
+}
+
+export function instanceTurnPolicy(config: InstanceFormData['config']) {
+  if (config.backend_type === 'langchain')
+    return config.langchain?.human_input === true ? 'single' : undefined;
+  const appType = config.app_metadata.dify_apptype;
+  return appType === 'workflow' || appType === 'text-generation'
+    ? 'independent'
+    : undefined;
+}
+
+export function detectDifyAppType(mode: unknown): DifyAppType | undefined {
+  switch (mode) {
+    case 'chat':
+      return 'chatbot';
+    case 'agent-chat':
+      return 'agent';
+    case 'advanced-chat':
+      return 'chatflow';
+    case 'workflow':
+      return 'workflow';
+    case 'completion':
+      return 'text-generation';
+  }
+}
+
+export function applyDetectedDifyType(
+  data: InstanceFormData,
+  mode: unknown,
+  isEditing: boolean
+) {
+  const detected = detectDifyAppType(mode);
+  const typeMismatch =
+    isEditing && detected && detected !== data.config.app_metadata.dify_apptype
+      ? detected
+      : undefined;
+  if (!detected || typeMismatch) return { data, typeMismatch };
+  let next = isEditing ? data : changeInstanceDifyAppType(data, detected);
+  if (!isEditing && (detected === 'workflow' || detected === 'text-generation'))
+    next = changeInstanceAppType(next, 'marketplace');
+  if (
+    (detected === 'chatbot' || detected === 'agent') &&
+    !next.config.conversation_turns
+  )
+    return {
+      data: {
+        ...next,
+        config: { ...next.config, conversation_turns: 'multi' as const },
+      },
+      typeMismatch,
+    };
+  return { data: next, typeMismatch };
 }
 
 export function getInitialProviderId(

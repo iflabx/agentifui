@@ -227,7 +227,12 @@ export default function TextGenerationPage({
 
   return (
     <div className="relative flex h-full w-full flex-col bg-stone-100 text-stone-900 dark:bg-stone-800 dark:text-gray-100">
-      <div className="min-h-0 flex-1 pt-12">
+      <div
+        className={cn(
+          'min-h-0 flex-1',
+          searchParams?.get('executionId') && 'pt-12'
+        )}
+      >
         {searchParams?.get('executionId') ? (
           <TextGenerationLayout instanceId={instanceId} />
         ) : (

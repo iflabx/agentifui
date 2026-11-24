@@ -1,3 +1,4 @@
+import { isSingleConversation } from '@agentifui/shared';
 import { createDecipheriv, createHash } from 'node:crypto';
 
 import {
@@ -24,6 +25,7 @@ export interface AgentApp {
   assistantId: string;
   fingerprint: string;
   humanInput?: boolean;
+  singleTurn?: boolean;
   resultProfileEnabled?: boolean;
 }
 
@@ -198,6 +200,9 @@ export async function resolveAgentApp(
     credentialVersion: row.credential_version,
     assistantId,
     humanInput: backendType === 'langchain' && langchain?.human_input === true,
+    ...(isSingleConversation(row.config?.conversation_turns)
+      ? { singleTurn: true }
+      : {}),
     resultProfileEnabled:
       backendType === 'langchain' &&
       typeof langchain?.result_profile_enabled === 'boolean'

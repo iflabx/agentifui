@@ -75,6 +75,7 @@ export interface DifyFilePreviewResponse {
 }
 
 export interface DifyAppInfoResponse {
+  mode?: string;
   name: string;
   description: string;
   tags: string[];

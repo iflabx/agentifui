@@ -1558,6 +1558,17 @@
             "title": "Dify 參數配置",
             "appTypeNote": "選擇\"模型\"類型的應用會出現在聊天介面的模型選擇器中"
           },
+          "conversationTurns": {
+            "label": "會話輪次（選填）",
+            "default": "沿用應用程式預設",
+            "single": "單輪",
+            "multi": "多輪",
+            "independent": "獨立執行",
+            "note": "只有上游應用程式設計為使用前文時，才選擇多輪。",
+            "independentNote": "可在同一視窗多次執行，每次獨立，不沿用前文。",
+            "humanInputNote": "需要人工確認的智慧代理每個會話只處理一項任務。",
+            "typeMismatch": "Dify 識別為 {type}，未變更已儲存的應用程式類型。"
+          },
           "backend": {
             "label": "后端类型",
             "assistantId": "Assistant ID",

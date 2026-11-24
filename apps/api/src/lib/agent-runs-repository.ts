@@ -3,6 +3,7 @@ import {
   MAX_PROJECTION_MESSAGES,
   type Message,
   buildMessageEditPrompt,
+  isSingleConversation,
   mergeAgentHistoryResult,
   readAgentHistoryMessages,
   readAgentHistoryResult,
@@ -384,6 +385,8 @@ export async function reserveRun(input: ReserveAgentRunInput): Promise<{
       }
       if (conversationId) {
         await validateBinding(client, conversationId, normalized);
+        if (isSingleConversation(liveApp.config?.conversation_turns))
+          throw new AgentRunError(409, 'AGENT_SINGLE_TASK_CONVERSATION');
         const singleTask = await client.query(
           `SELECT conversation_id FROM backend_conversations WHERE conversation_id = $1::uuid AND human_input = TRUE`,
           [conversationId]

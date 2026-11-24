@@ -13,6 +13,7 @@ import {
   useAgentInputCapabilities,
   useRetainedInputCapabilities,
 } from '@lib/hooks/use-agent-input-capabilities';
+import { useComposerParameterDraft } from '@lib/hooks/use-composer-parameter-draft';
 import {
   AgentRequestError,
   agentInputRequirementsChanged,
@@ -28,7 +29,7 @@ import {
 } from '@lib/stores/attachment-store';
 import { useLangchainDraftStore } from '@lib/stores/langchain-draft-store';
 
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 
@@ -39,10 +40,11 @@ import {
 } from '../../packages/shared/src/agent-input';
 
 const noFiles: AttachmentFile[] = [];
-const noFields: Record<string, string> = {};
-
-function fieldValue(field: AgentInputField, values: Record<string, string>) {
-  return values[field.key] ?? String(field.default ?? '');
+function fieldValue(
+  field: AgentInputField,
+  values: Record<string, string | number>
+) {
+  return String(values[field.key] ?? field.default ?? '');
 }
 
 function fieldValid(field: AgentInputField, value: string) {
@@ -141,17 +143,13 @@ export function useAgentComposerInput({
     if (enabled && requirementsChanged) refreshCapabilities();
   }, [enabled, requirementsChanged, submissionError, refreshCapabilities]);
   const filesByScope = useAttachmentStore(state => state.filesByScope);
-  const [parameterDraft, setParameterDraft] = useState<{
-    scope: string;
-    values: Record<string, string>;
-  }>();
+  const parameterDraft = useComposerParameterDraft('agent-parameters', scope);
   const [uploadError, setUploadError] = useState<{
     scope: string;
     message: string;
   }>();
   const activeScope = scope ?? '';
-  const values =
-    parameterDraft?.scope === activeScope ? parameterDraft.values : noFields;
+  const values = parameterDraft.values;
   const slots = displayedCapabilities?.attachmentSlots ?? [];
   const choices = slots.map((slot, index) => {
     const key = JSON.stringify([
@@ -171,6 +169,11 @@ export function useAgentComposerInput({
   });
   const fields = capabilities?.fields ?? [];
   const ready = enabled && capabilities?.status === 'ready';
+  useLayoutEffect(() => {
+    if (scope)
+      for (const choice of choices)
+        useAttachmentStore.getState().restoreFiles(choice.scope);
+  });
   const isCurrentActor = () => {
     const current = useLangchainDraftStore.getState();
     return current.actorId === actorId && current.actorEpoch === actorEpoch;
@@ -183,7 +186,7 @@ export function useAgentComposerInput({
       .getState()
       .getFiles(entry.scope)
       .find(file => file.id === draftId);
-    if (!ready || !current || validateInputFile(entry.slot, current.file))
+    if (!ready || !current?.file || validateInputFile(entry.slot, current.file))
       return;
     return uploadScopedAttachment({
       scope: entry.scope,
@@ -235,7 +238,7 @@ export function useAgentComposerInput({
               file =>
                 file.status === 'success' &&
                 file.uploadedId &&
-                !validateInputFile(entry.slot, file.file)
+                !validateInputFile(entry.slot, file.file ?? file)
             )
         ) &&
         (hasText ||
@@ -288,12 +291,7 @@ export function useAgentComposerInput({
               field={field}
               value={fieldValue(field, values)}
               disabled={disabled}
-              onChange={value =>
-                setParameterDraft({
-                  scope: activeScope,
-                  values: { ...values, [field.key]: value },
-                })
-              }
+              onChange={value => parameterDraft.setValue(field.key, value)}
             />
           ))}
         </div>

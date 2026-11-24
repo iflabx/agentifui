@@ -14,7 +14,7 @@ import {
 
 export function validateChatAttachments(
   capabilities: AgentInputCapabilities | null,
-  files: { file: File }[],
+  files: { file?: File; name?: string; size?: number; type?: string }[],
   continuingConversation = false
 ): string | null {
   if (capabilities?.status !== 'ready') return 'INPUT_CAPABILITIES_UNAVAILABLE';
@@ -33,7 +33,18 @@ export function validateChatAttachments(
   if (!slot) return files.length ? 'INPUT_UPLOAD_DISABLED' : null;
   return (
     validateInputFileCount(slot, files.length) ||
-    files.map(entry => validateInputFile(slot, entry.file)).find(Boolean) ||
+    files
+      .map(entry =>
+        validateInputFile(
+          slot,
+          entry.file ?? {
+            name: entry.name ?? '',
+            size: entry.size ?? NaN,
+            type: entry.type ?? '',
+          }
+        )
+      )
+      .find(Boolean) ||
     null
   );
 }
@@ -77,7 +88,8 @@ export async function uploadScopedAttachment({
   if (!isCurrentActor()) return;
   const store = useAttachmentStore.getState();
   const file = store.getFiles(scope).find(entry => entry.id === draftId);
-  if (!file || file.status === 'uploading' || file.status === 'success') return;
+  if (!file?.file || file.status === 'uploading' || file.status === 'success')
+    return;
   const attempt = store.beginUpload(scope, draftId);
   if (attempt === undefined) return;
   try {
@@ -127,7 +139,7 @@ export function useChatInputUploads({
       const store = useAttachmentStore.getState();
       const attachment = store.getFiles(scope).find(file => file.id === fileId);
       if (
-        !attachment ||
+        !attachment?.file ||
         !slot ||
         attachment.status === 'uploading' ||
         attachment.status === 'success'

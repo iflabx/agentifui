@@ -12,7 +12,13 @@ import {
 } from '@lib/stores/attachment-store';
 import { useChatInputStore } from '@lib/stores/chat-input-store';
 
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import {
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 
 import { useTranslations } from 'next-intl';
 
@@ -173,6 +179,11 @@ export function useChatflowAttachments({
       entries: enabled ? store.getFiles(bucket) : [],
     };
   });
+  useLayoutEffect(() => {
+    if (enabled)
+      for (const draft of drafts)
+        useAttachmentStore.getState().restoreFiles(draft.scope);
+  });
   const clearSelectionError = (draft: SlotDraft) => {
     setSelectionErrors(previous => {
       const next = { ...previous };
@@ -185,7 +196,11 @@ export function useChatflowAttachments({
     const current = useAttachmentStore.getState();
     const entries = current.getFiles(draft.scope);
     const entry = entries.find(file => file.id === id);
-    if (!entry || entry.status === 'uploading' || entry.status === 'success')
+    if (
+      !entry?.file ||
+      entry.status === 'uploading' ||
+      entry.status === 'success'
+    )
       return;
     const validationError =
       validateInputFile(draft.slot, entry.file) ||
@@ -288,7 +303,9 @@ export function useChatflowAttachments({
     const { slot, entries } = draft;
     const validationError =
       validateInputFileCount(slot, entries.length) ||
-      entries.map(entry => validateInputFile(slot, entry.file)).find(Boolean);
+      entries
+        .map(entry => validateInputFile(slot, entry.file ?? entry))
+        .find(Boolean);
     const unfinished = entries.some(
       entry =>
         entry.status !== 'success' ||
@@ -308,7 +325,9 @@ export function useChatflowAttachments({
         validationMessage(selectionErrors[draft.scope], slot, translate),
     ].filter((message): message is string => Boolean(message));
     errors.push(
-      ...[...new Set(draftErrors)].map(message => `${slot.label}: ${message}`)
+      ...[...new Set(draftErrors)].map(message =>
+        drafts.length > 1 ? `${slot.label}: ${message}` : message
+      )
     );
     const payload: UploadPayloadFile[] = entries
       .filter(

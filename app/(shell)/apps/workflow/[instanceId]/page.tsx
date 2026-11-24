@@ -237,7 +237,12 @@ export default function WorkflowPage({ params }: WorkflowPageProps) {
         'text-stone-900 dark:text-gray-100'
       )}
     >
-      <div className="h-full overflow-hidden pt-12">
+      <div
+        className={cn(
+          'h-full overflow-hidden',
+          searchParams?.get('executionId') && 'pt-12'
+        )}
+      >
         {searchParams?.get('executionId') ? (
           <WorkflowLayout instanceId={instanceId} />
         ) : (

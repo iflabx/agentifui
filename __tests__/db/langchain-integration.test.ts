@@ -1554,6 +1554,35 @@ it('waits for slow database persistence before reporting saved', async () => {
   expect(modelCalls()).toHaveLength(1);
 });
 
+it('honors an explicit LangChain single-turn setting without changing existing history', async () => {
+  const appId = applications[0];
+  await database.query(
+    `UPDATE service_instances SET config = config || '{"conversation_turns":"single"}'::jsonb WHERE id=$1`,
+    [appId]
+  );
+  try {
+    const root = `/api/internal/apps/${appId}/agent`;
+    expect((await request(0, root)).json()).toMatchObject({ singleTask: true });
+    const first = await submit(0, 'First turn');
+    expect(first.statusCode).toBe(200);
+    const { conversationId } = accepted(first.body);
+    const second = await submit(0, 'Second turn', { conversationId });
+    expect(second.statusCode).toBe(409);
+    expect(second.body).toContain('AGENT_SINGLE_TASK_CONVERSATION');
+    expect(modelCalls()).toHaveLength(1);
+    expect(
+      (await request(0, `${root}/conversations/${conversationId}`)).statusCode
+    ).toBe(200);
+    expect((await submit(0, 'New conversation')).statusCode).toBe(200);
+    expect(modelCalls()).toHaveLength(2);
+  } finally {
+    await database.query(
+      `UPDATE service_instances SET config = config - 'conversation_turns' WHERE id=$1`,
+      [appId]
+    );
+  }
+});
+
 it('refuses backend switching, binding mutation, native thread reuse and deletion of referenced apps', async () => {
   const ids = accepted((await submit(0)).body);
   await expect(

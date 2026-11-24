@@ -1,6 +1,7 @@
 import { captureDifyInputSubmission } from '@components/chat-input/submission';
 import { getConversationByExternalId } from '@lib/services/client/conversations-api';
 import { useAttachmentStore } from '@lib/stores/attachment-store';
+import { clearChatInputScopeCache } from '@lib/stores/chat-input-scope-cache';
 import { appDrafts } from '@lib/stores/chat-input-scope-cache';
 import {
   chatInputScope,
@@ -24,13 +25,79 @@ jest.mock('@lib/services/client/conversations-api', () => ({
 describe('input route scope synchronization', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    sessionStorage.clear();
     mockPathname = '/apps/chatbot/app-A';
     useChatInputStore.getState().setActor(null);
     useChatInputStore.getState().clearAllMessages();
     useAttachmentStore.getState().resetAll();
     useChatStore.getState().clearMessages();
     useChatStore.getState().setCurrentConversationId(null);
+    clearChatInputScopeCache();
   });
+
+  it.each([
+    '/chat/new',
+    '/apps/chatbot/app-A',
+    '/apps/agent/app-A',
+    '/apps/chatflow/app-A',
+  ])(
+    'restores the unsent draft and completed file after reloading %s',
+    pathname => {
+      mockPathname = pathname;
+      const open = () =>
+        renderHook(() =>
+          useChatInputRouteSync({ userId: 'actor', appId: 'app-A' })
+        );
+      const first = open();
+      const scope = first.result.current.scope!;
+      act(() => {
+        const input = useChatInputStore.getState();
+        input.setMessage('Unsent question');
+        const attachments = useAttachmentStore.getState();
+        attachments.addFiles([
+          new File(['synthetic'], 'reference.txt', { type: 'text/plain' }),
+          new File(['incomplete'], 'pending.txt', { type: 'text/plain' }),
+        ]);
+        const [completed] = attachments.getFiles(scope);
+        const attempt = attachments.beginUpload(scope, completed.id)!;
+        attachments.finishUpload(scope, completed.id, attempt, {
+          uploadedId: 'uploaded-reference',
+          appId: 'app-A',
+          actorId: 'actor',
+          actorEpoch: input.actorEpoch,
+        });
+      });
+      const reload = () => {
+        useChatInputStore.getState().setActor(null);
+        useAttachmentStore.getState().resetAll();
+        clearChatInputScopeCache();
+        return open();
+      };
+      first.unmount();
+      const reopened = reload();
+      expect(useChatInputStore.getState().message).toBe('Unsent question');
+      const files = useAttachmentStore.getState().files;
+      expect(files).toEqual([
+        expect.objectContaining({
+          name: 'reference.txt',
+          status: 'success',
+          uploadedId: 'uploaded-reference',
+          uploadedActorEpoch: useChatInputStore.getState().actorEpoch,
+        }),
+      ]);
+      expect(files[0].file).toBeUndefined();
+      act(() => {
+        const input = useChatInputStore.getState();
+        input.consumeSnapshot(input.snapshot());
+        const attachments = useAttachmentStore.getState();
+        attachments.consumeFiles(attachments.currentScope, files);
+      });
+      reopened.unmount();
+      reload();
+      expect(useChatInputStore.getState().message).toBe('');
+      expect(useAttachmentStore.getState().files).toEqual([]);
+    }
+  );
 
   it('restores separate application drafts without moving uploaded handles', () => {
     const { rerender } = renderHook(

@@ -56,6 +56,7 @@ interface FileUploadFieldProps {
   onRequirementsChanged?: () => void;
   restoreScope?: WorkflowUploadOwner;
   compact?: boolean;
+  showCompactLabel?: boolean;
   inputId?: string;
   disabled?: boolean;
   onCountChange?: (count: number) => void;
@@ -97,6 +98,7 @@ function ScopedFileUploadField({
   actorEpoch,
   loading,
   compact = false,
+  showCompactLabel = false,
   inputId,
   disabled = false,
   onCountChange,
@@ -154,6 +156,7 @@ function ScopedFileUploadField({
     if (value === lastEmittedValue.current) return;
     if (!value || (Array.isArray(value) && value.length === 0)) {
       attempts.current.clear();
+      setSelectionError(null);
       setUploadFiles([]);
       return;
     }
@@ -495,9 +498,11 @@ function ScopedFileUploadField({
         />
         {uploadFiles.length > 0 && (
           <div role="group" aria-label={label}>
-            <p className="mb-1 text-xs text-stone-500 dark:text-stone-400">
-              {label}
-            </p>
+            {showCompactLabel && label && (
+              <p className="mb-1 text-xs text-stone-500 dark:text-stone-400">
+                {label}
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
               {uploadFiles.map(file => (
                 <AttachmentPreviewItem

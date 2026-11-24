@@ -1558,6 +1558,17 @@
             "title": "Dify 参数配置",
             "appTypeNote": "选择\"模型\"类型的应用会出现在聊天界面的模型选择器中"
           },
+          "conversationTurns": {
+            "label": "会话轮次（可选）",
+            "default": "沿用应用默认",
+            "single": "单轮",
+            "multi": "多轮",
+            "independent": "独立运行",
+            "note": "仅当上游应用设计为使用前文时，才选择多轮。",
+            "independentNote": "可在同一窗口多次运行，每次独立，不沿用前文。",
+            "humanInputNote": "需要人工确认的智能体每个会话只处理一个任务。",
+            "typeMismatch": "Dify 识别为{type}，未更改已保存的应用类型。"
+          },
           "backend": {
             "label": "后端类型",
             "assistantId": "Assistant ID",

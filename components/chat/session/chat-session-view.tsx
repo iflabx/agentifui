@@ -69,7 +69,7 @@ export function ChatSessionView({
       >
         {header}
         {showWelcome ? (
-          <div className="min-h-0 flex-1">{welcome}</div>
+          welcome && <div className="min-h-0 flex-1">{welcome}</div>
         ) : (
           <div className="min-h-0 flex-1">
             <div

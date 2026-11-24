@@ -3,6 +3,11 @@ import {
   reserveTaskExecution,
   updateExecutionStatus,
 } from '@lib/services/client/app-executions-api';
+import {
+  readTaskDraft,
+  taskDraftKey,
+  writeTaskDraft,
+} from '@lib/stores/chat-draft-session';
 import type { AppExecution } from '@lib/types/database';
 import {
   act,
@@ -28,6 +33,7 @@ const mockApps = [
   {
     id: 'app-uuid',
     instance_id: 'task-app',
+    display_name: 'Configured task app',
     config: { app_metadata: { dify_apptype: 'workflow' } },
   },
 ];
@@ -151,6 +157,7 @@ function execution(id: string): AppExecution {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  sessionStorage.clear();
   mockAuth.session = { user: { id: 'actor' } };
   mockAuth.loading = false;
   mockApps[0].config.app_metadata.dify_apptype = 'workflow';
@@ -179,6 +186,9 @@ it.each(['workflow', 'text-generation'] as const)(
     mockApps[0].config.app_metadata.dify_apptype = taskType;
     const props = { instanceId: 'task-app', taskType };
     const view = render(<TaskChat {...props} />);
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Configured task app' })
+    ).toBeInTheDocument();
     const input = screen.getByLabelText('Task attachment');
     mockAuth.loading = true;
     view.rerender(<TaskChat {...props} />);
@@ -208,6 +218,9 @@ it.each(['logout', 'different-user'])(
 );
 
 it('adopts a reserved URL without unmounting the active runner', async () => {
+  const opening = taskDraftKey('actor', undefined, 'app-uuid', null);
+  const reserved = taskDraftKey('actor', undefined, 'app-uuid', 'conversation');
+  writeTaskDraft(opening, { topic: 'test' });
   let finish!: (accepted: boolean) => void;
   mockExecute.mockImplementationOnce(
     () =>
@@ -219,6 +232,8 @@ it('adopts a reserved URL without unmounting the active runner', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'submit task' }));
   await waitFor(() => expect(mockExecute).toHaveBeenCalledTimes(1));
   expect(window.location.search).toContain('conversationId=conversation');
+  expect(readTaskDraft(opening)).toBeUndefined();
+  expect(readTaskDraft(reserved)).toEqual({ topic: 'test' });
   view.rerender(
     <TaskChat
       instanceId="task-app"

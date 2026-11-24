@@ -286,71 +286,106 @@ describe('Chatflow standard composer', () => {
     );
   });
 
-  it('keeps native history read-only without requiring initialization files again', async () => {
-    mockPathname = '/chat/native-id';
-    mockedFetch.mockImplementation(
-      async url =>
-        ({
-          ok: true,
-          json: async () =>
-            String(url).includes('input-capabilities')
-              ? {
-                  ...ready,
-                  fields: [
-                    {
-                      key: 'topic',
-                      label: 'Topic',
-                      type: 'text-input',
-                      required: true,
+  it.each([undefined, 'single', 'multi'])(
+    'handles history with %s turn policy without reopening initialization fields',
+    async turns => {
+      mockPathname = '/chat/native-id';
+      mockedFetch.mockImplementation(
+        async url =>
+          ({
+            ok: true,
+            json: async () =>
+              String(url).includes('input-capabilities')
+                ? {
+                    ...ready,
+                    fields: [
+                      {
+                        key: 'topic',
+                        label: 'Topic',
+                        type: 'text-input',
+                        required: true,
+                      },
+                    ],
+                    attachmentSlots: [
+                      {
+                        key: 'source',
+                        label: 'Initial document',
+                        target: 'inputs',
+                        minCount: 1,
+                        maxCount: 1,
+                        methods: ['local_file'],
+                        allowedTypes: ['document'],
+                        extensions: ['txt'],
+                        maxBytesByType: { document: 1024 },
+                      },
+                    ],
+                  }
+                : {
+                    success: true,
+                    app: {
+                      id: 'uuid-1',
+                      instance_id: 'app-1',
+                      config: { conversation_turns: turns },
                     },
-                  ],
-                  attachmentSlots: [
-                    {
-                      key: 'source',
-                      label: 'Initial document',
-                      target: 'inputs',
-                      minCount: 1,
-                      maxCount: 1,
-                      methods: ['local_file'],
-                      allowedTypes: ['document'],
-                      extensions: ['txt'],
-                      maxBytesByType: { document: 1024 },
-                    },
-                  ],
-                }
-              : { success: true, app: { id: 'uuid-1', instance_id: 'app-1' } },
-        }) as Response
-    );
-    useChatStore.setState({
-      messages: [
-        {
-          id: 'first',
-          text: 'first question',
-          isUser: true,
-          metadata: { chatflow_initial_inputs: { topic: 'Saved topic' } },
-        },
-      ],
-    });
-    const onSubmit = jest.fn().mockResolvedValue({ ok: true });
-    const view = render(
-      <ChatflowInputArea
-        instanceId="app-1"
-        onSubmit={onSubmit}
-        isWelcomeScreen={false}
-      />
-    );
-    const newTask = await screen.findByRole('link', {
-      name: 'composer.newTask',
-    });
-    expect(newTask).toHaveAttribute('href', '/apps/chatflow/app-1');
-    expect(
-      screen.queryByRole('textbox', { name: 'input.placeholder' })
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText('Saved topic')).not.toBeInTheDocument();
-    expect(view.container.querySelector('input[type="file"]')).toBeNull();
-    expect(screen.queryByLabelText('Topic')).not.toBeInTheDocument();
-    expect(onSubmit).not.toHaveBeenCalled();
-  });
+                  },
+          }) as Response
+      );
+      useChatStore.setState({
+        messages: [
+          {
+            id: 'first',
+            text: 'first question',
+            isUser: true,
+            metadata: { chatflow_initial_inputs: { topic: 'Saved topic' } },
+          },
+        ],
+      });
+      const onSubmit = jest.fn().mockResolvedValue({ ok: true });
+      const view = render(
+        <ChatflowInputArea
+          instanceId="app-1"
+          onSubmit={onSubmit}
+          isWelcomeScreen={false}
+        />
+      );
+      if (turns === 'multi') {
+        const input = await waitFor(() => {
+          const field = screen.getByRole('textbox', {
+            name: 'input.placeholder',
+          });
+          expect(field).toBeEnabled();
+          return field;
+        });
+        fireEvent.change(input, { target: { value: 'Follow-up' } });
+        fireEvent.keyDown(input, { key: 'Enter' });
+        await waitFor(() =>
+          expect(onSubmit).toHaveBeenCalledWith(
+            'Follow-up',
+            {},
+            [],
+            undefined,
+            expect.any(Function)
+          )
+        );
+        expect(screen.queryByLabelText('Topic')).not.toBeInTheDocument();
+        expect(
+          screen.queryByRole('link', { name: 'newTask' })
+        ).not.toBeInTheDocument();
+        return;
+      }
+      const newTask = await screen.findByRole('link', {
+        name: 'newTask',
+      });
+      expect(newTask).toHaveAttribute('href', '/apps/chatflow/app-1');
+      expect(
+        screen.queryByRole('textbox', { name: 'input.placeholder' })
+      ).not.toBeInTheDocument();
+      expect(screen.queryByText('Saved topic')).not.toBeInTheDocument();
+      expect(view.container.querySelector('input[type="file"]')).toBeNull();
+      expect(screen.queryByLabelText('Topic')).not.toBeInTheDocument();
+      expect(onSubmit).not.toHaveBeenCalled();
+    }
+  );
 
   it('clears an accepted snapshot immediately but never clears a newer draft on late completion', async () => {
     let finish!: (result: unknown) => void;

@@ -31,6 +31,7 @@ import { useCallback, useRef, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 
+import { isSingleConversation } from '../../packages/shared/src/conversation-turns';
 import { AppIntroduction } from './app-introduction';
 import { AttachmentPreviewBar } from './attachment-preview-bar';
 import { ChatButton } from './button';
@@ -39,6 +40,7 @@ import { FileTypeSelector } from './file-type-selector';
 import { useFocusManager } from './focus-manager';
 import { buildSubmitFiles } from './helpers';
 import { ModelSelectorButton } from './model-selector-button';
+import { SingleTurnEnd } from './single-turn-end';
 import { useChatInputUploads, validateChatAttachments } from './use-uploads';
 import { ChatInputView } from './view';
 
@@ -106,6 +108,10 @@ export const ChatInput = ({
   const accepted = useChatInputStore(state =>
     Boolean(state.acceptedScopes[state.resolveScope(currentRoute)])
   );
+  const singleTurnFinished =
+    route.ready &&
+    (continuingConversation || accepted) &&
+    isSingleConversation(inputApp?.config?.conversation_turns);
   const showIntroduction =
     !showModelSelector && route.ready && !continuingConversation && !accepted;
   const capabilitiesReady = Boolean(
@@ -155,6 +161,13 @@ export const ChatInput = ({
     barHeight.current = height;
     useChatLayoutStore.getState().setInputHeight(height + textHeight.current);
   }, []);
+  const updateEndHeight = useCallback(
+    (height: number) => {
+      barHeight.current = 0;
+      updateTextHeight(height);
+    },
+    [updateTextHeight]
+  );
   const validModel =
     !requireModelValidation ||
     !showModelSelector ||
@@ -177,6 +190,7 @@ export const ChatInput = ({
   const waiting = isWaiting || isWaitingForResponse || localSubmitting;
   const editScope =
     route.ready &&
+    !singleTurnFinished &&
     currentRoute !== 'default' &&
     JSON.parse(currentRoute)[3]?.startsWith('conversation:')
       ? currentRoute
@@ -238,6 +252,7 @@ export const ChatInput = ({
     const snapshot = input.snapshot();
     if (
       disabled ||
+      singleTurnFinished ||
       submissionBlocked ||
       edit.active ||
       waiting ||
@@ -334,6 +349,22 @@ export const ChatInput = ({
     }
   };
 
+  if (singleTurnFinished && !waiting && !isProcessing) {
+    const type = inputApp?.config?.app_metadata?.dify_apptype;
+    const newTask =
+      inputApp?.config?.app_metadata?.app_type !== 'marketplace' || !route.appId
+        ? '/chat/new'
+        : `/apps/${type === 'agent' ? 'agent' : 'chatbot'}/${encodeURIComponent(route.appId)}`;
+    return (
+      <SingleTurnEnd
+        href={newTask}
+        className={className}
+        widthClass={widthClass}
+        onHeightChange={updateEndHeight}
+      />
+    );
+  }
+
   return (
     <>
       <ChatInputView
@@ -342,6 +373,7 @@ export const ChatInput = ({
         onValueChange={setMessage}
         onSubmit={handleLocalSubmit}
         disabled={disabled || edit.active}
+        textDisabled={singleTurnFinished}
         stopDisabled={disabled}
         isProcessing={isProcessing}
         onStop={onStop}

@@ -1,4 +1,5 @@
 import { uploadDifyFile } from '@lib/services/dify/file-service';
+import { readTaskDraft, taskDraftKey } from '@lib/stores/chat-draft-session';
 import { useChatInputStore } from '@lib/stores/chat-input-store';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
@@ -36,6 +37,7 @@ describe('WorkflowInputForm system-injected fields', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    sessionStorage.clear();
     global.fetch = mockedFetch;
     useChatInputStore.getState().setActor('actor');
     mockedFetch.mockResolvedValue({
@@ -101,15 +103,18 @@ describe('WorkflowInputForm system-injected fields', () => {
         .mocked(uploadDifyFile)
         .mockResolvedValue({ id: 'native-upload' } as never);
       const onExecute = jest.fn().mockResolvedValue(true);
-      const view = render(
+      const draftKey = taskDraftKey('actor', 'session', 'uuid-1', 'thread');
+      const form = (showIntroduction: boolean) => (
         <WorkflowInputForm
           instanceId="app-1"
           onExecute={onExecute}
           isExecuting={false}
           chat
-          showIntroduction
+          showIntroduction={showIntroduction}
+          draftKey={draftKey}
         />
       );
+      const view = render(form(true));
       await screen.findByText('Configured task description');
       expect(screen.getByText('Task name')).toBeInTheDocument();
       expect(screen.queryByText('independent')).not.toBeInTheDocument();
@@ -140,7 +145,27 @@ describe('WorkflowInputForm system-injected fields', () => {
         screen.getByRole('button', { name: 'fileTypeSelector.ariaLabel' })
       ).toBeDisabled();
       expect(screen.getByText('notes.txt')).toBeInTheDocument();
-      fireEvent.click(send);
+      expect(screen.queryByText('Document')).not.toBeInTheDocument();
+      expect(readTaskDraft(draftKey)).toMatchObject({
+        prompt: 'Summarize',
+        document: { upload_file_id: 'native-upload', name: 'notes.txt' },
+      });
+      view.unmount();
+      useChatInputStore.getState().setActor(null);
+      useChatInputStore.getState().setActor('actor');
+      const reopened = render(form(true));
+      expect(await screen.findByText('notes.txt')).toBeInTheDocument();
+      const reopenedComposer = screen.getByRole('textbox', {
+        name: 'input.placeholder',
+      });
+      expect(reopenedComposer).toHaveValue('Summarize');
+      expect(uploadDifyFile).toHaveBeenCalledTimes(1);
+      expect(onExecute).not.toHaveBeenCalled();
+      const reopenedSend = screen.getByRole('button', {
+        name: 'startExecution',
+      });
+      await waitFor(() => expect(reopenedSend).toBeEnabled());
+      fireEvent.click(reopenedSend);
       await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(1));
       expect(onExecute).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -150,23 +175,30 @@ describe('WorkflowInputForm system-injected fields', () => {
             upload_file_id: 'native-upload',
             app_id: 'app-1',
             actor_id: 'actor',
+            actor_epoch: useChatInputStore.getState().actorEpoch,
           }),
         })
       );
-      view.rerender(
-        <WorkflowInputForm
-          instanceId="app-1"
-          onExecute={onExecute}
-          isExecuting={false}
-          chat
-          showIntroduction={false}
-        />
-      );
+      reopened.rerender(form(false));
       expect(
         screen.queryByText('Configured task description')
       ).not.toBeInTheDocument();
       expect(screen.getByDisplayValue('English')).toBeInTheDocument();
-      expect(screen.getByText('notes.txt')).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.queryByText('notes.txt')).not.toBeInTheDocument();
+        expect(reopenedComposer).toHaveValue('');
+        expect(reopenedSend).toBeDisabled();
+        expect(
+          screen.getByRole('button', { name: 'fileTypeSelector.ariaLabel' })
+        ).toBeEnabled();
+      });
+      expect(readTaskDraft(draftKey)).toBeUndefined();
+      fireEvent.change(reopened.container.querySelector('input[type=file]')!, {
+        target: {
+          files: [new File(['new note'], 'next.txt', { type: 'text/plain' })],
+        },
+      });
+      expect(await screen.findByText('next.txt')).toBeInTheDocument();
     }
   );
 
@@ -263,7 +295,10 @@ describe('WorkflowInputForm system-injected fields', () => {
     jest
       .mocked(uploadDifyFile)
       .mockResolvedValue({ id: 'dropped-upload' } as never);
-    const onExecute = jest.fn().mockResolvedValue(true);
+    const onExecute = jest
+      .fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValue(true);
     const props = {
       instanceId: 'app-1',
       onExecute,
@@ -303,6 +338,11 @@ describe('WorkflowInputForm system-injected fields', () => {
       'fileTypeSelector.maxFilesReached'
     );
     fireEvent.click(send);
+    await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(send).toBeEnabled());
+    expect(screen.getByText('notes.txt')).toBeInTheDocument();
+    fireEvent.click(send);
+    await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(2));
     await waitFor(() =>
       expect(onExecute).toHaveBeenCalledWith({
         document: expect.objectContaining({
@@ -312,6 +352,7 @@ describe('WorkflowInputForm system-injected fields', () => {
         }),
       })
     );
+    await waitFor(() => expect(screen.queryByText('notes.txt')).toBeNull());
     view.rerender(<WorkflowInputForm {...props} isExecuting />);
     expect(drop()).toBe(false);
     expect(uploadDifyFile).toHaveBeenCalledTimes(1);

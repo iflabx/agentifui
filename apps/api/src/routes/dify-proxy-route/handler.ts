@@ -120,6 +120,15 @@ async function handleDifyProxyRequest(
   const path = adjustApiPathByAppType(context.slug, target.appType);
   if (/human-input|human_input|\/resume(?:\/|$)/.test(path))
     throw new AgentPolicyError(409, 'AGENT_CAPABILITY_UNSUPPORTED');
+  if (
+    target.singleTurn &&
+    request.method === 'POST' &&
+    path === 'chat-messages' &&
+    isObjectRecord(target.rawBody) &&
+    typeof target.rawBody.conversation_id === 'string' &&
+    target.rawBody.conversation_id.trim()
+  )
+    throw new AgentPolicyError(409, 'AGENT_SINGLE_TASK_CONVERSATION');
   const messageEdit = await resolveDifyMessageEdit(
     context,
     target,

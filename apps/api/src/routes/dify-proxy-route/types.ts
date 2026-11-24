@@ -21,6 +21,7 @@ export interface DifyProxyRequestContext {
 }
 
 export interface DifyProxyTargetConfig {
+  singleTurn?: boolean;
   serviceInstanceId?: string;
   appInstanceId?: string;
   rootTaskId?: string;

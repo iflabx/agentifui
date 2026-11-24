@@ -1,6 +1,11 @@
 import { create } from 'zustand';
 
 import type { MessageEditSource } from '../../packages/shared/src/message-edit';
+import {
+  readComposerDraft,
+  scopedComposerDraftKey,
+  writeComposerDraft,
+} from './chat-draft-session';
 
 export interface DraftSnapshot {
   editSource?: MessageEditSource;
@@ -88,6 +93,10 @@ export const useChatInputStore = create<ChatInputState>((set, get) => ({
     const state = get();
     const scope = state.currentRoute;
     if (state.message === message) return;
+    writeComposerDraft(
+      scopedComposerDraftKey('chat-text', scope, state),
+      message || undefined
+    );
     set({
       message,
       messagesByRoute: { ...state.messagesByRoute, [scope]: message },
@@ -104,9 +113,17 @@ export const useChatInputStore = create<ChatInputState>((set, get) => ({
   setCurrentRoute: route => {
     const scope = get().resolveScope(route);
     if (scope === get().currentRoute) return;
+    const state = get();
+    const stored = readComposerDraft(
+      scopedComposerDraftKey('chat-text', scope, state)
+    );
+    const message =
+      state.messagesByRoute[scope] ??
+      (typeof stored === 'string' ? stored : '');
     set({
       currentRoute: scope,
-      message: get().messagesByRoute[scope] || '',
+      message,
+      messagesByRoute: { ...state.messagesByRoute, [scope]: message },
       isComposing: false,
     });
   },
@@ -121,6 +138,10 @@ export const useChatInputStore = create<ChatInputState>((set, get) => ({
     }),
   clearRouteMessage: route => {
     const scope = get().resolveScope(route);
+    writeComposerDraft(
+      scopedComposerDraftKey('chat-text', scope, get()),
+      undefined
+    );
     set(state => {
       const messagesByRoute = { ...state.messagesByRoute };
       delete messagesByRoute[scope];
@@ -184,10 +205,17 @@ export const useChatInputStore = create<ChatInputState>((set, get) => ({
     source = state.resolveScope(source);
     target = state.resolveScope(target);
     if (source === target) return true;
-    if (state.messagesByRoute[target]) return false;
+    const targetKey = scopedComposerDraftKey('chat-text', target, state);
+    if (state.messagesByRoute[target] || readComposerDraft(targetKey))
+      return false;
     const messagesByRoute = { ...state.messagesByRoute };
     messagesByRoute[target] = messagesByRoute[source] || '';
     delete messagesByRoute[source];
+    writeComposerDraft(targetKey, messagesByRoute[target] || undefined);
+    writeComposerDraft(
+      scopedComposerDraftKey('chat-text', source, state),
+      undefined
+    );
     set({
       messagesByRoute,
       acceptedScopes: {

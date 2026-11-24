@@ -19,7 +19,7 @@ export function describeNegotiatedRuntime(app: AgentApp) {
     protocol: 'ag-ui/1.0',
     persistence: 'server',
     acceptsInputCapabilities,
-    ...(app.humanInput ? { singleTask: true } : {}),
+    ...(app.humanInput || app.singleTurn ? { singleTask: true } : {}),
     newConversationsEnabled:
       app.backendType !== 'dify' || app.interactionProtocol === 'ag-ui/1.0',
     ...(app.backendType === 'dify'

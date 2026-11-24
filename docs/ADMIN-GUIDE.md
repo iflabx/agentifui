@@ -85,6 +85,27 @@ Keep website account IDs, product instance identifiers, the service-instance UUI
 native Dify conversation IDs and LangChain thread/run IDs distinct. Users should
 follow product links rather than construct URLs from upstream identifiers.
 
+### Conversation Turns
+
+**Conversation turns** is optional in the create and edit forms. Single turn
+allows one submission per conversation; another task starts a new conversation.
+After the turn ends, the composer is replaced by **Start new task**. The
+existing conversation and its results stay readable.
+Multi-turn allows follow-up in the same upstream conversation. Select it only
+when the application is designed to use earlier context.
+
+- **Dify:** Sync reads the app mode from `/info`. It prefills a recognized
+  subtype for new applications and reports a mismatch without changing an
+  existing subtype. Chatbot and Agent get a multi-turn default when no choice
+  is set. Chatflow mode does not reveal whether the app uses prior context;
+  select its turn policy manually. An unset Chatflow keeps its single-turn behavior.
+- **LangChain:** Set the turn policy manually. Leaving it unset keeps the
+  existing behavior. Agents that use the human-confirmation profile remain
+  single-task per conversation.
+- **Workflow and text generation:** These use independent runs, not
+  conversational turns. They can run several times in one window without
+  carrying context forward.
+
 ### Check Configuration Without Saving
 
 The application create/edit form's top action row includes **Check configuration**,

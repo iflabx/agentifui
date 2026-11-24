@@ -2,6 +2,11 @@ import { getConversationByExternalId } from '@lib/services/client/conversations-
 import { useAttachmentStore } from '@lib/stores/attachment-store';
 import { syncChatDraftActor } from '@lib/stores/chat-draft-lifecycle';
 import {
+  composerDraftKey,
+  readComposerDraft,
+  writeComposerDraft,
+} from '@lib/stores/chat-draft-session';
+import {
   acceptedDrafts,
   appDrafts,
   chatInputNavigation,
@@ -22,6 +27,7 @@ function migrateDraft(source: string, target: string) {
   const input = useChatInputStore.getState();
   const attachments = useAttachmentStore.getState();
   if (input.resolveScope(source) === input.resolveScope(target)) return;
+  attachments.restoreFiles(target);
   if (input.messagesByRoute[target] || attachments.getFiles(target).length)
     return;
   if (input.migrateScope(source, target))
@@ -204,7 +210,21 @@ export function useChatInputRouteSync({
         });
       } else {
         const key = JSON.stringify([actorEpoch, userId, resolvedApp, pathname]);
-        const saved = enteredNewChat ? undefined : appDrafts.get(key);
+        const draftKey = composerDraftKey(
+          userId,
+          useChatInputStore.getState().actorSessionId,
+          'chat-new-route',
+          resolvedApp,
+          pathname
+        );
+        const storedTarget = readComposerDraft(draftKey);
+        const saved = enteredNewChat
+          ? undefined
+          : (appDrafts.get(key) ??
+            (typeof storedTarget === 'string' &&
+            storedTarget.startsWith('newdraft:')
+              ? storedTarget
+              : undefined));
         const savedScope = saved
           ? chatInputScope(actorEpoch, userId, resolvedApp, saved)
           : undefined;
@@ -224,6 +244,7 @@ export function useChatInputRouteSync({
             : undefined;
         const target = existing || `newdraft:${crypto.randomUUID()}`;
         appDrafts.set(key, target);
+        writeComposerDraft(draftKey, target);
         activate(resolvedApp, target);
       }
     }

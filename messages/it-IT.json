@@ -1558,6 +1558,17 @@
             "title": "Configurazione Parametri Dify",
             "appTypeNote": "Le applicazioni di tipo \"Modello\" appariranno nel selettore di modelli dell'interfaccia di chat"
           },
+          "conversationTurns": {
+            "label": "Turni di conversazione (facoltativo)",
+            "default": "Predefinito dell’applicazione",
+            "single": "Turno singolo",
+            "multi": "Più turni",
+            "independent": "Esecuzioni indipendenti",
+            "note": "Seleziona più turni solo se l’applicazione a monte è progettata per usare il contesto precedente.",
+            "independentNote": "Nella stessa finestra sono possibili più esecuzioni indipendenti senza condividere il contesto.",
+            "humanInputNote": "Un agente con conferma umana gestisce una sola attività per conversazione.",
+            "typeMismatch": "Dify indica {type}. Il tipo di applicazione salvato non è stato modificato."
+          },
           "backend": {
             "label": "Backend",
             "assistantId": "Assistant ID",

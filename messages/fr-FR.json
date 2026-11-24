@@ -1558,6 +1558,17 @@
             "title": "Configuration des paramètres Dify",
             "appTypeNote": "Les applications de type \"Modèle\" apparaîtront dans le sélecteur de modèle de l'interface de chat"
           },
+          "conversationTurns": {
+            "label": "Tours de conversation (facultatif)",
+            "default": "Valeur par défaut de l’application",
+            "single": "Un seul tour",
+            "multi": "Plusieurs tours",
+            "independent": "Exécutions indépendantes",
+            "note": "Choisissez plusieurs tours uniquement si l’application en amont est conçue pour utiliser le contexte précédent.",
+            "independentNote": "Plusieurs exécutions sont possibles dans la même fenêtre, sans partager le contexte.",
+            "humanInputNote": "Un agent avec confirmation humaine traite une seule tâche par conversation.",
+            "typeMismatch": "Dify indique {type}. Le type d’application enregistré n’a pas été modifié."
+          },
           "backend": {
             "label": "Backend",
             "assistantId": "Assistant ID",
