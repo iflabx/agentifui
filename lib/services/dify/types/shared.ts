@@ -60,7 +60,6 @@ export interface DifyFileUploadResponse {
 
 export interface DifyFilePreviewOptions {
   as_attachment?: boolean;
-  preview_url?: string;
 }
 
 export interface DifyFilePreviewResponse {

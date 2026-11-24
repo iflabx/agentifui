@@ -44,7 +44,6 @@ async function fetchPreview(
   if (file.source !== 'agent-input')
     return previewDifyFile(appId, fileId, {
       as_attachment: download,
-      preview_url: file.preview_url,
     });
   const response = await fetch(
     agentPath(appId, `/files/${encodeURIComponent(fileId)}`),

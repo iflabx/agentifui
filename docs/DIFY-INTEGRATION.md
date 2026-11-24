@@ -157,8 +157,14 @@ package imports and tracing administration are not part of this integration.
 
 ## Files And Limits
 
-Successful file-preview responses are forwarded without converting file bytes
-to text, including document/archive MIME types. HTML, SVG and XML responses keep
+Native chat attachment previews and downloads use the AgentifUI origin. After
+checking the saved reference, the API renews the Dify signature and streams the
+original from the configured Dify server's `/files/.../file-preview` route. The
+browser does not need to reach Dify, and the relay does not store a second copy.
+Keep that route reachable from the AgentifUI API, including when Dify advertises
+a different public file host. Existing Workflow archives remain readable
+locally; a missing native chat original cannot be recovered by this relay.
+File bytes are not converted to text. HTML, SVG and XML responses keep
 forced-download, sandbox and `nosniff` protections.
 
 `DIFY_UPLOAD_MAX_BYTES` sets the total buffered multipart request limit for
@@ -167,7 +173,8 @@ forced-download, sandbox and `nosniff` protections.
 decimal safe integer of at least 1024; an invalid configured value prevents API
 startup. Other API routes keep their original body limits. Dify and reverse
 proxies enforce their own limits independently; larger audio/file requirements
-need an appropriately bounded setting at each layer. Uploads are buffered, so
+need an appropriately bounded setting at each layer. The same limit bounds
+native attachment reads from Dify, which are streamed. Uploads are buffered, so
 account for concurrency and available memory before increasing the limit.
 
 ## Identity Boundary
