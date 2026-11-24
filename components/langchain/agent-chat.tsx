@@ -10,9 +10,11 @@ import {
   useFollowChatOutput,
   useRunProcessSelection,
 } from '@components/chat/session/use-session-presentation';
-import { toolProcessItem } from '@components/execution-process/adapters';
+import {
+  processStatus,
+  toolProcessItem,
+} from '@components/execution-process/adapters';
 import { ExecutionProcessDisclosure } from '@components/execution-process/disclosure';
-import { ExecutionProcessRow } from '@components/execution-process/row';
 import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
 import { formatUiErrorMessage, toUiError } from '@lib/errors/ui-error';
 import { localizeChatModerationMessage } from '@lib/hooks/chat-interface/error-utils';
@@ -247,6 +249,41 @@ function AgentChatSession({
   const process = useRunProcessSelection(processScope, key =>
     processRuns.has(key)
   );
+  const renderProcess = (key: string) => {
+    const activities = processRuns.get(key);
+    if (!activities || renderedProcessRuns.has(key)) return null;
+    renderedProcessRuns.add(key);
+    const historical =
+      chat.historyLoading || !chat.busy || key !== chat.view.runId;
+    const state =
+      run && (run.id || run.runId) === key ? run.executionStatus : undefined;
+    const status =
+      state === 'success'
+        ? 'completed'
+        : state === 'cancelled'
+          ? 'stopped'
+          : state === 'error' || state === 'timeout'
+            ? 'failed'
+            : state && state !== 'waiting'
+              ? processStatus(state)
+              : !historical
+                ? 'running'
+                : undefined;
+    return (
+      <ExecutionProcessDisclosure
+        key={JSON.stringify([processScope, key])}
+        placement="panel"
+        open={process.selected === key}
+        onOpenChange={open => process.setOpen(key, open)}
+        items={activities.map(activity =>
+          toolProcessItem(activity, historical)
+        )}
+        historical={historical}
+        status={status}
+        unordered={activities.some(activity => activity.order === undefined)}
+      />
+    );
+  };
 
   useLayoutEffect(() => {
     if (actorEpoch === null || authLoading) return;
@@ -429,53 +466,9 @@ function AgentChatSession({
         )}
         {timeline.map(item => {
           if (item.type === 'tool') {
-            const tool = item.tool;
-            const runKey =
-              tool.runId || JSON.stringify(['unscoped', tool.toolCallId]);
-            const showProcessEntry = !renderedProcessRuns.has(runKey);
-            renderedProcessRuns.add(runKey);
-            const activities = processRuns.get(runKey) || [tool];
-            const historicalProcess =
-              chat.historyLoading ||
-              !chat.busy ||
-              !tool.runId ||
-              tool.runId !== chat.view.runId;
-            return (
-              <div
-                key={JSON.stringify([tool.runId, tool.toolCallId])}
-                className="my-3"
-              >
-                <ExecutionProcessRow
-                  item={toolProcessItem(tool, historicalProcess)}
-                />
-                {tool.order === undefined && (
-                  <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
-                    {t('toolSummary')}
-                  </p>
-                )}
-                {showProcessEntry && (
-                  <ExecutionProcessDisclosure
-                    key={JSON.stringify([
-                      actorId,
-                      appId,
-                      conversationId,
-                      chat.draftScope,
-                      runKey,
-                    ])}
-                    placement="panel"
-                    open={process.selected === runKey}
-                    onOpenChange={open => process.setOpen(runKey, open)}
-                    title={tool.name}
-                    items={activities.map(activity =>
-                      toolProcessItem(activity, historicalProcess)
-                    )}
-                    historical={historicalProcess}
-                    unordered={activities.some(
-                      activity => activity.order === undefined
-                    )}
-                  />
-                )}
-              </div>
+            return renderProcess(
+              item.tool.runId ||
+                JSON.stringify(['unscoped', item.tool.toolCallId])
             );
           }
           const { message } = item;
@@ -515,6 +508,8 @@ function AgentChatSession({
             />
           ) : message.role === 'assistant' && message.content ? (
             <Fragment key={message.id}>
+              {typeof message.metadata?.backend_run_id === 'string' &&
+                renderProcess(message.metadata.backend_run_id)}
               <ChatMessage
                 role="assistant"
                 id={message.id}

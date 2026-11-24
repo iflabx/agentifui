@@ -237,6 +237,10 @@ function TaskChatSession({
     null
   );
   const [result, setResult] = useState<AppExecution | null>(null);
+  const process = useRunProcessSelection(
+    JSON.stringify([actorId, sessionId, appId]),
+    id => executions.some(execution => execution.id === id)
+  );
   const form = useRef<WorkflowInputFormRef>(null);
   const mounted = useRef(false);
   const request = useRef(0);
@@ -264,9 +268,6 @@ function TaskChatSession({
     }
     setFocusPending(false);
   }, [focusPending, focusedExecution, loading, scroll.ref]);
-  const process = useRunProcessSelection(conversationId, id =>
-    executions.some(execution => execution.id === id)
-  );
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -482,6 +483,7 @@ function TaskChatSession({
               streamedText={runner.generatedText}
               processOpen={process.selected === execution.id}
               onProcessOpen={open => process.setOpen(execution.id, open)}
+              processSuspended={Boolean(result)}
               reuseDisabled={busy || loadFailed}
               onReuse={() => void prepareAgain(execution)}
               onShowResult={() => setResult(execution)}
@@ -500,6 +502,7 @@ function TaskExecutionTurn({
   streamedText,
   processOpen,
   onProcessOpen,
+  processSuspended,
   reuseDisabled = false,
   onReuse,
   onShowResult,
@@ -510,6 +513,7 @@ function TaskExecutionTurn({
   streamedText?: string;
   processOpen?: boolean;
   onProcessOpen?: (open: boolean) => void;
+  processSuspended?: boolean;
   reuseDisabled?: boolean;
   onReuse?: () => void;
   onShowResult: () => void;
@@ -539,6 +543,7 @@ function TaskExecutionTurn({
           live={live}
           open={processOpen}
           onOpenChange={onProcessOpen}
+          suspended={processSuspended}
         />
         {output && (
           <ChatMessage
@@ -549,23 +554,14 @@ function TaskExecutionTurn({
             wasManuallyStopped={execution.status === 'stopped'}
           />
         )}
-        <p
-          role={execution.status === 'failed' ? 'alert' : 'status'}
-          className="text-xs text-stone-500"
-        >
-          {t(
-            unknown
-              ? 'unknown'
-              : live
-                ? 'running'
-                : execution.status === 'deleted'
-                  ? 'unavailable'
-                  : execution.status
-          )}
-        </p>
+        {unknown && (
+          <p role="status" className="text-xs text-stone-500">
+            {t('unknown')}
+          </p>
+        )}
         {execution.error_message &&
           execution.error_message !== 'CLIENT_TASK_INTERRUPTED' && (
-            <p className="mt-2 text-sm text-red-600">
+            <p role="alert" className="mt-2 text-sm text-red-600">
               {execution.error_message}
             </p>
           )}
@@ -689,6 +685,7 @@ function TaskExecutionEntry({
           <TaskExecutionTurn
             execution={execution}
             instanceId={instanceId}
+            processSuspended={showResult}
             onShowResult={() => setShowResult(true)}
           />
         ) : (

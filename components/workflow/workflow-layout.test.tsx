@@ -247,7 +247,7 @@ describe('Workflow historical selection boundary', () => {
     });
     expect(panel.closest('[data-execution-process-panel]')).toHaveClass(
       'fixed',
-      'right-4'
+      'md:right-4'
     );
     expect(panel).toContainElement(screen.getByText('Saved step B'));
     expect(screen.queryByText('Live step A')).not.toBeInTheDocument();

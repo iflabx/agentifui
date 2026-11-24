@@ -10,9 +10,8 @@ import { ChatInput } from '@components/chat-input';
 import { DifyEditProvider } from '@components/chat-input/edit-resend';
 import { DynamicSuggestedQuestions } from '@components/chat/dynamic-suggested-questions';
 import { ChatSessionView } from '@components/chat/session/chat-session-view';
-import { ChatflowFloatingController } from '@components/chatflow/chatflow-floating-controller';
 import { ChatflowInputArea } from '@components/chatflow/chatflow-input-area';
-import { ChatflowNodeTracker } from '@components/chatflow/chatflow-node-tracker';
+import { useChatflowMessageProcess } from '@components/chatflow/use-chatflow-message-process';
 import { AgentChat } from '@components/langchain/agent-chat';
 import { TaskChat } from '@components/task-chat/task-chat';
 import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
@@ -23,7 +22,6 @@ import { useChatScroll } from '@lib/hooks/use-chat-scroll';
 import { useChatflowDetection } from '@lib/hooks/use-chatflow-detection';
 import { useChatflowExecutionView } from '@lib/hooks/use-chatflow-execution-view';
 import { useChatflowInterface } from '@lib/hooks/use-chatflow-interface';
-import { useChatflowState } from '@lib/hooks/use-chatflow-state';
 import { useConversationMessages } from '@lib/hooks/use-conversation-messages';
 import { useHistoryAttachmentPreviewSync } from '@lib/hooks/use-history-attachment-preview-sync';
 import { useProfile } from '@lib/hooks/use-profile';
@@ -31,10 +29,8 @@ import { getConversationByExternalId } from '@lib/services/client/conversations-
 import { useChatLayoutStore } from '@lib/stores/chat-layout-store';
 import { useChatStore } from '@lib/stores/chat-store';
 import { useChatflowExecutionStore } from '@lib/stores/chatflow-execution-store';
-import { readChatflowExecutionMetadata } from '@lib/stores/chatflow-execution-store/history';
 import { useFilePreviewStore } from '@lib/stores/ui/file-preview-store';
 
-import React from 'react';
 import { useEffect, useLayoutEffect, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
@@ -157,10 +153,8 @@ function LegacyChatPage({
 
   const { inputHeight } = useChatLayoutStore();
   const isPreviewOpen = useFilePreviewStore(state => state.isPreviewOpen);
-  const trackerButtonRef = React.useRef<HTMLButtonElement>(null);
   const regularInterface = useChatInterface();
   const { conversationAppId } = regularInterface;
-  const storedMessages = useChatStore(state => state.messages);
 
   // Use the wrapped hook to detect chatflow apps
   const { isChatflowApp: detectedChatflow, currentConversationApp } =
@@ -170,47 +164,24 @@ function LegacyChatPage({
     isChatflowApp ? currentConversationApp?.instance_id : null
   );
 
-  const persistedChatflowExecution = React.useMemo(() => {
-    if (!isChatflowApp) return null;
-
-    for (const message of [...storedMessages].reverse()) {
-      if (message.isUser) continue;
-      const snapshot = readChatflowExecutionMetadata(message.metadata);
-      if (snapshot) return snapshot;
-    }
-
-    return null;
-  }, [isChatflowApp, storedMessages]);
-
-  // Use the wrapped hook to manage chatflow state
   const {
     messages,
     handleSubmit: originalHandleSubmit,
     isProcessing,
     handleStopProcessing,
     sendDirectMessage,
-    showNodeTracker,
-    setShowNodeTracker,
-    showFloatingController,
-  } = useChatflowState({
-    scope:
-      executionScope ??
-      JSON.stringify([session?.user.id, conversationIdFromUrl]),
+  } = isChatflowApp ? chatflowInterface : regularInterface;
+  const renderProcess = useChatflowMessageProcess(
+    messages,
     isChatflowApp,
-    retainCompletedExecution:
-      Boolean(executionScope) || Boolean(persistedChatflowExecution),
-    chatflowInterface,
-    regularInterface,
-  });
-
-  useEffect(() => {
-    if (!isChatflowApp || !persistedChatflowExecution || isProcessing) return;
-
-    const executionState = useChatflowExecutionStore.getState();
-    if (executionState.isExecuting || executionState.nodes.length > 0) return;
-
-    executionState.restoreExecution(persistedChatflowExecution.nodes);
-  }, [isChatflowApp, isProcessing, persistedChatflowExecution]);
+    (preserveMessages ? executionScope : undefined) ??
+      JSON.stringify([
+        session?.user.id,
+        conversationIdFromUrl,
+        conversationAppId,
+      ]),
+    Boolean(executionScope)
+  );
 
   useLayoutEffect(() => {
     if (!authLoading && !executionScope) {
@@ -289,16 +260,6 @@ function LegacyChatPage({
         }
         showWelcome={showWelcome}
         scrollProps={{ ref: setScrollRef, className: 'scroll-smooth' }}
-        processAction={
-          isChatflowApp && (
-            <ChatflowFloatingController
-              buttonRef={trackerButtonRef}
-              isVisible={showFloatingController}
-              isTrackerVisible={showNodeTracker}
-              onToggleTracker={() => setShowNodeTracker(!showNodeTracker)}
-            />
-          )
-        }
         composer={
           isChatflowApp && currentConversationApp ? (
             <ChatflowInputArea
@@ -356,22 +317,8 @@ function LegacyChatPage({
           conversationAppId={conversationAppId}
           isWaitingForResponse={isWaitingForResponse}
           isLoadingInitial={isLoadingInitial}
+          renderProcess={renderProcess}
         />
-
-        {isChatflowApp && showNodeTracker && (
-          <ChatflowNodeTracker
-            isVisible={showNodeTracker && !isPreviewOpen}
-            scope={
-              executionScope ??
-              JSON.stringify([conversationAppId, conversationIdFromUrl])
-            }
-            onClose={() => {
-              setShowNodeTracker(false);
-              trackerButtonRef.current?.focus();
-            }}
-            className="fixed right-4 bottom-40 z-30 max-w-sm transition-all duration-300"
-          />
-        )}
       </ChatSessionView>
     </DifyEditProvider>
   );

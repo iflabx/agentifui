@@ -652,12 +652,16 @@ describe('Agent chat draft', () => {
         <AgentChat appId="app" conversationId="thread" />
       );
       expect(container.querySelector('.animate-spin')).toBeNull();
-      expect(screen.getByText('status.unknown')).toBeInTheDocument();
+      expect(screen.queryByText('Search')).not.toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: 'view' }));
       expect(screen.getByRole('region', { name: 'title' })).toHaveTextContent(
         'status.unknown'
       );
-      expect(container.querySelector('.animate-spin')).toBeNull();
+      expect(
+        screen
+          .getByRole('region', { name: 'title' })
+          .querySelector('.animate-spin')
+      ).toBeNull();
       expect(restored.tools[0].status).toBe('running');
     }
   );
@@ -690,15 +694,20 @@ describe('Agent chat draft', () => {
     const { container, rerender } = render(
       <AgentChat appId="app" conversationId={null} />
     );
-    expect(container.querySelector('.animate-spin')).not.toBeNull();
+    expect(container.querySelector('.animate-spin')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'view' }));
+    expect(
+      screen
+        .getByRole('region', { name: 'title' })
+        .querySelector('.animate-spin')
+    ).not.toBeNull();
     expect(screen.queryByText('historical')).not.toBeInTheDocument();
     jest.mocked(useAgentChat).mockReturnValue({ ...live, busy: false });
     rerender(<AgentChat appId="app" conversationId={null} />);
     expect(container.querySelector('.animate-spin')).toBeNull();
     expect(screen.getByText('historical')).toBeInTheDocument();
-    expect(screen.getAllByText('status.unknown')).toHaveLength(2);
-    expect(screen.getAllByText('status.completed')).toHaveLength(2);
+    expect(screen.getAllByText('status.unknown')).toHaveLength(1);
+    expect(screen.getAllByText('status.completed')).toHaveLength(1);
   });
 
   it('groups process details by run without changing tool timeline order or exposing raw summaries', () => {
@@ -736,6 +745,8 @@ describe('Agent chat draft', () => {
       <AgentChat appId="app" conversationId={null} />
     );
     expect(screen.getAllByRole('button', { name: 'view' })).toHaveLength(2);
+    expect(screen.queryByText('Search one')).not.toBeInTheDocument();
+    expect(screen.queryByText('Write one')).not.toBeInTheDocument();
     fireEvent.click(screen.getAllByRole('button', { name: 'view' })[0]);
     const process = screen.getByRole('region', { name: 'title' });
     expect(process.textContent).toContain('Search one');
@@ -748,7 +759,7 @@ describe('Agent chat draft', () => {
     ).toHaveLength(1);
     expect(
       document.querySelector('[data-execution-process-panel]')
-    ).toHaveClass('fixed', 'right-4');
+    ).toHaveClass('fixed', 'md:right-4');
     fireEvent.click(screen.getByRole('button', { name: 'view' }));
     expect(screen.getAllByRole('region', { name: 'title' })).toHaveLength(1);
     expect(

@@ -8,6 +8,7 @@ import { ChatMessage } from '@lib/stores/chat-store';
 import { cn } from '@lib/utils';
 
 import React, { useEffect, useRef } from 'react';
+import type { ReactNode } from 'react';
 
 import { MessageSkeleton } from './message-skeleton';
 import { useAppChatLayout } from './session/app-chat-layout';
@@ -28,6 +29,7 @@ interface ChatLoaderProps {
   isLoadingInitial?: boolean;
   /** Custom CSS class name */
   className?: string;
+  renderProcess?: (message: ChatMessage) => ReactNode;
 }
 
 /**
@@ -56,6 +58,7 @@ export const ChatLoader = ({
   isWaitingForResponse = false,
   isLoadingInitial = false,
   className,
+  renderProcess,
 }: ChatLoaderProps) => {
   const appLayout = useAppChatLayout();
   const { widthClass, paddingClass } = useChatWidth();
@@ -169,52 +172,56 @@ export const ChatLoader = ({
           <MessageSkeleton />
         ) : (
           <>
-            {displayedMessages.map(msg =>
-              msg.isUser ? (
-                <SessionMessage
-                  role="user"
-                  key={msg.id}
-                  content={msg.text}
-                  attachments={
-                    edit?.pending?.sourceId === (msg.db_id || msg.id)
-                      ? undefined
-                      : msg.attachments
-                  }
-                  conversationAppId={conversationAppId}
-                  id={msg.id}
-                  editor={
-                    edit?.sourceId === msg.id || edit?.sourceId === msg.db_id
-                      ? edit?.editor
-                      : undefined
-                  }
-                  onEdit={
-                    edit && msg.text.trim()
-                      ? () =>
-                          edit.start({
-                            id: msg.db_id || msg.id,
-                            text: msg.text,
-                            hasAttachments: Boolean(msg.attachments?.length),
-                          })
-                      : undefined
-                  }
-                  editDisabled={
-                    edit?.disabled || isLoadingInitial || isWaitingForResponse
-                  }
-                />
-              ) : (
-                <SessionMessage
-                  role="assistant"
-                  key={msg.id}
-                  content={msg.text}
-                  isStreaming={msg.isStreaming ?? false}
-                  wasManuallyStopped={msg.wasManuallyStopped ?? false}
-                  metadata={msg.metadata}
-                  id={msg.id}
-                  resultFiles={msg.difyResultFiles}
-                  resultAppId={conversationAppId ?? undefined}
-                />
-              )
-            )}
+            {displayedMessages.map(msg => (
+              <React.Fragment key={msg.id}>
+                {!msg.isUser && renderProcess?.(msg)}
+                {msg.isUser ? (
+                  <SessionMessage
+                    role="user"
+                    key={msg.id}
+                    content={msg.text}
+                    attachments={
+                      edit?.pending?.sourceId === (msg.db_id || msg.id)
+                        ? undefined
+                        : msg.attachments
+                    }
+                    conversationAppId={conversationAppId}
+                    id={msg.id}
+                    editor={
+                      edit?.sourceId === msg.id || edit?.sourceId === msg.db_id
+                        ? edit?.editor
+                        : undefined
+                    }
+                    onEdit={
+                      edit && msg.text.trim()
+                        ? () =>
+                            edit.start({
+                              id: msg.db_id || msg.id,
+                              text: msg.text,
+                              hasAttachments: Boolean(msg.attachments?.length),
+                            })
+                        : undefined
+                    }
+                    editDisabled={
+                      edit?.disabled || isLoadingInitial || isWaitingForResponse
+                    }
+                  />
+                ) : (
+                  <SessionMessage
+                    role="assistant"
+                    key={msg.id}
+                    content={msg.text}
+                    isStreaming={msg.isStreaming ?? false}
+                    wasManuallyStopped={msg.wasManuallyStopped ?? false}
+                    metadata={msg.metadata}
+                    id={msg.id}
+                    resultFiles={msg.difyResultFiles}
+                    resultAppId={conversationAppId ?? undefined}
+                  />
+                )}
+                {msg.isUser && renderProcess?.(msg)}
+              </React.Fragment>
+            ))}
 
             {isWaitingForResponse && (
               <div className="my-2 flex justify-start py-2">

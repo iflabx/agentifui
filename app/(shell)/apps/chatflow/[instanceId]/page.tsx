@@ -3,13 +3,12 @@
 import { ChatLoader } from '@components/chat';
 import { DifyEditProvider } from '@components/chat-input/edit-resend';
 import { ChatSessionView } from '@components/chat/session/chat-session-view';
-import { ChatflowFloatingController } from '@components/chatflow/chatflow-floating-controller';
 import { ChatflowInputArea } from '@components/chatflow/chatflow-input-area';
-import { ChatflowNodeTracker } from '@components/chatflow/chatflow-node-tracker';
+import { useChatflowMessageProcess } from '@components/chatflow/use-chatflow-message-process';
 import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
 import { useChatScroll, useWelcomeScreen } from '@lib/hooks';
+import { useChatflowExecutionView } from '@lib/hooks/use-chatflow-execution-view';
 import { useChatflowInterface } from '@lib/hooks/use-chatflow-interface';
-import { useChatflowState } from '@lib/hooks/use-chatflow-state';
 import { useCurrentApp } from '@lib/hooks/use-current-app';
 import { useAppListStore } from '@lib/stores/app-list-store';
 import { useChatLayoutStore } from '@lib/stores/chat-layout-store';
@@ -19,14 +18,13 @@ import { useSidebarStore } from '@lib/stores/sidebar-store';
 import { cn } from '@lib/utils';
 import { Blocks, Loader2 } from 'lucide-react';
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 
 export default function AppDetailPage() {
-  const { session } = useAuthSession();
-  const trackerButtonRef = useRef<HTMLButtonElement>(null);
+  const { session, loading: authLoading } = useAuthSession();
   const router = useRouter();
   const params = useParams();
   const pathname = usePathname() ?? '';
@@ -38,20 +36,18 @@ export default function AppDetailPage() {
   // get chatflow execution state cleanup method
   const { resetExecution } = useChatflowExecutionStore();
 
-  // use unified chatflow state management, support intelligent popup control
-  const {
+  const { messages, isProcessing, handleStopProcessing } = chatflowInterface;
+  const executionView = useChatflowExecutionView(
+    session?.user.id,
+    pathname,
+    authLoading
+  );
+  const renderProcess = useChatflowMessageProcess(
     messages,
-    isProcessing,
-    handleStopProcessing,
-    showNodeTracker,
-    setShowNodeTracker,
-    showFloatingController,
-  } = useChatflowState({
-    scope: JSON.stringify([session?.user.id, instanceId]),
-    isChatflowApp: true,
-    chatflowInterface,
-    regularInterface: chatflowInterface,
-  }); // chatflow page is always a chatflow application
+    true,
+    executionView?.scope ?? JSON.stringify([session?.user.id, instanceId]),
+    Boolean(executionView && executionView.appId === instanceId)
+  );
 
   // get chatflow-specific submission function
   const {
@@ -67,8 +63,6 @@ export default function AppDetailPage() {
   // get chat layout state, used for input box height management
   const { inputHeight } = useChatLayoutStore();
 
-  // remove duplicate automatic display logic, now managed by useChatflowState
-  // Support intelligent behavior where users can manually close and no longer automatically open
   // add scroll management, ensure message list can scroll correctly
   const scrollRef = useChatScroll(messages);
 
@@ -353,14 +347,6 @@ export default function AppDetailPage() {
         showWelcome={isWelcomeScreen && messages.length === 0}
         scrollProps={{ ref: scrollRef, className: 'scroll-smooth' }}
         backdrop={!isWelcomeScreen}
-        processAction={
-          <ChatflowFloatingController
-            buttonRef={trackerButtonRef}
-            isVisible={showFloatingController}
-            isTrackerVisible={showNodeTracker}
-            onToggleTracker={() => setShowNodeTracker(!showNodeTracker)}
-          />
-        }
         composer={
           <ChatflowInputArea
             key={formIdentity}
@@ -377,15 +363,7 @@ export default function AppDetailPage() {
           messages={messages}
           conversationAppId={instanceId}
           isWaitingForResponse={isWaitingForResponse}
-        />
-        <ChatflowNodeTracker
-          isVisible={showNodeTracker}
-          scope={JSON.stringify([instanceId, formIdentity])}
-          onClose={() => {
-            setShowNodeTracker(false);
-            trackerButtonRef.current?.focus();
-          }}
-          className="fixed right-4 bottom-40 z-30 max-w-sm transition-all duration-300"
+          renderProcess={renderProcess}
         />
       </ChatSessionView>
     </DifyEditProvider>

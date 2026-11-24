@@ -160,7 +160,7 @@ describe('Workflow process integration', () => {
     const panel = document.querySelector<HTMLDivElement>(
       '[data-execution-process-panel]'
     );
-    expect(panel).toHaveClass('fixed', 'right-4');
+    expect(panel).toHaveClass('fixed', 'md:right-4');
     expect(panel).toContainElement(screen.getByText('Saved task B'));
     expect(container).not.toContainElement(panel);
     expect(screen.queryByText('Live task A')).not.toBeInTheDocument();

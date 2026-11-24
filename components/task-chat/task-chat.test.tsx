@@ -48,7 +48,11 @@ jest.mock('@lib/stores/app-list-store', () => ({
 }));
 jest.mock('@lib/stores/workflow-execution-store', () => ({
   useWorkflowExecutionStore: (selector: (state: unknown) => unknown) =>
-    selector({ nodes: [] }),
+    selector({
+      nodes: [],
+      iterationExpandedStates: {},
+      loopExpandedStates: {},
+    }),
 }));
 jest.mock('@lib/hooks/use-workflow-execution', () => ({
   useWorkflowExecution: () => {
@@ -121,9 +125,6 @@ jest.mock(
     AssistantMessage: ({ content }: { content: string }) => <p>{content}</p>,
   })
 );
-jest.mock('@components/execution-process/disclosure', () => ({
-  ExecutionProcessDisclosure: () => null,
-}));
 jest.mock('@components/file-preview/file-preview-canvas', () => ({
   FilePreviewCanvas: () => null,
 }));
@@ -393,6 +394,69 @@ it('reserves once and executes that same row with the same submission ID', async
   expect(screen.getAllByText('topic: 1')).toHaveLength(1);
   expect(window.location.search).toContain('conversationId=conversation');
 });
+
+it.each(['workflow', 'text-generation'] as const)(
+  'keeps %s details closed until asked and does not insert steps in the transcript',
+  async taskType => {
+    mockApps[0].config.app_metadata.dify_apptype = taskType;
+    jest.mocked(reserveTaskExecution).mockResolvedValue({
+      success: true,
+      data: {
+        conversationId: 'conversation',
+        execution: {
+          ...execution('1'),
+          execution_type: taskType,
+          metadata:
+            taskType === 'workflow'
+              ? {
+                  task_process_nodes: [
+                    {
+                      id: 'step',
+                      title: 'Saved step',
+                      description: '',
+                      status: 'completed',
+                      visible: true,
+                    },
+                  ],
+                }
+              : {},
+        },
+        replayed: false,
+      },
+    });
+    const { container } = render(
+      <TaskChat instanceId="task-app" taskType={taskType} />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'submit task' }));
+    await waitFor(() => expect(container).toHaveTextContent('answer-1'));
+    expect(
+      screen.queryByRole('region', { name: 'title' })
+    ).not.toBeInTheDocument();
+    expect(container).not.toHaveTextContent('Saved step');
+    expect(container).toHaveTextContent('status.completed');
+    if (taskType === 'text-generation') {
+      expect(
+        screen.queryByRole('button', { name: 'view' })
+      ).not.toBeInTheDocument();
+      return;
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'view' }));
+    const panel = screen
+      .getByRole('region', { name: 'title' })
+      .closest<HTMLElement>('[data-execution-process-panel]');
+    expect(panel).toHaveClass('fixed', 'md:right-4');
+    expect(panel?.parentElement).toBe(document.body);
+    expect(container).not.toContainElement(panel);
+
+    fireEvent.click(screen.getByRole('button', { name: 'close' }));
+    expect(
+      screen.queryByRole('region', { name: 'title' })
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'view' }));
+    expect(screen.getByRole('region', { name: 'title' })).toBeInTheDocument();
+  }
+);
 
 it('does not reexecute an already reserved submission or pretend it completed', async () => {
   jest.mocked(reserveTaskExecution).mockResolvedValue({

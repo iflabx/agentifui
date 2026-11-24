@@ -145,6 +145,7 @@ function buildAssistantPersistenceFallback(input: {
 
 interface ExecuteChatSubmitInput {
   editSourceId?: string;
+  onUserMessage?: (id: string) => void;
   onAccepted?: (accepted: ChatSubmissionAccepted) => void;
   viewScope?: ChatViewScope;
   message: string;
@@ -268,6 +269,7 @@ export async function executeChatSubmit(
   const userMessage = deferFormTransition
     ? { ...userMessageData, id: crypto.randomUUID() }
     : input.addMessage(userMessageData);
+  input.onUserMessage?.(userMessage.id);
 
   const leaveWelcomeScreen = () => {
     if (!input.isWelcomeScreen) return;

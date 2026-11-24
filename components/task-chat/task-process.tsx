@@ -2,6 +2,7 @@
 
 import {
   difyProcessItem,
+  processStatus,
   visibleDifyNodes,
   workflowSnapshotItems,
 } from '@components/execution-process/adapters';
@@ -53,11 +54,13 @@ export function TaskProcess({
   live,
   open,
   onOpenChange,
+  suspended,
 }: {
   execution: AppExecution;
   live: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  suspended?: boolean;
 }) {
   const t = useTranslations('taskChat');
   const current = useWorkflowExecutionStore(state => state.nodes);
@@ -88,20 +91,29 @@ export function TaskProcess({
         )
       )
     : workflowSnapshotItems(execution.metadata, execution.id);
-  if (!items.length && !workflow) return null;
-  if (!items.length && !live)
-    return <p className="mb-2 text-xs text-stone-500">{t('noProcess')}</p>;
+  const status =
+    !live &&
+    (['pending', 'running'].includes(execution.status) ||
+      execution.error_message === 'CLIENT_TASK_INTERRUPTED')
+      ? 'unknown'
+      : live
+        ? 'running'
+        : processStatus(execution.status);
   return (
     <ExecutionProcessDisclosure
       items={items}
+      status={status}
+      showEmpty={workflow && !live}
       placement="panel"
       open={open}
       onOpenChange={onOpenChange}
+      suspended={suspended}
       title={execution.title || t('taskTitle')}
-      historical={!live}
-      executing={live}
+      historical={!live && items.length > 0}
+      executing={live && workflow}
+      failed={execution.status === 'failed'}
       renderItem={
-        nodes.length
+        nodes.length && items.length
           ? (item, index) => (
               <ExecutionBar
                 historical={!live}

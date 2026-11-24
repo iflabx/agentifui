@@ -17,7 +17,6 @@ interface ChatSessionViewProps {
   composer: ReactNode;
   header?: ReactNode;
   showWelcome?: boolean;
-  processAction?: ReactNode;
   preview?: ReactNode;
   filePreview?: boolean;
   previewOpen?: boolean;
@@ -37,7 +36,6 @@ export function ChatSessionView({
   composer,
   header,
   showWelcome = false,
-  processAction,
   preview,
   filePreview,
   previewOpen,
@@ -90,7 +88,6 @@ export function ChatSessionView({
             </div>
           )}
           {jumpToBottom && <ScrollToBottomButton />}
-          {processAction}
           {backdrop && !appLayout && <ChatInputBackdrop />}
           {composer && (
             <div

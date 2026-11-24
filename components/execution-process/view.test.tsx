@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { useFilePreviewStore } from '@lib/stores/ui/file-preview-store';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import { useState } from 'react';
 
@@ -39,7 +40,7 @@ describe('shared execution process UI', () => {
     const firstPanel = document.querySelector<HTMLDivElement>(
       '[data-execution-process-panel]'
     );
-    expect(firstPanel).toHaveClass('fixed', 'right-4');
+    expect(firstPanel).toHaveClass('fixed', 'md:right-4', 'bottom-0');
     expect(firstPanel?.parentElement).toBe(document.body);
     expect(container).not.toContainElement(firstPanel);
     fireEvent.click(
@@ -65,6 +66,29 @@ describe('shared execution process UI', () => {
       screen.getByRole('button', { name: 'executionProcess.view' })
     );
     expect(screen.getByText('executionProcess.waiting')).toBeInTheDocument();
+  });
+  it('suspends the selected process for file preview without stealing focus on return', () => {
+    render(
+      <>
+        <ExecutionProcessDisclosure items={items} placement="panel" />
+        <button type="button">Preview opener</button>
+      </>
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'executionProcess.view' })
+    );
+    expect(screen.getByRole('region')).toBeInTheDocument();
+    try {
+      act(() => useFilePreviewStore.setState({ isPreviewOpen: true }));
+      expect(screen.queryByRole('region')).not.toBeInTheDocument();
+      const opener = screen.getByRole('button', { name: 'Preview opener' });
+      opener.focus();
+      act(() => useFilePreviewStore.setState({ isPreviewOpen: false }));
+      expect(screen.getByRole('region')).toBeInTheDocument();
+      expect(opener).toHaveFocus();
+    } finally {
+      act(() => useFilePreviewStore.setState({ isPreviewOpen: false }));
+    }
   });
   it('shows activities and controlled states without a fictional percentage', () => {
     const { container } = render(<ExecutionProcessView items={items} />);

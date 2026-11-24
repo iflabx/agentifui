@@ -1,11 +1,13 @@
 'use client';
 
+import { useFilePreviewStore } from '@lib/stores/ui/file-preview-store';
+
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 
 import { ExecutionProcessPanel } from './panel';
-import type { ExecutionProcessItem } from './types';
+import type { ExecutionProcessItem, ExecutionProcessStatus } from './types';
 import { ExecutionProcessView } from './view';
 
 interface ExecutionProcessDisclosureProps {
@@ -20,6 +22,9 @@ interface ExecutionProcessDisclosureProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   title?: string;
+  status?: ExecutionProcessStatus;
+  suspended?: boolean;
+  showEmpty?: boolean;
 }
 
 export function ExecutionProcessDisclosure({
@@ -34,10 +39,16 @@ export function ExecutionProcessDisclosure({
   open: controlledOpen,
   onOpenChange,
   title,
+  status,
+  suspended,
+  showEmpty,
 }: ExecutionProcessDisclosureProps) {
   const translate = useTranslations('executionProcess');
   const [localOpen, setLocalOpen] = useState(false);
   const open = controlledOpen ?? localOpen;
+  const previewOpen = useFilePreviewStore(state => state.isPreviewOpen);
+  const visible = open && !suspended && !(placement === 'panel' && previewOpen);
+  const focusRequested = useRef(false);
   const setOpen = (next: boolean) => {
     setLocalOpen(next);
     onOpenChange?.(next);
@@ -46,24 +57,37 @@ export function ExecutionProcessDisclosure({
   const panel = useRef<HTMLDivElement>(null);
   const contentId = useId();
   useEffect(() => {
-    if (open && placement === 'panel')
+    if (visible && focusRequested.current && placement === 'panel')
       panel.current?.focus({ preventScroll: true });
-  }, [open, placement]);
-  if (items.length === 0 && !executing) return null;
+    focusRequested.current = false;
+  }, [visible, placement]);
+  if (items.length === 0 && !executing && !showEmpty && !status) return null;
+  const canOpen = items.length > 0 || executing || showEmpty;
   const Container = placement === 'panel' ? ExecutionProcessPanel : 'div';
   return (
     <div className="my-2">
-      <button
-        ref={trigger}
-        type="button"
-        aria-expanded={open}
-        aria-controls={open ? contentId : undefined}
-        className="rounded text-xs underline underline-offset-4 focus-visible:outline-2"
-        onClick={() => setOpen(!open)}
-      >
-        {translate(open ? 'hide' : 'view')}
-      </button>
-      {open && (
+      <div className="flex flex-wrap items-baseline gap-x-2 text-xs text-stone-600 dark:text-stone-300">
+        {status && <span role="status">{translate(`status.${status}`)}</span>}
+        {canOpen && (
+          <button
+            ref={trigger}
+            type="button"
+            aria-expanded={visible}
+            aria-controls={visible ? contentId : undefined}
+            disabled={Boolean(
+              suspended || (placement === 'panel' && previewOpen)
+            )}
+            className="rounded underline underline-offset-4 focus-visible:outline-2"
+            onClick={() => {
+              focusRequested.current = !open;
+              setOpen(!open);
+            }}
+          >
+            {translate(visible ? 'hide' : 'view')}
+          </button>
+        )}
+      </div>
+      {visible && canOpen && (
         <Container
           ref={panel}
           tabIndex={-1}

@@ -53,9 +53,9 @@ export function useChatflowInterface(preferredRouteAppId?: string | null) {
       if (activeViewRef.current === view) activeViewRef.current = null;
     };
   }, [view]);
-  // Get node tracking related methods
-  const { startExecution, handleNodeEvent, resetExecution } =
-    useChatflowExecutionStore();
+  const handleNodeEvent = useChatflowExecutionStore(
+    state => state.handleNodeEvent
+  );
 
   // Use the base chat interface, passing the node event handler
   const getAssistantMessageMetadata = useCallback(
@@ -105,9 +105,6 @@ export function useChatflowInterface(preferredRouteAppId?: string | null) {
       )
         return { ok: false, errorCode: 'INVALID_ATTACHMENT_OWNER' };
       try {
-        // Step 1: Start node execution tracking
-        startExecution();
-
         // Step 2: Build user message content (shown to user, includes query and form data summary)
         const userMessage = formatChatflowMessage(query, inputs);
 
@@ -147,7 +144,7 @@ export function useChatflowInterface(preferredRouteAppId?: string | null) {
         throw error;
       }
     },
-    [chatInterface, startExecution, view, formScope, userId, actorEpoch]
+    [chatInterface, view, formScope, userId, actorEpoch]
   );
 
   /**
@@ -261,16 +258,6 @@ export function useChatflowInterface(preferredRouteAppId?: string | null) {
     handleStopProcessing, // Use the overridden stop method
     handleChatflowSubmit,
     formIdentity: JSON.stringify([actorEpoch, userId, preferredRouteAppId]),
-    // Expose node tracking related state and methods
-    nodeTracker: {
-      nodes: useChatflowExecutionStore(state => state.nodes),
-      isExecuting: useChatflowExecutionStore(state => state.isExecuting),
-      executionProgress: useChatflowExecutionStore(
-        state => state.executionProgress
-      ),
-      error: useChatflowExecutionStore(state => state.error),
-      resetExecution,
-    },
   };
 }
 

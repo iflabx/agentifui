@@ -10,7 +10,6 @@ import { difyProcessItem } from '@components/execution-process/adapters';
 import { ExecutionProcessRow } from '@components/execution-process/row';
 import type { ExecutionProcessItem } from '@components/execution-process/types';
 import type { ChatflowNode } from '@lib/stores/chatflow-execution-store';
-import { useChatflowExecutionStore } from '@lib/stores/chatflow-execution-store';
 
 import { useTranslations } from 'next-intl';
 
@@ -18,26 +17,18 @@ interface ChatflowExecutionBarProps {
   node: ChatflowNode;
   index: number;
   item: ExecutionProcessItem;
+  expanded: boolean;
+  onToggle: () => void;
 }
 
 export function ChatflowExecutionBar({
   node,
   index,
   item,
+  expanded,
+  onToggle,
 }: ChatflowExecutionBarProps) {
   const translate = useTranslations('pages.chatflow.executionBar');
-  const iterationExpanded = useChatflowExecutionStore(
-    state => state.iterationExpandedStates[node.id]
-  );
-  const loopExpanded = useChatflowExecutionStore(
-    state => state.loopExpandedStates[node.id]
-  );
-  const toggleIterationExpanded = useChatflowExecutionStore(
-    state => state.toggleIterationExpanded
-  );
-  const toggleLoopExpanded = useChatflowExecutionStore(
-    state => state.toggleLoopExpanded
-  );
   const children = node.isIterationNode
     ? node.iterations?.map(iteration =>
         difyProcessItem(
@@ -76,15 +67,8 @@ export function ChatflowExecutionBar({
         node.isInIteration || node.isInLoop ? 'ml-4 w-auto' : undefined
       }
       badge={getCounterBadgeText(node)}
-      expanded={Boolean(node.isLoopNode ? loopExpanded : iterationExpanded)}
-      onToggle={
-        isExpandableNode(node)
-          ? () => {
-              if (node.isLoopNode) toggleLoopExpanded(node.id);
-              else toggleIterationExpanded(node.id);
-            }
-          : undefined
-      }
+      expanded={expanded}
+      onToggle={isExpandableNode(node) ? onToggle : undefined}
     />
   );
 }
