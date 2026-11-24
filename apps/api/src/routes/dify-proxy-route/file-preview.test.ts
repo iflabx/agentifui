@@ -1,5 +1,5 @@
 /** @jest-environment node */
-import type { FastifyReply, FastifyRequest } from 'fastify';
+import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 
 import {
   canReadDifyUpload,
@@ -173,6 +173,49 @@ describe('owned Dify file previews', () => {
     expect(await responseBytes(reply)).toEqual(Buffer.from([1, 2, 3]));
     expect(readDifyUpload).not.toHaveBeenCalled();
     expect(saveDifyUpload).not.toHaveBeenCalled();
+  });
+
+  it('delivers the streamed bytes from an async Fastify route', async () => {
+    const app = Fastify();
+    const bytes = Buffer.from([137, 80, 78, 71]);
+    jest
+      .mocked(queryRowsWithPgUserContext)
+      .mockResolvedValueOnce([{ external_id: 'conversation-1' }]);
+    jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                message_files: [
+                  {
+                    upload_file_id: 'upload-1',
+                    url: 'https://dify.example.com/files/upload-1/file-preview?sign=fresh',
+                  },
+                ],
+              },
+            ],
+          })
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(bytes, { headers: { 'Content-Type': 'image/png' } })
+      );
+    app.get(context.routePath, async (request, reply) => {
+      await handleOwnedDifyFilePreview(request, reply, context, {
+        ...target,
+        appType: 'chatbot',
+      });
+    });
+    try {
+      const response = await app.inject(context.routePath);
+      expect(response.statusCode).toBe(200);
+      expect(response.rawPayload).toEqual(bytes);
+      expect(response.headers.location).toBeUndefined();
+    } finally {
+      await app.close();
+    }
   });
 
   it('distinguishes unavailable Workflow storage from an expired legacy file', async () => {

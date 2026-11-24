@@ -324,6 +324,7 @@ export async function handleOwnedDifyFilePreview(
             objectMode: false,
           })
         );
+        await reply;
         return true;
       }
     }
