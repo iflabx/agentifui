@@ -10,6 +10,7 @@ import { cn } from '@lib/utils';
 import React, { useEffect, useRef } from 'react';
 
 import { MessageSkeleton } from './message-skeleton';
+import { useAppChatLayout } from './session/app-chat-layout';
 import { ChatMessage as SessionMessage } from './session/chat-message';
 
 /**
@@ -56,6 +57,7 @@ export const ChatLoader = ({
   isLoadingInitial = false,
   className,
 }: ChatLoaderProps) => {
+  const appLayout = useAppChatLayout();
   const { widthClass, paddingClass } = useChatWidth();
   const edit = useDifyEditControls();
   const pendingSource = edit?.pending
@@ -158,7 +160,10 @@ export const ChatLoader = ({
 
   return (
     <div className={cn('mx-auto w-full', widthClass, paddingClass, className)}>
-      <div className="space-y-2 pt-4" style={paddingBottomStyle}>
+      <div
+        className={cn('space-y-2 pt-4', appLayout && 'pb-4')}
+        style={appLayout ? undefined : paddingBottomStyle}
+      >
         {isLoadingInitial ? (
           // Show skeleton loading
           <MessageSkeleton />

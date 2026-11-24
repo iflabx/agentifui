@@ -1,5 +1,6 @@
 'use client';
 
+import { useAppChatLayout } from '@components/chat/session/app-chat-layout';
 import { cn } from '@lib/utils';
 import { ArrowUpIcon, Loader2, Square } from 'lucide-react';
 
@@ -77,6 +78,7 @@ export function ChatInputView({
   sendButtonAriaLabel,
   onInputRef,
 }: ChatInputViewProps) {
+  const appLayout = useAppChatLayout();
   const t = useTranslations('pages.chat');
   const composing = useRef(false);
   const submitting = useRef(false);
@@ -121,10 +123,10 @@ export function ChatInputView({
   };
   const stopping = isProcessing && Boolean(onStop);
   const busy = isWaiting || pending;
-  const welcomeLayout = scrollableWelcome && isWelcomeScreen;
+  const welcomeLayout = !appLayout && scrollableWelcome && isWelcomeScreen;
   const composer = (
     <ChatContainer
-      embedded={embedded || welcomeLayout}
+      embedded={appLayout || embedded || welcomeLayout}
       beforeInput={beforeInput}
       afterInput={afterInput}
       className={cn(welcomeLayout && 'mx-auto my-auto shrink-0', className)}

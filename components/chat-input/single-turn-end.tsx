@@ -1,5 +1,6 @@
 'use client';
 
+import { useAppChatLayout } from '@components/chat/session/app-chat-layout';
 import { cn } from '@lib/utils';
 
 import { type ReactNode, useLayoutEffect, useRef } from 'react';
@@ -21,6 +22,7 @@ export function SingleTurnEnd({
   beforeInput?: ReactNode;
   onHeightChange?: (height: number) => void;
 }) {
+  const appLayout = useAppChatLayout();
   const t = useTranslations('pages.chatflow.composer');
   const content = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -35,8 +37,9 @@ export function SingleTurnEnd({
 
   return (
     <ChatContainer
+      embedded={appLayout}
       widthClass={widthClass}
-      className={cn('w-[calc(100%-2rem)]', className)}
+      className={cn(!appLayout && 'w-[calc(100%-2rem)]', className)}
       beforeInput={beforeInput}
     >
       <div

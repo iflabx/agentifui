@@ -353,35 +353,77 @@ const ScopedWorkflowInputForm = React.forwardRef<
       />
     );
   };
+  const fields = userInputForm.some(item => {
+    const { fieldType, fieldConfig } = getDifyUserInputFormEntry(item);
+    return (
+      fieldConfig &&
+      fieldConfig.variable !== textTarget &&
+      (!chat || !['file', 'file-list'].includes(fieldType))
+    );
+  }) ? (
+    <fieldset
+      disabled={isExecuting}
+      inert={isExecuting}
+      className={cn(
+        'no-scrollbar space-y-6 overflow-x-visible overflow-y-auto px-2',
+        chat ? 'max-h-[35dvh]' : 'flex-1'
+      )}
+    >
+      {userInputForm.map((formItem: DifyUserInputFormItem) => {
+        const { fieldType, fieldConfig } = getDifyUserInputFormEntry(formItem);
+        if (!fieldConfig) return null;
+        const variable = fieldConfig.variable;
+        if (variable === textTarget) return null;
+        const onChange = (value: unknown) => {
+          setFormData(prev => ({ ...prev, [variable]: value }));
+          setErrors(prev => ({ ...prev, [variable]: '' }));
+        };
+        if (fieldType === 'file' || fieldType === 'file-list') {
+          return chat ? null : renderUpload(formItem);
+        }
+        return (
+          <FormField
+            key={variable}
+            type={fieldType as 'text-input' | 'number' | 'paragraph' | 'select'}
+            config={fieldConfig}
+            value={
+              (formData[variable] ?? defaults[variable] ?? '') as
+                string | number | string[] | File[]
+            }
+            onChange={onChange}
+            error={errors[variable]}
+          />
+        );
+      })}
+    </fieldset>
+  ) : null;
   return (
     <div
       className={cn('flex min-h-0 flex-col', !chat && 'h-full')}
       data-task-composer={chat ? '' : undefined}
     >
-      {chat && showIntroduction && (
-        <AppIntroduction
-          name={app.instance?.display_name}
-          description={app.instance?.description}
-        />
-      )}
       {!ready && (
         <div
           role={failed ? 'alert' : 'status'}
+          aria-label={failed ? undefined : t('loading')}
           className="space-y-3 px-2 py-4 font-serif text-sm text-stone-600 dark:text-stone-400"
         >
-          {failed
-            ? tChat(
+          {failed ? (
+            <>
+              {tChat(
                 capabilities?.status === 'unsupported'
                   ? 'input.capabilitiesUnsupported'
                   : 'input.capabilitiesUnavailable'
-              )
-            : t('loading')}
-          {failed ? (
-            <button type="button" onClick={retry} className="ml-3 underline">
-              {tCommon('ui.retry')}
-            </button>
+              )}
+              <button type="button" onClick={retry} className="ml-3 underline">
+                {tCommon('ui.retry')}
+              </button>
+            </>
           ) : (
-            <Loader2 className="inline h-4 w-4 animate-spin" />
+            <Loader2
+              aria-hidden="true"
+              className="inline h-4 w-4 animate-spin"
+            />
           )}
         </div>
       )}
@@ -392,47 +434,9 @@ const ScopedWorkflowInputForm = React.forwardRef<
         }}
         className="hide-all-scrollbars flex min-h-0 flex-1 flex-col"
       >
-        <fieldset
-          disabled={isExecuting}
-          inert={isExecuting}
-          className={cn(
-            'no-scrollbar space-y-6 overflow-x-visible overflow-y-auto px-2',
-            chat ? 'max-h-[35dvh]' : 'flex-1'
-          )}
-        >
-          {userInputForm.map((formItem: DifyUserInputFormItem) => {
-            const { fieldType, fieldConfig } =
-              getDifyUserInputFormEntry(formItem);
-            if (!fieldConfig) return null;
-            const variable = fieldConfig.variable;
-            if (variable === textTarget) return null;
-            const onChange = (value: unknown) => {
-              setFormData(prev => ({ ...prev, [variable]: value }));
-              setErrors(prev => ({ ...prev, [variable]: '' }));
-            };
-            if (fieldType === 'file' || fieldType === 'file-list') {
-              return chat ? null : renderUpload(formItem);
-            }
-            return (
-              <FormField
-                key={variable}
-                type={
-                  fieldType as 'text-input' | 'number' | 'paragraph' | 'select'
-                }
-                config={fieldConfig}
-                value={
-                  (formData[variable] ?? defaults[variable] ?? '') as
-                    string | number | string[] | File[]
-                }
-                onChange={onChange}
-                error={errors[variable]}
-              />
-            );
-          })}
-        </fieldset>
+        {!chat && fields}
         {chat ? (
           <div
-            className="mt-3"
             onDragOver={event => {
               if (!event.dataTransfer.types.includes('Files')) return;
               event.preventDefault();
@@ -477,6 +481,17 @@ const ScopedWorkflowInputForm = React.forwardRef<
             )}
             <ChatInputView
               embedded
+              beforeInput={
+                <>
+                  {showIntroduction && (
+                    <AppIntroduction
+                      name={app.instance?.display_name}
+                      description={app.instance?.description}
+                    />
+                  )}
+                  {fields && <div className="mb-3">{fields}</div>}
+                </>
+              }
               value={textValue}
               onValueChange={value => {
                 if (textTarget)

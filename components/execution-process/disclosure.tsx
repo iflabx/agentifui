@@ -10,9 +10,11 @@ import { ExecutionProcessView } from './view';
 
 interface ExecutionProcessDisclosureProps {
   items: ExecutionProcessItem[];
+  completedCount?: number;
   historical?: boolean;
   unordered?: boolean;
   executing?: boolean;
+  failed?: boolean;
   renderItem?: (item: ExecutionProcessItem, index: number) => ReactNode;
   placement?: 'inline' | 'panel';
   open?: boolean;
@@ -22,9 +24,11 @@ interface ExecutionProcessDisclosureProps {
 
 export function ExecutionProcessDisclosure({
   items,
+  completedCount,
   historical,
   unordered,
   executing,
+  failed,
   renderItem,
   placement = 'inline',
   open: controlledOpen,
@@ -66,7 +70,7 @@ export function ExecutionProcessDisclosure({
           id={contentId}
           className={
             placement === 'panel'
-              ? 'fixed right-4 bottom-40 z-30'
+              ? undefined
               : 'mt-2 max-h-[min(28rem,60dvh)] overflow-y-auto overscroll-contain rounded-lg border border-stone-200 p-3 dark:border-stone-700'
           }
           onKeyDown={event => {
@@ -84,9 +88,11 @@ export function ExecutionProcessDisclosure({
           )}
           <ExecutionProcessView
             items={items}
+            completedCount={completedCount}
             historical={historical}
             unordered={unordered}
             executing={executing}
+            failed={failed}
             renderItem={renderItem}
             onClose={() => {
               setOpen(false);

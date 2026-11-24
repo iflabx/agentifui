@@ -5,7 +5,6 @@ import { useEditResend } from '@components/chat-input/edit-resend';
 import { SingleTurnEnd } from '@components/chat-input/single-turn-end';
 import { ChatInputView } from '@components/chat-input/view';
 import { ChatMessage } from '@components/chat/session/chat-message';
-import { ChatSessionHeader } from '@components/chat/session/chat-session-header';
 import { ChatSessionView } from '@components/chat/session/chat-session-view';
 import {
   useFollowChatOutput,
@@ -144,7 +143,6 @@ function AgentChatSession({
     scope ? state.drafts[scope] : undefined
   );
   const content = draft?.text || '';
-  const [inputHeight, setInputHeight] = useState(160);
   const singleTurnFinished =
     chat.singleTask &&
     Boolean(chat.view.conversationId) &&
@@ -295,37 +293,64 @@ function AgentChatSession({
       useLangchainDraftStore.getState().consumeSnapshot(draft);
   };
 
+  const showIntroduction =
+    chat.ready && !conversationId && !chat.view.conversationId;
+  const confirmationUncertain =
+    chat.humanInput &&
+    (interactions.error ||
+      interactions.exhausted ||
+      interactions.uncertainId ||
+      interactions.processing ||
+      interactions.items.some(
+        item =>
+          ['submitting', 'unknown', 'expired'].includes(item.status) ||
+          (item.status === 'pending' && item.expiresAt !== null)
+      ));
+  const showWelcome =
+    showIntroduction &&
+    !chat.busy &&
+    !chat.historyLoading &&
+    timeline.length === 0 &&
+    !presentation.resultRuns?.length &&
+    !chat.nextCursor &&
+    !runLabel &&
+    !chat.unconfirmed &&
+    !interactions.items.length &&
+    !interactions.notDispatched &&
+    !confirmationUncertain;
+  const notices = (
+    <>
+      {chat.textOnly && (
+        <p role="note" className="mb-3 text-sm text-stone-500">
+          {t('textOnlyNote')}
+        </p>
+      )}
+      {chat.newConversationsEnabled === false && !chat.view.conversationId && (
+        <p role="status">{t('unavailable')}</p>
+      )}
+      {errorMessage && (
+        <p
+          role="alert"
+          className="rounded-lg bg-amber-50 p-3 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+        >
+          {errorMessage}
+        </p>
+      )}
+      {chat.resultSingleBatch && (
+        <p className="mt-3 text-sm text-stone-500">{t('resultSingleBatch')}</p>
+      )}
+    </>
+  );
+
   return (
     <ChatSessionView
-      as="main"
-      className="pt-16 md:pt-12"
-      contentClassName=""
+      appLayout
+      appTitle={chat.appName || t('title')}
       jumpToBottom={false}
       filePreview
-      header={
-        <ChatSessionHeader title={chat.appName || t('title')}>
-          <button
-            type="button"
-            className="text-xs text-stone-500 disabled:opacity-50"
-            disabled={
-              authLoading ||
-              chat.busy ||
-              chat.historyLoading ||
-              chat.unconfirmed ||
-              (chat.humanInput && interactions.blocked) ||
-              !chat.view.conversationId
-            }
-            onClick={() => {
-              if (window.confirm(t('confirmDelete'))) void chat.remove();
-            }}
-          >
-            {t('deleteConversation')}
-          </button>
-        </ChatSessionHeader>
-      }
+      showWelcome={showWelcome}
       scrollProps={{
         ...scroll,
-        style: { paddingBottom: inputHeight + 96 },
         'aria-live': 'polite',
         'aria-busy': chat.busy || chat.historyLoading,
       }}
@@ -334,7 +359,6 @@ function AgentChatSession({
           <SingleTurnEnd
             href={`/apps/agent-chat/${encodeURIComponent(appId)}`}
             widthClass={widthClass}
-            onHeightChange={setInputHeight}
           />
         ) : (
           <ChatInputView
@@ -349,22 +373,15 @@ function AgentChatSession({
             canSubmit={composerInput.canSubmit}
             isProcessing={chat.busy}
             placeholder=""
-            scrollableWelcome
-            isWelcomeScreen={
-              chat.ready &&
-              !conversationId &&
-              !chat.view.conversationId &&
-              chat.view.messages.length === 0 &&
-              !chat.busy
-            }
             beforeInput={
               <div className="max-h-[40dvh] overflow-y-auto">
-                {chat.ready && !conversationId && !chat.view.conversationId && (
+                {showIntroduction && (
                   <AppIntroduction
                     name={chat.appName}
                     description={chat.appDescription}
                   />
                 )}
+                {showWelcome && notices}
                 {composerInput.parameters}
               </div>
             }
@@ -373,20 +390,33 @@ function AgentChatSession({
             editNotice={composerInput.notice}
             sendButtonAriaLabel={t('send')}
             widthClass={widthClass}
-            onHeightChange={setInputHeight}
           />
         )
       }
     >
-      <div className={cn('mx-auto w-full pt-4', widthClass, paddingClass)}>
-        {chat.historyLoading && <p role="status">{t('loading')}</p>}
-        {chat.textOnly && (
-          <p role="note" className="mb-3 text-sm text-stone-500">
-            {t('textOnlyNote')}
-          </p>
+      <div className={cn('mx-auto w-full py-4', widthClass, paddingClass)}>
+        {chat.view.conversationId && (
+          <div className="mb-2 flex justify-end">
+            <button
+              type="button"
+              className="text-xs text-stone-500 disabled:opacity-50"
+              disabled={
+                authLoading ||
+                chat.busy ||
+                chat.historyLoading ||
+                chat.unconfirmed ||
+                (chat.humanInput && interactions.blocked)
+              }
+              onClick={() => {
+                if (window.confirm(t('confirmDelete'))) void chat.remove();
+              }}
+            >
+              {t('deleteConversation')}
+            </button>
+          </div>
         )}
-        {chat.newConversationsEnabled === false &&
-          !chat.view.conversationId && <p role="status">{t('unavailable')}</p>}
+        {chat.historyLoading && <p role="status">{t('loading')}</p>}
+        {!showWelcome && notices}
         {chat.nextCursor && (
           <button
             type="button"
@@ -396,14 +426,6 @@ function AgentChatSession({
           >
             {t(chat.loadingMore ? 'loading' : 'loadMore')}
           </button>
-        )}
-        {errorMessage && (
-          <p
-            role="alert"
-            className="rounded-lg bg-amber-50 p-3 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
-          >
-            {errorMessage}
-          </p>
         )}
         {timeline.map(item => {
           if (item.type === 'tool') {
@@ -575,32 +597,18 @@ function AgentChatSession({
             {t('confirmationNotDispatched')}
           </p>
         )}
-        {chat.humanInput &&
-          (interactions.error ||
-            interactions.exhausted ||
-            interactions.uncertainId ||
-            interactions.processing ||
-            interactions.items.some(
-              item =>
-                ['submitting', 'unknown', 'expired'].includes(item.status) ||
-                (item.status === 'pending' && item.expiresAt !== null)
-            )) && (
-            <div className="my-3 text-sm">
-              <p role="status">{t('confirmationUnknown')}</p>
-              <button
-                type="button"
-                onClick={interactions.check}
-                disabled={interactions.loading}
-                className="mt-2 underline disabled:opacity-50"
-              >
-                {t('retryStatus')}
-              </button>
-            </div>
-          )}
-        {chat.resultSingleBatch && (
-          <p className="mt-3 text-sm text-stone-500">
-            {t('resultSingleBatch')}
-          </p>
+        {confirmationUncertain && (
+          <div className="my-3 text-sm">
+            <p role="status">{t('confirmationUnknown')}</p>
+            <button
+              type="button"
+              onClick={interactions.check}
+              disabled={interactions.loading}
+              className="mt-2 underline disabled:opacity-50"
+            >
+              {t('retryStatus')}
+            </button>
+          </div>
         )}
         {chat.unconfirmed && (
           <p className="text-sm text-amber-700 dark:text-amber-300">

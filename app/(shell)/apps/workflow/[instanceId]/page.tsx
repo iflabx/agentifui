@@ -1,7 +1,6 @@
 'use client';
 
 import { TaskChat } from '@components/task-chat/task-chat';
-import { WorkflowLayout } from '@components/workflow/workflow-layout';
 import { useCurrentApp } from '@lib/hooks/use-current-app';
 import { useAppListStore } from '@lib/stores/app-list-store';
 import { useSidebarStore } from '@lib/stores/sidebar-store';
@@ -237,21 +236,13 @@ export default function WorkflowPage({ params }: WorkflowPageProps) {
         'text-stone-900 dark:text-gray-100'
       )}
     >
-      <div
-        className={cn(
-          'h-full overflow-hidden',
-          searchParams?.get('executionId') && 'pt-12'
-        )}
-      >
-        {searchParams?.get('executionId') ? (
-          <WorkflowLayout instanceId={instanceId} />
-        ) : (
-          <TaskChat
-            instanceId={instanceId}
-            taskType="workflow"
-            conversationId={searchParams?.get('conversationId')}
-          />
-        )}
+      <div className="h-full overflow-hidden">
+        <TaskChat
+          instanceId={instanceId}
+          taskType="workflow"
+          conversationId={searchParams?.get('conversationId')}
+          executionId={searchParams?.get('executionId')}
+        />
       </div>
     </div>
   );

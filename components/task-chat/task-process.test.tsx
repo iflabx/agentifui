@@ -64,7 +64,9 @@ it('restores each round hierarchy without borrowing live nodes or showing histor
 it('shows an explicit absence of saved process rather than unrelated live data', () => {
   render(
     <TaskProcess
-      execution={{ id: 'old', metadata: {} } as AppExecution}
+      execution={
+        { id: 'old', metadata: {}, execution_type: 'workflow' } as AppExecution
+      }
       live={false}
     />
   );
@@ -72,4 +74,31 @@ it('shows an explicit absence of saved process rather than unrelated live data',
   expect(
     savedTaskNodes({ task_process_nodes: [{ ...saved, iterations: [null] }] })
   ).toEqual([]);
+});
+
+it('does not display a concurrent Workflow process in a text generation task', () => {
+  useWorkflowExecutionStore.setState({
+    nodes: [
+      {
+        id: 'workflow-step',
+        title: 'Unrelated Workflow step',
+        description: '',
+        status: 'running',
+        visible: true,
+      },
+    ],
+  });
+  render(
+    <TaskProcess
+      execution={
+        {
+          id: 'textgen',
+          metadata: {},
+          execution_type: 'text-generation',
+        } as AppExecution
+      }
+      live
+    />
+  );
+  expect(screen.queryByRole('button')).not.toBeInTheDocument();
 });

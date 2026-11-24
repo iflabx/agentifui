@@ -66,11 +66,13 @@ export function TaskProcess({
   );
   const liveLoop = useWorkflowExecutionStore(state => state.loopExpandedStates);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const nodes = live ? current : savedTaskNodes(execution.metadata);
+  const workflow = execution.execution_type === 'workflow';
+  const liveNodes = live && workflow;
+  const nodes = liveNodes ? current : savedTaskNodes(execution.metadata);
   const visible = visibleDifyNodes(
     nodes,
-    live ? liveIteration : expanded,
-    live ? liveLoop : expanded
+    liveNodes ? liveIteration : expanded,
+    liveNodes ? liveLoop : expanded
   );
   const items = nodes.length
     ? visible.map(node =>
@@ -86,6 +88,7 @@ export function TaskProcess({
         )
       )
     : workflowSnapshotItems(execution.metadata, execution.id);
+  if (!items.length && !workflow) return null;
   if (!items.length && !live)
     return <p className="mb-2 text-xs text-stone-500">{t('noProcess')}</p>;
   return (
@@ -106,7 +109,7 @@ export function TaskProcess({
                 item={item}
                 index={index}
                 expansion={
-                  live
+                  liveNodes
                     ? undefined
                     : {
                         expanded: Boolean(expanded[visible[index].id]),

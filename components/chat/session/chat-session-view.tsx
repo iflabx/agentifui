@@ -6,15 +6,18 @@ import { cn } from '@lib/utils';
 
 import type { CSSProperties, ComponentPropsWithRef, ReactNode } from 'react';
 
+import { AppChatLayout } from './app-chat-layout';
+import { ChatSessionHeader } from './chat-session-header';
+
 interface ChatSessionViewProps {
   as?: 'div' | 'main';
+  appLayout?: boolean;
+  appTitle?: string;
   children: ReactNode;
   composer: ReactNode;
   header?: ReactNode;
-  welcome?: ReactNode;
   showWelcome?: boolean;
   processAction?: ReactNode;
-  afterComposer?: ReactNode;
   preview?: ReactNode;
   filePreview?: boolean;
   previewOpen?: boolean;
@@ -28,13 +31,13 @@ interface ChatSessionViewProps {
 
 export function ChatSessionView({
   as: Container = 'div',
+  appLayout = false,
+  appTitle,
   children,
   composer,
   header,
-  welcome,
   showWelcome = false,
   processAction,
-  afterComposer,
   preview,
   filePreview,
   previewOpen,
@@ -47,50 +50,82 @@ export function ChatSessionView({
 }: ChatSessionViewProps) {
   const { className: scrollClassName, ...scrollBindings } = scrollProps ?? {};
   return (
-    <Container
-      className={cn(
-        'relative flex h-full min-h-0 w-full flex-col bg-stone-100 text-stone-900 dark:bg-stone-800 dark:text-stone-100',
-        className
-      )}
-      data-chat-session
-    >
-      <div
+    <AppChatLayout value={appLayout}>
+      <Container
         className={cn(
-          'relative flex min-h-0 flex-1 flex-col',
-          contentClassName,
-          filePreview && 'transition-[width] duration-300 ease-in-out',
-          previewOpen ? 'w-[50%] lg:w-[60%]' : 'w-full'
+          'relative flex h-full min-h-0 w-full flex-col bg-stone-100 text-stone-900 dark:bg-stone-800 dark:text-stone-100',
+          className
         )}
-        style={
-          inputHeight === undefined
-            ? undefined
-            : ({ '--chat-input-height': `${inputHeight}px` } as CSSProperties)
-        }
+        data-chat-session
+        data-app-chat-layout={appLayout ? '' : undefined}
       >
-        {header}
-        {showWelcome ? (
-          welcome && <div className="min-h-0 flex-1">{welcome}</div>
-        ) : (
-          <div className="min-h-0 flex-1">
+        <div
+          className={cn(
+            'relative flex min-h-0 flex-1 flex-col',
+            appLayout ? 'overflow-hidden pt-12 md:pt-10' : contentClassName,
+            filePreview && 'transition-[width] duration-300 ease-in-out',
+            previewOpen ? 'w-[50%] lg:w-[60%]' : 'w-full'
+          )}
+          style={
+            inputHeight === undefined
+              ? undefined
+              : ({ '--chat-input-height': `${inputHeight}px` } as CSSProperties)
+          }
+        >
+          {header}
+          {appLayout && appTitle && !showWelcome && (
+            <ChatSessionHeader title={appTitle} />
+          )}
+          {!showWelcome && (
+            <div className="min-h-0 flex-1">
+              <div
+                {...scrollBindings}
+                className={cn(
+                  'chat-scroll-container h-full overflow-y-auto overscroll-contain',
+                  scrollClassName
+                )}
+              >
+                {children}
+              </div>
+            </div>
+          )}
+          {jumpToBottom && <ScrollToBottomButton />}
+          {processAction}
+          {backdrop && !appLayout && <ChatInputBackdrop />}
+          {composer && (
             <div
-              {...scrollBindings}
+              data-app-chat-composer={
+                appLayout
+                  ? showWelcome
+                    ? 'welcome'
+                    : 'conversation'
+                  : undefined
+              }
               className={cn(
-                'chat-scroll-container h-full overflow-y-auto overscroll-contain',
-                scrollClassName
+                appLayout
+                  ? showWelcome
+                    ? 'absolute inset-0 flex flex-col overflow-y-auto px-4 py-6'
+                    : 'max-h-[55dvh] shrink-0 overflow-y-auto px-4 pb-4'
+                  : 'contents'
               )}
             >
-              {children}
+              <div
+                className={
+                  !appLayout
+                    ? 'contents'
+                    : showWelcome
+                      ? 'my-auto shrink-0'
+                      : undefined
+                }
+              >
+                {composer}
+              </div>
             </div>
-          </div>
-        )}
-        {jumpToBottom && <ScrollToBottomButton />}
-        {processAction}
-        {backdrop && <ChatInputBackdrop />}
-        {composer}
-        {afterComposer}
-      </div>
-      {preview}
-      {filePreview && <FilePreviewCanvas />}
-    </Container>
+          )}
+        </div>
+        {preview}
+        {filePreview && <FilePreviewCanvas />}
+      </Container>
+    </AppChatLayout>
   );
 }

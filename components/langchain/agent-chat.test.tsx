@@ -188,8 +188,10 @@ describe('Agent chat draft', () => {
   });
 
   it('reserves space for fixed desktop and mobile shell navigation', () => {
-    render(<AgentChat appId="app" conversationId={null} />);
-    expect(screen.getByRole('main')).toHaveClass('pt-16', 'md:pt-12');
+    const view = render(<AgentChat appId="app" conversationId={null} />);
+    const composer = view.container.querySelector('[data-app-chat-composer]');
+    expect(composer).toHaveAttribute('data-app-chat-composer', 'welcome');
+    expect(composer?.parentElement).toHaveClass('pt-12', 'md:pt-10');
   });
 
   it('shares the configured introduction and quiet composer without promising unsupported uploads', () => {
@@ -730,7 +732,7 @@ describe('Agent chat draft', () => {
         ],
       },
     });
-    const { container, rerender } = render(
+    const { rerender } = render(
       <AgentChat appId="app" conversationId={null} />
     );
     expect(screen.getAllByRole('button', { name: 'view' })).toHaveLength(2);
@@ -740,12 +742,12 @@ describe('Agent chat draft', () => {
     expect(process.textContent).toContain('Write one');
     expect(process.textContent).not.toContain('Search two');
     expect(process.textContent).not.toContain('unordered');
-    expect(container.textContent).not.toContain('PRIVATE_RESULT');
+    expect(document.body.textContent).not.toContain('PRIVATE_RESULT');
     expect(
-      container.querySelectorAll('[data-execution-process-panel]')
+      document.querySelectorAll('[data-execution-process-panel]')
     ).toHaveLength(1);
     expect(
-      container.querySelector('[data-execution-process-panel]')
+      document.querySelector('[data-execution-process-panel]')
     ).toHaveClass('fixed', 'right-4');
     fireEvent.click(screen.getByRole('button', { name: 'view' }));
     expect(screen.getAllByRole('region', { name: 'title' })).toHaveLength(1);
@@ -866,7 +868,7 @@ describe('Agent chat draft', () => {
       },
     };
     jest.mocked(useAgentChat).mockReturnValue(state);
-    const { container, rerender } = render(
+    const { rerender } = render(
       <AgentChat appId="app" conversationId={null} />
     );
     fireEvent.click(screen.getByRole('button', { name: 'view' }));
@@ -888,7 +890,7 @@ describe('Agent chat draft', () => {
     jest.mocked(useAgentChat).mockReturnValue(updated);
     rerender(<AgentChat appId="app" conversationId={null} />);
     expect(
-      container.querySelectorAll('[data-execution-process-panel]')
+      document.querySelectorAll('[data-execution-process-panel]')
     ).toHaveLength(1);
     expect(screen.getByRole('region', { name: 'title' })).toHaveTextContent(
       'Write'

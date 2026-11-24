@@ -139,8 +139,8 @@ function LegacyChatPage({
   const params = useParams<{ conversationId: string }>();
   const conversationIdFromUrl =
     typeof params?.conversationId === 'string' ? params.conversationId : '';
+  const isNewChat = conversationIdFromUrl === 'new';
   const pathname = usePathname() ?? '';
-  const t = useTranslations('pages.chat.input');
   const { session } = useAuthSession();
 
   // Get chatflow execution state cleanup method
@@ -163,7 +163,9 @@ function LegacyChatPage({
   const storedMessages = useChatStore(state => state.messages);
 
   // Use the wrapped hook to detect chatflow apps
-  const { isChatflowApp, currentConversationApp } = useChatflowDetection();
+  const { isChatflowApp: detectedChatflow, currentConversationApp } =
+    useChatflowDetection();
+  const isChatflowApp = !isNewChat && detectedChatflow;
   const chatflowInterface = useChatflowInterface(
     isChatflowApp ? currentConversationApp?.instance_id : null
   );
@@ -253,7 +255,6 @@ function LegacyChatPage({
     setMessagesContainer(element);
   };
 
-  const isNewChat = conversationIdFromUrl === 'new';
   const { profile: loadedProfile, isLoading: isProfileLoading } = useProfile();
   const profile = isNewChat ? loadedProfile : null;
 
@@ -273,6 +274,12 @@ function LegacyChatPage({
   return (
     <DifyEditProvider>
       <ChatSessionView
+        appLayout
+        appTitle={
+          isNewChat
+            ? undefined
+            : currentConversationApp?.display_name || undefined
+        }
         inputHeight={inputHeight || 80}
         contentClassName="overflow-hidden pt-10"
         filePreview
@@ -281,7 +288,6 @@ function LegacyChatPage({
           <PageLoadingSpinner isLoading={isNewChat && isProfileLoading} />
         }
         showWelcome={showWelcome}
-        welcome={<WelcomeScreen username={profile?.username} />}
         scrollProps={{ ref: setScrollRef, className: 'scroll-smooth' }}
         processAction={
           isChatflowApp && (
@@ -306,19 +312,26 @@ function LegacyChatPage({
           ) : (
             <ChatInput
               onSubmit={handleSubmit}
-              placeholder={t('placeholder')}
               isProcessing={isProcessing}
               isWaiting={isWaitingForResponse}
               onStop={handleStopProcessing}
               isWelcomeScreen={isWelcomeScreen}
               isTransitioningToWelcome={isTransitioningToWelcome}
               showModelSelector={isNewChat && messages.length === 0}
+              beforeInput={
+                isNewChat && showWelcome ? (
+                  <WelcomeScreen username={profile?.username} />
+                ) : undefined
+              }
+              afterInput={
+                isNewChat && showWelcome ? (
+                  <DynamicSuggestedQuestions
+                    inline
+                    onQuestionClick={sendDirectMessage}
+                  />
+                ) : undefined
+              }
             />
-          )
-        }
-        afterComposer={
-          showWelcome && (
-            <DynamicSuggestedQuestions onQuestionClick={sendDirectMessage} />
           )
         }
       >

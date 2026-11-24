@@ -54,7 +54,7 @@ describe('Chatflow process integration', () => {
 
   it('uses the common process view and supports closing without executing anything', () => {
     const close = jest.fn();
-    const { rerender, container } = render(
+    const { rerender } = render(
       <ChatflowNodeTracker scope="conversation" isVisible onClose={close} />
     );
     expect(screen.getByText('executionProcess.empty')).toBeInTheDocument();
@@ -93,7 +93,7 @@ describe('Chatflow process integration', () => {
     expect(
       screen.getByText('executionProcess.status.failed')
     ).toBeInTheDocument();
-    expect(container.textContent).not.toContain('PRIVATE');
+    expect(document.body.textContent).not.toContain('PRIVATE');
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     fireEvent.click(
       screen.getByRole('button', { name: 'executionProcess.close' })

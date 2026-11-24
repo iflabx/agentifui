@@ -8,21 +8,23 @@ export function useFollowChatOutput({
   activity,
   streamedText,
   paused,
+  followLatest = true,
 }: {
   scope: string | null;
   messages: readonly unknown[];
   activity?: readonly unknown[];
   streamedText?: string;
   paused?: boolean;
+  followLatest?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const following = useRef({ scope, enabled: true });
+  const following = useRef({ scope, enabled: followLatest });
   useEffect(() => {
     if (following.current.scope !== scope)
-      following.current = { scope, enabled: true };
+      following.current = { scope, enabled: followLatest };
     if (following.current.enabled && !paused && ref.current)
       ref.current.scrollTop = ref.current.scrollHeight;
-  }, [scope, messages, activity, streamedText, paused]);
+  }, [scope, messages, activity, streamedText, paused, followLatest]);
 
   return {
     ref,

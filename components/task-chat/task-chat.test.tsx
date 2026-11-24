@@ -1,5 +1,6 @@
 import {
   getConversationExecutions,
+  getExecutionById,
   reserveTaskExecution,
   updateExecutionStatus,
 } from '@lib/services/client/app-executions-api';
@@ -80,6 +81,7 @@ jest.mock('@lib/hooks/use-combined-conversations', () => ({
 jest.mock('@lib/services/client/app-executions-api', () => ({
   reserveTaskExecution: jest.fn(),
   getConversationExecutions: jest.fn(),
+  getExecutionById: jest.fn(),
   updateExecutionStatus: jest.fn(),
 }));
 jest.mock('@components/workflow/workflow-input-form', () => {
@@ -187,8 +189,8 @@ it.each(['workflow', 'text-generation'] as const)(
     const props = { instanceId: 'task-app', taskType };
     const view = render(<TaskChat {...props} />);
     expect(
-      screen.getByRole('heading', { level: 1, name: 'Configured task app' })
-    ).toBeInTheDocument();
+      view.container.querySelector('[data-app-chat-composer]')
+    ).toHaveAttribute('data-app-chat-composer', 'welcome');
     const input = screen.getByLabelText('Task attachment');
     mockAuth.loading = true;
     view.rerender(<TaskChat {...props} />);
@@ -199,6 +201,80 @@ it.each(['workflow', 'text-generation'] as const)(
     expect(screen.getByLabelText('Task attachment')).toBe(input);
   }
 );
+
+it.each(['workflow', 'text-generation'] as const)(
+  'renders old unlinked %s records in the common chat without starting a task',
+  async taskType => {
+    mockApps[0].config.app_metadata.dify_apptype = taskType;
+    jest.mocked(getExecutionById).mockResolvedValue({
+      success: true,
+      data: {
+        ...execution('1'),
+        conversation_id: null,
+        execution_type: taskType,
+        outputs: { generated_text: 'Historical answer', count: 2 },
+      },
+    });
+    const view = render(
+      <TaskChat instanceId="task-app" taskType={taskType} executionId="1" />
+    );
+    expect(await screen.findByText('Historical answer')).toBeInTheDocument();
+    expect(
+      view.container.querySelector('[data-app-chat-layout]')
+    ).not.toBeNull();
+    expect(screen.queryByText('submit task')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'newTask' })).toHaveAttribute(
+      'href',
+      `/apps/${taskType}/task-app`
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'viewResult' }));
+    expect(screen.getByText(/"count":2/)).toBeInTheDocument();
+    expect(reserveTaskExecution).not.toHaveBeenCalled();
+    expect(getConversationExecutions).not.toHaveBeenCalled();
+  }
+);
+
+it('loads the linked task conversation and retains the targeted execution outside its first page', async () => {
+  jest.mocked(getExecutionById).mockResolvedValue({
+    success: true,
+    data: execution('1'),
+  });
+  jest.mocked(getConversationExecutions).mockResolvedValue({
+    success: true,
+    data: { executions: [execution('5')], hasMore: true, nextCursor: 'older' },
+  });
+  render(
+    <TaskChat instanceId="task-app" taskType="workflow" executionId="1" />
+  );
+  expect(await screen.findByText('result: answer-5')).toBeInTheDocument();
+  expect(screen.getByText('result: answer-1')).toBeInTheDocument();
+  expect(getConversationExecutions).toHaveBeenCalledWith(
+    'conversation',
+    undefined
+  );
+});
+
+it('does not render old records scoped to another application, user, or execution type', async () => {
+  const base = execution('1');
+  for (const override of [
+    { service_instance_id: 'other-app' },
+    { user_id: 'other-user' },
+    { execution_type: 'text-generation' as const },
+    { status: 'deleted' as const },
+  ]) {
+    jest.mocked(getExecutionById).mockResolvedValue({
+      success: true,
+      data: { ...base, ...override },
+    });
+    const view = render(
+      <TaskChat instanceId="task-app" taskType="workflow" executionId="1" />
+    );
+    expect(await screen.findByRole('alert')).toHaveTextContent('historyFailed');
+    expect(screen.queryByText('result: answer-1')).not.toBeInTheDocument();
+    expect(getConversationExecutions).not.toHaveBeenCalled();
+    view.unmount();
+  }
+});
 
 it.each(['logout', 'different-user'])(
   'discards the previous file input after %s',

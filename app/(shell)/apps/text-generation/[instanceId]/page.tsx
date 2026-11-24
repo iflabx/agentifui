@@ -1,7 +1,6 @@
 'use client';
 
 import { TaskChat } from '@components/task-chat/task-chat';
-import { TextGenerationLayout } from '@components/text-generation/text-generation-layout';
 import { useCurrentApp } from '@lib/hooks/use-current-app';
 import { useAppListStore } from '@lib/stores/app-list-store';
 import { useSidebarStore } from '@lib/stores/sidebar-store';
@@ -227,21 +226,13 @@ export default function TextGenerationPage({
 
   return (
     <div className="relative flex h-full w-full flex-col bg-stone-100 text-stone-900 dark:bg-stone-800 dark:text-gray-100">
-      <div
-        className={cn(
-          'min-h-0 flex-1',
-          searchParams?.get('executionId') && 'pt-12'
-        )}
-      >
-        {searchParams?.get('executionId') ? (
-          <TextGenerationLayout instanceId={instanceId} />
-        ) : (
-          <TaskChat
-            instanceId={instanceId}
-            taskType="text-generation"
-            conversationId={searchParams?.get('conversationId')}
-          />
-        )}
+      <div className="min-h-0 flex-1">
+        <TaskChat
+          instanceId={instanceId}
+          taskType="text-generation"
+          conversationId={searchParams?.get('conversationId')}
+          executionId={searchParams?.get('executionId')}
+        />
       </div>
     </div>
   );

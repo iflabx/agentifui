@@ -61,6 +61,7 @@ interface ChatInputProps {
   isTransitioningToWelcome?: boolean;
   requireModelValidation?: boolean;
   showModelSelector?: boolean;
+  beforeInput?: React.ReactNode;
   afterInput?: React.ReactNode;
 }
 
@@ -77,6 +78,7 @@ export const ChatInput = ({
   isTransitioningToWelcome = false,
   requireModelValidation = true,
   showModelSelector = true,
+  beforeInput,
   afterInput,
 }: ChatInputProps) => {
   const t = useTranslations('pages.chat');
@@ -383,7 +385,8 @@ export const ChatInput = ({
         scrollableWelcome={!showModelSelector}
         afterInput={afterInput}
         beforeInput={
-          showIntroduction && inputApp ? (
+          beforeInput ??
+          (showIntroduction && inputApp ? (
             <div className="max-h-[40dvh] overflow-y-auto">
               <AppIntroduction
                 name={inputApp.display_name}
@@ -395,7 +398,7 @@ export const ChatInput = ({
                 </p>
               )}
             </div>
-          ) : undefined
+          ) : undefined)
         }
         maxHeight={maxHeight}
         isWelcomeScreen={externalIsWelcomeScreen || isWelcomeScreen}
@@ -461,7 +464,11 @@ export const ChatInput = ({
             />
           ) : undefined
         }
-        modelSelector={showModelSelector ? <ModelSelectorButton /> : undefined}
+        modelSelector={
+          showModelSelector ? (
+            <ModelSelectorButton disabled={waiting || isProcessing} />
+          ) : undefined
+        }
       />
     </>
   );

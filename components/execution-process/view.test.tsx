@@ -36,21 +36,22 @@ describe('shared execution process UI', () => {
       screen.getAllByRole('button', { name: 'executionProcess.view' })[0]
     );
     expect(screen.getByText('Task first')).toBeInTheDocument();
-    expect(
-      container.querySelector('[data-execution-process-panel]')
-    ).toHaveClass('fixed', 'right-4');
+    const firstPanel = document.querySelector<HTMLDivElement>(
+      '[data-execution-process-panel]'
+    );
+    expect(firstPanel).toHaveClass('fixed', 'right-4');
+    expect(firstPanel?.parentElement).toBe(document.body);
+    expect(container).not.toContainElement(firstPanel);
     fireEvent.click(
       screen.getByRole('button', { name: 'executionProcess.view' })
     );
     expect(screen.queryByText('Task first')).not.toBeInTheDocument();
     expect(screen.getByText('Task second')).toBeInTheDocument();
     expect(
-      container.querySelectorAll('[data-execution-process-panel]')
+      document.querySelectorAll('[data-execution-process-panel]')
     ).toHaveLength(1);
     fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
-    expect(
-      container.querySelector('[data-execution-process-panel]')
-    ).toBeNull();
+    expect(document.querySelector('[data-execution-process-panel]')).toBeNull();
     expect(
       screen.getAllByRole('button', { name: 'executionProcess.view' })[1]
     ).toHaveFocus();

@@ -5,7 +5,7 @@ import {
   visibleDifyNodes,
   workflowSnapshotItems,
 } from '@components/execution-process/adapters';
-import { ExecutionProcessView } from '@components/execution-process/view';
+import { ExecutionProcessDisclosure } from '@components/execution-process/disclosure';
 import { useWorkflowExecutionStore } from '@lib/stores/workflow-execution-store';
 import type { AppExecution } from '@lib/types/database';
 
@@ -110,8 +110,10 @@ export function WorkflowTracker({
           />
         )}
       <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-2 pb-4">
-        <ExecutionProcessView
+        <ExecutionProcessDisclosure
           key={JSON.stringify([historical, executionId])}
+          placement="panel"
+          title={currentExecution?.title}
           items={items}
           completedCount={
             historical
@@ -121,7 +123,6 @@ export function WorkflowTracker({
           historical={historical}
           executing={executing}
           failed={failed}
-          onClose={historical ? onCloseHistory : undefined}
           renderItem={
             historical
               ? undefined
@@ -134,6 +135,11 @@ export function WorkflowTracker({
                 )
           }
         />
+        {historical && !items.length && (
+          <p role="status" className="text-sm text-stone-500">
+            {translate('empty')}
+          </p>
+        )}
       </div>
       {executionId &&
         showResultFor === executionId &&

@@ -346,6 +346,8 @@ export default function AppDetailPage() {
   return (
     <DifyEditProvider>
       <ChatSessionView
+        appLayout
+        appTitle={currentApp.display_name || currentApp.instance_id}
         inputHeight={inputHeight || 80}
         contentClassName="overflow-hidden pt-10"
         showWelcome={isWelcomeScreen && messages.length === 0}

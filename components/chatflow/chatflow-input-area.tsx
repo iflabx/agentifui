@@ -5,6 +5,7 @@ import { useRegisterDifyEdit } from '@components/chat-input/edit-resend';
 import { useFocusManager } from '@components/chat-input/focus-manager';
 import { SingleTurnEnd } from '@components/chat-input/single-turn-end';
 import { ChatInputView } from '@components/chat-input/view';
+import { useAppChatLayout } from '@components/chat/session/app-chat-layout';
 import { FormField } from '@components/workflow/workflow-input-form/form-field';
 import {
   capabilityFormFields,
@@ -84,6 +85,7 @@ function ScopedChatflowInputArea({
   className,
   onFormConfigChange,
 }: ChatflowInputAreaProps) {
+  const appLayout = useAppChatLayout();
   const t = useTranslations('pages.chatflow');
   const tChat = useTranslations('pages.chat');
   const tWorkflow = useTranslations('pages.workflow.form');
@@ -366,7 +368,8 @@ function ScopedChatflowInputArea({
       ref={composerNode}
       data-chatflow-composer
       className={cn(
-        isWelcomeScreen &&
+        !appLayout &&
+          isWelcomeScreen &&
           'absolute inset-0 flex flex-col overflow-y-auto px-4 py-6'
       )}
     >
@@ -390,8 +393,8 @@ function ScopedChatflowInputArea({
           onStop={onStop}
           isWaiting={waiting}
           className={cn(
-            'w-[calc(100%-2rem)]',
-            isWelcomeScreen && 'mx-auto my-auto w-full shrink-0',
+            !appLayout && 'w-[calc(100%-2rem)]',
+            !appLayout && isWelcomeScreen && 'mx-auto my-auto w-full shrink-0',
             className
           )}
           embedded={isWelcomeScreen}

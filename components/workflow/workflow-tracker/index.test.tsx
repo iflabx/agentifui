@@ -40,6 +40,11 @@ const history = (
   completed_at: '2026-01-01T00:00:01Z',
 });
 
+const openProcess = () =>
+  fireEvent.click(
+    screen.getByRole('button', { name: 'executionProcess.view' })
+  );
+
 describe('Workflow process integration', () => {
   beforeEach(() => {
     useWorkflowExecutionStore.getState().reset();
@@ -90,6 +95,7 @@ describe('Workflow process integration', () => {
         executionResult={null}
       />
     );
+    openProcess();
     expect(
       screen.getByText('executionProcess.completedCount:2')
     ).toBeInTheDocument();
@@ -117,6 +123,7 @@ describe('Workflow process integration', () => {
         executionResult={null}
       />
     );
+    openProcess();
     expect(
       screen.getByText('executionProcess.completedCount:1')
     ).toBeInTheDocument();
@@ -148,9 +155,16 @@ describe('Workflow process integration', () => {
         onStop={stop}
       />
     );
-    expect(screen.getByText('Saved task B')).toBeInTheDocument();
+    expect(screen.queryByText('Saved task B')).not.toBeInTheDocument();
+    openProcess();
+    const panel = document.querySelector<HTMLDivElement>(
+      '[data-execution-process-panel]'
+    );
+    expect(panel).toHaveClass('fixed', 'right-4');
+    expect(panel).toContainElement(screen.getByText('Saved task B'));
+    expect(container).not.toContainElement(panel);
     expect(screen.queryByText('Live task A')).not.toBeInTheDocument();
-    expect(container.textContent).not.toContain('PRIVATE');
+    expect(document.body.textContent).not.toContain('PRIVATE');
     expect(
       screen.queryByRole('button', { name: /retry|stop/ })
     ).not.toBeInTheDocument();
@@ -187,6 +201,7 @@ describe('Workflow process integration', () => {
       />
     );
     fireEvent.click(screen.getByRole('button', { name: 'Close result' }));
+    openProcess();
     expect(screen.getByText('Saved task B')).toBeInTheDocument();
     expect(
       screen.getByText('executionProcess.status.unknown')
@@ -195,6 +210,9 @@ describe('Workflow process integration', () => {
     fireEvent.click(
       screen.getByRole('button', { name: 'executionProcess.close' })
     );
+    expect(closeHistory).not.toHaveBeenCalled();
+    expect(screen.queryByText('Saved task B')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /buttons.reset$/ }));
     expect(closeHistory).toHaveBeenCalledTimes(1);
     rerender(
       <WorkflowTracker
@@ -272,6 +290,7 @@ describe('Workflow process integration', () => {
         executionResult={null}
       />
     );
+    openProcess();
     const iterate = screen.getByRole('button', { name: /Iterate/ });
     fireEvent.click(iterate);
     expect(iterate).toHaveAttribute('aria-expanded', 'true');
