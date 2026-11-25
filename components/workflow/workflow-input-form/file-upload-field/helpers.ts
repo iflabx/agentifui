@@ -2,7 +2,7 @@ import { formatBytes } from '@lib/utils';
 
 import {
   type AgentAttachmentSlot,
-  INPUT_FILE_EXTENSIONS,
+  inputFileExtensionsForSlot,
   inputFileType,
 } from '../../../../packages/shared/src/agent-input';
 
@@ -193,9 +193,7 @@ export function getFileTypeInfo(
   slot: AgentAttachmentSlot | undefined,
   t: TranslateFn
 ) {
-  const extensions = slot?.extensions.length
-    ? slot.extensions
-    : (slot?.allowedTypes.flatMap(type => INPUT_FILE_EXTENSIONS[type]) ?? []);
+  const extensions = slot ? inputFileExtensionsForSlot(slot) : [];
   return {
     hint: t('supportTypes', {
       types: extensions.map(extension => `.${extension}`).join(', '),

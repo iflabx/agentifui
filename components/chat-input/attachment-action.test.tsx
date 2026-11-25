@@ -56,6 +56,39 @@ const slot: AgentAttachmentSlot = {
 };
 
 describe('shared attachment action', () => {
+  it('offers only image extensions in an image-only slot with mixed upstream extensions', () => {
+    expect(
+      attachmentAccept({
+        ...slot,
+        allowedTypes: ['image'],
+        extensions: ['jpg', 'png', 'mp4', 'mov', 'mpeg', 'webm', 'png'],
+        maxBytesByType: { image: 100 },
+      })
+    ).toBe('.jpg,.png');
+  });
+
+  it('keeps MPEG for video slots and derives defaults when extensions are not configured', () => {
+    expect(
+      attachmentAccept({
+        ...slot,
+        allowedTypes: ['video'],
+        extensions: [],
+        maxBytesByType: { video: 100 },
+      })
+    ).toBe('.mp4,.mov,.mpeg,.webm');
+  });
+
+  it('honors explicit custom formats without opening the picker to other extensions', () => {
+    expect(
+      attachmentAccept({
+        ...slot,
+        allowedTypes: ['custom'],
+        extensions: ['xyz', 'tsv'],
+        maxBytesByType: { custom: 100 },
+      })
+    ).toBe('.xyz,.tsv');
+  });
+
   it('opens a single upload purpose directly and disables it when full', () => {
     const onChoose = jest.fn();
     const choice = { id: 'docs', slot, count: 0 };

@@ -9,7 +9,7 @@ import { useTranslations } from 'next-intl';
 
 import {
   type AgentAttachmentSlot,
-  INPUT_FILE_EXTENSIONS,
+  inputFileExtensionsForSlot,
 } from '../../packages/shared/src/agent-input';
 import { ChatButton } from './button';
 
@@ -20,10 +20,9 @@ export interface AttachmentChoice {
 }
 
 export function attachmentAccept(slot: AgentAttachmentSlot) {
-  const extensions = slot.extensions.length
-    ? slot.extensions
-    : slot.allowedTypes.flatMap(type => INPUT_FILE_EXTENSIONS[type]);
-  return [...new Set(extensions)].map(extension => `.${extension}`).join(',');
+  return inputFileExtensionsForSlot(slot)
+    .map(extension => `.${extension}`)
+    .join(',');
 }
 
 export function AttachmentAction({
