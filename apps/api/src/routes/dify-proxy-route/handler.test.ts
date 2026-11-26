@@ -207,6 +207,25 @@ describe('handleDifyProxy input moderation integration', () => {
     expect(mockedRunInputModeration).not.toHaveBeenCalled();
   });
 
+  it('rejects a configured single-turn continuation before admission', async () => {
+    mockedResolveDifyTargetConfig.mockResolvedValueOnce({
+      ok: true,
+      targetConfig: {
+        serviceInstanceId: '20000000-0000-4000-8000-000000000001',
+        difyApiKey: 'test-key',
+        difyApiUrl: 'https://business.example.com/v1',
+        tempConfigUsed: false,
+        singleTurn: true,
+        rawBody: { query: 'follow-up', conversation_id: 'saved' },
+      },
+    });
+    const reply = createReply();
+    await handleDifyProxy(createRequest(), reply, createConfig());
+    expect(reply.status).toHaveBeenCalledWith(409);
+    expect(registerSubmission).not.toHaveBeenCalled();
+    expect(mockedDispatchDifyUpstreamRequest).not.toHaveBeenCalled();
+  });
+
   it('does not redispatch or re-moderate an unknown duplicate submission', async () => {
     jest.mocked(registerSubmission).mockResolvedValue({
       task: { root_task_id: 'root-task', state: 'unknown' } as never,

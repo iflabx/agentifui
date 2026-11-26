@@ -4,15 +4,23 @@ import { createHash } from 'node:crypto';
 import type { ApiRuntimeConfig } from '../config';
 import {
   AgentAppError,
+  langChainConfigForActor,
   readAgentAdmissionLimits,
   resolveAgentApp,
 } from '../lib/agent-app';
 import { AgentPolicyError } from '../lib/agent-backends';
 import { toUserFacingAgentError } from '../lib/agent-error';
+import { readAgentInputFile, uploadAgentInputFile } from '../lib/agent-files';
 import {
   executeHumanInputRun,
   reconcileHumanInputRun,
 } from '../lib/agent-human-input-execution';
+import {
+  agentUploadBodyLimit,
+  parseAgentRunInputs,
+  prepareAgentRunInput,
+  resolveSharedAgentInputCapabilities,
+} from '../lib/agent-input';
 import { moderateInputText } from '../lib/agent-input-moderation';
 import {
   expireInteraction,
@@ -36,7 +44,9 @@ import {
 import {
   AgentRunError,
   type AgentRunRecord,
+  assertAgentInputConversation,
   getRunForActor,
+  loadAgentEditInputFields,
   recordRunDeliverables,
   reserveRun,
   saveRunResult,
@@ -53,6 +63,7 @@ import {
 } from '../lib/agui/runtime';
 import { trackApiBackgroundTask } from '../lib/capacity-control';
 import { getHumanInputState } from '../lib/langchain/human-input';
+import { langChainInputPath } from '../lib/langchain/input-profile';
 import {
   LangChainUpstreamError,
   getCapabilities,
@@ -72,6 +83,7 @@ import {
 
 const UUID_PATTERN =
   /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
+const MULTIPART = /^multipart\/form-data(?:;.*)?$/i;
 
 function uuid(value: unknown): string {
   if (typeof value !== 'string' || !UUID_PATTERN.test(value)) {
@@ -233,6 +245,12 @@ export const agentRunsRoutes: FastifyPluginAsync<{
   config: ApiRuntimeConfig;
 }> = async (server, options) => {
   const active = new Set<Promise<void>>();
+  if (!server.hasContentTypeParser(MULTIPART))
+    server.addContentTypeParser(
+      MULTIPART,
+      { parseAs: 'buffer' },
+      (_request, body, done) => done(null, body)
+    );
   server.addHook('onRequest', async (_request, reply) => {
     reply.header('cache-control', 'private, no-store');
   });
@@ -292,11 +310,79 @@ export const agentRunsRoutes: FastifyPluginAsync<{
       app: {
         id: app.id,
         name: app.name,
+        description: app.description ?? null,
         backendType: app.backendType ?? 'langchain',
       },
       ...describeNegotiatedRuntime(app),
     };
   });
+
+  server.post(
+    '/api/internal/apps/:appId/agent/files',
+    { bodyLimit: agentUploadBodyLimit() },
+    async (request, reply) => {
+      requireSameOrigin(request, options.config);
+      const { app, actor } = await context(request, options.config);
+      const contentType = request.headers['content-type'];
+      if (
+        !contentType ||
+        !MULTIPART.test(contentType) ||
+        !Buffer.isBuffer(request.body)
+      )
+        throw new AgentAppError(400, 'INPUT_UPLOAD_INVALID');
+      let form: FormData;
+      try {
+        form = await new Response(new Uint8Array(request.body), {
+          headers: { 'content-type': contentType },
+        }).formData();
+      } catch {
+        throw new AgentAppError(400, 'INPUT_UPLOAD_INVALID');
+      }
+      const files = form.getAll('file');
+      const slotKeys = form.getAll('slotKey');
+      if (
+        Array.from(form.keys()).some(
+          key => key !== 'file' && key !== 'slotKey'
+        ) ||
+        files.length !== 1 ||
+        !(files[0] instanceof File) ||
+        slotKeys.length !== 1 ||
+        typeof slotKeys[0] !== 'string'
+      )
+        throw new AgentAppError(400, 'INPUT_UPLOAD_INVALID');
+      const file = await uploadAgentInputFile(
+        app,
+        actor.userId,
+        slotKeys[0],
+        files[0]
+      );
+      return reply.status(201).send(file);
+    }
+  );
+
+  server.get(
+    '/api/internal/apps/:appId/agent/files/:fileId',
+    async (request, reply) => {
+      const { app, actor } = await context(request, options.config);
+      const { file, content } = await readAgentInputFile(
+        app,
+        actor.userId,
+        uuid(routeParams(request).fileId)
+      );
+      const safeType =
+        /^(?:text\/(?:plain|markdown|csv)|image\/(?:jpeg|png|gif|webp)|audio\/[\w.+-]+|video\/[\w.+-]+|application\/pdf)$/i.test(
+          file.type
+        )
+          ? file.type
+          : 'application/octet-stream';
+      return reply
+        .header('X-Content-Type-Options', 'nosniff')
+        .header('Content-Security-Policy', "default-src 'none'; sandbox")
+        .header('Content-Disposition', 'attachment; filename="attachment"')
+        .type(safeType)
+        .send(content);
+    }
+  );
 
   server.get(
     '/api/internal/apps/:appId/agent/conversations/:conversationId/interactions',
@@ -467,7 +553,11 @@ export const agentRunsRoutes: FastifyPluginAsync<{
       const agui = protocol === 'ag-ui/1.0';
       if (app.backendType === 'dify' && !agui)
         throw new AgentAppError(409, 'AGENT_PROTOCOL_REQUIRED');
-      if (app.backendType === 'langchain' && app.resultProfileEnabled === false)
+      if (
+        app.backendType !== 'dify' &&
+        app.resultProfileEnabled === false &&
+        !langChainInputPath(app.assistantId)
+      )
         throw new AgentAppError(409, 'AGENT_RESULT_PROFILE_DISABLED');
       const body = request.body as Record<string, unknown> | null;
       if (
@@ -481,17 +571,43 @@ export const agentRunsRoutes: FastifyPluginAsync<{
               'conversationId',
               'content',
               'editSourceId',
+              'inputs',
+              'attachments',
             ].includes(key)
         ) ||
         typeof body.content !== 'string' ||
-        !body.content.trim() ||
         body.content.length > 16000
       ) {
         throw new AgentAppError(400, 'INVALID_AGENT_REQUEST');
       }
+      const requestedInput = parseAgentRunInputs(body);
+      const scopedLangChain =
+        app.backendType !== 'dify' &&
+        Boolean(langChainInputPath(app.assistantId));
+      const hasConfiguredInput = Boolean(
+        requestedInput.inputs || requestedInput.attachments
+      );
+      if (app.backendType !== 'dify' && !scopedLangChain && hasConfiguredInput)
+        throw new AgentAppError(400, 'INPUT_FIELDS_UNSUPPORTED');
+      const content = body.content.trim() ? body.content : '';
+      const submissionId = uuid(body.submissionId);
+      const conversationId =
+        body.conversationId === undefined
+          ? undefined
+          : uuid(body.conversationId);
+      const editSourceId =
+        body.editSourceId === undefined ? undefined : uuid(body.editSourceId);
+      if (!content && !requestedInput.attachments?.length)
+        throw new AgentAppError(400, 'INVALID_AGENT_REQUEST');
+      if (editSourceId && requestedInput.attachments?.length)
+        throw new AgentAppError(409, 'AGENT_EDIT_ATTACHMENTS_UNSUPPORTED');
+      if (editSourceId && !conversationId)
+        throw new AgentAppError(400, 'INVALID_AGENT_REQUEST');
       if (
         app.backendType === 'dify' &&
-        !body.conversationId &&
+        (!conversationId ||
+          requestedInput.attachments?.length ||
+          requestedInput.inputs) &&
         app.interactionProtocol !== 'ag-ui/1.0'
       )
         throw new AgentAppError(409, 'AGENT_INTERACTION_NOT_ENABLED');
@@ -499,7 +615,7 @@ export const agentRunsRoutes: FastifyPluginAsync<{
         credentialVersion: app.credentialVersion,
         userId: actor.userId,
         serviceInstanceId: app.id,
-        submissionId: uuid(body.submissionId),
+        submissionId,
         backendType: app.backendType ?? 'langchain',
         targetFingerprint: submissionHash([
           app.id,
@@ -507,11 +623,10 @@ export const agentRunsRoutes: FastifyPluginAsync<{
           app.assistantId,
         ]),
         request: {
-          content: body.content,
-          conversationId: body.conversationId ?? null,
-          ...(body.editSourceId === undefined
-            ? {}
-            : { editSourceId: uuid(body.editSourceId) }),
+          content,
+          conversationId: conversationId ?? null,
+          ...requestedInput,
+          ...(editSourceId ? { editSourceId } : {}),
         },
       });
       const rootTaskId = registration.task.root_task_id;
@@ -521,39 +636,86 @@ export const agentRunsRoutes: FastifyPluginAsync<{
           409,
           registration.task.error_code ?? 'AGENT_SUBMISSION_IN_PROGRESS'
         );
-      let difyInputs: Record<string, string> = {};
-      if (!registration.replayed) {
-        if (app.backendType === 'dify')
-          difyInputs = buildTrustedUserInputs(
-            actor,
-            await loadTrustedUserProfile(actor.userId)
-          );
-        const moderation = await moderateInputText({
-          request,
-          config: options.config,
-          userId: actor.userId,
-          text:
-            app.backendType === 'dify'
-              ? [body.content, ...Object.values(difyInputs)].join('\n')
-              : body.content,
-        });
-        if (
-          moderation.outcome === 'block' ||
-          moderation.outcome === 'unavailable'
-        ) {
-          const code =
-            moderation.outcome === 'block'
-              ? 'CONTENT_MODERATION_BLOCKED'
-              : 'CONTENT_MODERATION_UNAVAILABLE';
-          await rejectSubmission(rootTaskId, code);
-          throw new AgentPolicyError(
-            moderation.outcome === 'block' ? 400 : 503,
-            code
-          );
-        }
-      }
+      let prepared: Awaited<ReturnType<typeof prepareAgentRunInput>> = {
+        inputs: {},
+      };
+      let difyModeUnsupported = false;
       let reservation;
       try {
+        if (!registration.replayed) {
+          const isDify = app.backendType === 'dify';
+          if (
+            conversationId &&
+            (scopedLangChain || isDify || hasConfiguredInput)
+          )
+            await assertAgentInputConversation(conversationId, {
+              userId: actor.userId,
+              serviceInstanceId: app.id,
+              configFingerprint: app.fingerprint,
+              backendType: app.backendType ?? 'langchain',
+            });
+          const trusted = isDify
+            ? buildTrustedUserInputs(
+                actor,
+                await loadTrustedUserProfile(actor.userId)
+              )
+            : {};
+          const sourceFields =
+            isDify && editSourceId && conversationId
+              ? parseAgentRunInputs({
+                  inputs: await loadAgentEditInputFields(
+                    conversationId,
+                    actor.userId,
+                    editSourceId
+                  ),
+                }).inputs
+              : undefined;
+          const effectiveInput = sourceFields
+            ? {
+                ...requestedInput,
+                inputs: { ...sourceFields, ...requestedInput.inputs },
+              }
+            : requestedInput;
+          prepared = { inputs: trusted };
+          if (scopedLangChain || isDify || hasConfiguredInput) {
+            const capabilities = await resolveSharedAgentInputCapabilities(app);
+            difyModeUnsupported =
+              isDify &&
+              !effectiveInput.inputs &&
+              !effectiveInput.attachments &&
+              capabilities.reason === 'DIFY_MODE_UNSUPPORTED';
+            if (!difyModeUnsupported)
+              prepared = await prepareAgentRunInput({
+                app,
+                userId: actor.userId,
+                content,
+                agui,
+                capabilities,
+                request: effectiveInput,
+                trusted,
+              });
+          }
+          const moderation = await moderateInputText({
+            request,
+            config: options.config,
+            userId: actor.userId,
+            text: [
+              content,
+              ...Object.values(prepared.messageInputFields ?? {}).map(String),
+              ...Object.values(trusted),
+            ].join('\n'),
+          });
+          if (
+            moderation.outcome === 'block' ||
+            moderation.outcome === 'unavailable'
+          )
+            throw new AgentPolicyError(
+              moderation.outcome === 'block' ? 400 : 503,
+              moderation.outcome === 'block'
+                ? 'CONTENT_MODERATION_BLOCKED'
+                : 'CONTENT_MODERATION_UNAVAILABLE'
+            );
+        }
         reservation = await reserveRun({
           governanceTaskId: rootTaskId,
           backendType: app.backendType ?? 'langchain',
@@ -561,23 +723,20 @@ export const agentRunsRoutes: FastifyPluginAsync<{
           serviceInstanceId: app.id,
           appInstanceId: app.instanceId,
           configFingerprint: app.fingerprint,
-          submissionId: uuid(body.submissionId),
-          conversationId:
-            body.conversationId === undefined
-              ? undefined
-              : uuid(body.conversationId),
-          content: body.content,
+          submissionId,
+          conversationId,
+          content,
+          ...requestedInput,
+          ...(prepared.messageInputFields
+            ? { messageInputFields: prepared.messageInputFields }
+            : {}),
           ...readAgentAdmissionLimits(),
-          ...(body.editSourceId === undefined
-            ? {}
-            : { editSourceId: uuid(body.editSourceId) }),
+          ...(editSourceId ? { editSourceId } : {}),
         });
       } catch (error) {
         if (
           !registration.replayed &&
-          (error instanceof AgentRunError ||
-            error instanceof AgentPolicyError) &&
-          error.statusCode < 500
+          (error instanceof AgentRunError || error instanceof AgentPolicyError)
         )
           await rejectSubmission(rootTaskId, error.code);
         throw error;
@@ -633,7 +792,7 @@ export const agentRunsRoutes: FastifyPluginAsync<{
         rootTaskId,
         app,
         run,
-        content: reservation.upstreamContent ?? body.content,
+        content: reservation.upstreamContent ?? content,
         emit,
         ...(agui ? { agui: { emit } } : {}),
         report: (value: { runId: string; code: string }) =>
@@ -641,7 +800,15 @@ export const agentRunsRoutes: FastifyPluginAsync<{
       };
       const task = (
         agui
-          ? executeNegotiatedAgentRun({ ...execution, inputs: difyInputs })
+          ? executeNegotiatedAgentRun({
+              ...execution,
+              inputs: prepared.inputs,
+              ...(prepared.files ? { files: prepared.files } : {}),
+              ...(prepared.inputFiles
+                ? { inputFiles: prepared.inputFiles }
+                : {}),
+              ...(difyModeUnsupported ? { difyModeUnsupported } : {}),
+            })
           : executeAgentRun(execution)
       )
         .catch(() => {
@@ -934,8 +1101,13 @@ export const agentRunsRoutes: FastifyPluginAsync<{
       )
     ) {
       try {
-        upstreamStatus = (await getRun(app, run.thread_id, run.native_run_id))
-          .status;
+        upstreamStatus = (
+          await getRun(
+            langChainConfigForActor(app, actor.userId),
+            run.thread_id,
+            run.native_run_id
+          )
+        ).status;
       } catch {
         upstreamStatus = 'unknown';
       }

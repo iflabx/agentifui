@@ -1,3 +1,4 @@
+import { isSingleConversation } from '@agentifui/shared';
 import { createDecipheriv, createHash } from 'node:crypto';
 
 import { resolveBackendType } from './agent-backends';
@@ -29,6 +30,7 @@ export interface DifyAppConfig {
   displayName?: string;
   description?: string;
   appType?: string;
+  singleTurn?: boolean;
   taskInput?: { text_variable?: string | null };
 }
 
@@ -279,6 +281,9 @@ export async function resolveDifyConfig(
     displayName: serviceInstance.display_name || serviceInstance.instance_id,
     description: serviceInstance.description || undefined,
     appType: readDifyAppType(serviceInstance.config),
+    ...(isSingleConversation(serviceInstance.config?.conversation_turns)
+      ? { singleTurn: true }
+      : {}),
     taskInput: serviceInstance.config?.task_input as
       { text_variable?: string | null } | undefined,
   };

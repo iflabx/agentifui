@@ -2,6 +2,7 @@
 
 import {
   difyProcessItem,
+  processStatus,
   visibleDifyNodes,
   workflowSnapshotItems,
 } from '@components/execution-process/adapters';
@@ -51,9 +52,15 @@ export function savedTaskNodes(
 export function TaskProcess({
   execution,
   live,
+  open,
+  onOpenChange,
+  suspended,
 }: {
   execution: AppExecution;
   live: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  suspended?: boolean;
 }) {
   const t = useTranslations('taskChat');
   const current = useWorkflowExecutionStore(state => state.nodes);
@@ -62,11 +69,13 @@ export function TaskProcess({
   );
   const liveLoop = useWorkflowExecutionStore(state => state.loopExpandedStates);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const nodes = live ? current : savedTaskNodes(execution.metadata);
+  const workflow = execution.execution_type === 'workflow';
+  const liveNodes = live && workflow;
+  const nodes = liveNodes ? current : savedTaskNodes(execution.metadata);
   const visible = visibleDifyNodes(
     nodes,
-    live ? liveIteration : expanded,
-    live ? liveLoop : expanded
+    liveNodes ? liveIteration : expanded,
+    liveNodes ? liveLoop : expanded
   );
   const items = nodes.length
     ? visible.map(node =>
@@ -82,17 +91,29 @@ export function TaskProcess({
         )
       )
     : workflowSnapshotItems(execution.metadata, execution.id);
-  if (!items.length)
-    return live ? null : (
-      <p className="mb-2 text-xs text-stone-500">{t('noProcess')}</p>
-    );
+  const status =
+    !live &&
+    (['pending', 'running'].includes(execution.status) ||
+      execution.error_message === 'CLIENT_TASK_INTERRUPTED')
+      ? 'unknown'
+      : live
+        ? 'running'
+        : processStatus(execution.status);
   return (
     <ExecutionProcessDisclosure
       items={items}
-      historical={!live}
-      executing={live}
+      status={status}
+      showEmpty={workflow && !live}
+      placement="panel"
+      open={open}
+      onOpenChange={onOpenChange}
+      suspended={suspended}
+      title={execution.title || t('taskTitle')}
+      historical={!live && items.length > 0}
+      executing={live && workflow}
+      failed={execution.status === 'failed'}
       renderItem={
-        nodes.length
+        nodes.length && items.length
           ? (item, index) => (
               <ExecutionBar
                 historical={!live}
@@ -100,7 +121,7 @@ export function TaskProcess({
                 item={item}
                 index={index}
                 expansion={
-                  live
+                  liveNodes
                     ? undefined
                     : {
                         expanded: Boolean(expanded[visible[index].id]),

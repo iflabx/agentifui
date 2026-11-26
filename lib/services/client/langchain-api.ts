@@ -27,6 +27,54 @@ export interface AgentMessage {
   metadata?: Record<string, unknown>;
 }
 
+export interface AgentInputFile {
+  id: string;
+  name: string;
+  size: number;
+  type: string;
+}
+
+export interface AgentTurnInputs {
+  inputs?: Record<string, string | number>;
+  attachments?: { fileId: string; slotKey: string }[];
+}
+
+export function agentInputRequirementsChanged(code?: string): boolean {
+  return [
+    'INPUT_CAPABILITIES_UNAVAILABLE',
+    'INPUT_CAPABILITIES_UNSUPPORTED',
+    'INPUT_CAPABILITIES_INVALID',
+    'INPUT_FIELD_UNSUPPORTED',
+    'INPUT_PROFILE_UNSUPPORTED',
+    'INPUT_FIELD_INVALID',
+    'INPUT_FIELD_REQUIRED',
+    'INPUT_FILE_SLOT_INVALID',
+    'INPUT_UPLOAD_DISABLED',
+    'INPUT_FILE_TYPE',
+    'INPUT_FILE_SIZE',
+    'INPUT_FILE_NOT_ALLOWED',
+    'INPUT_FILES_REQUIRED',
+    'INPUT_TOO_MANY_FILES',
+    'INPUT_TEXT_INVALID',
+    'DIFY_PARAMETERS_UNSUPPORTED',
+    'DIFY_UPLOAD_STORAGE_UNAVAILABLE',
+  ].includes(code ?? '');
+}
+
+export function agentInputFiles(message: AgentMessage): AgentInputFile[] {
+  const files = message.metadata?.input_attachments;
+  if (!Array.isArray(files)) return [];
+  return files.filter(
+    (file): file is AgentInputFile =>
+      file !== null &&
+      typeof file === 'object' &&
+      typeof file.id === 'string' &&
+      typeof file.name === 'string' &&
+      typeof file.size === 'number' &&
+      typeof file.type === 'string'
+  );
+}
+
 export interface AgentRun {
   id?: string;
   runId?: string;
@@ -124,13 +172,15 @@ export function agentPath(appId: string, suffix = ''): string {
 
 export function agentMessageFitsRequest(
   content: string,
-  conversationId?: string | null
+  conversationId?: string | null,
+  turnInputs?: AgentTurnInputs
 ) {
   const upstreamEnvelopeReserveBytes = 1024;
   const body = {
     submissionId: '00000000-0000-0000-0000-000000000000',
     content: content.trim(),
     ...(conversationId ? { conversationId } : {}),
+    ...turnInputs,
   };
   return (
     body.content.length <= 16000 &&

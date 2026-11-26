@@ -1,9 +1,11 @@
 'use client';
 
-import { ChatContainer } from '@components/chat-input/container';
+import { AppIntroduction } from '@components/chat-input/app-introduction';
 import { useRegisterDifyEdit } from '@components/chat-input/edit-resend';
 import { useFocusManager } from '@components/chat-input/focus-manager';
+import { SingleTurnEnd } from '@components/chat-input/single-turn-end';
 import { ChatInputView } from '@components/chat-input/view';
+import { useAppChatLayout } from '@components/chat/session/app-chat-layout';
 import { FormField } from '@components/workflow/workflow-input-form/form-field';
 import {
   capabilityFormFields,
@@ -26,6 +28,7 @@ import {
   useChatInputRouteSync,
 } from '@lib/hooks/use-chat-input-route-sync';
 import { useChatWidth } from '@lib/hooks/use-chat-width';
+import { useComposerParameterDraft } from '@lib/hooks/use-composer-parameter-draft';
 import { getDifyUserInputFormEntry } from '@lib/services/dify/user-input-form';
 import { useChatInputStore } from '@lib/stores/chat-input-store';
 import { useChatLayoutStore } from '@lib/stores/chat-layout-store';
@@ -37,6 +40,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 
+import { isSingleConversation } from '../../packages/shared/src/conversation-turns';
 import { useChatflowAttachments } from './chatflow-attachments';
 import { buildChatflowFormConfig } from './chatflow-input-area/helpers';
 import type {
@@ -81,6 +85,7 @@ function ScopedChatflowInputArea({
   className,
   onFormConfigChange,
 }: ChatflowInputAreaProps) {
+  const appLayout = useAppChatLayout();
   const t = useTranslations('pages.chatflow');
   const tChat = useTranslations('pages.chat');
   const tWorkflow = useTranslations('pages.workflow.form');
@@ -93,6 +98,8 @@ function ScopedChatflowInputArea({
     authLoading: loading && !session,
   });
   const app = useChatInputApp(instanceId, route.ready);
+  const appName = app.instance?.display_name?.trim();
+  const appDescription = app.instance?.description?.trim();
   const live = useAgentInputCapabilities(app.instance?.id ?? null);
   const displayed = useRetainedInputCapabilities(live.capabilities);
   const ready = route.ready && live.capabilities?.status === 'ready';
@@ -104,6 +111,10 @@ function ScopedChatflowInputArea({
     (JSON.parse(currentRoute)[3]?.startsWith('conversation:') ||
       (!isWelcomeScreen && messages.some(item => item.isUser)))
   );
+  const singleTurnFinished =
+    continuing &&
+    Boolean(app.instance) &&
+    isSingleConversation(app.instance?.config?.conversation_turns, true);
   const fields = useMemo(
     () =>
       capabilityFormFields(displayed).filter(
@@ -118,17 +129,30 @@ function ScopedChatflowInputArea({
     () => buildChatflowFormConfig(fields),
     [fields]
   );
-  const [drafts, setDrafts] = useState<Record<string, ChatflowFormData>>({});
+  const parameterDraft = useComposerParameterDraft(
+    'chatflow-parameters',
+    route.ready ? currentRoute : null
+  );
   const formData = useMemo(
-    () => ({ ...initialFormData, ...drafts[currentRoute] }),
-    [initialFormData, drafts, currentRoute]
+    () => ({
+      ...initialFormData,
+      ...Object.fromEntries(
+        Object.keys(initialFormData)
+          .filter(key => Object.hasOwn(parameterDraft.values, key))
+          .map(key => [key, parameterDraft.values[key]])
+      ),
+    }),
+    [initialFormData, parameterDraft.values]
   );
   const validation = continuing
     ? {}
     : validateFormData(formData, userInputForm, tWorkflow);
   const slots = useMemo(
-    () => (displayed?.attachmentSlots ?? []).filter(() => !continuing),
-    [displayed, continuing]
+    () =>
+      (displayed?.attachmentSlots ?? []).filter(
+        slot => !continuing || (!singleTurnFinished && slot.target === 'files')
+      ),
+    [displayed, continuing, singleTurnFinished]
   );
   const attachments = useChatflowAttachments({
     scope: route.ready ? currentRoute : null,
@@ -184,7 +208,7 @@ function ScopedChatflowInputArea({
   const validQuery = !displayed?.text.required || Boolean(message.trim());
   const canSubmit =
     !disabled &&
-    !continuing &&
+    !singleTurnFinished &&
     !attachments.blocked &&
     !Object.keys(validation).length &&
     validQuery &&
@@ -207,6 +231,7 @@ function ScopedChatflowInputArea({
     const consume = () => {
       useChatInputStore.getState().consumeSnapshot(snapshot);
       attachments.consume();
+      parameterDraft.clear();
     };
     const isCurrent = () => {
       const current = useChatInputStore.getState();
@@ -276,22 +301,11 @@ function ScopedChatflowInputArea({
   const parameters =
     !continuing || failed || !ready ? (
       <div className="mb-3 space-y-3 text-xs text-stone-500 dark:text-stone-400">
-        {!continuing && isWelcomeScreen && (
-          <header className="mb-6 px-4">
-            <h1 className="font-serif text-sm font-normal">
-              {app.instance?.display_name}
-            </h1>
-            {app.instance?.description?.trim() && (
-              <div
-                data-chatflow-description
-                className="markdown-body main-content-area assistant-message-content mt-3 w-full text-base text-stone-800 dark:text-stone-200"
-              >
-                <p className="break-words whitespace-pre-wrap">
-                  {app.instance.description}
-                </p>
-              </div>
-            )}
-          </header>
+        {!continuing && isWelcomeScreen && (appName || appDescription) && (
+          <AppIntroduction
+            name={appName}
+            description={app.instance?.description}
+          />
         )}
         {failed ? (
           <div role="alert">
@@ -337,13 +351,7 @@ function ScopedChatflowInputArea({
                       >['value']
                     }
                     onChange={value =>
-                      setDrafts(previous => ({
-                        ...previous,
-                        [currentRoute]: {
-                          ...previous[currentRoute],
-                          [fieldConfig.variable]: value,
-                        },
-                      }))
+                      parameterDraft.setValue(fieldConfig.variable, value)
                     }
                     error={validation[fieldConfig.variable]}
                   />
@@ -360,48 +368,38 @@ function ScopedChatflowInputArea({
       ref={composerNode}
       data-chatflow-composer
       className={cn(
-        isWelcomeScreen &&
+        !appLayout &&
+          isWelcomeScreen &&
           'absolute inset-0 flex flex-col overflow-y-auto px-4 py-6'
       )}
     >
-      {continuing && !waiting && !isProcessing ? (
-        <ChatContainer
-          className={cn('w-[calc(100%-2rem)]', className)}
+      {singleTurnFinished && !waiting && !isProcessing ? (
+        <SingleTurnEnd
+          href={`/apps/chatflow/${encodeURIComponent(instanceId)}`}
+          className={className}
           widthClass={widthClass}
           beforeInput={parameters}
-        >
-          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
-            <p role="status" className="text-stone-500 dark:text-stone-400">
-              {t('composer.singleTurn')}
-            </p>
-            <a
-              href={`/apps/chatflow/${encodeURIComponent(instanceId)}`}
-              className="rounded-lg border border-stone-300 px-3 py-2 text-stone-700 hover:bg-stone-50 dark:border-stone-600 dark:text-stone-200 dark:hover:bg-stone-800"
-            >
-              {t('composer.newTask')}
-            </a>
-          </div>
-        </ChatContainer>
+        />
       ) : (
         <ChatInputView
           value={route.ready ? message : ''}
           onValueChange={setMessage}
           onSubmit={submit}
           disabled={disabled}
-          textDisabled={continuing}
+          textDisabled={singleTurnFinished}
           stopDisabled={!route.ready || !session}
           canSubmit={canSubmit}
           isProcessing={isProcessing}
           onStop={onStop}
           isWaiting={waiting}
           className={cn(
-            'w-[calc(100%-2rem)]',
-            isWelcomeScreen && 'mx-auto my-auto w-full shrink-0',
+            !appLayout && 'w-[calc(100%-2rem)]',
+            !appLayout && isWelcomeScreen && 'mx-auto my-auto w-full shrink-0',
             className
           )}
           embedded={isWelcomeScreen}
           widthClass={widthClass}
-          placeholder={t('form.question.placeholder')}
+          placeholder=""
           beforeInput={parameters}
           attachmentAction={attachments.action}
           attachmentPreview={attachments.preview}

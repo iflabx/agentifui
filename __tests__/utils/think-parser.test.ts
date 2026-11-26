@@ -9,6 +9,146 @@ import {
 } from '../../lib/utils/think-parser';
 
 describe('parseThinkBlocks', () => {
+  it.each(['Answer<think>analysis `', 'Answer<think>analysis ``'])(
+    'does not grow a saved response truncated at an inline delimiter: %s',
+    content => {
+      const normalized = normalizeCompletedAssistantReply(
+        content,
+        'INCOMPLETE'
+      );
+      expect(
+        normalizeCompletedAssistantReply(normalized.content, 'INCOMPLETE')
+          .content
+      ).toBe(normalized.content);
+      expect(
+        parseThinkBlocks(normalized.content)
+          .filter(block => block.type === 'text')
+          .map(block => block.content)
+          .join('')
+      ).toBe('Answer');
+    }
+  );
+
+  it('treats an unmatched backtick as literal in completed reasoning', () => {
+    const content = '<think>Consider the ` character.</think>Visible answer.';
+    const normalized = normalizeCompletedAssistantReply(content, 'INCOMPLETE');
+    expect(normalized.usedFallback).toBe(false);
+    expect(
+      parseThinkBlocks(normalized.content)
+        .filter(block => block.type === 'text')
+        .map(block => block.content)
+        .join('')
+        .trim()
+    ).toBe('Visible answer.');
+  });
+  it('recovers a list after an explicit final reply marker', () => {
+    const content = '<think>Plan\n\n最终回复：\n- First item\n- Second item';
+    const normalized = normalizeCompletedAssistantReply(content, 'INCOMPLETE');
+    expect(normalized.usedFallback).toBe(false);
+    expect(
+      parseThinkBlocks(normalized.content)
+        .filter(block => block.type === 'text')
+        .map(block => block.content)
+        .join('')
+        .trim()
+    ).toBe('- First item\n- Second item');
+  });
+
+  it('does not treat a code example as an explicit reply marker', () => {
+    const content = '<think>Example:\n```text\n最终回复：\nexample answer\n```';
+    const normalized = normalizeCompletedAssistantReply(content, 'INCOMPLETE');
+    expect(normalized.usedFallback).toBe(true);
+    expect(
+      parseThinkBlocks(normalized.content)
+        .filter(block => block.type === 'text')
+        .map(block => block.content)
+        .join('')
+        .trim()
+    ).toBe('INCOMPLETE');
+  });
+  it.each(['<think>analysis\n```python\nfoo', '<think>analysis `foo'])(
+    'keeps normalization stable when reasoning ends inside Markdown code: %s',
+    content => {
+      const normalized = normalizeCompletedAssistantReply(
+        content,
+        'INCOMPLETE'
+      );
+      expect(
+        parseThinkBlocks(normalized.content)
+          .filter(block => block.type === 'text')
+          .map(block => block.content)
+          .join('')
+          .trim()
+      ).toBe('INCOMPLETE');
+      expect(
+        normalizeCompletedAssistantReply(normalized.content, 'INCOMPLETE')
+          .content
+      ).toBe(normalized.content);
+    }
+  );
+  it.each([
+    'Example:\n```xml\n<think>sample</think>\n```\nAnswer.',
+    'Example:\n~~~html\n<details>sample</details>\n~~~\nAnswer.',
+    'Use `<think>sample</think>` literally.',
+    'Use ``<think>`sample`</think>`` literally.',
+    'Example:\n```xml\n<think>unfinished example',
+    'Use \\<think> literally.',
+  ])('preserves literal markup in Markdown: %s', content => {
+    expect(parseThinkBlocks(content)).toEqual([{ type: 'text', content }]);
+    expect(parseStreamingThinkBlocks(content)).toEqual([
+      { type: 'text', content },
+    ]);
+    expect(
+      normalizeCompletedAssistantReply(content, 'INCOMPLETE').content
+    ).toBe(content);
+  });
+
+  it('recognizes real reasoning after a literal code example', () => {
+    const example = '```xml\n<think>sample</think>\n```\n';
+    expect(
+      parseThinkBlocks(`${example}<think>Actual reasoning</think>Answer`)
+    ).toEqual([
+      { type: 'text', content: example },
+      { type: 'think', content: 'Actual reasoning', status: 'closed' },
+      { type: 'text', content: 'Answer' },
+    ]);
+  });
+
+  it.each(['', '</think>'])(
+    'recovers an explicit reply marker even after legacy auto-closure (%s)',
+    closing => {
+      const normalized = normalizeCompletedAssistantReply(
+        `<think>Plan steps\n\n**最终回复**：\nVisible answer${closing}`,
+        'INCOMPLETE'
+      );
+      expect(normalized.usedFallback).toBe(false);
+      expect(
+        parseThinkBlocks(normalized.content)
+          .filter(block => block.type === 'text')
+          .map(block => block.content)
+          .join('')
+          .trim()
+      ).toBe('Visible answer');
+      expect(
+        normalizeCompletedAssistantReply(normalized.content, 'INCOMPLETE')
+          .content
+      ).toBe(normalized.content);
+    }
+  );
+
+  it('preserves all recovered answer paragraphs', () => {
+    const answer =
+      'The first answer paragraph contains the main explanation.\n\nThe second answer paragraph contains a final recommendation.';
+    const content = `<think>Here is a thinking process:\n\n1. Check the request carefully.\n\n2. Find the relevant information.\n\n${answer}`;
+    const normalized = normalizeCompletedAssistantReply(content, 'INCOMPLETE');
+    const mainText = parseThinkBlocks(normalized.content)
+      .filter(block => block.type === 'text')
+      .map(block => block.content)
+      .join('')
+      .trim();
+    expect(mainText).toBe(answer);
+  });
+
   it('should parse plain text', () => {
     const result = parseThinkBlocks('Hello world');
     expect(result).toEqual([{ type: 'text', content: 'Hello world' }]);

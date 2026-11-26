@@ -30,6 +30,7 @@ export function captureDifyInputSubmission(
     )
       return;
     accepted = true;
+    useChatInputStore.getState().markAccepted(snapshot.scope);
     if (eligible) {
       useChatInputStore.getState().consumeSnapshot(snapshot);
       useAttachmentStore.getState().consumeFiles(snapshot.scope, files);

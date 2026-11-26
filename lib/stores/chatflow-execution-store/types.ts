@@ -111,6 +111,8 @@ export interface ChatflowExecutionView {
 
 export interface ChatflowExecutionState {
   view: ChatflowExecutionView | null;
+  processMessageId: string | null;
+  openProcessMessageId: string | null;
   nodes: ChatflowNode[];
   currentNodeId: string | null;
   isExecuting: boolean;

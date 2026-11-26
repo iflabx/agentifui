@@ -3,6 +3,7 @@ import {
   MAX_PROJECTION_MESSAGES,
   type Message,
   buildMessageEditPrompt,
+  isSingleConversation,
   mergeAgentHistoryResult,
   readAgentHistoryMessages,
   readAgentHistoryResult,
@@ -21,12 +22,21 @@ import {
   resolveBackendType,
 } from './agent-backends';
 import {
+  type AgentInputFileReference,
+  bindAgentInputFiles,
+  messageInputFile,
+  resolveAgentInputFiles,
+} from './agent-input-file-repository';
+import {
   type AgentDeliverables,
   parseStoredAgentDeliverables,
 } from './agent-result';
-import { admitSubmission } from './agent-submissions';
+import { admitSubmission, submissionHash } from './agent-submissions';
 import { MAX_AGENT_RESULT_BYTES } from './agui/runtime-result';
-import { runWithPgSystemContext } from './pg-context';
+import {
+  queryRowsWithPgSystemContext,
+  runWithPgSystemContext,
+} from './pg-context';
 
 export type AgentExecutionStatus =
   | 'reserved'
@@ -85,6 +95,9 @@ export interface ReserveAgentRunInput {
   configFingerprint: string;
   submissionId: string;
   content: string;
+  inputs?: Record<string, string | number>;
+  messageInputFields?: Record<string, string | number>;
+  attachments?: AgentInputFileReference[];
   conversationId?: string;
   editSourceId?: string;
   userLimit?: number;
@@ -235,6 +248,46 @@ async function validateBinding(
   if (!rows[0]) throw new AgentRunError(409, 'AGENT_CONVERSATION_UNAVAILABLE');
 }
 
+export async function assertAgentInputConversation(
+  conversationId: string,
+  input: {
+    userId: string;
+    serviceInstanceId: string;
+    configFingerprint: string;
+    backendType: AgentBackendType;
+  }
+) {
+  const rows = await queryRowsWithPgSystemContext<{ id: string }>(
+    `SELECT c.id FROM conversations c JOIN backend_conversations b ON b.conversation_id = c.id
+     WHERE c.id = $1::uuid AND c.user_id = $2::uuid AND c.status = 'active'
+       AND b.service_instance_id = $3::uuid AND b.config_fingerprint = $4 AND b.backend_type = $5`,
+    [
+      conversationId,
+      input.userId,
+      input.serviceInstanceId,
+      input.configFingerprint,
+      input.backendType,
+    ]
+  );
+  if (!rows[0]) throw new AgentRunError(409, 'AGENT_CONVERSATION_UNAVAILABLE');
+}
+
+export async function loadAgentEditInputFields(
+  conversationId: string,
+  userId: string,
+  messageId: string
+) {
+  const rows = await queryRowsWithPgSystemContext<{ fields: unknown }>(
+    `SELECT metadata->'input_fields' AS fields FROM messages
+     WHERE id = $1::uuid AND conversation_id = $2::uuid
+       AND user_id = $3::uuid AND role = 'user'
+       AND COALESCE(metadata->>'edit_hidden', 'false') <> 'true'`,
+    [messageId, conversationId, userId]
+  );
+  if (!rows[0]) throw new AgentRunError(409, 'AGENT_EDIT_SOURCE_UNAVAILABLE');
+  return rows[0].fields ?? undefined;
+}
+
 export async function reserveRun(input: ReserveAgentRunInput): Promise<{
   run: AgentRunRecord;
   replayed: boolean;
@@ -252,7 +305,7 @@ export async function reserveRun(input: ReserveAgentRunInput): Promise<{
   if (
     !['langchain', 'dify'].includes(backendType) ||
     typeof input.content !== 'string' ||
-    input.content.trim().length === 0 ||
+    (input.content.trim().length === 0 && !input.attachments?.length) ||
     input.content.length > 16000 ||
     Buffer.byteLength(input.content, 'utf8') > 64000 ||
     !/^[0-9a-f]{64}$/i.test(input.configFingerprint) ||
@@ -267,15 +320,23 @@ export async function reserveRun(input: ReserveAgentRunInput): Promise<{
   const editSourceId = input.editSourceId
     ? uuid(input.editSourceId)
     : undefined;
-  if (editSourceId && !conversationId)
+  if (editSourceId && (!conversationId || input.attachments?.length))
     throw new AgentRunError(400, 'INVALID_AGENT_REQUEST');
-  const requestHash = createHash('sha256')
-    .update(
-      editSourceId
-        ? JSON.stringify([input.content, editSourceId])
-        : input.content
-    )
-    .digest('hex');
+  const requestHash =
+    input.inputs || input.attachments?.length
+      ? submissionHash({
+          content: input.content,
+          editSourceId,
+          inputs: input.inputs,
+          attachments: input.attachments,
+        })
+      : createHash('sha256')
+          .update(
+            editSourceId
+              ? JSON.stringify([input.content, editSourceId])
+              : input.content
+          )
+          .digest('hex');
   return storage(() =>
     runWithPgSystemContext(async client => {
       await client.query(
@@ -324,6 +385,8 @@ export async function reserveRun(input: ReserveAgentRunInput): Promise<{
       }
       if (conversationId) {
         await validateBinding(client, conversationId, normalized);
+        if (isSingleConversation(liveApp.config?.conversation_turns))
+          throw new AgentRunError(409, 'AGENT_SINGLE_TASK_CONVERSATION');
         const singleTask = await client.query(
           `SELECT conversation_id FROM backend_conversations WHERE conversation_id = $1::uuid AND human_input = TRUE`,
           [conversationId]
@@ -362,7 +425,7 @@ export async function reserveRun(input: ReserveAgentRunInput): Promise<{
           [
             allocatedId,
             userId,
-            input.content.slice(0, 80),
+            input.content.trim() ? input.content.slice(0, 80) : 'Attachment',
             serviceId,
             backendType,
           ]
@@ -388,6 +451,8 @@ export async function reserveRun(input: ReserveAgentRunInput): Promise<{
       if (editSourceId) {
         const source = await client.query(
           `SELECT content, sequence_index,
+             EXISTS (SELECT 1 FROM agent_input_file_messages binding
+               WHERE binding.message_id = messages.id) AS has_input_files,
              (SELECT count(*)::int FROM messages preceding
                WHERE preceding.conversation_id = messages.conversation_id AND preceding.role = 'user'
                  AND preceding.sequence_index <= messages.sequence_index) AS user_turn
@@ -397,6 +462,8 @@ export async function reserveRun(input: ReserveAgentRunInput): Promise<{
              AND COALESCE(metadata->>'edit_hidden', 'false') <> 'true' FOR UPDATE`,
           [editSourceId, allocatedId, userId]
         );
+        if (source.rows[0]?.has_input_files)
+          throw new AgentRunError(409, 'AGENT_EDIT_ATTACHMENTS_UNSUPPORTED');
         if (
           !source.rows[0] ||
           !source.rows[0].content.trim() ||
@@ -415,6 +482,11 @@ export async function reserveRun(input: ReserveAgentRunInput): Promise<{
         )
           throw new AgentRunError(413, 'AGENT_MESSAGE_TOO_LONG');
       }
+      const inputFiles = await resolveAgentInputFiles(
+        normalized,
+        input.attachments ?? [],
+        client
+      );
       if (input.governanceTaskId) {
         await admitSubmission(
           client,
@@ -436,9 +508,18 @@ export async function reserveRun(input: ReserveAgentRunInput): Promise<{
           input.content,
           runId,
           backendType,
-          JSON.stringify(editSourceId ? { edit_source_id: editSourceId } : {}),
+          JSON.stringify({
+            ...(editSourceId ? { edit_source_id: editSourceId } : {}),
+            ...(input.messageInputFields
+              ? { input_fields: input.messageInputFields }
+              : {}),
+            ...(inputFiles.length
+              ? { input_attachments: inputFiles.map(messageInputFile) }
+              : {}),
+          }),
         ]
       );
+      await bindAgentInputFiles(client, messageId, inputFiles);
       if (editSequence !== undefined) {
         await client.query(
           `UPDATE messages SET metadata = COALESCE(metadata, '{}'::jsonb) || '{"edit_hidden":true}'::jsonb

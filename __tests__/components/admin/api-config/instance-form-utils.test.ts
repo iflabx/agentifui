@@ -1,5 +1,6 @@
 /** @jest-environment node */
 import {
+  applyDetectedDifyType,
   buildSimplifiedDifyParameters,
   changeInstanceAppType,
   changeInstanceBackend,
@@ -7,11 +8,64 @@ import {
   createEmptyInstanceFormData,
   createInstanceFormDataFromInstance,
   getInitialProviderId,
+  instanceTurnPolicy,
   prepareInstanceFormForSave,
   validateInstanceIdValue,
 } from '@components/admin/api-config/instance-form-utils';
 
 describe('instance form utils', () => {
+  it.each([
+    ['chat', 'chatbot', 'multi', undefined],
+    ['agent-chat', 'agent', 'multi', undefined],
+    ['advanced-chat', 'chatflow', undefined, undefined],
+    ['workflow', 'workflow', undefined, 'independent'],
+    ['completion', 'text-generation', undefined, 'independent'],
+    ['unknown', 'chatbot', undefined, undefined],
+  ])(
+    'prefills known Dify mode %s without guessing Chatflow memory',
+    (mode, type, turns, fixed) => {
+      const result = applyDetectedDifyType(
+        createEmptyInstanceFormData(),
+        mode,
+        false
+      );
+      expect(result.data.config.app_metadata.dify_apptype).toBe(type);
+      expect(result.data.config.conversation_turns).toBe(turns);
+      expect(instanceTurnPolicy(result.data.config)).toBe(fixed);
+      expect(result.typeMismatch).toBeUndefined();
+    }
+  );
+
+  it('reports edit mismatches and never replaces a manual turn choice', () => {
+    const data = createEmptyInstanceFormData();
+    data.config.conversation_turns = 'single';
+    expect(applyDetectedDifyType(data, 'advanced-chat', true)).toEqual({
+      data,
+      typeMismatch: 'chatflow',
+    });
+    expect(
+      applyDetectedDifyType(data, 'chat', true).data.config.conversation_turns
+    ).toBe('single');
+  });
+
+  it.each(['single', 'multi', undefined] as const)(
+    'roundtrips manually selected LangChain turns %s',
+    turns => {
+      const existing = {
+        config: {
+          backend_type: 'langchain' as const,
+          langchain: { assistant_id: 'assistant' },
+          conversation_turns: turns,
+        },
+      };
+      const data = createInstanceFormDataFromInstance(existing, []);
+      expect(instanceTurnPolicy(data.config)).toBeUndefined();
+      expect(prepareInstanceFormForSave(data).config.conversation_turns).toBe(
+        turns
+      );
+    }
+  );
+
   it.each([undefined, null, 'ExactText'])(
     'roundtrips task mapping %p without inventing an automatic override',
     text_variable => {

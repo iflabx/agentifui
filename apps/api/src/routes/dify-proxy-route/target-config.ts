@@ -116,6 +116,7 @@ export async function resolveDifyTargetConfig(
       difyApiKey: difyConfig.apiKey,
       difyApiUrl: difyConfig.apiUrl,
       appType: difyConfig.appType,
+      ...(difyConfig.singleTurn ? { singleTurn: true } : {}),
       taskInput: difyConfig.taskInput,
       tempConfigUsed: false,
       rawBody,

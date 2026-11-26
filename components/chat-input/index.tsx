@@ -31,6 +31,8 @@ import { useCallback, useRef, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 
+import { isSingleConversation } from '../../packages/shared/src/conversation-turns';
+import { AppIntroduction } from './app-introduction';
 import { AttachmentPreviewBar } from './attachment-preview-bar';
 import { ChatButton } from './button';
 import { useEditResend, useRegisterDifyEdit } from './edit-resend';
@@ -38,6 +40,7 @@ import { FileTypeSelector } from './file-type-selector';
 import { useFocusManager } from './focus-manager';
 import { buildSubmitFiles } from './helpers';
 import { ModelSelectorButton } from './model-selector-button';
+import { SingleTurnEnd } from './single-turn-end';
 import { useChatInputUploads, validateChatAttachments } from './use-uploads';
 import { ChatInputView } from './view';
 
@@ -58,6 +61,8 @@ interface ChatInputProps {
   isTransitioningToWelcome?: boolean;
   requireModelValidation?: boolean;
   showModelSelector?: boolean;
+  beforeInput?: React.ReactNode;
+  afterInput?: React.ReactNode;
 }
 
 export const ChatInput = ({
@@ -73,6 +78,8 @@ export const ChatInput = ({
   isTransitioningToWelcome = false,
   requireModelValidation = true,
   showModelSelector = true,
+  beforeInput,
+  afterInput,
 }: ChatInputProps) => {
   const t = useTranslations('pages.chat');
   const tModeration = useTranslations('errors.system.moderation');
@@ -100,6 +107,15 @@ export const ChatInput = ({
     retry: retryInputApp,
   } = useChatInputApp(route.appId, route.ready);
   const fileConfig = useFileTypes(inputApp);
+  const accepted = useChatInputStore(state =>
+    Boolean(state.acceptedScopes[state.resolveScope(currentRoute)])
+  );
+  const singleTurnFinished =
+    route.ready &&
+    (continuingConversation || accepted) &&
+    isSingleConversation(inputApp?.config?.conversation_turns);
+  const showIntroduction =
+    !showModelSelector && route.ready && !continuingConversation && !accepted;
   const capabilitiesReady = Boolean(
     inputApp && fileConfig.capabilities?.status === 'ready'
   );
@@ -147,6 +163,13 @@ export const ChatInput = ({
     barHeight.current = height;
     useChatLayoutStore.getState().setInputHeight(height + textHeight.current);
   }, []);
+  const updateEndHeight = useCallback(
+    (height: number) => {
+      barHeight.current = 0;
+      updateTextHeight(height);
+    },
+    [updateTextHeight]
+  );
   const validModel =
     !requireModelValidation ||
     !showModelSelector ||
@@ -169,6 +192,7 @@ export const ChatInput = ({
   const waiting = isWaiting || isWaitingForResponse || localSubmitting;
   const editScope =
     route.ready &&
+    !singleTurnFinished &&
     currentRoute !== 'default' &&
     JSON.parse(currentRoute)[3]?.startsWith('conversation:')
       ? currentRoute
@@ -230,6 +254,7 @@ export const ChatInput = ({
     const snapshot = input.snapshot();
     if (
       disabled ||
+      singleTurnFinished ||
       submissionBlocked ||
       edit.active ||
       waiting ||
@@ -326,6 +351,22 @@ export const ChatInput = ({
     }
   };
 
+  if (singleTurnFinished && !waiting && !isProcessing) {
+    const type = inputApp?.config?.app_metadata?.dify_apptype;
+    const newTask =
+      inputApp?.config?.app_metadata?.app_type !== 'marketplace' || !route.appId
+        ? '/chat/new'
+        : `/apps/${type === 'agent' ? 'agent' : 'chatbot'}/${encodeURIComponent(route.appId)}`;
+    return (
+      <SingleTurnEnd
+        href={newTask}
+        className={className}
+        widthClass={widthClass}
+        onHeightChange={updateEndHeight}
+      />
+    );
+  }
+
   return (
     <>
       <ChatInputView
@@ -334,12 +375,31 @@ export const ChatInput = ({
         onValueChange={setMessage}
         onSubmit={handleLocalSubmit}
         disabled={disabled || edit.active}
+        textDisabled={singleTurnFinished}
         stopDisabled={disabled}
         isProcessing={isProcessing}
         onStop={onStop}
         isWaiting={waiting || blockedAttachments || submissionBlocked}
         className={className}
-        placeholder={placeholder}
+        placeholder={showModelSelector ? placeholder : ''}
+        scrollableWelcome={!showModelSelector}
+        afterInput={afterInput}
+        beforeInput={
+          beforeInput ??
+          (showIntroduction && inputApp ? (
+            <div className="max-h-[40dvh] overflow-y-auto">
+              <AppIntroduction
+                name={inputApp.display_name}
+                description={inputApp.description}
+              />
+              {inputApp.config?.dify_parameters?.opening_statement?.trim() && (
+                <p className="mb-4 px-4 text-sm whitespace-pre-wrap text-stone-500 dark:text-stone-400">
+                  {inputApp.config.dify_parameters.opening_statement}
+                </p>
+              )}
+            </div>
+          ) : undefined)
+        }
         maxHeight={maxHeight}
         isWelcomeScreen={externalIsWelcomeScreen || isWelcomeScreen}
         widthClass={widthClass}
@@ -404,7 +464,11 @@ export const ChatInput = ({
             />
           ) : undefined
         }
-        modelSelector={showModelSelector ? <ModelSelectorButton /> : undefined}
+        modelSelector={
+          showModelSelector ? (
+            <ModelSelectorButton disabled={waiting || isProcessing} />
+          ) : undefined
+        }
       />
     </>
   );

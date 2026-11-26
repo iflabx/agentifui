@@ -205,6 +205,15 @@ The human-input migrations add `waiting` to execution status and a guarded
 pre-dispatch claim-release path. A waiting task, a closed event-stream segment
 and a completed task are not interchangeable states.
 
+`20261124100000_add_agent_input_files.sql` adds two RLS-protected tables for
+shared Agent input files. `agent_input_files` associates a platform file ID
+with the user, service instance, backend, configuration fingerprint, native
+reference and slot. `agent_input_file_messages` links a file to saved messages.
+After binding, reads require an eligible owned message in an active conversation
+with the same backend binding. Neither table stores file bytes or replaces the
+existing native Dify upload registry. Dify uses protected application storage
+for these uploads; LangChain bytes remain upstream.
+
 Legacy Dify conversations retain their compatible browser-managed persistence;
 the negotiated Dify and LangChain paths use the server writer. Read/refresh/history
 does not dispatch a generation or a human decision. See

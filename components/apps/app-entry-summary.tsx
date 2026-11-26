@@ -29,7 +29,7 @@ export function AppEntrySummary({
       }
     | undefined;
   const type = metadata?.dify_apptype || difyAppType;
-  const textOnly =
+  const configuredInputs =
     config?.backend_type !== 'langchain' &&
     config?.interaction_protocol === 'ag-ui/1.0' &&
     metadata?.app_type === 'marketplace' &&
@@ -80,7 +80,9 @@ export function AppEntrySummary({
           {translate(`entryModes.${mode}`)}
         </p>
       )}
-      {textOnly && <p className="mt-1 text-xs">{translate('textOnlyLimit')}</p>}
+      {configuredInputs && (
+        <p className="mt-1 text-xs">{translate('configuredInputs')}</p>
+      )}
     </div>
   );
 }

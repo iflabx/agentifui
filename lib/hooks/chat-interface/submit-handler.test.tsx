@@ -22,9 +22,11 @@ jest.mock('@components/chat-input/submission', () => ({
 
 jest.mock('@lib/stores/chat-store', () => ({
   selectIsProcessing: (...args: unknown[]) => mockSelectIsProcessing(...args),
-  useChatStore: {
-    getState: (...args: unknown[]) => mockGetChatStoreState(...args),
-  },
+  useChatStore: Object.assign(
+    (selector: (state: unknown) => unknown) =>
+      selector(mockGetChatStoreState()),
+    { getState: (...args: unknown[]) => mockGetChatStoreState(...args) }
+  ),
 }));
 
 jest.mock('./app-config', () => ({
@@ -76,7 +78,10 @@ describe('useChatSubmitHandler', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockCaptureInput.mockReturnValue(mockAcceptInput);
-    mockGetChatStoreState.mockReturnValue({});
+    mockGetChatStoreState.mockReturnValue({
+      messages: [],
+      currentConversationId: null,
+    });
     mockSelectIsProcessing.mockReturnValue(false);
     (resolveChatSubmitAppConfig as jest.Mock).mockResolvedValue({
       appId: 'app-1',

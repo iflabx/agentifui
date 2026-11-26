@@ -1,5 +1,6 @@
 'use client';
 
+import { AttachmentPreviewItem } from '@components/chat-input/attachment-preview-item';
 import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
 import { uploadDifyFile } from '@lib/services/dify/file-service';
 import { useChatInputStore } from '@lib/stores/chat-input-store';
@@ -9,9 +10,11 @@ import { AlertCircle } from 'lucide-react';
 import {
   type ChangeEvent,
   type DragEvent,
+  type Ref,
   type SetStateAction,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -52,6 +55,16 @@ interface FileUploadFieldProps {
   onBlockedChange?: (blocked: boolean) => void;
   onRequirementsChanged?: () => void;
   restoreScope?: WorkflowUploadOwner;
+  compact?: boolean;
+  showCompactLabel?: boolean;
+  inputId?: string;
+  disabled?: boolean;
+  onCountChange?: (count: number) => void;
+  selectionRef?: Ref<FileUploadSelection>;
+}
+
+export interface FileUploadSelection {
+  selectFiles: (files: File[]) => void;
 }
 
 export function FileUploadField(props: FileUploadFieldProps) {
@@ -84,6 +97,12 @@ function ScopedFileUploadField({
   userId,
   actorEpoch,
   loading,
+  compact = false,
+  showCompactLabel = false,
+  inputId,
+  disabled = false,
+  onCountChange,
+  selectionRef,
 }: FileUploadFieldProps & {
   userId: string | undefined;
   actorEpoch: number;
@@ -137,6 +156,7 @@ function ScopedFileUploadField({
     if (value === lastEmittedValue.current) return;
     if (!value || (Array.isArray(value) && value.length === 0)) {
       attempts.current.clear();
+      setSelectionError(null);
       setUploadFiles([]);
       return;
     }
@@ -231,6 +251,7 @@ function ScopedFileUploadField({
     async (uploadFile: UploadFile) => {
       const input = useChatInputStore.getState();
       if (
+        disabled ||
         !activeViewRef.current ||
         loading ||
         !userId ||
@@ -307,6 +328,7 @@ function ScopedFileUploadField({
       updateFileStatus,
       slot,
       onRequirementsChanged,
+      disabled,
     ]
   );
 
@@ -321,6 +343,7 @@ function ScopedFileUploadField({
     (newFiles: File[]) => {
       const input = useChatInputStore.getState();
       if (
+        disabled ||
         !activeViewRef.current ||
         !owner ||
         input.actorId !== owner.actor_id ||
@@ -352,7 +375,7 @@ function ScopedFileUploadField({
       });
       setUploadFiles(prev => [...prev, ...newUploadFiles]);
     },
-    [owner, slot, isSingleFileMode, setUploadFiles]
+    [owner, slot, isSingleFileMode, setUploadFiles, disabled]
   );
 
   const handleFileInputChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -363,8 +386,12 @@ function ScopedFileUploadField({
     }
   };
 
+  useImperativeHandle(selectionRef, () => ({ selectFiles: handleFileSelect }), [
+    handleFileSelect,
+  ]);
+
   const handleRemoveFile = (id: string) => {
-    if (!activeViewRef.current) return;
+    if (disabled || !activeViewRef.current) return;
     attempts.current.delete(id);
     setUploadFiles(prev => prev.filter(file => file.id !== id));
     setSelectionError(null);
@@ -372,6 +399,7 @@ function ScopedFileUploadField({
 
   const handleRetryUpload = useCallback(
     (id: string) => {
+      if (disabled) return;
       const uploadFile = uploadFiles.find(file => file.id === id);
       if (uploadFile?.file && uploadFile.status === 'error') {
         const nextError = !slot
@@ -395,7 +423,7 @@ function ScopedFileUploadField({
         );
       }
     },
-    [uploadFiles, slot, setUploadFiles]
+    [uploadFiles, slot, setUploadFiles, disabled]
   );
 
   const handleDrop = (event: DragEvent) => {
@@ -435,6 +463,9 @@ function ScopedFileUploadField({
   useLayoutEffect(() => {
     onBlockedChange?.(blocked);
   }, [blocked, onBlockedChange]);
+  useLayoutEffect(() => {
+    onCountChange?.(uploadFiles.length);
+  }, [uploadFiles.length, onCountChange]);
   const errorCode = error || selectionError || capabilityError;
   const displayedError =
     errorCode === 'INPUT_CAPABILITIES_UNAVAILABLE'
@@ -446,6 +477,55 @@ function ScopedFileUploadField({
           : errorCode === 'INPUT_FILE_TYPE'
             ? tChat('fileUpload.unsupportedFormat')
             : errorCode;
+
+  if (compact)
+    return (
+      <div
+        className={
+          uploadFiles.length || displayedError ? 'px-3 pt-3 pb-2' : undefined
+        }
+      >
+        <input
+          id={inputId}
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          aria-label={label}
+          accept={fileTypeInfo.accept}
+          multiple={!isSingleFileMode && maxFiles - uploadFiles.length > 1}
+          disabled={disabled || !owner || !canUploadMore}
+          onChange={handleFileInputChange}
+        />
+        {uploadFiles.length > 0 && (
+          <div role="group" aria-label={label}>
+            {showCompactLabel && label && (
+              <p className="mb-1 text-xs text-stone-500 dark:text-stone-400">
+                {label}
+              </p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              {uploadFiles.map(file => (
+                <AttachmentPreviewItem
+                  key={file.id}
+                  attachment={file}
+                  disabled={disabled}
+                  onRemove={handleRemoveFile}
+                  onRetry={handleRetryUpload}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+        {displayedError && (
+          <p
+            role="alert"
+            className="mt-2 text-sm text-amber-700 dark:text-amber-300"
+          >
+            {displayedError}
+          </p>
+        )}
+      </div>
+    );
 
   return (
     <div className="space-y-4">

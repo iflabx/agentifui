@@ -4,6 +4,7 @@ import { conversationEvents } from '@lib/hooks/use-combined-conversations';
 import { consumeAguiStream } from '@lib/services/client/agui-stream';
 import {
   AgentRequestError,
+  agentInputRequirementsChanged,
   agentMessageFitsRequest,
   agentPath,
   agentRequest,
@@ -13,11 +14,14 @@ import {
 } from '@lib/services/client/langchain-api';
 import type {
   AgentConversation,
+  AgentInputFile,
   AgentMessage,
   AgentRun,
+  AgentTurnInputs,
 } from '@lib/services/client/langchain-api';
 import {
   type LangchainDraftSnapshot,
+  type PendingAgentSubmission,
   useLangchainDraftStore,
 } from '@lib/stores/langchain-draft-store';
 import type {
@@ -96,7 +100,10 @@ export function useAgentChat(
   const draftScopes = useRef(new Map<string, string>());
   const newDraftVersion = useRef(0);
   const [appName, setAppName] = useState('');
+  const [appDescription, setAppDescription] = useState<string | null>(null);
   const [textOnly, setTextOnly] = useState(false);
+  const [acceptsInputCapabilities, setAcceptsInputCapabilities] =
+    useState(false);
   const [humanInput, setHumanInput] = useState(false);
   const [singleTask, setSingleTask] = useState(false);
   const [resultSingleBatch, setResultSingleBatch] = useState(false);
@@ -143,7 +150,14 @@ export function useAgentChat(
           ...previous.messages.filter(
             message => message.id !== pending.submissionId
           ),
-          { id: pending.submissionId, role: 'user', content: pending.content },
+          {
+            id: pending.submissionId,
+            role: 'user',
+            content: pending.content,
+            ...(pending.inputFiles?.length
+              ? { metadata: { input_attachments: pending.inputFiles } }
+              : {}),
+          },
         ],
       }));
       return true;
@@ -222,9 +236,10 @@ export function useAgentChat(
         setUnconfirmed(false);
         setPendingSubmissionId(null);
         const result = await agentRequest<{
-          app: { name: string };
+          app: { name: string; description?: string | null };
           protocol?: string;
           interactionMode?: string;
+          acceptsInputCapabilities?: boolean;
           capabilities?: {
             humanInput?: boolean;
             resultArtifacts?: { batchesPerThread?: number };
@@ -234,7 +249,9 @@ export function useAgentChat(
         }>(appId, '', { signal: lifetime.signal });
         if (lifetime.signal.aborted) return;
         setAppName(result.app.name);
+        setAppDescription(result.app.description ?? null);
         setTextOnly(result.interactionMode === 'text-only');
+        setAcceptsInputCapabilities(result.acceptsInputCapabilities === true);
         setHumanInput(result.capabilities?.humanInput === true);
         setSingleTask(result.singleTask === true);
         setResultSingleBatch(
@@ -471,7 +488,12 @@ export function useAgentChat(
   const send = async (
     content: string,
     draftSnapshot?: LangchainDraftSnapshot,
-    editSourceId?: string
+    editSourceId?: string,
+    configuredInput?: {
+      inputs: AgentTurnInputs;
+      fileDrafts: PendingAgentSubmission['fileDrafts'];
+      files: AgentInputFile[];
+    }
   ) => {
     if (
       !ready ||
@@ -485,10 +507,16 @@ export function useAgentChat(
       unconfirmed ||
       (lastRouteConversation.current &&
         lastRouteConversation.current !== view.conversationId) ||
-      !content.trim()
+      (!content.trim() && (!acceptsInputCapabilities || !configuredInput))
     )
       return;
-    if (!agentMessageFitsRequest(content, view.conversationId)) {
+    if (
+      !agentMessageFitsRequest(
+        content,
+        view.conversationId,
+        configuredInput?.inputs
+      )
+    ) {
       setError(
         new AgentRequestError(413, {
           code: 'AGENT_MESSAGE_TOO_LONG',
@@ -517,6 +545,15 @@ export function useAgentChat(
       submissionId: crypto.randomUUID(),
       content: content.trim(),
       ...(editSourceId ? { editSourceId } : {}),
+      ...configuredInput?.inputs,
+    };
+    const pendingMessage: AgentMessage = {
+      id: payload.submissionId,
+      role: 'user',
+      content: payload.content,
+      ...(configuredInput?.files.length
+        ? { metadata: { input_attachments: configuredInput.files } }
+        : {}),
     };
     if (actorId)
       useLangchainDraftStore.getState().rememberSubmission(actorId, {
@@ -524,6 +561,8 @@ export function useAgentChat(
         target: view.conversationId || 'new',
         ...payload,
         snapshot: draftSnapshot,
+        fileDrafts: configuredInput?.fileDrafts,
+        inputFiles: configuredInput?.files,
       });
     setBusy(true);
     setError(null);
@@ -532,10 +571,7 @@ export function useAgentChat(
       ...previous,
       run: undefined,
       runId: undefined,
-      messages: [
-        ...previous.messages,
-        { id: payload.submissionId, role: 'user', content: payload.content },
-      ],
+      messages: [...previous.messages, pendingMessage],
     }));
     let latest: AgentViewState = { ...view, run: undefined, runId: undefined };
     let editResult: EditSubmissionResult = {
@@ -580,6 +616,14 @@ export function useAgentChat(
             setPendingSubmissionId(null);
             if (editSourceId && !accepted)
               latest = editViewPrefix(latest, editSourceId);
+            if (!accepted && pendingMessage.metadata)
+              latest = {
+                ...latest,
+                messages: [
+                  ...latest.messages,
+                  { ...pendingMessage, id: acceptance.userMessageId },
+                ],
+              };
             latest = projectAgentView(latest, snapshot);
             setView(latest);
             if (!accepted) {
@@ -657,14 +701,20 @@ export function useAgentChat(
       );
       if (failure instanceof AgentRequestError && !latest.runId) {
         if (
-          failure.status >= 400 &&
-          failure.status < 500 &&
-          failure.status !== 408 &&
-          (failure.status !== 409 ||
-            [
-              'AGENT_RESULT_PROFILE_DISABLED',
-              'AGENT_EDIT_SOURCE_UNAVAILABLE',
-            ].includes(failure.detail?.code ?? ''))
+          agentInputRequirementsChanged(failure.detail?.code) ||
+          (failure.status >= 400 &&
+            failure.status < 500 &&
+            failure.status !== 408 &&
+            (failure.status !== 409 ||
+              [
+                'AGENT_RESULT_PROFILE_DISABLED',
+                'AGENT_EDIT_SOURCE_UNAVAILABLE',
+                'AGENT_EDIT_ATTACHMENTS_UNSUPPORTED',
+                'INPUT_FILE_CHANGED',
+                'INPUT_PROFILE_UNSUPPORTED',
+                'INPUT_CAPABILITIES_UNSUPPORTED',
+                'DIFY_MODE_UNSUPPORTED',
+              ].includes(failure.detail?.code ?? '')))
         ) {
           editResult = false;
           setView(view);
@@ -775,7 +825,9 @@ export function useAgentChat(
     view,
     draftScope,
     appName,
+    appDescription,
     textOnly,
+    acceptsInputCapabilities,
     humanInput,
     singleTask,
     resultSingleBatch,

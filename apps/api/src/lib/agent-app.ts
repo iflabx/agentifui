@@ -1,3 +1,4 @@
+import { isSingleConversation } from '@agentifui/shared';
 import { createDecipheriv, createHash } from 'node:crypto';
 
 import {
@@ -5,6 +6,8 @@ import {
   LANGCHAIN_CAPABILITIES,
   resolveBackendType,
 } from './agent-backends';
+import { langChainInputPath } from './langchain/input-profile';
+import type { LangChainConfig } from './langchain/transport';
 import { queryRowsWithPgSystemContext } from './pg-context';
 
 export const AGENT_CAPABILITIES = LANGCHAIN_CAPABILITIES;
@@ -15,13 +18,24 @@ export interface AgentApp {
   id: string;
   instanceId: string;
   name: string;
+  description?: string | null;
   baseUrl: string;
   apiKey: string;
   credentialVersion?: string;
   assistantId: string;
   fingerprint: string;
   humanInput?: boolean;
+  singleTurn?: boolean;
   resultProfileEnabled?: boolean;
+}
+
+export function langChainConfigForActor(
+  app: AgentApp,
+  actorId: string
+): LangChainConfig {
+  return app.backendType !== 'dify' && langChainInputPath(app.assistantId)
+    ? { ...app, scope: { actorId, appId: app.id } }
+    : app;
 }
 
 export function agentConfigFingerprint(
@@ -48,6 +62,7 @@ interface AgentAppRow {
   id: string;
   instance_id: string;
   display_name: string | null;
+  description?: string | null;
   base_url: string;
   config: Record<string, unknown> | null;
   key_value: string | null;
@@ -113,7 +128,7 @@ export async function resolveAgentApp(
   options: { allowDify?: boolean } = {}
 ): Promise<AgentApp> {
   const rows = await queryRowsWithPgSystemContext<AgentAppRow>(
-    `SELECT si.id::text, si.instance_id, si.display_name, si.config,
+    `SELECT si.id::text, si.instance_id, si.display_name, si.description, si.config,
        p.base_url, (
          SELECT key_value FROM api_keys
          WHERE service_instance_id = si.id AND is_default = TRUE
@@ -179,11 +194,15 @@ export async function resolveAgentApp(
     id: row.id,
     instanceId: row.instance_id,
     name: row.display_name || row.instance_id,
+    description: row.description ?? null,
     baseUrl,
     apiKey,
     credentialVersion: row.credential_version,
     assistantId,
     humanInput: backendType === 'langchain' && langchain?.human_input === true,
+    ...(isSingleConversation(row.config?.conversation_turns)
+      ? { singleTurn: true }
+      : {}),
     resultProfileEnabled:
       backendType === 'langchain' &&
       typeof langchain?.result_profile_enabled === 'boolean'

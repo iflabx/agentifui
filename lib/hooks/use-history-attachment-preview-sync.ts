@@ -21,7 +21,7 @@ function buildHistoryAttachmentPreviewSyncKey(messages: ChatMessage[]): string {
   return messages
     .map(
       message =>
-        `${message.id}:${message.dify_message_id || ''}:${message.text}:${
+        `${message.id}:${message.db_id || ''}:${message.dify_message_id || ''}:${message.difyResultFiles !== undefined}:${message.text}:${
           message.attachments
             ?.map(
               attachment =>

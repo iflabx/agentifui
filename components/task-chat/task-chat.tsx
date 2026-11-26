@@ -1,8 +1,11 @@
 'use client';
 
-import { AssistantMessage } from '@components/chat/messages/assistant-message/assistant-message';
-import { UserMessage } from '@components/chat/messages/user-message/user-message';
-import { FilePreviewCanvas } from '@components/file-preview/file-preview-canvas';
+import { ChatMessage } from '@components/chat/session/chat-message';
+import { ChatSessionView } from '@components/chat/session/chat-session-view';
+import {
+  useFollowChatOutput,
+  useRunProcessSelection,
+} from '@components/chat/session/use-session-presentation';
 import {
   WorkflowInputForm,
   type WorkflowInputFormRef,
@@ -17,10 +20,13 @@ import { useWorkflowExecution } from '@lib/hooks/use-workflow-execution';
 import {
   type TaskExecutionReservation,
   getConversationExecutions,
+  getExecutionById,
   reserveTaskExecution,
   updateExecutionStatus,
 } from '@lib/services/client/app-executions-api';
 import { useAppListStore } from '@lib/stores/app-list-store';
+import { moveTaskDraft, taskDraftKey } from '@lib/stores/chat-draft-session';
+import { useChatInputStore } from '@lib/stores/chat-input-store';
 import { useWorkflowExecutionStore } from '@lib/stores/workflow-execution-store';
 import type { AppExecution, ExecutionType } from '@lib/types/database';
 import { cn } from '@lib/utils';
@@ -30,16 +36,19 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 import {
+  hasDetailedTaskResult,
   mergeTaskExecutions,
   taskInputText,
   taskOutputText,
 } from './projection';
+import { TaskActions } from './task-actions';
 import { TaskProcess } from './task-process';
 
 interface TaskChatProps {
   instanceId?: string;
   appId?: string;
   conversationId?: string | null;
+  executionId?: string | null;
   taskType: ExecutionType;
 }
 
@@ -56,13 +65,18 @@ export function TaskChat(props: TaskChatProps) {
     generation: number;
   } | null>(null);
   const { session, loading } = useAuthSession();
+  const sessionId = useChatInputStore(state =>
+    state.actorId === session?.user.id
+      ? (state.actorSessionId ?? undefined)
+      : undefined
+  );
   const apps = useAppListStore(state => state.apps);
   const fetchApps = useAppListStore(state => state.fetchApps);
   const t = useTranslations('taskChat');
   useEffect(() => {
     if (session && apps.length === 0) void fetchApps();
   }, [session, apps.length, fetchApps]);
-  if (loading) return <p role="status">{t('loading')}</p>;
+  if (loading && !session) return <p role="status">{t('loading')}</p>;
   if (!session) return <a href="/login">{t('loginRequired')}</a>;
   const app = apps.find(item =>
     props.appId
@@ -70,6 +84,27 @@ export function TaskChat(props: TaskChatProps) {
       : item.instance_id === props.instanceId
   );
   if (!app) return <p role="status">{t('unavailable')}</p>;
+  if (props.executionId)
+    return (
+      <TaskExecutionEntry
+        key={JSON.stringify([
+          session.user.id,
+          app.id,
+          props.taskType,
+          props.executionId,
+        ])}
+        executionId={props.executionId}
+        actorId={session.user.id}
+        appId={app.id}
+        instanceId={app.instance_id}
+        appName={app.display_name || app.instance_id}
+        taskType={props.taskType}
+        sessionId={sessionId}
+        executionEnabled={
+          app.config?.app_metadata?.dify_apptype === props.taskType
+        }
+      />
+    );
   const nextId = props.conversationId ?? null;
   if (
     route?.actorId !== session.user.id ||
@@ -94,28 +129,41 @@ export function TaskChat(props: TaskChatProps) {
   const common = {
     ...props,
     appId: app.id,
+    appName: app.display_name || app.instance_id,
     instanceId: app.instance_id,
     actorId: session.user.id,
+    sessionId,
     executionEnabled: app.config?.app_metadata?.dify_apptype === props.taskType,
     onReserved: (id: string) => {
       if (!props.conversationId)
         setAdopted({ actorId: session.user.id, appId: app.id, id });
     },
   };
-  const key = JSON.stringify([session.user.id, app.id, route?.generation]);
+  return (
+    <TaskChatRunner
+      key={JSON.stringify([session.user.id, app.id, route?.generation])}
+      {...common}
+    />
+  );
+}
+
+function TaskChatRunner(props: ResolvedProps) {
   return props.taskType === 'workflow' ? (
-    <WorkflowTaskChat key={key} {...common} />
+    <WorkflowTaskChat {...props} />
   ) : (
-    <CompletionTaskChat key={key} {...common} />
+    <CompletionTaskChat {...props} />
   );
 }
 
 type ResolvedProps = TaskChatProps & {
   appId: string;
+  appName: string;
   instanceId: string;
   actorId: string;
+  sessionId?: string;
   executionEnabled: boolean;
   onReserved: (id: string) => void;
+  focusedExecution?: AppExecution;
 };
 type TaskRunner = {
   isExecuting: boolean;
@@ -159,9 +207,12 @@ function CompletionTaskChat(props: ResolvedProps) {
 
 function TaskChatSession({
   appId,
+  appName,
   instanceId,
   conversationId: initialConversationId,
+  focusedExecution,
   actorId,
+  sessionId,
   executionEnabled,
   onReserved,
   runner,
@@ -171,7 +222,11 @@ function TaskChatSession({
   const [conversationId, setConversationId] = useState(
     initialConversationId ?? null
   );
-  const [executions, setExecutions] = useState<AppExecution[]>([]);
+  const draftKey = taskDraftKey(actorId, sessionId, appId, conversationId);
+  const [executions, setExecutions] = useState<AppExecution[]>(
+    focusedExecution ? [focusedExecution] : []
+  );
+  const [focusPending, setFocusPending] = useState(Boolean(focusedExecution));
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(Boolean(initialConversationId));
@@ -182,13 +237,37 @@ function TaskChatSession({
     null
   );
   const [result, setResult] = useState<AppExecution | null>(null);
+  const process = useRunProcessSelection(
+    JSON.stringify([actorId, sessionId, appId]),
+    id => executions.some(execution => execution.id === id)
+  );
   const form = useRef<WorkflowInputFormRef>(null);
   const mounted = useRef(false);
   const request = useRef(0);
   const submission = useRef<{ id: string; signature: string } | null>(null);
-  const scroll = useRef<HTMLDivElement>(null);
-  const following = useRef(true);
   const nodes = useWorkflowExecutionStore(state => state.nodes);
+  const scroll = useFollowChatOutput({
+    scope: conversationId,
+    messages: executions,
+    activity: nodes,
+    streamedText: runner.generatedText,
+    paused: focusPending,
+    followLatest: !focusedExecution,
+  });
+  useEffect(() => {
+    if (loading || !focusPending || !focusedExecution) return;
+    const row = Array.from(
+      scroll.ref.current?.querySelectorAll<HTMLElement>(
+        '[data-execution-id]'
+      ) ?? []
+    ).find(element => element.dataset.executionId === focusedExecution.id);
+    if (row && scroll.ref.current) {
+      const area = scroll.ref.current;
+      area.scrollTop +=
+        row.getBoundingClientRect().top - area.getBoundingClientRect().top;
+    }
+    setFocusPending(false);
+  }, [focusPending, focusedExecution, loading, scroll.ref]);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -230,16 +309,14 @@ function TaskChatSession({
     )
       setExecutions(previous => mergeTaskExecutions(previous, [current]));
   }, [runner.currentExecution, conversationId, actorId]);
-  useEffect(() => {
-    if (following.current && scroll.current)
-      scroll.current.scrollTop = scroll.current.scrollHeight;
-  }, [executions, runner.generatedText, nodes]);
   const busy = submitting || runner.isExecuting;
   const unresolved =
     !busy &&
     executions.some(execution =>
       ['pending', 'running'].includes(execution.status)
     );
+  const welcome =
+    executionEnabled && !conversationId && executions.length === 0;
   const prepareAgain = async (execution: AppExecution) => {
     if (busy || loadFailed) return;
     if (['pending', 'running'].includes(execution.status)) {
@@ -286,6 +363,10 @@ function TaskChatSession({
       if (!mounted.current) return false;
       if (!reserved.success) throw reserved.error;
       const saved = reserved.data;
+      moveTaskDraft(
+        draftKey,
+        taskDraftKey(actorId, sessionId, appId, saved.conversationId)
+      );
       onReserved(saved.conversationId);
       setConversationId(saved.conversationId);
       const url = new URL(window.location.href);
@@ -325,21 +406,54 @@ function TaskChatSession({
     }
   };
   return (
-    <div
-      className="flex h-full min-h-0 flex-col bg-stone-100 text-stone-900 dark:bg-stone-800 dark:text-stone-100"
-      data-task-chat
+    <ChatSessionView
+      appLayout
+      appTitle={appName}
+      jumpToBottom={false}
+      filePreview
+      showWelcome={welcome}
+      scrollProps={scroll}
+      composer={
+        <div
+          data-task-chat={welcome ? '' : undefined}
+          className={cn('mx-auto w-full', widthClass)}
+        >
+          {(error || runner.error) && (
+            <p role="alert" className="mb-2 text-sm text-red-600">
+              {error ||
+                (runner.error === 'TASK_OUTCOME_UNKNOWN'
+                  ? t('unknown')
+                  : runner.error)}
+            </p>
+          )}
+          <WorkflowInputForm
+            ref={form}
+            instanceId={instanceId}
+            chat
+            draftKey={draftKey}
+            showIntroduction={welcome}
+            onExecute={execute}
+            isExecuting={
+              busy || loading || loadFailed || unresolved || !executionEnabled
+            }
+            onStop={runner.isExecuting ? runner.stop : undefined}
+          />
+        </div>
+      }
+      preview={
+        result && (
+          <ResultViewer
+            result={{ outputs: result.outputs }}
+            execution={result}
+            appId={instanceId}
+            onClose={() => setResult(null)}
+          />
+        )
+      }
     >
-      <div
-        ref={scroll}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
-        onScroll={event => {
-          const area = event.currentTarget;
-          following.current =
-            area.scrollHeight - area.scrollTop - area.clientHeight < 100;
-        }}
-      >
+      <div data-task-chat>
         {!executionEnabled && <p role="alert">{t('unavailable')}</p>}
-        <div className={cn('mx-auto w-full py-6', widthClass, paddingClass)}>
+        <div className={cn('mx-auto w-full py-4', widthClass, paddingClass)}>
           {hasMore && (
             <button
               disabled={loading}
@@ -360,126 +474,236 @@ function TaskChatSession({
               </button>
             </p>
           )}
-          {!executions.length && !loading && (
-            <p className="py-12 text-center font-serif text-stone-500">
-              {t('welcome')}
-            </p>
-          )}
-          {executions.map(execution => {
-            const live = busy && activeExecutionId === execution.id;
-            const unknown =
-              !live &&
-              (['pending', 'running'].includes(execution.status) ||
-                execution.error_message === 'CLIENT_TASK_INTERRUPTED');
-            const output =
-              live && runner.generatedText
-                ? runner.generatedText
-                : taskOutputText(execution.outputs);
-            return (
-              <section
-                key={execution.id}
-                data-execution-id={execution.id}
-                className="mb-8 min-w-0"
-              >
-                <UserMessage
-                  id={`task-${execution.id}-input`}
-                  content={
-                    taskInputText(execution.inputs) || t('parameterTask')
-                  }
-                  attachments={extractWorkflowInputAttachments(
-                    execution.inputs,
-                    instanceId
-                  )}
-                  conversationAppId={instanceId}
-                />
-                <div className="min-w-0">
-                  <TaskProcess execution={execution} live={live} />
-                  {output && (
-                    <AssistantMessage
-                      id={`task-${execution.id}-output`}
-                      content={output}
-                      isStreaming={live}
-                      wasManuallyStopped={execution.status === 'stopped'}
-                    />
-                  )}
-                  <p
-                    role={execution.status === 'failed' ? 'alert' : 'status'}
-                    className="text-xs text-stone-500"
-                  >
-                    {t(
-                      unknown
-                        ? 'unknown'
-                        : live
-                          ? 'running'
-                          : execution.status === 'deleted'
-                            ? 'unavailable'
-                            : execution.status
-                    )}
-                  </p>
-                  {execution.error_message &&
-                    execution.error_message !== 'CLIENT_TASK_INTERRUPTED' && (
-                      <p className="mt-2 text-sm text-red-600">
-                        {execution.error_message}
-                      </p>
-                    )}
-                  <div className="mt-2 flex gap-4 text-xs">
-                    <button
-                      disabled={busy || loadFailed}
-                      onClick={() => void prepareAgain(execution)}
-                      className="underline"
-                    >
-                      {t(
-                        ['pending', 'running'].includes(execution.status)
-                          ? 'recoverTask'
-                          : 'runAgain'
-                      )}
-                    </button>
-                    {execution.outputs && (
-                      <button
-                        onClick={() => setResult(execution)}
-                        className="underline"
-                      >
-                        {t('viewResult')}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </section>
-            );
-          })}
+          {executions.map(execution => (
+            <TaskExecutionTurn
+              key={execution.id}
+              execution={execution}
+              instanceId={instanceId}
+              live={busy && activeExecutionId === execution.id}
+              streamedText={runner.generatedText}
+              processOpen={process.selected === execution.id}
+              onProcessOpen={open => process.setOpen(execution.id, open)}
+              processSuspended={Boolean(result)}
+              reuseDisabled={busy || loadFailed}
+              onReuse={() => void prepareAgain(execution)}
+              onShowResult={() => setResult(execution)}
+            />
+          ))}
         </div>
       </div>
-      <div
-        className={cn('mx-auto w-full shrink-0 pb-4', widthClass, paddingClass)}
-      >
-        {(error || runner.error) && (
-          <p role="alert" className="mb-2 text-sm text-red-600">
-            {error ||
-              (runner.error === 'TASK_OUTCOME_UNKNOWN'
-                ? t('unknown')
-                : runner.error)}
+    </ChatSessionView>
+  );
+}
+
+function TaskExecutionTurn({
+  execution,
+  instanceId,
+  live = false,
+  streamedText,
+  processOpen,
+  onProcessOpen,
+  processSuspended,
+  reuseDisabled = false,
+  onReuse,
+  onShowResult,
+}: {
+  execution: AppExecution;
+  instanceId: string;
+  live?: boolean;
+  streamedText?: string;
+  processOpen?: boolean;
+  onProcessOpen?: (open: boolean) => void;
+  processSuspended?: boolean;
+  reuseDisabled?: boolean;
+  onReuse?: () => void;
+  onShowResult: () => void;
+}) {
+  const t = useTranslations('taskChat');
+  const unknown =
+    !live &&
+    (['pending', 'running'].includes(execution.status) ||
+      execution.error_message === 'CLIENT_TASK_INTERRUPTED');
+  const output =
+    live && streamedText ? streamedText : taskOutputText(execution.outputs);
+  return (
+    <section data-execution-id={execution.id} className="mb-8 min-w-0">
+      <ChatMessage
+        role="user"
+        id={`task-${execution.id}-input`}
+        content={taskInputText(execution.inputs) || t('parameterTask')}
+        attachments={extractWorkflowInputAttachments(
+          execution.inputs,
+          instanceId
+        )}
+        conversationAppId={instanceId}
+      />
+      <div className="min-w-0">
+        <TaskProcess
+          execution={execution}
+          live={live}
+          open={processOpen}
+          onOpenChange={onProcessOpen}
+          suspended={processSuspended}
+        />
+        {output && (
+          <ChatMessage
+            role="assistant"
+            id={`task-${execution.id}-output`}
+            content={output}
+            isStreaming={live}
+            wasManuallyStopped={execution.status === 'stopped'}
+          />
+        )}
+        {unknown && (
+          <p role="status" className="text-xs text-stone-500">
+            {t('unknown')}
           </p>
         )}
-        <WorkflowInputForm
-          ref={form}
-          instanceId={instanceId}
-          chat
-          onExecute={execute}
-          isExecuting={
-            busy || loading || loadFailed || unresolved || !executionEnabled
-          }
-          onStop={runner.isExecuting ? runner.stop : undefined}
-        />
+        {execution.error_message &&
+          execution.error_message !== 'CLIENT_TASK_INTERRUPTED' && (
+            <p role="alert" className="mt-2 text-sm text-red-600">
+              {execution.error_message}
+            </p>
+          )}
+        <div className="mt-2 flex items-center gap-4 text-xs">
+          {onReuse &&
+            (['pending', 'running'].includes(execution.status) ? (
+              <button
+                type="button"
+                disabled={reuseDisabled}
+                onClick={onReuse}
+                className="underline"
+              >
+                {t('recoverTask')}
+              </button>
+            ) : (
+              <TaskActions disabled={reuseDisabled} onReuse={onReuse} />
+            ))}
+          {hasDetailedTaskResult(execution.outputs) && (
+            <button onClick={onShowResult} className="underline">
+              {t('viewResult')}
+            </button>
+          )}
+        </div>
       </div>
-      {result && (
-        <ResultViewer
-          result={result.outputs}
-          execution={result}
-          appId={instanceId}
-          onClose={() => setResult(null)}
-        />
-      )}
-      <FilePreviewCanvas />
-    </div>
+    </section>
+  );
+}
+
+function TaskExecutionEntry({
+  executionId,
+  actorId,
+  appId,
+  appName,
+  instanceId,
+  taskType,
+  sessionId,
+  executionEnabled,
+}: Omit<ResolvedProps, 'onReserved'> & { executionId: string }) {
+  const t = useTranslations('taskChat');
+  const tComposer = useTranslations('pages.chatflow.composer');
+  const { widthClass, paddingClass } = useChatWidth();
+  const [execution, setExecution] = useState<AppExecution | null>();
+  const [retry, setRetry] = useState(0);
+  const [showResult, setShowResult] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void getExecutionById(executionId)
+      .then(response => {
+        if (!active) return;
+        const record = response.success ? response.data : null;
+        setExecution(
+          record &&
+            record.id === executionId &&
+            record.user_id === actorId &&
+            record.service_instance_id === appId &&
+            record.execution_type === taskType &&
+            record.status !== 'deleted'
+            ? record
+            : null
+        );
+      })
+      .catch(() => {
+        if (active) setExecution(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [actorId, appId, executionId, retry, taskType]);
+  if (execution?.conversation_id)
+    return (
+      <TaskChatRunner
+        appId={appId}
+        actorId={actorId}
+        appName={appName}
+        instanceId={instanceId}
+        sessionId={sessionId}
+        taskType={taskType}
+        executionEnabled={executionEnabled}
+        conversationId={execution.conversation_id}
+        focusedExecution={execution}
+        onReserved={() => undefined}
+      />
+    );
+
+  return (
+    <ChatSessionView
+      appLayout
+      appTitle={appName}
+      filePreview
+      jumpToBottom={false}
+      composer={
+        execution && executionEnabled ? (
+          <div
+            className={cn('mx-auto w-full px-4 text-right text-sm', widthClass)}
+          >
+            <a
+              className="underline underline-offset-4"
+              href={`/apps/${taskType}/${encodeURIComponent(instanceId)}`}
+            >
+              {tComposer('newTask')}
+            </a>
+          </div>
+        ) : undefined
+      }
+      preview={
+        execution &&
+        showResult && (
+          <ResultViewer
+            result={{ outputs: execution.outputs }}
+            execution={execution}
+            appId={instanceId}
+            onClose={() => setShowResult(false)}
+          />
+        )
+      }
+    >
+      <div className={cn('mx-auto w-full py-4', widthClass, paddingClass)}>
+        {execution === undefined ? (
+          <p role="status">{t('loading')}</p>
+        ) : execution ? (
+          <TaskExecutionTurn
+            execution={execution}
+            instanceId={instanceId}
+            processSuspended={showResult}
+            onShowResult={() => setShowResult(true)}
+          />
+        ) : (
+          <p role="alert">
+            {t('historyFailed')}{' '}
+            <button
+              type="button"
+              className="underline"
+              onClick={() => {
+                setExecution(undefined);
+                setRetry(previous => previous + 1);
+              }}
+            >
+              {t('retry')}
+            </button>
+          </p>
+        )}
+      </div>
+    </ChatSessionView>
   );
 }

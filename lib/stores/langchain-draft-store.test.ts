@@ -1,3 +1,6 @@
+import { useAttachmentStore } from './attachment-store';
+import { syncChatDraftActor } from './chat-draft-lifecycle';
+import { useChatInputStore } from './chat-input-store';
 import {
   langchainDraftScope,
   useLangchainDraftStore,
@@ -5,9 +8,71 @@ import {
 
 describe('LangChain draft store', () => {
   beforeEach(() => {
+    sessionStorage.clear();
     useLangchainDraftStore.getState().setActor(null);
     useLangchainDraftStore.getState().setActor('actor');
   });
+
+  it.each(['langchain-app', 'shared-dify-app'])(
+    'restores %s text and scoped files across reload and conversation adoption',
+    appId => {
+      useLangchainDraftStore.setState({ actorId: null, actorEpoch: 0 });
+      useChatInputStore.setState({ actorId: null, actorEpoch: 0 });
+      syncChatDraftActor('actor', 'session');
+      const first = useLangchainDraftStore.getState();
+      const original = first.selectScope(appId, 'new:0', false)!;
+      first.setText(original, 'Unsent agent question');
+      const bucket = (scope: string) =>
+        JSON.stringify(['agent-input', scope, 'inputs', 'doc']);
+      const fileScope = bucket(original);
+      const uploads = useAttachmentStore.getState();
+      uploads.addFiles(
+        [new File(['synthetic'], 'report.txt', { type: 'text/plain' })],
+        fileScope
+      );
+      const attached = uploads.getFiles(fileScope)[0];
+      uploads.finishUpload(
+        fileScope,
+        attached.id,
+        uploads.beginUpload(fileScope, attached.id)!,
+        {
+          uploadedId: 'upstream-reference',
+          appId,
+          actorId: 'actor',
+          actorEpoch: first.actorEpoch,
+        }
+      );
+      first.bindConversation(original, appId, 'existing-conversation');
+      useChatInputStore.getState().setActor(null);
+      useLangchainDraftStore.getState().setActor(null);
+      useAttachmentStore.getState().resetAll();
+      syncChatDraftActor('actor', 'session');
+      const reopened = useLangchainDraftStore
+        .getState()
+        .selectScope(appId, 'existing-conversation', false)!;
+      expect(useLangchainDraftStore.getState().drafts[reopened].text).toBe(
+        'Unsent agent question'
+      );
+      uploads.restoreFiles(bucket(reopened));
+      expect(uploads.getFiles(bucket(reopened))).toEqual([
+        expect.objectContaining({
+          name: 'report.txt',
+          uploadedId: 'upstream-reference',
+          status: 'success',
+        }),
+      ]);
+      const unrelated = useLangchainDraftStore
+        .getState()
+        .selectScope(appId, 'different-conversation', false)!;
+      uploads.restoreFiles(bucket(unrelated));
+      expect(
+        useLangchainDraftStore.getState().drafts[unrelated]
+      ).toBeUndefined();
+      expect(uploads.getFiles(bucket(unrelated))).toEqual([]);
+      syncChatDraftActor(null);
+      expect(sessionStorage.length).toBe(0);
+    }
+  );
 
   function scope(app: string, target: string) {
     const state = useLangchainDraftStore.getState();

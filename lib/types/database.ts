@@ -142,6 +142,7 @@ export interface Provider {
 // ServiceInstanceConfig type definition
 // Used to standardize the structure of ServiceInstance.config
 export interface ServiceInstanceConfig {
+  conversation_turns?: import('../../packages/shared/src/conversation-turns').ConversationTurns;
   task_input?: { text_variable: string | null };
   backend_type?: 'dify' | 'langchain';
   interaction_protocol?: 'ag-ui/1.0';

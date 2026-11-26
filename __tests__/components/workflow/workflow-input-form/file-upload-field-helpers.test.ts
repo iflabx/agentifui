@@ -81,6 +81,9 @@ describe('file upload field helpers', () => {
     expect(info.hint).toContain('supportTypes');
     expect(info.accept).toContain('.png');
     expect(info.accept).not.toContain('*');
+    expect(
+      getFileTypeInfo({ ...slot, extensions: ['png', 'mp4'] }, t).accept
+    ).toBe('.png');
     expect(getFileSizeHint(slot, t)).toContain('10 Bytes');
     expect(getFileSizeHint(undefined, t)).toBe('');
   });

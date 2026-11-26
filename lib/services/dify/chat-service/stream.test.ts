@@ -1,4 +1,8 @@
 import { useChatflowExecutionStore } from '@lib/stores/chatflow-execution-store';
+import {
+  normalizeCompletedAssistantReply,
+  parseThinkBlocks,
+} from '@lib/utils/think-parser';
 import { ReadableStream } from 'stream/web';
 import { TextDecoder, TextEncoder } from 'util';
 
@@ -33,6 +37,115 @@ async function collectStream(
 }
 
 describe('streamDifyChat agent_thought handling', () => {
+  async function collectEvents(events: unknown[]) {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: createSseBody(events),
+    });
+    const response = await streamDifyChat(
+      { query: 'test', user: 'user-1', response_mode: 'streaming' },
+      'app-1'
+    );
+    return collectStream(response.answerStream);
+  }
+
+  it('does not replay reasoning from an identical complete replacement snapshot', async () => {
+    const answer = '<think>analysis</think>Answer';
+    const content = await collectEvents([
+      { event: 'message', answer },
+      { event: 'message_replace', answer },
+      { event: 'message_replace', answer },
+      { event: 'message_end', metadata: {} },
+    ]);
+    expect(content).toBe(answer);
+  });
+
+  it('appends a replacement answer extension without repeating its reasoning', async () => {
+    const content = await collectEvents([
+      { event: 'message', answer: '<think>analysis</think>Answer' },
+      {
+        event: 'message_replace',
+        answer: '<think>analysis</think>Answer continued',
+      },
+      { event: 'message_end', metadata: {} },
+    ]);
+    expect(content).toBe('<think>analysis</think>Answer continued');
+  });
+
+  it('discards a superseded partial tag before consuming later answer chunks', async () => {
+    const content = await collectEvents([
+      { event: 'message', answer: '<think>reason</thi' },
+      { event: 'message_replace', answer: 'Done' },
+      { event: 'message', answer: ' plus' },
+      { event: 'message_end', metadata: {} },
+    ]);
+    expect(content).toBe('<think>reason</think>Done plus');
+  });
+
+  it('recovers a real closing tag after an unmatched inline backtick at completion', async () => {
+    const answer = '<think>Consider the ` character.</think>Visible answer.';
+    const content = await collectEvents([
+      ...Array.from(answer, part => ({ event: 'message', answer: part })),
+      { event: 'message_end', metadata: {} },
+    ]);
+    const normalized = normalizeCompletedAssistantReply(content, 'INCOMPLETE');
+    expect(normalized.usedFallback).toBe(false);
+    expect(
+      parseThinkBlocks(normalized.content)
+        .filter(block => block.type === 'text')
+        .map(block => block.content)
+        .join('')
+        .trim()
+    ).toBe('Visible answer.');
+  });
+
+  it.each([true, false])(
+    'retains missing closure for completed answer recovery (message_end=%s)',
+    withEnd => {
+      const raw = '<think>Plan steps\n\n**最终回复**：\nThe visible answer.';
+      return collectEvents([
+        { event: 'message', answer: raw },
+        ...(withEnd ? [{ event: 'message_end', metadata: {} }] : []),
+      ]).then(content => {
+        const normalized = normalizeCompletedAssistantReply(
+          content,
+          'INCOMPLETE'
+        );
+        expect(normalized.usedFallback).toBe(false);
+        expect(
+          parseThinkBlocks(normalized.content)
+            .filter(block => block.type === 'text')
+            .map(block => block.content)
+            .join('')
+            .trim()
+        ).toBe('The visible answer.');
+      });
+    }
+  );
+
+  it.each([
+    'Example:\n```xml\n<think>sample</think>\n```\nAnswer.',
+    'Use `<think>sample</think>` literally.',
+    'Example:\n~~~xml\n<think>sample</think>\n~~~\nAnswer.',
+  ])(
+    'preserves literal tags across every possible SSE chunk boundary: %s',
+    async answer => {
+      for (let split = 1; split < answer.length; split += 1) {
+        const content = await collectEvents([
+          { event: 'message', answer: answer.slice(0, split) },
+          { event: 'message', answer: answer.slice(split) },
+          { event: 'message_replace', answer },
+          { event: 'message_end', metadata: {} },
+        ]);
+        expect(content).toBe(answer);
+        expect(parseThinkBlocks(content)).toEqual([
+          { type: 'text', content: answer },
+        ]);
+      }
+    }
+  );
+
   beforeEach(() => {
     jest.spyOn(console, 'log').mockImplementation(() => undefined);
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);

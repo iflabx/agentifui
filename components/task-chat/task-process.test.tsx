@@ -26,6 +26,7 @@ it('restores each round hierarchy without borrowing live nodes or showing histor
   const execution = (id: string): AppExecution =>
     ({
       id,
+      status: 'completed',
       metadata: { task_process_nodes: [saved] },
     }) as unknown as AppExecution;
   useWorkflowExecutionStore.setState({
@@ -46,6 +47,10 @@ it('restores each round hierarchy without borrowing live nodes or showing histor
     </>
   );
   fireEvent.click(screen.getAllByRole('button', { name: 'view' })[0]);
+  expect(document.querySelector('[data-execution-process-panel]')).toHaveClass(
+    'fixed',
+    'md:right-4'
+  );
   expect(screen.queryByText('Unrelated live process')).not.toBeInTheDocument();
   fireEvent.click(
     screen.getByRole('button', { name: /iteration.*status.unknown/ })
@@ -57,15 +62,52 @@ it('restores each round hierarchy without borrowing live nodes or showing histor
   expect(screen.getAllByText('roundIteration')).toHaveLength(1);
 });
 
-it('shows an explicit absence of saved process rather than unrelated live data', () => {
-  render(
+it('shows missing saved workflow details only in the side panel', () => {
+  const { container } = render(
     <TaskProcess
-      execution={{ id: 'old', metadata: {} } as AppExecution}
+      execution={
+        { id: 'old', metadata: {}, execution_type: 'workflow' } as AppExecution
+      }
       live={false}
     />
   );
-  expect(screen.getByText('noProcess')).toBeInTheDocument();
+  expect(screen.queryByText('empty')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'view' }));
+  expect(screen.getByText('empty')).toBeInTheDocument();
+  expect(container).not.toContainElement(screen.getByText('empty'));
   expect(
     savedTaskNodes({ task_process_nodes: [{ ...saved, iterations: [null] }] })
   ).toEqual([]);
+});
+
+it('does not display a concurrent Workflow process in a text generation task', () => {
+  useWorkflowExecutionStore.setState({
+    nodes: [
+      {
+        id: 'workflow-step',
+        title: 'Unrelated Workflow step',
+        description: '',
+        status: 'running',
+        visible: true,
+      },
+    ],
+  });
+  render(
+    <TaskProcess
+      execution={
+        {
+          id: 'textgen',
+          metadata: {},
+          execution_type: 'text-generation',
+          status: 'running',
+        } as AppExecution
+      }
+      live
+    />
+  );
+  expect(screen.getByText('status.running')).toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: 'view' })
+  ).not.toBeInTheDocument();
+  expect(screen.queryByText('Unrelated Workflow step')).not.toBeInTheDocument();
 });

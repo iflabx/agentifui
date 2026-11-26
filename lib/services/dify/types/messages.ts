@@ -19,6 +19,7 @@ export interface ConversationMessage {
   query: string;
   answer: string;
   message_files: DifyMessageFile[];
+  result_files?: { key: string; image: boolean; name: string; size: number }[];
   created_at: number;
   feedback: DifyMessageFeedback | null;
   retriever_resources: DifyRetrieverResource[];

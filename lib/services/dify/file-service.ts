@@ -12,6 +12,14 @@ import type {
 // Points to our backend proxy API
 const DIFY_API_BASE_URL = '/api/dify';
 
+export function difyResultFilePath(
+  appId: string,
+  messageId: string,
+  fileId: string
+): string {
+  return `${DIFY_API_BASE_URL}/${encodeURIComponent(appId)}/result-files/${encodeURIComponent(messageId)}/${encodeURIComponent(fileId)}`;
+}
+
 /**
  * Upload a single file to Dify (via backend proxy).
  *
@@ -87,43 +95,7 @@ export async function previewDifyFile(
   fileId: string,
   options: DifyFilePreviewOptions = {}
 ): Promise<DifyFilePreviewResponse> {
-  const { as_attachment = false, preview_url } = options;
-
-  if (preview_url && !preview_url.startsWith('/api/dify/')) {
-    try {
-      const signedUrl = new URL(
-        preview_url,
-        typeof window === 'undefined'
-          ? 'http://localhost'
-          : window.location.origin
-      );
-      if (as_attachment) {
-        signedUrl.searchParams.set('as_attachment', 'true');
-      }
-
-      if (!['http:', 'https:'].includes(signedUrl.protocol)) {
-        throw new Error('Invalid file preview URL');
-      }
-      const response = await fetch(signedUrl.toString(), { method: 'GET' });
-      if (response.ok) {
-        return {
-          content: await response.blob(),
-          headers: {
-            contentType:
-              response.headers.get('Content-Type') ||
-              'application/octet-stream',
-            contentLength: response.headers.get('Content-Length')
-              ? parseInt(response.headers.get('Content-Length')!, 10)
-              : undefined,
-            contentDisposition:
-              response.headers.get('Content-Disposition') || undefined,
-            cacheControl: response.headers.get('Cache-Control') || undefined,
-            acceptRanges: response.headers.get('Accept-Ranges') || undefined,
-          },
-        };
-      }
-    } catch {}
-  }
+  const { as_attachment = false, resultMessageId } = options;
 
   // Build query parameters
   const searchParams = new URLSearchParams();
@@ -132,12 +104,17 @@ export async function previewDifyFile(
   }
 
   const queryString = searchParams.toString();
-  const slug = `files/${fileId}/preview${queryString ? `?${queryString}` : ''}`;
-  const apiUrl = `${DIFY_API_BASE_URL}/${appId}/${slug}`;
+  const filePath = resultMessageId
+    ? difyResultFilePath(appId, resultMessageId, fileId)
+    : `${DIFY_API_BASE_URL}/${encodeURIComponent(appId)}/files/${encodeURIComponent(fileId)}/preview`;
+  const apiUrl = `${filePath}${queryString ? `?${queryString}` : ''}`;
 
   try {
     const response = await fetch(apiUrl, {
       method: 'GET',
+      cache: 'no-store',
+      credentials: 'same-origin',
+      redirect: 'error',
     });
 
     if (!response.ok) {

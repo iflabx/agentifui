@@ -12,6 +12,7 @@ import type { AgentInputCapabilities } from '../../packages/shared/src/agent-inp
 import { ChatflowInputArea } from './chatflow-input-area';
 
 let mockDescription: string | null;
+let mockName: string | null;
 
 jest.mock('@lib/auth/better-auth/react-hooks', () => ({
   useAuthSession: () => ({
@@ -27,7 +28,7 @@ jest.mock('@lib/hooks/use-chat-input-app', () => ({
   useChatInputApp: () => ({
     instance: {
       id: 'service',
-      display_name: 'Example agent',
+      display_name: mockName,
       description: mockDescription,
     },
     failed: false,
@@ -93,6 +94,7 @@ const props = { instanceId: 'app', onSubmit: jest.fn() };
 beforeEach(() => {
   jest.clearAllMocks();
   mockDescription = 'Example initialization guidance';
+  mockName = 'Example agent';
   useChatInputStore.getState().setActor('actor');
   useChatInputStore.getState().clearAllMessages();
   useChatInputStore
@@ -123,10 +125,16 @@ beforeEach(() => {
   }));
 });
 
-it('shows the admin description above the composer using assistant text styles and muted settings', () => {
+it('shows the app name above the muted admin description and composer', () => {
   const { container } = render(<ChatflowInputArea {...props} />);
   const beforeInput = screen.getByTestId('before-input');
   expect(beforeInput).toHaveTextContent('Example initialization guidance');
+  expect(screen.getAllByText('Example initialization guidance')).toHaveLength(
+    1
+  );
+  const name = container.querySelector('[data-chatflow-name]');
+  expect(name).toHaveTextContent('Example agent');
+  expect(name).toHaveClass('text-base', 'font-semibold', 'text-stone-800');
   expect(screen.getByLabelText('Topic')).toBeVisible();
   expect(screen.getByLabelText('Topic')).toHaveValue('General');
   expect(container.querySelector('details, summary')).toBeNull();
@@ -140,9 +148,10 @@ it('shows the admin description above the composer using assistant text styles a
     'markdown-body',
     'assistant-message-content',
     'text-base',
-    'text-stone-800',
-    'dark:text-stone-200'
+    'text-stone-500',
+    'dark:text-stone-400'
   );
+  expect(name?.nextElementSibling).toBe(description);
   expect(description?.closest('header')).not.toHaveClass('text-center');
   expect(useChatStore.getState().messages).toEqual([]);
 });
@@ -153,12 +162,28 @@ it.each([null, '', '   '])(
     mockDescription = description;
     const { container } = render(<ChatflowInputArea {...props} />);
     expect(container.querySelector('[data-chatflow-description]')).toBeNull();
-    expect(
-      screen.getByRole('heading', { name: 'Example agent' })
-    ).toBeVisible();
+    expect(container.querySelector('header')).toHaveTextContent(
+      'Example agent'
+    );
     expect(useChatStore.getState().messages).toEqual([]);
   }
 );
+
+it('omits an empty name without hiding the description', () => {
+  mockName = '   ';
+  const { container } = render(<ChatflowInputArea {...props} />);
+  expect(container.querySelector('[data-chatflow-name]')).toBeNull();
+  expect(
+    container.querySelector('[data-chatflow-description]')
+  ).toHaveTextContent('Example initialization guidance');
+});
+
+it('omits the introduction when both name and description are empty', () => {
+  mockName = null;
+  mockDescription = null;
+  const { container } = render(<ChatflowInputArea {...props} />);
+  expect(container.querySelector('header')).toBeNull();
+});
 
 it('preserves description line breaks and treats admin content as text, not HTML', () => {
   mockDescription = 'First line\nSecond line\n<script>alert("test")</script>';
@@ -207,9 +232,11 @@ it('removes initialization entirely once a conversation starts and restores it f
   expect(
     screen.queryByText('Example initialization guidance')
   ).not.toBeInTheDocument();
+  expect(screen.queryByText('Example agent')).not.toBeInTheDocument();
   act(() => useChatStore.getState().clearMessages());
   rerender(<ChatflowInputArea {...props} />);
   expect(screen.getByLabelText('Topic')).toBeVisible();
+  expect(screen.getByText('Example agent')).toBeVisible();
 });
 
 it('does not show initialization when reopening a saved conversation without loaded messages', () => {

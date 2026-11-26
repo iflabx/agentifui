@@ -201,10 +201,12 @@
         "uploading": "A carregar...",
         "uploadFailed": "Falha no carregamento",
         "capabilitiesUnavailable": "Não foi possível carregar os requisitos de entrada. Tente novamente.",
+        "capabilitiesChanged": "Os requisitos de entrada mudaram. Reveja os campos e anexos antes de voltar a enviar.",
         "capabilitiesUnsupported": "Requisitos de entrada não suportados. Verifique a configuração da aplicação.",
         "filesRequired": "Adicione os anexos necessários.",
         "uploadPending": "Aguarde os carregamentos ou remova os ficheiros com falha.",
         "localUploadUnavailable": "Esta finalidade não permite ficheiros locais.",
+        "chooseAttachmentField": "Use o botão de anexos para escolher um campo e depois selecione os ficheiros.",
         "retryUpload": "Tentar carregar novamente",
         "removeFile": "Remover ficheiro",
         "fileUploadError": "Erro no carregamento do ficheiro",
@@ -621,7 +623,7 @@
             "generation": "Geração de texto",
             "text": "Interação por texto"
           },
-          "textOnlyLimit": "Apenas texto: sem anexos, citações, voz ou variáveis personalizadas.",
+          "configuredInputs": "Os campos e anexos dependem da configuração da aplicação.",
           "noDescription": "Sem descrição",
           "defaultType": "Aplicação"
         },
@@ -1556,13 +1558,24 @@
             "title": "Configuração de Parâmetros Dify",
             "appTypeNote": "Aplicações com o tipo \"Modelo\" aparecerão no seletor de modelos da interface de chat"
           },
+          "conversationTurns": {
+            "label": "Turnos de conversa (opcional)",
+            "default": "Predefinição da aplicação",
+            "single": "Um turno",
+            "multi": "Vários turnos",
+            "independent": "Execuções independentes",
+            "note": "Selecione vários turnos apenas se a aplicação de origem tiver sido concebida para utilizar o contexto anterior.",
+            "independentNote": "Pode executar várias vezes na mesma janela, sem partilhar o contexto.",
+            "humanInputNote": "Um agente com confirmação humana trata uma tarefa por conversa.",
+            "typeMismatch": "O Dify indica {type}. O tipo de aplicação guardado não foi alterado."
+          },
           "backend": {
             "label": "Backend",
             "assistantId": "Assistant ID",
             "resultProfileLabel": "Enable Deep Agent result artifacts",
             "resultProfileNote": "Enable only for an assistant verified to support phase4.result.v1, regardless of its name. Disabling pauses new profile tasks; existing results remain readable.",
             "aguiLabel": "Usar o chat AG-UI comum em novas conversas das aplicações",
-            "aguiNote": "Apenas novas conversas de texto em aplicações chatbot do mercado. Ficheiros, citações, voz e variáveis personalizadas não são suportados. O modelo predefinido e o seletor não mudam. As conversas antigas mantêm o percurso compatível; as conversas públicas associadas não regressam ao percurso anterior.",
+            "aguiNote": "Aplica-se a novas conversas dos chatbots do catálogo. Os campos e anexos dependem da configuração da aplicação. As conversas existentes mantêm o modo original.",
             "langchainNote": "Use the assistant exposed by this service. Text and read-only tools only; service credentials stay on the server.",
             "validation": {
               "instanceIdRequired": "Enter an application identifier.",
@@ -2908,7 +2921,7 @@
       "copied": "Source copied.",
       "copyFailed": "Could not copy the source. Please select and copy its text."
     },
-    "textOnlyNote": "Esta conversa aceita apenas texto, sem ficheiros, citações, voz ou variáveis personalizadas. As conversas antigas mantêm as funcionalidades compatíveis.",
+    "textOnlyNote": "Esta aplicação não aceita anexos nesta conversa.",
     "cancelled": "Cancelado",
     "interrupted": "Interrompido",
     "loadMore": "Carregar mensagens anteriores",

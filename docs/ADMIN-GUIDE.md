@@ -85,6 +85,27 @@ Keep website account IDs, product instance identifiers, the service-instance UUI
 native Dify conversation IDs and LangChain thread/run IDs distinct. Users should
 follow product links rather than construct URLs from upstream identifiers.
 
+### Conversation Turns
+
+**Conversation turns** is optional in the create and edit forms. Single turn
+allows one submission per conversation; another task starts a new conversation.
+After the turn ends, the composer is replaced by **Start new task**. The
+existing conversation and its results stay readable.
+Multi-turn allows follow-up in the same upstream conversation. Select it only
+when the application is designed to use earlier context.
+
+- **Dify:** Sync reads the app mode from `/info`. It prefills a recognized
+  subtype for new applications and reports a mismatch without changing an
+  existing subtype. Chatbot and Agent get a multi-turn default when no choice
+  is set. Chatflow mode does not reveal whether the app uses prior context;
+  select its turn policy manually. An unset Chatflow keeps its single-turn behavior.
+- **LangChain:** Set the turn policy manually. Leaving it unset keeps the
+  existing behavior. Agents that use the human-confirmation profile remain
+  single-task per conversation.
+- **Workflow and text generation:** These use independent runs, not
+  conversational turns. They can run several times in one window without
+  carrying context forward.
+
 ### Check Configuration Without Saving
 
 The application create/edit form's top action row includes **Check configuration**,
@@ -146,11 +167,10 @@ addresses, credentials and raw diagnostic responses are not added to cards.
    upstream application's model is disabled or its key cannot call that app.
 
 For an application-marketplace **chatbot**, the form offers an opt-in shared
-AG-UI text-only interaction. Enable it only for a compatible chatbot without
-required unsupported inputs. It controls new conversations; existing
-conversations retain their own compatible persistence path. Do not enable it
-for workflows, chatflows, model-selector entries or applications that need
-attachments/custom inputs. Do not switch modes to work around a failed request.
+AG-UI interaction. It controls new conversations. Existing conversations keep
+their original persistence path. Enable it for compatible chatbots and verify
+the configured input fields and file limits with an ordinary user. Workflows,
+Chatflows and model-selector entries keep their native interaction modes.
 
 [Dify integration](DIFY-INTEGRATION.md) documents compatibility and current
 administrator-only restrictions on workflow follow-up and file-preview routes.
@@ -177,6 +197,13 @@ The server must have a stable `API_ENCRYPTION_KEY` to encrypt/decrypt stored
 credentials. Keep service tokens out of chat messages, screenshots, exported
 configuration and source control. Replacing this encryption key arbitrarily
 breaks access to existing encrypted values.
+
+### Optional LangChain File Input
+
+Configure the assistant ID of a [supported input-file profile](LANGCHAIN-INTEGRATION.md#optional-input-file-profile).
+After applying the Agent input file migration, verify that the application exposes its declared
+attachment limits and that an ordinary user can send and reopen a sample file.
+The upstream assistant controls file retention and supported formats.
 
 ### Optional LangChain Human Input
 

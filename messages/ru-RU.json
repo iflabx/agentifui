@@ -201,10 +201,12 @@
         "uploading": "Загрузка...",
         "uploadFailed": "Ошибка загрузки",
         "capabilitiesUnavailable": "Не удалось загрузить требования к вводу. Повторите попытку.",
+        "capabilitiesChanged": "Требования к вводу изменились. Проверьте поля и вложения перед повторной отправкой.",
         "capabilitiesUnsupported": "Требования к вводу не поддерживаются. Проверьте настройки приложения.",
         "filesRequired": "Добавьте необходимые вложения.",
         "uploadPending": "Дождитесь загрузки или удалите файлы с ошибкой.",
         "localUploadUnavailable": "Для этого назначения загрузка локальных файлов не поддерживается.",
+        "chooseAttachmentField": "Выберите поле с помощью кнопки вложений, затем выберите файлы.",
         "retryUpload": "Повторить загрузку",
         "removeFile": "Удалить файл",
         "fileUploadError": "Ошибка загрузки файла",
@@ -621,7 +623,7 @@
             "generation": "Генерация текста",
             "text": "Текстовое взаимодействие"
           },
-          "textOnlyLimit": "Только текст: без вложений, цитат, голоса и пользовательских переменных.",
+          "configuredInputs": "Поля и вложения определяются настройками приложения.",
           "noDescription": "Нет описания",
           "defaultType": "Приложение"
         },
@@ -1556,13 +1558,24 @@
             "title": "Конфигурация параметров Dify",
             "appTypeNote": "Приложения типа \"Модель\" будут отображаться в селекторе моделей интерфейса чата"
           },
+          "conversationTurns": {
+            "label": "Ходы диалога (необязательно)",
+            "default": "По умолчанию для приложения",
+            "single": "Один ход",
+            "multi": "Несколько ходов",
+            "independent": "Независимые запуски",
+            "note": "Выбирайте несколько ходов только для приложений, рассчитанных на использование предыдущего контекста.",
+            "independentNote": "В одном окне можно сделать несколько независимых запусков без переноса контекста.",
+            "humanInputNote": "Агент с подтверждением человеком обрабатывает одну задачу на диалог.",
+            "typeMismatch": "Dify сообщает тип {type}. Сохранённый тип приложения не изменён."
+          },
           "backend": {
             "label": "Backend",
             "assistantId": "Assistant ID",
             "resultProfileLabel": "Enable Deep Agent result artifacts",
             "resultProfileNote": "Enable only for an assistant verified to support phase4.result.v1, regardless of its name. Disabling pauses new profile tasks; existing results remain readable.",
             "aguiLabel": "Использовать общий чат AG-UI для новых диалогов приложений",
-            "aguiNote": "Только новые текстовые диалоги в приложениях chatbot из каталога. Файлы, цитирование, голос и пользовательские переменные не поддерживаются. Модель по умолчанию и выбор модели не меняются. Старые диалоги сохраняют совместимый маршрут; связанные общие диалоги не возвращаются к прежнему маршруту.",
+            "aguiNote": "Применяется к новым диалогам чат-ботов из каталога. Поля и вложения определяются настройками приложения. Существующие диалоги сохраняют исходный режим.",
             "langchainNote": "Use the assistant exposed by this service. Text and read-only tools only; service credentials stay on the server.",
             "validation": {
               "instanceIdRequired": "Enter an application identifier.",
@@ -2908,7 +2921,7 @@
       "copied": "Source copied.",
       "copyFailed": "Could not copy the source. Please select and copy its text."
     },
-    "textOnlyNote": "Этот диалог поддерживает только текст, без файлов, цитирования, голоса и пользовательских переменных. Старые диалоги сохраняют совместимые функции.",
+    "textOnlyNote": "Это приложение не принимает вложения в данном диалоге.",
     "cancelled": "Отменено",
     "interrupted": "Прервано",
     "loadMore": "Загрузить более ранние сообщения",

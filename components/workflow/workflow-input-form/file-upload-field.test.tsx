@@ -44,10 +44,11 @@ describe('form upload ownership', () => {
     jest.restoreAllMocks();
   });
 
-  function setup() {
+  function setup(compact = false) {
     const onChange = jest.fn();
     const view = render(
       <FileUploadField
+        compact={compact}
         slot={slot}
         config={{ max_length: 3 }}
         instanceId="app-B"
@@ -109,6 +110,66 @@ describe('form upload ownership', () => {
       expect(uploadDifyFile).not.toHaveBeenCalled();
     }
   );
+
+  it('uses shared compact cards, retries failures and prevents changes during execution', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    jest
+      .mocked(uploadDifyFile)
+      .mockRejectedValueOnce(new Error('Upload failed'));
+    const view = setup(true);
+    await act(async () => {
+      view.select();
+    });
+    expect(view.getByText('b.txt')).toBeInTheDocument();
+    expect(
+      view.getByRole('button', { name: 'common.ui.retry' })
+    ).not.toBeDisabled();
+    expect(view.getByRole('alert')).toHaveTextContent('Upload failed');
+    await act(async () => {
+      fireEvent.click(view.getByRole('button', { name: 'common.ui.retry' }));
+    });
+    expect(uploadDifyFile).toHaveBeenCalledTimes(2);
+    expect(view.onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ upload_file_id: 'uploaded-B' })
+    );
+    view.rerender(
+      <FileUploadField
+        compact
+        disabled
+        slot={slot}
+        config={{}}
+        instanceId="app-B"
+        value={view.onChange.mock.calls.at(-1)![0]}
+        onChange={view.onChange}
+        isSingleFileMode
+      />
+    );
+    expect(
+      view.getByRole('button', { name: 'common.ui.remove' })
+    ).toBeDisabled();
+    expect(view.container.querySelector('input[type=file]')).toBeDisabled();
+  });
+
+  it('discards a late compact upload after the pending card is removed', async () => {
+    let finish!: (result: never) => void;
+    jest.mocked(uploadDifyFile).mockImplementation(
+      () =>
+        new Promise(resolve => {
+          finish = resolve;
+        })
+    );
+    const view = setup(true);
+    act(() => {
+      view.select();
+    });
+    expect(view.getByText('b.txt')).toBeInTheDocument();
+    fireEvent.click(view.getByRole('button', { name: 'common.ui.remove' }));
+    await act(async () => {
+      finish({ id: 'late' } as never);
+    });
+    expect(view.queryByText('b.txt')).not.toBeInTheDocument();
+    expect(view.onChange).not.toHaveBeenCalled();
+  });
 
   it('replaces a fresh uploaded B with controlled A without reuploading or reemitting B', async () => {
     const view = setup();
@@ -380,37 +441,44 @@ describe('form upload ownership', () => {
     expect(uploadDifyFile).not.toHaveBeenCalled();
   });
 
-  it('preserves files selected during same-actor authentication refresh and uploads once it finishes', async () => {
-    const view = setup();
-    const refresh = (loading: boolean) => {
-      mockAuth.loading = loading;
-      view.rerender(
-        <FileUploadField
-          slot={slot}
-          config={{ max_length: 3 }}
-          instanceId="app-B"
-          value={null}
-          onChange={view.onChange}
-          isSingleFileMode
-        />
+  it.each([false, true])(
+    'preserves files selected during same-actor authentication refresh and uploads once it finishes (compact=%s)',
+    async compact => {
+      const view = setup(compact);
+      const input = view.container.querySelector('input[type="file"]');
+      const refresh = (loading: boolean) => {
+        mockAuth.loading = loading;
+        view.rerender(
+          <FileUploadField
+            compact={compact}
+            slot={slot}
+            config={{ max_length: 3 }}
+            instanceId="app-B"
+            value={null}
+            onChange={view.onChange}
+            isSingleFileMode
+          />
+        );
+      };
+      refresh(true);
+      expect(view.container.querySelector('input[type="file"]')).toBe(input);
+      expect(input).not.toBeDisabled();
+      await act(async () => {
+        view.select();
+        jest.advanceTimersByTime(100);
+      });
+      expect(view.getByText('b.txt')).toBeInTheDocument();
+      expect(uploadDifyFile).not.toHaveBeenCalled();
+      await act(async () => {
+        refresh(false);
+        jest.advanceTimersByTime(100);
+      });
+      expect(uploadDifyFile).toHaveBeenCalledTimes(1);
+      expect(view.onChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ upload_file_id: 'uploaded-B' })
       );
-    };
-    refresh(true);
-    await act(async () => {
-      view.select();
-      jest.advanceTimersByTime(100);
-    });
-    expect(view.getByText('b.txt')).toBeInTheDocument();
-    expect(uploadDifyFile).not.toHaveBeenCalled();
-    await act(async () => {
-      refresh(false);
-      jest.advanceTimersByTime(100);
-    });
-    expect(uploadDifyFile).toHaveBeenCalledTimes(1);
-    expect(view.onChange).toHaveBeenLastCalledWith(
-      expect.objectContaining({ upload_file_id: 'uploaded-B' })
-    );
-  });
+    }
+  );
 
   it('does not repeat an in-flight upload when authentication refresh completes', async () => {
     let finishUpload!: (value: never) => void;

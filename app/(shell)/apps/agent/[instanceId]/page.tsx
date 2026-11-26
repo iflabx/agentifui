@@ -1,22 +1,12 @@
 'use client';
 
-import {
-  ChatInputBackdrop,
-  ChatLoader,
-  ScrollToBottomButton,
-  WelcomeScreen,
-} from '@components/chat';
+import { ChatLoader } from '@components/chat';
 import { ChatInput } from '@components/chat-input';
 import { DifyEditProvider } from '@components/chat-input/edit-resend';
 import { DynamicSuggestedQuestions } from '@components/chat/dynamic-suggested-questions';
-import {
-  useChatInterface,
-  useChatScroll,
-  useChatWidth,
-  useWelcomeScreen,
-} from '@lib/hooks';
+import { ChatSessionView } from '@components/chat/session/chat-session-view';
+import { useChatInterface, useChatScroll, useWelcomeScreen } from '@lib/hooks';
 import { useCurrentApp } from '@lib/hooks/use-current-app';
-import { useProfile } from '@lib/hooks/use-profile';
 import type { ChatUploadFile } from '@lib/services/dify/types';
 import { useAppListStore } from '@lib/stores/app-list-store';
 import { useChatLayoutStore } from '@lib/stores/chat-layout-store';
@@ -32,7 +22,6 @@ import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 
 export default function AppDetailPage() {
-  const { widthClass, paddingClass } = useChatWidth();
   const router = useRouter();
   const params = useParams();
   const pathname = usePathname() ?? '';
@@ -42,9 +31,6 @@ export default function AppDetailPage() {
   const chatInterface = useChatInterface(undefined, {
     preferredRouteAppId: instanceId,
   });
-
-  // get user profile, used for welcome interface display
-  const { profile } = useProfile();
 
   // use chat interface logic, get messages status and related methods
   const {
@@ -63,7 +49,6 @@ export default function AppDetailPage() {
 
   // get chat layout state, used for input box height management
   const { inputHeight } = useChatLayoutStore();
-  const chatInputHeightVar = `${inputHeight || 80}px`;
 
   // local state management
   const [, setIsSubmitting] = useState(false);
@@ -462,74 +447,40 @@ export default function AppDetailPage() {
 
   return (
     <DifyEditProvider>
-      <div
-        className={cn(
-          'relative flex h-full w-full flex-col',
-          'bg-stone-100 dark:bg-stone-800',
-          'text-stone-900 dark:text-gray-100'
-        )}
-      >
-        <div
-          className={cn(
-            'relative flex min-h-0 flex-1 flex-col overflow-hidden',
-            'pt-10'
-          )}
-          style={
-            { '--chat-input-height': chatInputHeightVar } as React.CSSProperties
-          }
-        >
-          <div className="min-h-0 flex-1">
-            {isWelcomeScreen && messages.length === 0 ? (
-              <div
-                className={cn(
-                  'h-full overflow-y-auto scroll-smooth',
-                  'mx-auto w-full',
-                  widthClass,
-                  paddingClass
-                )}
-              >
-                <div className="py-8">
-                  <div className="mb-8">
-                    <WelcomeScreen username={profile?.username} />
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div
-                ref={scrollRef}
-                className="chat-scroll-container h-full overflow-y-auto scroll-smooth"
-              >
-                <ChatLoader
-                  messages={messages}
-                  conversationAppId={conversationAppId}
-                  isWaitingForResponse={isWaitingForResponse}
-                  isLoadingInitial={false}
-                />
-              </div>
-            )}
-          </div>
-
-          <ScrollToBottomButton />
-
-          <ChatInputBackdrop />
-
+      <ChatSessionView
+        appLayout
+        appTitle={currentApp.display_name || currentApp.instance_id}
+        inputHeight={inputHeight || 80}
+        contentClassName="overflow-hidden pt-10"
+        showWelcome={isWelcomeScreen && messages.length === 0}
+        scrollProps={{ ref: scrollRef, className: 'scroll-smooth' }}
+        composer={
           <ChatInput
             onSubmit={handleSubmit}
-            placeholder={t('startChatWith', {
-              appName: currentApp.display_name || t('defaultApp'),
-            })}
+            placeholder=""
             isProcessing={isProcessing}
             isWaiting={isWaitingForResponse}
             onStop={handleStopProcessing}
             showModelSelector={false}
             requireModelValidation={false}
+            afterInput={
+              isWelcomeScreen && messages.length === 0 ? (
+                <DynamicSuggestedQuestions
+                  inline
+                  introductionReady
+                  onQuestionClick={sendDirectMessage}
+                />
+              ) : undefined
+            }
           />
-
-          {isWelcomeScreen && messages.length === 0 && (
-            <DynamicSuggestedQuestions onQuestionClick={sendDirectMessage} />
-          )}
-        </div>
-      </div>
+        }
+      >
+        <ChatLoader
+          messages={messages}
+          conversationAppId={conversationAppId}
+          isWaitingForResponse={isWaitingForResponse}
+        />
+      </ChatSessionView>
     </DifyEditProvider>
   );
 }

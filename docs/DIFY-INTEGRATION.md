@@ -45,9 +45,8 @@ enable local upload.
 
 Native generation endpoints enforce aggregate slot counts and registered file
 ownership/type/size before admission. Upload validation alone does not authorize
-a later generation request. This does not route Workflow or text generation
-through the text-only shared AG-UI transport; those execution adapters retain
-their native execution semantics. New Workflow/text-generation sessions use the
+a later generation request. Workflow and text generation retain their native
+execution adapters. New Workflow/text-generation sessions use the
 shared chat interface with local task grouping; they do not gain upstream chat
 memory. Each round is one independent `app_executions` record. Legacy execution
 links remain readable without automatically creating conversations.
@@ -69,11 +68,12 @@ or an old upload's trusted metadata is unavailable, the request fails rather tha
 silently guessing inputs or resending the task.
 
 The Chatflow browser adapter uses the standard composer for the initial request.
-The product currently treats each Chatflow conversation as a single-turn task:
+The product treats Chatflow as single-turn by default, unless the instance is
+configured for multiple turns. In single-turn mode:
 after acceptance, further sends and edit-and-resend are not offered. While the
 request runs, the stop action remains; afterwards, a new-task link opens a fresh
 conversation without reusing its parameters or upload references. Reopened
-history is read-only, including older multi-turn conversations. Requests rejected
+history is read-only while the single-turn policy applies. Requests rejected
 before acceptance keep editable inputs. Initialization `inputs` and message
 `files` slots retain their native payload semantics on the initial request.
 Multiple slots require explicit purpose selection. Single-file variables remain
@@ -92,7 +92,8 @@ backend or alter its native conversation memory.
 
 The configured `app_metadata.dify_apptype` determines task versus conversation
 mode: Workflow and Text Generation run independent tasks; Chatflow still uses
-the native conversation API. Its single-turn presentation is currently a product
+the native conversation API. The `config.conversation_turns` setting controls
+its turn presentation; single-turn is currently a product
 UI convention, not a server-enforced API maximum-turns policy. Native continuation
 compatibility remains in the backend; declaring a Chatflow as Workflow to change
 its UI would select the wrong endpoint. The declared type must match the upstream
@@ -158,9 +159,23 @@ package imports and tracing administration are not part of this integration.
 
 ## Files And Limits
 
-Successful file-preview responses are forwarded without converting file bytes
-to text, including document/archive MIME types. HTML, SVG and XML responses keep
+Native chat attachment previews and downloads use the AgentifUI origin. After
+checking the saved reference, the API renews the Dify signature and streams the
+original from the configured Dify server's `/files/.../file-preview` route. The
+browser does not need to reach Dify, and the relay does not store a second copy.
+Keep that route reachable from the AgentifUI API, including when Dify advertises
+a different public file host. Existing Workflow archives remain readable
+locally; a missing native chat original cannot be recovered by this relay.
+File bytes are not converted to text. HTML, SVG and XML responses keep
 forced-download, sandbox and `nosniff` protections.
+
+The shared AG-UI chatbot uses a separate registered-input path, described in
+[AG-UI Integration](AGUI-INTEGRATION.md#dify-chatbot-scope). It stores a protected
+copy of new input uploads for authorized preview. For supported assistant files
+recorded in native Dify history, the API can relay the original through the
+AgentifUI origin; it does not turn arbitrary Markdown URLs into downloadable
+results or generate images itself. If Dify no longer has the original, the relay
+cannot restore it.
 
 `DIFY_UPLOAD_MAX_BYTES` sets the total buffered multipart request limit for
 `POST /files/upload` and `POST /audio-to-text`. The default is `16777216` bytes
@@ -168,7 +183,8 @@ forced-download, sandbox and `nosniff` protections.
 decimal safe integer of at least 1024; an invalid configured value prevents API
 startup. Other API routes keep their original body limits. Dify and reverse
 proxies enforce their own limits independently; larger audio/file requirements
-need an appropriately bounded setting at each layer. Uploads are buffered, so
+need an appropriately bounded setting at each layer. The same limit bounds
+native attachment reads from Dify, which are streamed. Uploads are buffered, so
 account for concurrency and available memory before increasing the limit.
 
 ## Identity Boundary

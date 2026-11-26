@@ -54,6 +54,7 @@ async function fetchAppFromInternalApi(
   const response = await fetch(`/api/internal/apps?${query.toString()}`, {
     method: 'GET',
     credentials: 'include',
+    cache: 'no-store',
   });
 
   if (!response.ok) {
@@ -152,7 +153,10 @@ export const useCurrentAppStore = create<CurrentAppState>()(
 
       initializeDefaultAppId: async () => {
         // Prevent re-initialization or loading if already loaded
-        if (get().currentAppId || get().isLoadingAppId) {
+        if (
+          (get().currentAppId && get().currentAppInstance) ||
+          get().isLoadingAppId
+        ) {
           const existingState = get();
           logCurrentAppDebugSnapshot(
             '[CurrentAppDebug] CurrentAppStore initialize skipped',
@@ -172,7 +176,7 @@ export const useCurrentAppStore = create<CurrentAppState>()(
           return;
         }
 
-        if (defaultAppRetryAfter > Date.now()) {
+        if (!get().currentAppId && defaultAppRetryAfter > Date.now()) {
           set({
             currentAppId: null,
             currentAppInstance: null,
@@ -205,8 +209,13 @@ export const useCurrentAppStore = create<CurrentAppState>()(
 
         set({ isLoadingAppId: true, errorLoadingAppId: null });
 
+        const selectedAppId = get().currentAppId;
         try {
-          const defaultInstance = await fetchDefaultAppInstance();
+          const defaultInstance = selectedAppId
+            ? await fetchActiveAppInstance(selectedAppId)
+            : await fetchDefaultAppInstance();
+
+          if (get().currentAppId !== selectedAppId) return;
 
           if (defaultInstance && defaultInstance.instance_id) {
             set({
@@ -553,10 +562,17 @@ export const useCurrentAppStore = create<CurrentAppState>()(
           }
         );
       },
-      // Only persist appId and instance, other states are temporary
+      merge: (persistedState, currentState) => {
+        const saved = persistedState as { currentAppId?: unknown } | undefined;
+        return {
+          ...currentState,
+          currentAppId:
+            typeof saved?.currentAppId === 'string' ? saved.currentAppId : null,
+          currentAppInstance: null,
+        };
+      },
       partialize: state => ({
         currentAppId: state.currentAppId,
-        currentAppInstance: state.currentAppInstance,
       }),
     }
   )

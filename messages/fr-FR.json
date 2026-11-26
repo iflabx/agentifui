@@ -201,10 +201,12 @@
         "uploading": "Téléversement en cours...",
         "uploadFailed": "Échec du téléversement",
         "capabilitiesUnavailable": "Impossible de charger les exigences de saisie. Réessayez.",
+        "capabilitiesChanged": "Les exigences de saisie ont changé. Vérifiez les champs et les pièces jointes avant de renvoyer.",
         "capabilitiesUnsupported": "Ces exigences ne sont pas prises en charge. Vérifiez la configuration de l'application.",
         "filesRequired": "Ajoutez les pièces jointes requises.",
         "uploadPending": "Attendez la fin des envois ou supprimez les fichiers en échec.",
         "localUploadUnavailable": "Cet usage ne permet pas les fichiers locaux.",
+        "chooseAttachmentField": "Choisissez un champ avec le bouton de pièce jointe, puis sélectionnez vos fichiers.",
         "retryUpload": "Réessayer le téléversement",
         "removeFile": "Supprimer le fichier",
         "fileUploadError": "Erreur de téléversement de fichier",
@@ -621,7 +623,7 @@
             "generation": "Génération de texte",
             "text": "Interaction textuelle"
           },
-          "textOnlyLimit": "Texte uniquement : sans pièces jointes, citations, voix ni variables personnalisées.",
+          "configuredInputs": "Les champs et pièces jointes dépendent de la configuration de l'application.",
           "noDescription": "Aucune description",
           "defaultType": "Application"
         },
@@ -1556,13 +1558,24 @@
             "title": "Configuration des paramètres Dify",
             "appTypeNote": "Les applications de type \"Modèle\" apparaîtront dans le sélecteur de modèle de l'interface de chat"
           },
+          "conversationTurns": {
+            "label": "Tours de conversation (facultatif)",
+            "default": "Valeur par défaut de l’application",
+            "single": "Un seul tour",
+            "multi": "Plusieurs tours",
+            "independent": "Exécutions indépendantes",
+            "note": "Choisissez plusieurs tours uniquement si l’application en amont est conçue pour utiliser le contexte précédent.",
+            "independentNote": "Plusieurs exécutions sont possibles dans la même fenêtre, sans partager le contexte.",
+            "humanInputNote": "Un agent avec confirmation humaine traite une seule tâche par conversation.",
+            "typeMismatch": "Dify indique {type}. Le type d’application enregistré n’a pas été modifié."
+          },
           "backend": {
             "label": "Backend",
             "assistantId": "Assistant ID",
             "resultProfileLabel": "Enable Deep Agent result artifacts",
             "resultProfileNote": "Enable only for an assistant verified to support phase4.result.v1, regardless of its name. Disabling pauses new profile tasks; existing results remain readable.",
             "aguiLabel": "Utiliser le chat AG-UI commun pour les nouvelles conversations d’application",
-            "aguiNote": "Uniquement les nouvelles conversations textuelles des applications chatbot du marché. Les fichiers, citations, fonctions vocales et variables personnalisées ne sont pas pris en charge. Le modèle par défaut et le sélecteur restent inchangés. Les anciennes conversations gardent le parcours compatible ; les conversations publiques liées ne reviennent pas en arrière.",
+            "aguiNote": "S'applique aux nouvelles conversations des chatbots du catalogue. Les champs et pièces jointes dépendent de la configuration de l'application. Les conversations existantes gardent leur mode d'origine.",
             "langchainNote": "Use the assistant exposed by this service. Text and read-only tools only; service credentials stay on the server.",
             "validation": {
               "instanceIdRequired": "Enter an application identifier.",
@@ -2908,7 +2921,7 @@
       "copied": "Source copied.",
       "copyFailed": "Could not copy the source. Please select and copy its text."
     },
-    "textOnlyNote": "Cette conversation est limitée au texte, sans fichiers, citations, fonctions vocales ni variables personnalisées. Les anciennes conversations conservent leurs fonctions compatibles.",
+    "textOnlyNote": "Cette application n'accepte pas de pièces jointes dans cette conversation.",
     "cancelled": "Annulé",
     "interrupted": "Interrompu",
     "loadMore": "Charger les messages précédents",

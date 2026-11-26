@@ -14,7 +14,7 @@ import {
 
 export function validateChatAttachments(
   capabilities: AgentInputCapabilities | null,
-  files: { file: File }[],
+  files: { file?: File; name?: string; size?: number; type?: string }[],
   continuingConversation = false
 ): string | null {
   if (capabilities?.status !== 'ready') return 'INPUT_CAPABILITIES_UNAVAILABLE';
@@ -33,12 +33,23 @@ export function validateChatAttachments(
   if (!slot) return files.length ? 'INPUT_UPLOAD_DISABLED' : null;
   return (
     validateInputFileCount(slot, files.length) ||
-    files.map(entry => validateInputFile(slot, entry.file)).find(Boolean) ||
+    files
+      .map(entry =>
+        validateInputFile(
+          slot,
+          entry.file ?? {
+            name: entry.name ?? '',
+            size: entry.size ?? NaN,
+            type: entry.type ?? '',
+          }
+        )
+      )
+      .find(Boolean) ||
     null
   );
 }
 
-function uploadValidationMessage(
+export function uploadValidationMessage(
   code: string,
   slot: AgentAttachmentSlot,
   t: UploadTranslations
@@ -54,6 +65,50 @@ type UploadTranslations = (
   key: string,
   params?: Record<string, string | number>
 ) => string;
+
+export async function uploadScopedAttachment({
+  scope,
+  draftId,
+  appId,
+  actorId,
+  actorEpoch,
+  isCurrentActor,
+  transfer,
+  onError,
+}: {
+  scope: string;
+  draftId: string;
+  appId: string;
+  actorId: string;
+  actorEpoch: number;
+  isCurrentActor: () => boolean;
+  transfer: (file: File) => Promise<{ id: string; previewUrl?: string }>;
+  onError: (error: unknown) => string;
+}) {
+  if (!isCurrentActor()) return;
+  const store = useAttachmentStore.getState();
+  const file = store.getFiles(scope).find(entry => entry.id === draftId);
+  if (!file?.file || file.status === 'uploading' || file.status === 'success')
+    return;
+  const attempt = store.beginUpload(scope, draftId);
+  if (attempt === undefined) return;
+  try {
+    const { id, previewUrl } = await transfer(file.file);
+    if (isCurrentActor())
+      useAttachmentStore.getState().finishUpload(scope, draftId, attempt, {
+        uploadedId: id,
+        previewUrl,
+        appId,
+        actorId,
+        actorEpoch,
+      });
+  } catch (error) {
+    if (isCurrentActor())
+      useAttachmentStore.getState().finishUpload(scope, draftId, attempt, {
+        error: onError(error),
+      });
+  }
+}
 
 interface UseChatInputUploadsInput {
   scope: string | null;
@@ -84,7 +139,7 @@ export function useChatInputUploads({
       const store = useAttachmentStore.getState();
       const attachment = store.getFiles(scope).find(file => file.id === fileId);
       if (
-        !attachment ||
+        !attachment?.file ||
         !slot ||
         attachment.status === 'uploading' ||
         attachment.status === 'success'
@@ -105,30 +160,32 @@ export function useChatInputUploads({
           );
         return;
       }
-      const attempt = store.beginUpload(scope, fileId);
-      if (attempt === undefined) return;
-      try {
-        const response = await uploadDifyFile(
-          currentAppId,
-          attachment.file,
-          sessionUserId
-        );
-        if (!isCurrentActor()) return;
-        useAttachmentStore.getState().finishUpload(scope, fileId, attempt, {
-          uploadedId: response.id,
-          previewUrl: response.preview_url || response.source_url || undefined,
-          appId: currentAppId,
-          actorId: sessionUserId,
-          actorEpoch,
-        });
-      } catch (error) {
-        if (!isCurrentActor()) return;
-        useAttachmentStore.getState().finishUpload(scope, fileId, attempt, {
-          error:
-            error instanceof Error ? error.message : t('input.uploadFailed'),
-        });
-        onRequirementsChanged?.();
-      }
+      await uploadScopedAttachment({
+        scope,
+        draftId: fileId,
+        appId: currentAppId,
+        actorId: sessionUserId,
+        actorEpoch,
+        isCurrentActor,
+        transfer: async file => {
+          const response = await uploadDifyFile(
+            currentAppId,
+            file,
+            sessionUserId
+          );
+          return {
+            id: response.id,
+            previewUrl:
+              response.preview_url || response.source_url || undefined,
+          };
+        },
+        onError: error => {
+          onRequirementsChanged?.();
+          return error instanceof Error
+            ? error.message
+            : t('input.uploadFailed');
+        },
+      });
     },
     [
       scope,

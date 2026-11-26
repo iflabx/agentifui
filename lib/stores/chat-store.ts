@@ -20,6 +20,8 @@ export interface MessageAttachment {
   preview_url?: string;
   /** Dify application ID for API calls (optional for backward compatibility) */
   app_id?: string;
+  source?: 'agent-input' | 'dify-output';
+  resultMessageId?: string;
 }
 
 /**
@@ -41,6 +43,7 @@ export interface ChatMessage {
   error?: string | null;
   /** File attachments associated with the message */
   attachments?: MessageAttachment[];
+  difyResultFiles?: MessageAttachment[];
   /** Message sequence index, 0=user, 1=assistant, 2=system, etc. */
   sequence_index?: number;
 

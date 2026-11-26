@@ -108,6 +108,22 @@ export function validateInputFile(
   return null;
 }
 
+export function inputFileExtensionsForSlot(
+  slot: AgentAttachmentSlot
+): string[] {
+  const candidates = slot.extensions.length
+    ? slot.extensions
+    : slot.allowedTypes.flatMap(type => INPUT_FILE_EXTENSIONS[type]);
+  return [...new Set(candidates)].filter(extension => {
+    const file = { name: `file.${extension}`, size: 0 };
+    return (
+      validateInputFile(slot, file) === null ||
+      (extension === 'mpeg' &&
+        validateInputFile(slot, { ...file, type: 'video/mpeg' }) === null)
+    );
+  });
+}
+
 export function validateInputFileCount(
   slot: AgentAttachmentSlot,
   count: number

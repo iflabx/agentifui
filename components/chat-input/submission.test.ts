@@ -120,11 +120,14 @@ describe('submission-local Dify input acceptance', () => {
       }
     );
     const accept = captureDifyInputSubmission('Question', 'actor');
+    const scope = useChatInputStore.getState().currentRoute;
+    expect(useChatInputStore.getState().acceptedScopes[scope]).toBeUndefined();
     accept('app', {
       externalId: 'external-A',
       taskId: 'task-A',
       conversationPersistencePromise,
     });
+    expect(useChatInputStore.getState().acceptedScopes[scope]).toBe(true);
     expect(useChatInputStore.getState().message).toBe('');
     expect(bindChatInputConversation).toHaveBeenCalledWith(
       expect.any(String),
@@ -137,5 +140,27 @@ describe('submission-local Dify input acceptance', () => {
     finish('db-A');
     await conversationPersistencePromise;
     expect(bindChatInputConversation).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps acceptance scoped across migration, new drafts and actor changes', () => {
+    const original = useChatInputStore.getState().currentRoute;
+    const accept = captureDifyInputSubmission('Question', 'actor');
+    accept('app', { externalId: '', taskId: 'task' });
+    expect(useChatInputStore.getState().acceptedScopes).toEqual({});
+    accept('app', { externalId: 'external', taskId: 'task' });
+    const target = chatInputScope(
+      useChatInputStore.getState().actorEpoch,
+      'actor',
+      'app',
+      'conversation:saved'
+    );
+    expect(useChatInputStore.getState().migrateScope(original, target)).toBe(
+      true
+    );
+    expect(useChatInputStore.getState().acceptedScopes[target]).toBe(true);
+    const next = activate('new:next');
+    expect(useChatInputStore.getState().acceptedScopes[next]).toBeUndefined();
+    useChatInputStore.getState().setActor('other');
+    expect(useChatInputStore.getState().acceptedScopes).toEqual({});
   });
 });

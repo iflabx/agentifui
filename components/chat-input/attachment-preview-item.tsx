@@ -15,9 +15,10 @@ import { useTranslations } from 'next-intl';
  * Uses the stone color palette to match the overall app style.
  */
 interface AttachmentPreviewItemProps {
-  attachment: AttachmentFile;
+  attachment: Pick<AttachmentFile, 'id' | 'name' | 'size' | 'status' | 'error'>;
   onRetry: (id: string) => void;
   onRemove: (id: string) => void;
+  disabled?: boolean;
 }
 
 /**
@@ -28,6 +29,7 @@ export const AttachmentPreviewItem: React.FC<AttachmentPreviewItemProps> = ({
   attachment,
   onRetry,
   onRemove,
+  disabled = false,
 }) => {
   const t = useTranslations('common.ui');
 
@@ -65,6 +67,7 @@ export const AttachmentPreviewItem: React.FC<AttachmentPreviewItemProps> = ({
           >
             <button
               type="button"
+              disabled={disabled}
               onClick={handleRetryClick}
               className={cn(
                 'flex h-full w-full items-center justify-center rounded-full',
@@ -127,6 +130,14 @@ export const AttachmentPreviewItem: React.FC<AttachmentPreviewItemProps> = ({
         >
           {formatBytes(attachment.size)}
         </p>
+        {attachment.status === 'error' && attachment.error && (
+          <p
+            role="alert"
+            className="text-xs break-words whitespace-pre-wrap text-amber-700 dark:text-amber-300"
+          >
+            {attachment.error}
+          </p>
+        )}
       </div>
 
       <TooltipWrapper
@@ -138,6 +149,7 @@ export const AttachmentPreviewItem: React.FC<AttachmentPreviewItemProps> = ({
       >
         <button
           type="button"
+          disabled={disabled}
           onClick={handleRemove}
           className={cn(
             'ml-auto flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full transition-colors',

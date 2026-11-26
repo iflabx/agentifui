@@ -201,10 +201,12 @@
         "uploading": "Uploading...",
         "uploadFailed": "Upload failed",
         "capabilitiesUnavailable": "Unable to load input requirements. Retry.",
+        "capabilitiesChanged": "Input requirements have changed. Review the fields and attachments before sending again.",
         "capabilitiesUnsupported": "Input requirements are not supported. Check the app configuration.",
         "filesRequired": "Add the required attachments.",
         "uploadPending": "Wait for uploads or remove failed files.",
         "localUploadUnavailable": "This attachment purpose does not support local uploads.",
+        "chooseAttachmentField": "Use the attachment button to choose a field, then select your files.",
         "retryUpload": "Retry upload",
         "removeFile": "Remove file",
         "fileUploadError": "File upload error",
@@ -621,7 +623,7 @@
             "generation": "Text generation",
             "text": "Text interaction"
           },
-          "textOnlyLimit": "Text-only entry: no attachments, citations, voice or custom variables.",
+          "configuredInputs": "Available inputs and attachments follow the application configuration.",
           "noDescription": "No description",
           "defaultType": "App"
         },
@@ -1556,13 +1558,24 @@
             "title": "Dify Parameter Configuration",
             "appTypeNote": "Applications with \"Model\" type will appear in the chat interface model selector"
           },
+          "conversationTurns": {
+            "label": "Conversation turns (optional)",
+            "default": "Application default",
+            "single": "Single turn",
+            "multi": "Multi-turn",
+            "independent": "Independent runs",
+            "note": "Only select multi-turn if the upstream application is designed to use prior context.",
+            "independentNote": "This application supports multiple independent runs in one window, without carrying context forward.",
+            "humanInputNote": "An agent with human confirmation handles one task per conversation.",
+            "typeMismatch": "Dify reports {type}. The saved application type was not changed."
+          },
           "backend": {
             "label": "Backend",
             "assistantId": "Assistant ID",
             "resultProfileLabel": "Enable Deep Agent result artifacts",
             "resultProfileNote": "Enable only for an assistant verified to support phase4.result.v1, regardless of its name. Disabling pauses new profile tasks; existing results remain readable.",
             "aguiLabel": "Use public AG-UI chat for new app conversations",
-            "aguiNote": "Only new text-only app conversations in marketplace chatbot apps are enabled. Files, citations, speech and custom variables are not supported. The default model and model selector are unchanged. Existing legacy conversations keep their compatibility path; bound public conversations never fall back.",
+            "aguiNote": "Applies to new marketplace Chatbot conversations. Available inputs and attachments follow the application configuration. Existing conversations keep their original interaction mode.",
             "langchainNote": "Use the assistant exposed by this service. Text and read-only tools only; service credentials stay on the server.",
             "validation": {
               "instanceIdRequired": "Enter an application identifier.",
@@ -2884,7 +2897,7 @@
   "langchain": {
     "resultSingleBatch": "This app publishes one batch of results per conversation. Start a new conversation to generate another batch.",
     "resultProfilePaused": "New tasks are currently paused for this app. You can still view existing records.",
-    "textOnlyNote": "This conversation is text-only. Files, citations, speech and custom variables are not supported. Existing legacy conversations retain their compatible features.",
+    "textOnlyNote": "This application does not accept attachments in this conversation.",
     "cancelled": "Cancelled",
     "interrupted": "Interrupted",
     "loadMore": "Load earlier messages",

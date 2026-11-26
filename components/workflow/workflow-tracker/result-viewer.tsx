@@ -7,24 +7,24 @@ import {
   MarkdownBlockquote,
   MarkdownTableContainer,
 } from '@components/chat/markdown-block';
-import { ThinkBlockContent } from '@components/chat/markdown-block/think-block-content';
-// --- Import ThinkBlock components ---
-import { ThinkBlockHeader } from '@components/chat/markdown-block/think-block-header';
 import { FileAttachmentDisplay } from '@components/chat/messages/user-message/file-attachment-display';
-import { useMobile } from '@lib/hooks/use-mobile';
+import { PreviewShell } from '@components/file-preview/preview-shell';
+import { ThinkAwareMarkdown } from '@components/text-generation/think-aware-markdown';
 import { useFilePreviewStore } from '@lib/stores/ui/file-preview-store';
 import { cn } from '@lib/utils';
+import {
+  normalizeCompletedAssistantReply,
+  parseThinkBlocks,
+} from '@lib/utils/think-parser';
 import 'katex/dist/katex.min.css';
-import { Copy, Download, X } from 'lucide-react';
+import { Copy, Download } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import type { Components } from 'react-markdown';
 import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 
-import { useCallback, useEffect, useMemo } from 'react';
-// --- Import React Hook ---
-import React, { useState } from 'react';
+import { useMemo } from 'react';
 
 import { useTranslations } from 'next-intl';
 
@@ -37,61 +37,28 @@ interface ResultViewerProps {
   onClose: () => void;
 }
 
-/**
- * Parse the think tag content in the workflow result
- * @param content Original content string
- * @returns Parsed result containing think content and main content
- */
 const parseThinkContent = (
-  content: string
+  content: string,
+  fallbackText: string
 ): {
   hasThinkBlock: boolean;
   thinkContent: string;
   mainContent: string;
-  isThinkComplete: boolean;
 } => {
-  const thinkStartTag = '<think>';
-  const thinkEndTag = '</think>';
-
-  // Check if it contains think tags
-  if (content.includes(thinkStartTag)) {
-    const startIndex = content.indexOf(thinkStartTag);
-    const endIndex = content.indexOf(thinkEndTag, startIndex);
-
-    if (endIndex !== -1) {
-      // Think block complete
-      const thinkContent = content.substring(
-        startIndex + thinkStartTag.length,
-        endIndex
-      );
-      const mainContent = content
-        .substring(endIndex + thinkEndTag.length)
-        .trim();
-
-      return {
-        hasThinkBlock: true,
-        thinkContent: thinkContent.trim(),
-        mainContent,
-        isThinkComplete: true,
-      };
-    } else {
-      // Think block incomplete (theoretically should not appear in the result viewer)
-      const thinkContent = content.substring(startIndex + thinkStartTag.length);
-      return {
-        hasThinkBlock: true,
-        thinkContent: thinkContent.trim(),
-        mainContent: '',
-        isThinkComplete: false,
-      };
-    }
-  }
-
-  // No think tags
+  const blocks = parseThinkBlocks(
+    normalizeCompletedAssistantReply(content, fallbackText).content
+  );
   return {
-    hasThinkBlock: false,
-    thinkContent: '',
-    mainContent: content,
-    isThinkComplete: true,
+    hasThinkBlock: blocks.some(block => block.type === 'think'),
+    thinkContent: blocks
+      .filter(block => block.type === 'think')
+      .map(block => block.content)
+      .join('\n\n'),
+    mainContent: blocks
+      .filter(block => block.type === 'text')
+      .map(block => block.content)
+      .join('')
+      .trim(),
   };
 };
 
@@ -101,8 +68,10 @@ export function ResultViewer({
   appId,
   onClose,
 }: ResultViewerProps) {
-  const isMobile = useMobile();
   const t = useTranslations('pages.workflow.resultViewer');
+  const chatT = useTranslations('pages.chat');
+  const parseResultContent = (content: string) =>
+    parseThinkContent(content, chatT('messages.incompleteAnswer'));
   const executionRecord =
     execution && typeof execution === 'object'
       ? (execution as {
@@ -119,9 +88,6 @@ export function ResultViewer({
     [appId, executionRecord?.inputs, executionRecord?.service_instance_id]
   );
 
-  // --- ThinkBlock status management ---
-  const [isThinkOpen, setIsThinkOpen] = useState(false); // Default folded
-
   const formatResult = (
     data: unknown
   ): {
@@ -134,7 +100,7 @@ export function ResultViewer({
     try {
       if (!data || typeof data !== 'object') {
         const content = String(data || '');
-        const parsed = parseThinkContent(content);
+        const parsed = parseResultContent(content);
         return {
           content,
           isMarkdown: false,
@@ -157,7 +123,7 @@ export function ResultViewer({
 
         if (typeof resultContent === 'string') {
           // 🎯 Key modification: no longer delete think blocks, but parse them
-          const parsed = parseThinkContent(resultContent);
+          const parsed = parseResultContent(resultContent);
 
           // Check if the main content contains markdown
           const markdownContent = parsed.mainContent || parsed.thinkContent;
@@ -181,7 +147,7 @@ export function ResultViewer({
         typeof dataRecord.text === 'string' &&
         dataRecord.text.trim().length > 0
       ) {
-        const parsed = parseThinkContent(dataRecord.text);
+        const parsed = parseResultContent(dataRecord.text);
         const isMarkdown = dataRecord.text.includes('```');
 
         return {
@@ -217,7 +183,7 @@ export function ResultViewer({
     } catch (error) {
       console.error('[Result viewer] Data formatting failed:', error);
       const content = String(data);
-      const parsed = parseThinkContent(content);
+      const parsed = parseResultContent(content);
       return {
         content,
         isMarkdown: false,
@@ -232,7 +198,6 @@ export function ResultViewer({
     content: formattedContent,
     isMarkdown,
     hasThinkBlock,
-    thinkContent,
     mainContent,
   } = formatResult(result);
 
@@ -376,156 +341,94 @@ export function ResultViewer({
     document.body.removeChild(element);
   };
 
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
+  const handleClose = () => {
+    if (!useFilePreviewStore.getState().isPreviewOpen) {
       onClose();
     }
   };
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (
-        e.key === 'Escape' &&
-        !e.defaultPrevented &&
-        !useFilePreviewStore.getState().isPreviewOpen
-      ) {
-        onClose();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [onClose]);
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
-      onClick={handleBackdropClick}
-    >
-      <div
-        className={cn(
-          'relative mx-4 flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border shadow-2xl',
-          'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900'
-        )}
-      >
-        {/* Header area */}
-        <div
+    <PreviewShell open title={t('title')} onClose={handleClose}>
+      <div className="mb-4 flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={handleCopy}
           className={cn(
-            'flex items-center justify-between border-b px-6 py-4',
-            'border-gray-200 dark:border-gray-700'
+            'rounded-md p-2 transition-colors',
+            'text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white'
           )}
+          title={t('copyButton')}
+          aria-label={t('copyButton')}
         >
-          <h2
+          <Copy className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={handleDownload}
+          className={cn(
+            'rounded-md p-2 transition-colors',
+            'text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white'
+          )}
+          title={t('downloadButton')}
+          aria-label={t('downloadButton')}
+        >
+          <Download className="h-4 w-4" />
+        </button>
+      </div>
+      {/* Main content area */}
+      {inputAttachments.length > 0 && (
+        <section className="mb-5">
+          <h3 className="mb-2 font-serif text-sm font-semibold text-gray-900 dark:text-gray-100">
+            {t('inputFiles')}
+          </h3>
+          <FileAttachmentDisplay
+            attachments={inputAttachments}
+            appId={appId || executionRecord?.service_instance_id}
+            className="justify-start px-0"
+          />
+        </section>
+      )}
+
+      {hasThinkBlock ? (
+        <ThinkAwareMarkdown
+          content={formattedContent}
+          markdownComponents={markdownComponents}
+          plainText={!isMarkdown}
+        />
+      ) : (
+        formattedContent && (
+          <div
             className={cn(
-              'text-lg font-semibold',
-              'text-gray-900 dark:text-white'
+              'markdown-body w-full',
+              'text-gray-900 dark:text-gray-100'
             )}
           >
-            {t('title')}
-          </h2>
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={handleCopy}
-              className={cn(
-                'rounded-md p-2 transition-colors',
-                'text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white'
-              )}
-              title={t('copyButton')}
-            >
-              <Copy className="h-4 w-4" />
-            </button>
-            <button
-              onClick={handleDownload}
-              className={cn(
-                'rounded-md p-2 transition-colors',
-                'text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white'
-              )}
-              title={t('downloadButton')}
-            >
-              <Download className="h-4 w-4" />
-            </button>
-            <button
-              onClick={onClose}
-              className={cn(
-                'rounded-md p-2 transition-colors',
-                'text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white'
-              )}
-              title={t('closeButton')}
-            >
-              <X className="h-4 w-4" />
-            </button>
+            {isMarkdown ? (
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm, remarkMath]}
+                rehypePlugins={[rehypeKatex]}
+                components={markdownComponents}
+              >
+                {hasThinkBlock ? mainContent : formattedContent}
+              </ReactMarkdown>
+            ) : (
+              <pre
+                className={cn(
+                  'font-mono text-sm break-words whitespace-pre-wrap',
+                  'text-gray-700 dark:text-gray-300'
+                )}
+              >
+                {hasThinkBlock ? mainContent : formattedContent}
+              </pre>
+            )}
           </div>
-        </div>
-
-        {/* Content area */}
-        <div
-          className={cn(
-            'flex-1 overflow-y-auto p-6',
-            'bg-white dark:bg-gray-900'
-          )}
-        >
-          {/* 🎯 Think Block area */}
-          {hasThinkBlock && thinkContent && (
-            <div className="mb-4">
-              <ThinkBlockHeader
-                status="completed"
-                isOpen={isThinkOpen}
-                onToggle={() => setIsThinkOpen(!isThinkOpen)}
-              />
-              {isThinkOpen && (
-                <ThinkBlockContent
-                  markdownContent={thinkContent}
-                  isOpen={isThinkOpen}
-                />
-              )}
-            </div>
-          )}
-
-          {/* Main content area */}
-          {inputAttachments.length > 0 && (
-            <section className="mb-5">
-              <h3 className="mb-2 font-serif text-sm font-semibold text-gray-900 dark:text-gray-100">
-                {t('inputFiles')}
-              </h3>
-              <FileAttachmentDisplay
-                attachments={inputAttachments}
-                appId={appId || executionRecord?.service_instance_id}
-                className="justify-start px-0"
-              />
-            </section>
-          )}
-
-          {(mainContent || (!hasThinkBlock && formattedContent)) && (
-            <div
-              className={cn(
-                'markdown-body w-full',
-                'text-gray-900 dark:text-gray-100'
-              )}
-            >
-              {isMarkdown ? (
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm, remarkMath]}
-                  rehypePlugins={[rehypeKatex]}
-                  components={markdownComponents}
-                >
-                  {hasThinkBlock ? mainContent : formattedContent}
-                </ReactMarkdown>
-              ) : (
-                <pre
-                  className={cn(
-                    'font-mono text-sm break-words whitespace-pre-wrap',
-                    'text-gray-700 dark:text-gray-300'
-                  )}
-                >
-                  {hasThinkBlock ? mainContent : formattedContent}
-                </pre>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+        )
+      )}
+      {!formattedContent && (
+        <p role="status" className="text-sm text-stone-500 dark:text-stone-400">
+          {t('noData')}
+        </p>
+      )}
+    </PreviewShell>
   );
 }

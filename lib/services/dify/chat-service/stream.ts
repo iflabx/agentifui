@@ -1,4 +1,5 @@
 import { parseSseStream } from '@lib/utils/sse-parser';
+import { scanThinkMarkup } from '@lib/utils/think-markup';
 
 import {
   type DifySubmissionOptions,
@@ -118,16 +119,6 @@ function buildThinkDebugPreview(content: string): string | undefined {
   }
 
   return `${normalized.slice(0, 77).trimEnd()}...`;
-}
-
-function unwrapExactThinkBlock(content: string): string | null {
-  const match = content.match(/^<think(?:\s[^>]*)?>([\s\S]*)<\/think>$/i);
-
-  if (!match) {
-    return null;
-  }
-
-  return match[1].trim();
 }
 
 function summarizeThinkStructure(content: string): ThinkStructureDebugSummary {
@@ -269,45 +260,8 @@ interface NormalizedStreamSegment {
 interface ThinkMarkupState {
   thinkDepth: number;
   pendingThinkTagFragment: string;
-}
-
-function isPotentialThinkTagFragment(fragment: string): boolean {
-  if (!fragment.startsWith('<')) {
-    return false;
-  }
-
-  const lower = fragment.toLowerCase();
-
-  return (
-    THINK_OPEN_TAG.startsWith(lower) ||
-    THINK_CLOSE_TAG.startsWith(lower) ||
-    lower.startsWith('<think') ||
-    lower.startsWith('</think')
-  );
-}
-
-function splitTrailingThinkTagFragment(input: string): {
-  processable: string;
-  trailingFragment: string;
-} {
-  const lastOpenBracketIndex = input.lastIndexOf('<');
-
-  if (lastOpenBracketIndex < 0) {
-    return { processable: input, trailingFragment: '' };
-  }
-
-  const trailingFragment = input.slice(lastOpenBracketIndex);
-  if (
-    trailingFragment.includes('>') ||
-    !isPotentialThinkTagFragment(trailingFragment)
-  ) {
-    return { processable: input, trailingFragment: '' };
-  }
-
-  return {
-    processable: input.slice(0, lastOpenBracketIndex),
-    trailingFragment,
-  };
+  source: string;
+  processedLength: number;
 }
 
 function splitThinkAwareSegments(
@@ -318,32 +272,35 @@ function splitThinkAwareSegments(
   segments: NormalizedStreamSegment[];
   hasMalformedThink: boolean;
 } {
-  const combinedContent = `${state.pendingThinkTagFragment}${rawContent}`;
-  const { processable, trailingFragment } =
-    splitTrailingThinkTagFragment(combinedContent);
-  state.pendingThinkTagFragment = flushTrailingFragmentAsText
-    ? ''
-    : trailingFragment;
+  state.source += rawContent;
+  const { tags, pendingTagIndex } = scanThinkMarkup(
+    state.source,
+    !flushTrailingFragmentAsText
+  );
+  const end = flushTrailingFragmentAsText
+    ? state.source.length
+    : (pendingTagIndex ?? state.source.length);
+  state.pendingThinkTagFragment = state.source.slice(end);
 
   const segments: NormalizedStreamSegment[] = [];
-  let hasMalformedThink = false;
-  const thinkTagPattern = /<\/?think(?:\s[^>]*)?>/gi;
-  let cursor = 0;
+  let hasMalformedThink =
+    flushTrailingFragmentAsText && pendingTagIndex !== null;
+  let cursor = state.processedLength;
 
-  for (const match of processable.matchAll(thinkTagPattern)) {
-    const tag = match[0];
-    const matchIndex = match.index ?? 0;
+  for (const tag of tags) {
+    if (tag.name !== 'think' || tag.index < state.processedLength) continue;
+    const matchIndex = tag.index;
 
     if (matchIndex > cursor) {
       segments.push({
         type: state.thinkDepth > 0 ? 'reasoning' : 'answer',
-        content: processable.slice(cursor, matchIndex),
+        content: state.source.slice(cursor, matchIndex),
       });
     }
 
-    if (/^<think(?:\s[^>]*)?>$/i.test(tag)) {
+    if (!tag.closing) {
       state.thinkDepth += 1;
-    } else if (/^<\/think>$/i.test(tag)) {
+    } else {
       if (state.thinkDepth > 0) {
         state.thinkDepth -= 1;
       } else {
@@ -351,23 +308,17 @@ function splitThinkAwareSegments(
       }
     }
 
-    cursor = matchIndex + tag.length;
+    cursor = tag.end;
   }
 
-  if (cursor < processable.length) {
+  if (cursor < end) {
     segments.push({
       type: state.thinkDepth > 0 ? 'reasoning' : 'answer',
-      content: processable.slice(cursor),
+      content: state.source.slice(cursor, end),
     });
   }
 
-  if (flushTrailingFragmentAsText && trailingFragment) {
-    segments.push({
-      type: state.thinkDepth > 0 ? 'reasoning' : 'answer',
-      content: trailingFragment,
-    });
-    hasMalformedThink = true;
-  }
+  state.processedLength = end;
 
   return {
     segments: segments.filter(segment => segment.content.length > 0),
@@ -391,19 +342,9 @@ function splitStaticThinkAwarePayload(rawContent: string): {
     };
   }
 
-  const exactThinkBlock = unwrapExactThinkBlock(trimmedContent);
-  if (exactThinkBlock !== null) {
-    return {
-      reasoningText: exactThinkBlock,
-      answerText: '',
-      hasMalformedThink: false,
-      hasThinkMarkup: true,
-    };
-  }
-
-  const hasThinkMarkup =
-    trimmedContent.includes(THINK_OPEN_TAG) ||
-    trimmedContent.includes(THINK_CLOSE_TAG);
+  const hasThinkMarkup = scanThinkMarkup(trimmedContent).tags.some(
+    tag => tag.name === 'think'
+  );
 
   if (!hasThinkMarkup) {
     return {
@@ -417,6 +358,8 @@ function splitStaticThinkAwarePayload(rawContent: string): {
   const state: ThinkMarkupState = {
     thinkDepth: 0,
     pendingThinkTagFragment: '',
+    source: '',
+    processedLength: 0,
   };
   const { segments, hasMalformedThink } = splitThinkAwareSegments(
     trimmedContent,
@@ -569,11 +512,20 @@ export async function streamDifyChat(
       let syntheticThinkBlockOpen = false;
       let normalizedContent = '';
       let answerContent = '';
+      let reasoningContent = '';
       const previousAgentThoughtByPosition = new Map<string, string>();
       const userMessageFileIds: string[] = [];
       const answerStreamThinkState: ThinkMarkupState = {
         thinkDepth: 0,
         pendingThinkTagFragment: '',
+        source: '',
+        processedLength: 0,
+      };
+      const resetAnswerThinkState = (content: string) => {
+        answerStreamThinkState.thinkDepth = 0;
+        answerStreamThinkState.pendingThinkTagFragment = '';
+        answerStreamThinkState.source = content;
+        answerStreamThinkState.processedLength = content.length;
       };
       const outputThinkState = {
         currentOpenThinkContent: '',
@@ -605,6 +557,7 @@ export async function streamDifyChat(
         }
 
         outputThinkState.currentOpenThinkContent += chunk;
+        reasoningContent += chunk;
         yield* yieldChunk(chunk);
       };
 
@@ -781,8 +734,7 @@ export async function streamDifyChat(
 
               if (answerDelta) {
                 if (hasThinkMarkup) {
-                  answerStreamThinkState.thinkDepth = 0;
-                  answerStreamThinkState.pendingThinkTagFragment = '';
+                  resetAnswerThinkState(answerText);
                 }
                 yield* emitAnswerChunk(answerDelta);
               }
@@ -791,9 +743,9 @@ export async function streamDifyChat(
             case 'agent_message':
             case 'message':
               if (event.answer) {
-                const hasThinkMarkup =
-                  event.answer.includes(THINK_OPEN_TAG) ||
-                  event.answer.includes(THINK_CLOSE_TAG);
+                const hasThinkMarkup = scanThinkMarkup(event.answer).tags.some(
+                  tag => tag.name === 'think'
+                );
                 if (hasThinkMarkup) {
                   rawEventSummary.answerPayloadThinkMarkupCount += 1;
                 }
@@ -812,9 +764,9 @@ export async function streamDifyChat(
               break;
             case 'message_replace':
               if (event.answer) {
-                const hasThinkMarkup =
-                  event.answer.includes(THINK_OPEN_TAG) ||
-                  event.answer.includes(THINK_CLOSE_TAG);
+                const hasThinkMarkup = scanThinkMarkup(event.answer).tags.some(
+                  tag => tag.name === 'think'
+                );
 
                 if (!hasThinkMarkup) {
                   const answerDelta = buildNovelTail(
@@ -822,8 +774,7 @@ export async function streamDifyChat(
                     event.answer
                   );
                   if (answerDelta) {
-                    answerStreamThinkState.thinkDepth = 0;
-                    answerStreamThinkState.pendingThinkTagFragment = '';
+                    resetAnswerThinkState(event.answer);
                     yield* emitAnswerChunk(answerDelta);
                   }
                   break;
@@ -837,7 +788,7 @@ export async function streamDifyChat(
                 }
 
                 const reasoningDelta = buildNovelTail(
-                  outputThinkState.currentOpenThinkContent,
+                  reasoningContent,
                   reasoningText
                 );
                 const answerDelta = buildNovelTail(answerContent, answerText);
@@ -847,8 +798,7 @@ export async function streamDifyChat(
                 }
 
                 if (answerDelta) {
-                  answerStreamThinkState.thinkDepth = 0;
-                  answerStreamThinkState.pendingThinkTagFragment = '';
+                  resetAnswerThinkState(event.answer);
                   yield* emitAnswerChunk(answerDelta);
                 }
               }
@@ -954,8 +904,9 @@ export async function streamDifyChat(
                 rawEventSummary.malformedPayloadCount += 1;
                 answerStreamThinkState.pendingThinkTagFragment = '';
               }
-              answerStreamThinkState.thinkDepth = 0;
-              yield* closeSyntheticThinkBlock();
+              if (answerStreamThinkState.thinkDepth === 0) {
+                yield* closeSyntheticThinkBlock();
+              }
               console.log(
                 '[Dify Service] Received message_end event with metadata:',
                 {
@@ -1028,8 +979,9 @@ export async function streamDifyChat(
         }
 
         answerStreamThinkState.pendingThinkTagFragment = '';
-        answerStreamThinkState.thinkDepth = 0;
-        yield* closeSyntheticThinkBlock();
+        if (answerStreamThinkState.thinkDepth === 0) {
+          yield* closeSyntheticThinkBlock();
+        }
         logSuspiciousThinkStructure({
           appId,
           conversationId,

@@ -201,10 +201,12 @@
         "uploading": "Caricamento in corso...",
         "uploadFailed": "Caricamento fallito",
         "capabilitiesUnavailable": "Impossibile caricare i requisiti di input. Riprova.",
+        "capabilitiesChanged": "I requisiti di input sono cambiati. Controlla i campi e gli allegati prima di inviare di nuovo.",
         "capabilitiesUnsupported": "Requisiti di input non supportati. Controlla la configurazione dell'app.",
         "filesRequired": "Aggiungi gli allegati richiesti.",
         "uploadPending": "Attendi i caricamenti o rimuovi i file non riusciti.",
         "localUploadUnavailable": "Questo uso non supporta i caricamenti locali.",
+        "chooseAttachmentField": "Usa il pulsante degli allegati per scegliere un campo, poi seleziona i file.",
         "retryUpload": "Riprova caricamento",
         "removeFile": "Rimuovi file",
         "fileUploadError": "Errore nel caricamento del file",
@@ -621,7 +623,7 @@
             "generation": "Generazione di testo",
             "text": "Interazione testuale"
           },
-          "textOnlyLimit": "Solo testo: senza allegati, citazioni, voce o variabili personalizzate.",
+          "configuredInputs": "Campi e allegati dipendono dalla configurazione dell'applicazione.",
           "noDescription": "Nessuna descrizione",
           "defaultType": "App"
         },
@@ -1556,13 +1558,24 @@
             "title": "Configurazione Parametri Dify",
             "appTypeNote": "Le applicazioni di tipo \"Modello\" appariranno nel selettore di modelli dell'interfaccia di chat"
           },
+          "conversationTurns": {
+            "label": "Turni di conversazione (facoltativo)",
+            "default": "Predefinito dell’applicazione",
+            "single": "Turno singolo",
+            "multi": "Più turni",
+            "independent": "Esecuzioni indipendenti",
+            "note": "Seleziona più turni solo se l’applicazione a monte è progettata per usare il contesto precedente.",
+            "independentNote": "Nella stessa finestra sono possibili più esecuzioni indipendenti senza condividere il contesto.",
+            "humanInputNote": "Un agente con conferma umana gestisce una sola attività per conversazione.",
+            "typeMismatch": "Dify indica {type}. Il tipo di applicazione salvato non è stato modificato."
+          },
           "backend": {
             "label": "Backend",
             "assistantId": "Assistant ID",
             "resultProfileLabel": "Enable Deep Agent result artifacts",
             "resultProfileNote": "Enable only for an assistant verified to support phase4.result.v1, regardless of its name. Disabling pauses new profile tasks; existing results remain readable.",
             "aguiLabel": "Usa la chat AG-UI comune per le nuove conversazioni delle app",
-            "aguiNote": "Solo nuove conversazioni testuali nelle app chatbot del marketplace. File, citazioni, voce e variabili personalizzate non sono supportati. Il modello predefinito e il selettore non cambiano. Le vecchie conversazioni mantengono il percorso compatibile; quelle pubbliche collegate non tornano al percorso precedente.",
+            "aguiNote": "Si applica alle nuove conversazioni dei chatbot del catalogo. Campi e allegati dipendono dalla configurazione dell'applicazione. Le conversazioni esistenti mantengono la modalità originale.",
             "langchainNote": "Use the assistant exposed by this service. Text and read-only tools only; service credentials stay on the server.",
             "validation": {
               "instanceIdRequired": "Enter an application identifier.",
@@ -2908,7 +2921,7 @@
       "copied": "Source copied.",
       "copyFailed": "Could not copy the source. Please select and copy its text."
     },
-    "textOnlyNote": "Questa conversazione supporta solo testo, senza file, citazioni, voce o variabili personalizzate. Le vecchie conversazioni mantengono le funzioni compatibili.",
+    "textOnlyNote": "Questa applicazione non accetta allegati in questa conversazione.",
     "cancelled": "Annullato",
     "interrupted": "Interrotto",
     "loadMore": "Carica messaggi precedenti",

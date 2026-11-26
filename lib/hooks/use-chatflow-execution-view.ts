@@ -39,7 +39,10 @@ export function bindChatflowExecutionView(
         ]),
     paths: continuation ? previous.paths : [pathname],
   };
-  useChatflowExecutionStore.setState({ view });
+  useChatflowExecutionStore.setState({
+    view,
+    ...(!continuation && { openProcessMessageId: null }),
+  });
   return view;
 }
 

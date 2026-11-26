@@ -3,6 +3,8 @@ import type { Provider, ServiceInstance } from '@lib/stores/api-config-store';
 import type { DifyAppType } from '@lib/types/dify-app-types';
 import type { DifyParametersSimplifiedConfig } from '@lib/types/dify-parameters';
 
+import type { ConversationTurns } from '../../../packages/shared/src/conversation-turns';
+
 export interface InstanceFormData {
   id?: string;
   provider_id?: string;
@@ -14,6 +16,7 @@ export interface InstanceFormData {
   api_path: string;
   apiKey: string;
   config: {
+    conversation_turns?: ConversationTurns;
     task_input?: { text_variable: string | null };
     backend_type?: 'dify' | 'langchain';
     interaction_protocol?: 'ag-ui/1.0';
@@ -34,6 +37,7 @@ export interface InstanceFormData {
 }
 
 export interface DifyAppInfo {
+  mode?: string;
   name: string;
   description: string;
   tags: string[];

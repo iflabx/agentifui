@@ -12,6 +12,11 @@ import { useSearchParams } from 'next/navigation';
 
 import { WorkflowLayout } from './workflow-layout';
 
+const openProcess = () =>
+  fireEvent.click(
+    screen.getByRole('button', { name: 'executionProcess.view' })
+  );
+
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ replace: jest.fn() }),
   usePathname: () => '/apps/workflow/app-one',
@@ -165,6 +170,7 @@ describe('Workflow historical selection boundary', () => {
         screen.getByRole('button', { name: 'Select saved task' })
       );
       fireEvent.click(screen.getByRole('button', { name: 'Close result' }));
+      openProcess();
       expect(screen.getByText('Saved step B')).toBeInTheDocument();
       expect(screen.queryByText(mockLiveError)).not.toBeInTheDocument();
       expect(
@@ -177,6 +183,11 @@ describe('Workflow historical selection boundary', () => {
       expect(mockClearExecutionState).not.toHaveBeenCalled();
       fireEvent.click(
         screen.getByRole('button', { name: 'executionProcess.close' })
+      );
+      expect(screen.queryByText('Saved step B')).not.toBeInTheDocument();
+      expect(screen.queryByText(mockLiveError)).not.toBeInTheDocument();
+      fireEvent.click(
+        screen.getByRole('button', { name: 'pages.workflow.buttons.reset' })
       );
       expect(screen.getByText(mockLiveError)).toBeInTheDocument();
       fireEvent.click(screen.getByTitle('pages.workflow.buttons.retry'));
@@ -196,6 +207,7 @@ describe('Workflow historical selection boundary', () => {
       fireEvent.click(
         screen.getByRole('button', { name: 'Select saved task' })
       );
+      openProcess();
       expect(screen.getByText('Saved step B')).toBeInTheDocument();
       expect(screen.queryByText('Live step A')).not.toBeInTheDocument();
       expect(
@@ -226,7 +238,18 @@ describe('Workflow historical selection boundary', () => {
       .mocked(getExecutionById)
       .mockResolvedValue({ success: true, data: mockSavedExecution });
     const { rerender } = render(<WorkflowLayout instanceId="app-one" />);
-    expect(await screen.findByText('Saved step B')).toBeInTheDocument();
+    await screen.findByRole('button', { name: 'Close result' });
+    fireEvent.click(screen.getByRole('button', { name: 'Close result' }));
+    expect(screen.queryByText('Saved step B')).not.toBeInTheDocument();
+    openProcess();
+    const panel = screen.getByRole('region', {
+      name: 'executionProcess.title',
+    });
+    expect(panel.closest('[data-execution-process-panel]')).toHaveClass(
+      'fixed',
+      'md:right-4'
+    );
+    expect(panel).toContainElement(screen.getByText('Saved step B'));
     expect(screen.queryByText('Live step A')).not.toBeInTheDocument();
     jest
       .mocked(useSearchParams)

@@ -128,7 +128,10 @@ describe('independent agent chat lifecycle', () => {
     window.history.replaceState({}, '', '/apps/langchain/app-uuid');
     global.fetch = jest.fn().mockResolvedValue({ ok: true });
     jest.mocked(agentRequest).mockImplementation(async (_appId, suffix) => {
-      if (suffix === '') return { app: { name: 'Test agent' } } as never;
+      if (suffix === '')
+        return {
+          app: { name: 'Test agent', description: 'Configured description' },
+        } as never;
       if (suffix === '/conversations') return { conversations: [] } as never;
       return {
         conversation: { id: 'local', title: 'Test' },
@@ -145,6 +148,13 @@ describe('independent agent chat lifecycle', () => {
   afterEach(() => {
     global.fetch = originalFetch;
     jest.useRealTimers();
+  });
+
+  it('reads the configured introduction from authorized agent metadata', async () => {
+    const hook = renderHook(() => useAgentChat('app-uuid', null, 'test-actor'));
+    await waitFor(() => expect(hook.result.current.ready).toBe(true));
+    expect(hook.result.current.appName).toBe('Test agent');
+    expect(hook.result.current.appDescription).toBe('Configured description');
   });
 
   it('sends only revised text and a source reference, replacing the visible suffix after acceptance', async () => {

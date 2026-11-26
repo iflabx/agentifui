@@ -11,6 +11,34 @@ jest.mock('@lib/hooks/use-welcome-layout', () => ({
 }));
 
 describe('ChatInputView', () => {
+  it('keeps a long application introduction and suggestions inside a scrollable welcome layout', () => {
+    const props = {
+      value: 'draft',
+      onValueChange: jest.fn(),
+      onSubmit: jest.fn(),
+      scrollableWelcome: true,
+      isWelcomeScreen: true,
+      beforeInput: <p>{'Long introduction\n'.repeat(40)}</p>,
+      afterInput: <button type="button">Suggestion</button>,
+    };
+    const view = render(<ChatInputView {...props} />);
+    const welcome = view.container.querySelector('[data-chat-welcome]');
+    expect(welcome).toHaveClass('overflow-y-auto', 'inset-0');
+    const composer = view.container.querySelector(
+      '[data-chat-input-container]'
+    );
+    expect(composer).toHaveClass('relative', 'my-auto', 'shrink-0');
+    expect(composer).not.toHaveAttribute('style');
+    expect(composer).toContainElement(screen.getByRole('textbox'));
+    expect(composer).toContainElement(
+      screen.getByRole('button', { name: 'Suggestion' })
+    );
+    view.rerender(<ChatInputView {...props} isWelcomeScreen={false} />);
+    expect(view.container.querySelector('[data-chat-welcome]')).toBeNull();
+    expect(
+      view.container.querySelector('[data-chat-input-container]')
+    ).toHaveClass('absolute');
+  });
   it('keeps the default positioned chat layout', () => {
     const view = render(
       <ChatInputView

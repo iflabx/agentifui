@@ -1,6 +1,9 @@
 import { uploadDifyFile } from '@lib/services/dify/file-service';
 import { useAttachmentStore } from '@lib/stores/attachment-store';
-import { useChatInputStore } from '@lib/stores/chat-input-store';
+import {
+  chatInputScope,
+  useChatInputStore,
+} from '@lib/stores/chat-input-store';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import { type ReactNode, useLayoutEffect } from 'react';
@@ -137,6 +140,7 @@ function deferredUpload() {
 describe('Chatflow composer attachments', () => {
   beforeEach(() => {
     jest.resetAllMocks();
+    sessionStorage.clear();
     useChatInputStore.getState().setActor('actor-A');
     useAttachmentStore.getState().resetAll();
     jest.mocked(uploadDifyFile).mockImplementation(
@@ -146,6 +150,35 @@ describe('Chatflow composer attachments', () => {
           preview_url: `/preview/${upload.name}`,
         }) as never
     );
+  });
+
+  it('restores a single uploaded slot after reload without displaying its backend label', async () => {
+    const doc = {
+      ...slot,
+      key: 'doc',
+      label: 'doc',
+      target: 'inputs' as const,
+    };
+    const scope = () =>
+      chatInputScope(
+        useChatInputStore.getState().actorEpoch,
+        'actor-A',
+        'app-A',
+        'newdraft:stable'
+      );
+    const initial = render(<Harness scope={scope()} slots={[doc]} />);
+    await act(async () => select('doc', [file()]));
+    initial.unmount();
+    useAttachmentStore.getState().resetAll();
+    useChatInputStore.getState().setActor(null);
+    useChatInputStore.getState().setActor('actor-A');
+    render(<Harness scope={scope()} slots={[doc]} />);
+    expect(await screen.findByText('reference.txt')).toBeInTheDocument();
+    expect(screen.queryByText('doc', { exact: true })).not.toBeInTheDocument();
+    expect(snapshot.inputs).toEqual({
+      doc: [expect.objectContaining({ upload_file_id: 'reference.txt-id' })],
+    });
+    expect(uploadDifyFile).toHaveBeenCalledTimes(1);
   });
 
   it('keeps a disabled attachment icon without slots or local upload support', () => {

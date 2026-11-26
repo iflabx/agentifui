@@ -68,9 +68,9 @@ to expand it without opening the application. The application-name button opens
 the entry; the favorite button is separate and also available by keyboard.
 Interaction labels distinguish conversation, workflow, text generation or the
 platform's configured text interaction. They do not promise that the upstream
-model is currently available. An explicitly selected text-only entry states its
-attachment, citation, voice and custom-variable limitations. Missing descriptions
-or capability information are not automatically generated.
+model is currently available. The composer shows the fields and attachment
+limits supported by the selected application. Missing descriptions or capability
+information are not automatically generated.
 
 1. Open the application list. Search by application name, description or tags.
 2. Use the category/tag filters to narrow the list. Clear both the search and
@@ -92,8 +92,8 @@ account-wide synchronized preference.
 | Regular model chat           | General questions and follow-up conversation           | Chat input and a configured Dify model selector                                 |
 | Dify chatbot or legacy Agent | A published conversational application                 | Messages, plus enabled application-specific controls                            |
 | Dify chatflow                | Conversation backed by a workflow                      | Chat and supported input fields; execution/node progress where available        |
-| Dify workflow                | A task submitted with structured inputs                | Input form, execution status, result and application execution history          |
-| Dify text generation         | Generate text from a configured input form             | Inputs, generated text and execution records                                    |
+| Dify workflow                | A task submitted with structured inputs                | Chat composer, task parameters, execution progress and task history             |
+| Dify text generation         | Generate text from a configured input form             | Chat composer, generated text and task history                                  |
 | LangChain Agent              | Conversation with a compatible externally hosted Agent | Shared chat/history, supported tool activities and optional native confirmation |
 
 An application's name or tag is descriptive, not a guarantee of capability.
@@ -125,6 +125,14 @@ prove the upstream task was cancelled.
 
 ### Input And Message Actions
 
+Dedicated application pages share the same composer and introduction: the configured
+application name appears above its muted description, immediately above the input.
+There is no generic visible placeholder. This introduction is not a message or model
+input; it disappears after the first request is accepted, not on a rejected send,
+and returns for a new task or conversation. The model homepage keeps its existing
+greeting and input defaults. A configured Dify opening statement can appear as
+supplementary guidance; it does not replace the application's description.
+
 Chatflow uses the standard chat composer to start a single-turn task. Attach files with the button inside
 the input box; selected files appear as cards there, with upload status, remove
 and retry actions. A single available purpose opens the file picker directly.
@@ -146,11 +154,11 @@ accessible from their original messages.
 
 The application type configured by an administrator determines native execution
 semantics: Workflow and Text Generation perform an independent task per send.
-For now, the product also presents Chatflow as one task per conversation: while
-running, the stop action remains available; afterwards, **Start new task** replaces
-the composer. Chatflow follow-ups and edit-and-resend are not offered. Starting a
-new task opens a fresh conversation and requires its own parameters and files.
-Existing history, including older multi-turn conversations, remains readable.
+Chatflow defaults to one task per conversation unless configured for multiple
+turns. In single-turn mode, the stop action remains available while running;
+afterwards, **Start new task** replaces the composer. Follow-ups and edit-and-resend
+are not offered in that mode. Starting a new task opens a fresh conversation
+with its own parameters and files. Existing history remains readable.
 The notice does not imply that a failed or stopped task completed successfully;
 requests rejected before acceptance retain their editable inputs for retry.
 This is a product UI convention, not a Dify API limitation or server-enforced
@@ -283,15 +291,15 @@ identical across backends:
 | Application path              | Current boundary                                                                                                                                                     |
 | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Existing Dify modes           | Input forms, attachments, speech and other controls depend on the mode and configuration; some file-preview and workflow follow-up operations are administrator-only |
-| Dify shared AG-UI chatbot     | Explicitly enabled text-only chat; no files, human confirmation or native stop/run-query capability on this path                                                     |
-| Ordinary LangChain Agent      | Text chat and supported tool activity summaries; no general file input, execution cancellation or durable stream recovery                                            |
+| Dify shared AG-UI chatbot     | Explicitly enabled chat. The compatible chatbot configuration determines file and input fields. Human confirmation and native cancellation are unavailable.          |
+| Ordinary LangChain Agent      | Text chat and supported tool activity summaries. File input follows the selected assistant's supported input profile.                                                |
 | LangChain human-input profile | Controlled approve/reject interaction, not arbitrary forms or a general approval workflow                                                                            |
 
 A backend may have more features than AgentifUI exposes. A disabled or missing
 control is not fixed by adding a service token in the browser. A stopped display,
 network interruption and confirmed upstream cancellation are different states.
 
-### Attach A File On A Supported Dify Path
+### Attach A File In A Supported Application
 
 1. Open an application that exposes an attachment control or a file input field.
    Its configuration determines accepted file types, count and size.
@@ -306,15 +314,17 @@ network interruption and confirmed upstream cancellation are different states.
    uploads and failed items still occupy a place; retry the same item or remove it
    before selecting another file. Existing draft files are not silently discarded.
 3. Submit the message/form only after required uploads and other fields are ready.
-4. Use the response's available attachment controls to view or download results.
+4. Open attachments from their saved user messages. Use the response's available
+   result controls to view or download outputs.
    If preview is denied, do not try another user's file ID or assume you can
    bypass the restriction with a direct service URL; ask the administrator.
 
 The application, AgentifUI API, reverse proxy and upstream service can impose
 different limits. A file accepted by the browser can still be rejected during
-upload. Shared text-only Dify/LangChain chat does not currently expose general
-file handling. An export of displayed text/code is not a durable Agent-generated
-file artifact with a managed lifecycle.
+upload. For shared Agent chats, available file types and counts come from the
+selected Dify app or compatible LangChain assistant. Input attachments appear
+on the message that used them. The application may limit how long a saved
+attachment can be opened.
 
 The separately enabled frozen-result profile provides bounded report/CSV delivery,
 not general file input. See [reports, data and sources](#9-reports-data-and-sources).
@@ -324,12 +334,18 @@ not general file input. See [reports, data and sources](#9-reports-data-and-sour
 1. Open the application from `/apps`, not the model selector. Workflow and
    text-generation applications use the shared chat input and message display.
    Complete any parameters above the input and wait for required file uploads.
+   Choose files with the attachment button inside the composer; uploaded files
+   use the same status, remove and retry cards as chat. Each upload purpose keeps
+   its own limits. Per-task parameters stay available after sending, even when
+   the introductory application name and description are hidden.
    When a main text field is configured or unambiguously detected, the input
    fills that exact upstream variable. Parameter/file-only tasks need no dummy text.
 2. Send once. Each send is an independent task, not a conversational continuation:
    previous results are not automatically sent upstream as memory. Each round
    retains its input, result and available execution-process details.
-3. Open the result viewer when available. Its copy/download controls export the
+3. Read ordinary text results directly in the reply. Structured or multi-field
+   results retain a **View full result** entry; its viewer preserves all output
+   fields. Its copy/download controls export the
    displayed result: workflow output can be Markdown/JSON text and text-generation
    output can be a `.txt` download. This is not a universal export of conversation
    history, original uploaded files or an Agent's external state.
@@ -337,7 +353,8 @@ not general file input. See [reports, data and sources](#9-reports-data-and-sour
    view saved rounds, and load earlier tasks when more history is available.
    Older unlinked execution records remain readable through their original
    execution-history links; they are not converted or duplicated automatically.
-5. Use **Use these inputs again** to prepare another run, then submit explicitly.
+5. Open a round's **More options** menu and choose **Use these inputs again** to
+   prepare another run, then submit explicitly.
    This creates a new task rather than editing or branching a completed run.
    Reopening history never runs a task. Deleting a local task conversation also
    removes its linked executions from accessible history.
@@ -354,6 +371,13 @@ the current Dify proxy may intentionally restrict that operation to administrato
 Do not interpret every disabled follow-up action as a failed task submission.
 The node tracker is a display of supported events, not a workflow editor.
 
+Choose **View execution process** on a task round to open its right-side panel,
+using the same panel and activity display as Chatflow. Only one task's process
+panel is open at a time; its task heading identifies the selected round. Live
+activity updates while that task runs; reopening older rounds shows their saved
+process rather than another task's live activity. Close it with the close button
+or Escape. On small screens the panel stays within the viewport.
+
 ### Execution Process
 
 Dify Workflow steps, Chatflow steps and LangChain tool activities use a shared
@@ -366,23 +390,24 @@ For Dify, expanding or collapsing nested details does not change the completed
 count; iteration and branch summaries are not counted again as extra steps.
 
 - In a LangChain conversation, use **View execution process** beside the first
-  tool activity of a run to expand that run's activities inline. Other tool hints
-  keep their original positions among messages. Close the list with its close
-  button, the entry button or Escape inside the list; closing restores focus to
-  the entry. This inline area is separate from file-preview drawers and does not
+  tool activity of a run to open that run's activities in the shared right-side
+  panel. Only one run's panel is open at a time; selecting another run replaces
+  its contents without mixing activities. Other tool hints keep their original
+  positions among messages. Close the panel with its close button, the entry
+  button or Escape inside the panel; closing restores focus to the entry.
+  Switching conversations or applications closes it. This panel does not
   start or resume a task. Unfinished tools in saved or ended runs show an unknown
   state rather than continuing to animate; confirmed final tool states remain
   unchanged.
-- In Chatflow, use the process toggle to open or hide the floating list. Its close
-  button returns focus to the toggle. The list is scrollable on narrow screens.
+- In Chatflow, use **View execution process** to open the shared process panel.
+  Its close button returns focus to the entry. On narrow screens it opens as a drawer.
   Supported live iteration, loop and parallel details can be expanded with their
   step buttons. Saved per-response process snapshots remain available when
   reopening a conversation. Older messages without a saved snapshot do not
   recreate a missing process record.
-- In Workflow, the execution area shows live steps and supported nested details.
-  Selecting a saved execution displays only that execution's saved step summary,
-  never another live task's nodes. Close the result viewer to see the summary;
-  close the process summary to leave the selected historical execution. Missing
+- In Workflow and Text Generation, use **View execution process** on the relevant
+  round when steps are available. A saved round shows only its own saved summary,
+  never another live task's nodes. The result viewer is a separate action. Missing
   or incomplete snapshots show an empty/unknown state, not a simulated running
   task. Saved summaries do not reconstruct every loop iteration or a full event
   replay. Live error banners and their retry/dismiss actions are hidden while
