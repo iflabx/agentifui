@@ -68,11 +68,12 @@ or an old upload's trusted metadata is unavailable, the request fails rather tha
 silently guessing inputs or resending the task.
 
 The Chatflow browser adapter uses the standard composer for the initial request.
-The product currently treats each Chatflow conversation as a single-turn task:
+The product treats Chatflow as single-turn by default, unless the instance is
+configured for multiple turns. In single-turn mode:
 after acceptance, further sends and edit-and-resend are not offered. While the
 request runs, the stop action remains; afterwards, a new-task link opens a fresh
 conversation without reusing its parameters or upload references. Reopened
-history is read-only, including older multi-turn conversations. Requests rejected
+history is read-only while the single-turn policy applies. Requests rejected
 before acceptance keep editable inputs. Initialization `inputs` and message
 `files` slots retain their native payload semantics on the initial request.
 Multiple slots require explicit purpose selection. Single-file variables remain
@@ -91,7 +92,8 @@ backend or alter its native conversation memory.
 
 The configured `app_metadata.dify_apptype` determines task versus conversation
 mode: Workflow and Text Generation run independent tasks; Chatflow still uses
-the native conversation API. Its single-turn presentation is currently a product
+the native conversation API. The `config.conversation_turns` setting controls
+its turn presentation; single-turn is currently a product
 UI convention, not a server-enforced API maximum-turns policy. Native continuation
 compatibility remains in the backend; declaring a Chatflow as Workflow to change
 its UI would select the wrong endpoint. The declared type must match the upstream
@@ -166,6 +168,14 @@ a different public file host. Existing Workflow archives remain readable
 locally; a missing native chat original cannot be recovered by this relay.
 File bytes are not converted to text. HTML, SVG and XML responses keep
 forced-download, sandbox and `nosniff` protections.
+
+The shared AG-UI chatbot uses a separate registered-input path, described in
+[AG-UI Integration](AGUI-INTEGRATION.md#dify-chatbot-scope). It stores a protected
+copy of new input uploads for authorized preview. For supported assistant files
+recorded in native Dify history, the API can relay the original through the
+AgentifUI origin; it does not turn arbitrary Markdown URLs into downloadable
+results or generate images itself. If Dify no longer has the original, the relay
+cannot restore it.
 
 `DIFY_UPLOAD_MAX_BYTES` sets the total buffered multipart request limit for
 `POST /files/upload` and `POST /audio-to-text`. The default is `16777216` bytes

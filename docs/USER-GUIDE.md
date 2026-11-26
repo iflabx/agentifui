@@ -68,9 +68,9 @@ to expand it without opening the application. The application-name button opens
 the entry; the favorite button is separate and also available by keyboard.
 Interaction labels distinguish conversation, workflow, text generation or the
 platform's configured text interaction. They do not promise that the upstream
-model is currently available. An explicitly selected text-only entry states its
-attachment, citation, voice and custom-variable limitations. Missing descriptions
-or capability information are not automatically generated.
+model is currently available. The composer shows the fields and attachment
+limits supported by the selected application. Missing descriptions or capability
+information are not automatically generated.
 
 1. Open the application list. Search by application name, description or tags.
 2. Use the category/tag filters to narrow the list. Clear both the search and
@@ -154,11 +154,11 @@ accessible from their original messages.
 
 The application type configured by an administrator determines native execution
 semantics: Workflow and Text Generation perform an independent task per send.
-For now, the product also presents Chatflow as one task per conversation: while
-running, the stop action remains available; afterwards, **Start new task** replaces
-the composer. Chatflow follow-ups and edit-and-resend are not offered. Starting a
-new task opens a fresh conversation and requires its own parameters and files.
-Existing history, including older multi-turn conversations, remains readable.
+Chatflow defaults to one task per conversation unless configured for multiple
+turns. In single-turn mode, the stop action remains available while running;
+afterwards, **Start new task** replaces the composer. Follow-ups and edit-and-resend
+are not offered in that mode. Starting a new task opens a fresh conversation
+with its own parameters and files. Existing history remains readable.
 The notice does not imply that a failed or stopped task completed successfully;
 requests rejected before acceptance retain their editable inputs for retry.
 This is a product UI convention, not a Dify API limitation or server-enforced
@@ -399,16 +399,15 @@ count; iteration and branch summaries are not counted again as extra steps.
   start or resume a task. Unfinished tools in saved or ended runs show an unknown
   state rather than continuing to animate; confirmed final tool states remain
   unchanged.
-- In Chatflow, use the process toggle to open or hide the floating list. Its close
-  button returns focus to the toggle. The list is scrollable on narrow screens.
+- In Chatflow, use **View execution process** to open the shared process panel.
+  Its close button returns focus to the entry. On narrow screens it opens as a drawer.
   Supported live iteration, loop and parallel details can be expanded with their
   step buttons. Saved per-response process snapshots remain available when
   reopening a conversation. Older messages without a saved snapshot do not
   recreate a missing process record.
-- In Workflow, the execution area shows live steps and supported nested details.
-  Selecting a saved execution displays only that execution's saved step summary,
-  never another live task's nodes. Close the result viewer to see the summary;
-  close the process summary to leave the selected historical execution. Missing
+- In Workflow and Text Generation, use **View execution process** on the relevant
+  round when steps are available. A saved round shows only its own saved summary,
+  never another live task's nodes. The result viewer is a separate action. Missing
   or incomplete snapshots show an empty/unknown state, not a simulated running
   task. Saved summaries do not reconstruct every loop iteration or a full event
   replay. Live error banners and their retry/dismiss actions are hidden while

@@ -127,10 +127,11 @@ an arbitrary Agent URL or a promise of a standard AG-UI HTTP endpoint.
   navigation or persistence system.
 
 LangChain and explicitly opted-in Dify marketplace chatbots use negotiated AG-UI
-with server-managed saving. The Dify opt-in is text-only; existing Dify model,
-chatflow, workflow and other compatible paths retain their own behavior and
-browser-managed saving where applicable. A conversation must not have both a
-browser and server history writer.
+with server-managed saving and capability-gated inputs. Model chat, Chatflow,
+Workflow and text generation reuse the shared chat layout and composer without
+changing their transports or persistence ownership. Workflow and text generation
+group independent executions into a local conversation, not upstream chat memory.
+A conversation must not have both a browser and server history writer.
 
 `backend_conversations`, `backend_runs`, `agent_submissions` and
 `backend_run_interactions` complement the existing local conversations/messages.

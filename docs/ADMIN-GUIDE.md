@@ -200,8 +200,8 @@ breaks access to existing encrypted values.
 
 ### Optional LangChain File Input
 
-Configure the assistant ID of a supported input-file profile. After applying
-the Agent input file migration, verify that the application exposes its declared
+Configure the assistant ID of a [supported input-file profile](LANGCHAIN-INTEGRATION.md#optional-input-file-profile).
+After applying the Agent input file migration, verify that the application exposes its declared
 attachment limits and that an ordinary user can send and reopen a sample file.
 The upstream assistant controls file retention and supported formats.
 
