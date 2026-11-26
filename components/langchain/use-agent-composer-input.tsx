@@ -29,7 +29,7 @@ import {
 } from '@lib/stores/attachment-store';
 import { useLangchainDraftStore } from '@lib/stores/langchain-draft-store';
 
-import { useEffect, useId, useLayoutEffect, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 
@@ -117,6 +117,7 @@ export function useAgentComposerInput({
   scope,
   enabled,
   disabled,
+  authLoading,
   content,
   submissionError,
 }: {
@@ -125,6 +126,7 @@ export function useAgentComposerInput({
   scope: string | null;
   enabled: boolean;
   disabled: boolean;
+  authLoading: boolean;
   content: string;
   submissionError?: AgentRequestError | null;
 }) {
@@ -148,6 +150,11 @@ export function useAgentComposerInput({
     scope: string;
     message: string;
   }>();
+  const deferredSelection = useRef<{
+    slotScope: string;
+    actorEpoch: number;
+    files: File[];
+  } | null>(null);
   const activeScope = scope ?? '';
   const values = parameterDraft.values;
   const slots = displayedCapabilities?.attachmentSlots ?? [];
@@ -170,11 +177,9 @@ export function useAgentComposerInput({
   const fields = capabilities?.fields ?? [];
   const ready = enabled && capabilities?.status === 'ready';
   useLayoutEffect(() => {
-    if (scope) {
-      useAttachmentStore.getState().setScope(scope);
+    if (scope)
       for (const choice of choices)
         useAttachmentStore.getState().restoreFiles(choice.scope);
-    }
   });
   const isCurrentActor = () => {
     const current = useLangchainDraftStore.getState();
@@ -216,6 +221,34 @@ export function useAgentComposerInput({
       },
     });
   };
+  const selectFiles = (entry: (typeof choices)[number], files: File[]) => {
+    if (!scope || !isCurrentActor() || !files.length) return;
+    if (authLoading) {
+      deferredSelection.current = { slotScope: entry.scope, actorEpoch, files };
+      return;
+    }
+    if (!ready || disabled) return;
+    const result = useAttachmentStore
+      .getState()
+      .reserveFiles(files, entry.slot, entry.scope);
+    setUploadError(
+      result.error
+        ? {
+            scope: activeScope,
+            message: uploadValidationMessage(result.error, entry.slot, t),
+          }
+        : undefined
+    );
+    for (const draftId of result.ids) void transfer(entry, draftId);
+  };
+  useEffect(() => {
+    const selection = deferredSelection.current;
+    if (!selection || authLoading) return;
+    deferredSelection.current = null;
+    if (selection.actorEpoch !== actorEpoch) return;
+    const choice = choices.find(entry => entry.scope === selection.slotScope);
+    if (choice) selectFiles(choice, selection.files);
+  });
   const textDisabled = ready && capabilities.text.enabled === false;
   const hasText = !textDisabled && Boolean(content.trim());
   const fieldInputs = Object.fromEntries(
@@ -327,30 +360,7 @@ export function useAgentComposerInput({
             onChange={event => {
               const files = Array.from(event.target.files ?? []);
               event.target.value = '';
-              if (
-                !scope ||
-                !ready ||
-                disabled ||
-                !isCurrentActor() ||
-                !files.length
-              )
-                return;
-              const result = useAttachmentStore
-                .getState()
-                .reserveFiles(files, entry.slot, entry.scope);
-              setUploadError(
-                result.error
-                  ? {
-                      scope: activeScope,
-                      message: uploadValidationMessage(
-                        result.error,
-                        entry.slot,
-                        t
-                      ),
-                    }
-                  : undefined
-              );
-              for (const draftId of result.ids) void transfer(entry, draftId);
+              selectFiles(entry, files);
             }}
           />
         ))}

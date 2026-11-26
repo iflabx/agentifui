@@ -174,6 +174,7 @@ function AgentChatSession({
     scope,
     enabled: chat.acceptsInputCapabilities === true,
     disabled,
+    authLoading,
     content,
     submissionError: chat.error,
   });
