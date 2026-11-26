@@ -1,21 +1,15 @@
 'use client';
 
-import {
-  ChatInputBackdrop,
-  ChatLoader,
-  ScrollToBottomButton,
-} from '@components/chat';
-import { ChatInput } from '@components/chat-input';
+import { ChatLoader } from '@components/chat';
 import { DifyEditProvider } from '@components/chat-input/edit-resend';
-import { ChatflowFloatingController } from '@components/chatflow/chatflow-floating-controller';
+import { ChatSessionView } from '@components/chat/session/chat-session-view';
 import { ChatflowInputArea } from '@components/chatflow/chatflow-input-area';
-import { ChatflowNodeTracker } from '@components/chatflow/chatflow-node-tracker';
+import { useChatflowMessageProcess } from '@components/chatflow/use-chatflow-message-process';
 import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
 import { useChatScroll, useWelcomeScreen } from '@lib/hooks';
+import { useChatflowExecutionView } from '@lib/hooks/use-chatflow-execution-view';
 import { useChatflowInterface } from '@lib/hooks/use-chatflow-interface';
-import { useChatflowState } from '@lib/hooks/use-chatflow-state';
 import { useCurrentApp } from '@lib/hooks/use-current-app';
-import type { ChatUploadFile } from '@lib/services/dify/types';
 import { useAppListStore } from '@lib/stores/app-list-store';
 import { useChatLayoutStore } from '@lib/stores/chat-layout-store';
 import { useChatStore } from '@lib/stores/chat-store';
@@ -24,20 +18,13 @@ import { useSidebarStore } from '@lib/stores/sidebar-store';
 import { cn } from '@lib/utils';
 import { Blocks, Loader2 } from 'lucide-react';
 
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 
 export default function AppDetailPage() {
-  const { session } = useAuthSession();
-  const trackerButtonRef = useRef<HTMLButtonElement>(null);
+  const { session, loading: authLoading } = useAuthSession();
   const router = useRouter();
   const params = useParams();
   const pathname = usePathname() ?? '';
@@ -49,24 +36,21 @@ export default function AppDetailPage() {
   // get chatflow execution state cleanup method
   const { resetExecution } = useChatflowExecutionStore();
 
-  // use unified chatflow state management, support intelligent popup control
-  const {
+  const { messages, isProcessing, handleStopProcessing } = chatflowInterface;
+  const executionView = useChatflowExecutionView(
+    session?.user.id,
+    pathname,
+    authLoading
+  );
+  const renderProcess = useChatflowMessageProcess(
     messages,
-    isProcessing,
-    handleStopProcessing,
-    showNodeTracker,
-    setShowNodeTracker,
-    showFloatingController,
-  } = useChatflowState({
-    scope: JSON.stringify([session?.user.id, instanceId]),
-    isChatflowApp: true,
-    chatflowInterface,
-    regularInterface: chatflowInterface,
-  }); // chatflow page is always a chatflow application
+    true,
+    executionView?.scope ?? JSON.stringify([session?.user.id, instanceId]),
+    Boolean(executionView && executionView.appId === instanceId)
+  );
 
   // get chatflow-specific submission function
   const {
-    handleSubmit: originalHandleSubmit,
     handleChatflowSubmit,
     formIdentity,
     isWaitingForResponse,
@@ -78,13 +62,7 @@ export default function AppDetailPage() {
 
   // get chat layout state, used for input box height management
   const { inputHeight } = useChatLayoutStore();
-  const chatInputHeightVar = `${inputHeight || 80}px`;
 
-  // local state management
-  const [, setIsSubmitting] = useState(false);
-
-  // remove duplicate automatic display logic, now managed by useChatflowState
-  // Support intelligent behavior where users can manually close and no longer automatically open
   // add scroll management, ensure message list can scroll correctly
   const scrollRef = useChatScroll(messages);
 
@@ -97,8 +75,6 @@ export default function AppDetailPage() {
   // app initialization state
   const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState<string | null>(null);
-  // track form configuration state for chatflow
-  const [, setHasFormConfig] = useState(false);
 
   // ensure loader displays for at least 0.7 seconds, allowing layout to stabilize
   const [hasMinimumLoadTime, setHasMinimumLoadTime] = useState(false);
@@ -146,9 +122,6 @@ export default function AppDetailPage() {
 
       // force welcome screen state to true
       setIsWelcomeScreen(true);
-
-      // reset submission state
-      setIsSubmitting(false);
 
       // clean up chatflow execution state, ensuring previous node data is not displayed
       resetExecution();
@@ -282,45 +255,6 @@ export default function AppDetailPage() {
     };
   }, [selectItem]);
 
-  // wrap handleSubmit, implement UI switching logic
-  const handleSubmit = useCallback(
-    async (
-      message: string,
-      files?: ChatUploadFile[],
-      editSourceId?: string
-    ) => {
-      try {
-        // immediately set the submission state to true
-        setIsSubmitting(true);
-
-        // immediately close the welcome interface
-        setIsWelcomeScreen(false);
-
-        console.log('[AppDetail] UI state updated, start sending message');
-
-        // call the original handleSubmit, it will create a conversation and send a message
-        const result = await originalHandleSubmit(
-          message,
-          files,
-          undefined,
-          editSourceId
-        );
-
-        console.log(
-          '[AppDetail] Message sent successfully, waiting for route jump'
-        );
-        return result;
-      } catch (error) {
-        console.error('[AppDetail] Message sending failed:', error);
-
-        // restore UI state when send message failed
-        setIsSubmitting(false);
-        setIsWelcomeScreen(true);
-      }
-    },
-    [originalHandleSubmit, setIsWelcomeScreen]
-  );
-
   // error state
   if (initError) {
     return (
@@ -405,96 +339,33 @@ export default function AppDetailPage() {
 
   return (
     <DifyEditProvider>
-      <div
-        className={cn(
-          'relative flex h-full w-full flex-col',
-          'bg-stone-100 dark:bg-stone-800',
-          'text-stone-900 dark:text-gray-100'
-        )}
-      >
-        <div
-          className={cn(
-            'relative flex min-h-0 flex-1 flex-col overflow-hidden',
-            'pt-10'
-          )}
-          style={
-            { '--chat-input-height': chatInputHeightVar } as React.CSSProperties
-          }
-        >
-          <div className="min-h-0 flex-1">
-            {isWelcomeScreen && messages.length === 0 ? (
-              <div
-                className={cn(
-                  'h-full overflow-y-auto scroll-smooth',
-                  'mx-auto w-full'
-                )}
-              >
-                <div className="py-8">
-                  <ChatflowInputArea
-                    key={formIdentity}
-                    instanceId={instanceId}
-                    onSubmit={handleChatflowSubmit}
-                    isProcessing={isProcessing}
-                    isWaiting={isWaitingForResponse}
-                    onFormConfigChange={setHasFormConfig}
-                  />
-                </div>
-              </div>
-            ) : (
-              <div
-                ref={scrollRef}
-                className="chat-scroll-container h-full overflow-y-auto scroll-smooth"
-              >
-                <ChatLoader
-                  messages={messages}
-                  isWaitingForResponse={isWaitingForResponse}
-                  isLoadingInitial={false}
-                />
-
-                <ChatflowNodeTracker
-                  isVisible={showNodeTracker}
-                  scope={JSON.stringify([instanceId, formIdentity])}
-                  onClose={() => {
-                    setShowNodeTracker(false);
-                    trackerButtonRef.current?.focus();
-                  }}
-                  className={cn(
-                    'fixed right-4 bottom-40 z-30 max-w-sm',
-                    'transition-all duration-300'
-                  )}
-                />
-              </div>
-            )}
-          </div>
-
-          <ScrollToBottomButton />
-
-          <ChatflowFloatingController
-            buttonRef={trackerButtonRef}
-            isVisible={showFloatingController}
-            isTrackerVisible={showNodeTracker}
-            onToggleTracker={() => setShowNodeTracker(!showNodeTracker)}
+      <ChatSessionView
+        appLayout
+        appTitle={currentApp.display_name || currentApp.instance_id}
+        inputHeight={inputHeight || 80}
+        contentClassName="overflow-hidden pt-10"
+        showWelcome={isWelcomeScreen && messages.length === 0}
+        scrollProps={{ ref: scrollRef, className: 'scroll-smooth' }}
+        backdrop={!isWelcomeScreen}
+        composer={
+          <ChatflowInputArea
+            key={formIdentity}
+            instanceId={instanceId}
+            onSubmit={handleChatflowSubmit}
+            isProcessing={isProcessing}
+            isWaiting={isWaitingForResponse}
+            onStop={handleStopProcessing}
+            isWelcomeScreen={isWelcomeScreen && messages.length === 0}
           />
-
-          {!isWelcomeScreen && (
-            <>
-              <ChatInputBackdrop />
-
-              <ChatInput
-                onSubmit={handleSubmit}
-                placeholder={t('continueChatWith', {
-                  appName: currentApp.display_name || t('defaultApp'),
-                })}
-                isProcessing={isProcessing}
-                isWaiting={isWaitingForResponse}
-                onStop={handleStopProcessing}
-                showModelSelector={false}
-                requireModelValidation={false}
-              />
-            </>
-          )}
-        </div>
-      </div>
+        }
+      >
+        <ChatLoader
+          messages={messages}
+          conversationAppId={instanceId}
+          isWaitingForResponse={isWaitingForResponse}
+          renderProcess={renderProcess}
+        />
+      </ChatSessionView>
     </DifyEditProvider>
   );
 }

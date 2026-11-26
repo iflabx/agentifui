@@ -393,12 +393,29 @@ Use those only when you intentionally need the legacy relay upload path.
 
 ### Dify input attachment previews
 
+The authenticated `GET /api/internal/apps/:appId/input-capabilities` endpoint
+uses the service-instance UUID, not its upstream/route instance ID. It reads live
+Dify `/parameters` server-side and briefly caches the normalized requirements
+(approximately 60 seconds); authorization is still checked for every request.
+Local upload controls enforce per-slot count, extension, method and byte limits.
+The effective limit is the intersection of upstream settings and the platform's
+multipart body limit, with space reserved for multipart overhead. A failed
+capability lookup is not an unlimited-upload declaration.
+
+Apply `20261122150000_add_dify_upload_metadata.sql` before upgrading the API.
+This additive migration retains existing upload registrations and adds nullable
+filename, received byte length and media-type metadata. New submissions validate
+ownership and this registered metadata; clients cannot override it by changing
+the file reference. Historical reads remain supported. An old file without
+verifiable submission metadata must be attached again when reused in a new run;
+no mandatory historical backfill is required.
+
 Workflow uploads retain an encrypted original in the existing
 S3 bucket under `dify-uploads/`. This is required because Dify input-file signed
 URLs expire, and its service API preview endpoint does not cover all input-only
 files. Chatflow renews URLs through conversation history instead and does not
 depend on this archive or introduce an additional original copy.
-No additional storage service or database migration is needed. Workflow uploads
+No additional storage service is needed. Workflow uploads
 require working S3 read/write access and `API_ENCRYPTION_KEY`; a storage failure
 is reported as an upload failure rather than silently returning a short-lived
 preview. Missing storage/key configuration is rejected before calling Dify;

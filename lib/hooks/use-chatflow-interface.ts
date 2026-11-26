@@ -1,6 +1,10 @@
 'use client';
 
 import { extractFilesFromFormData as extractFormUploads } from '@components/chatflow/chatflow-input-area/helpers';
+import type {
+  ChatflowFormData,
+  UploadPayloadFile,
+} from '@components/chatflow/chatflow-input-area/types';
 import { isWorkflowUploadOwner } from '@components/workflow/workflow-input-form/file-upload-field/helpers';
 import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
 import { isChatSubmitResult } from '@lib/hooks/chat-interface/guards';
@@ -32,13 +36,11 @@ export function useChatflowInterface(preferredRouteAppId?: string | null) {
   const { session, loading } = useAuthSession();
   const userId = session?.user?.id;
   const actorEpoch = useChatInputStore(state => state.actorEpoch);
-  const isFormRoute = Boolean(
-    preferredRouteAppId && pathname === `/apps/chatflow/${preferredRouteAppId}`
-  );
+  const selectedAppId = useCurrentAppStore(state => state.currentAppId);
   const formScope = useChatInputRouteSync({
     userId,
-    appId: preferredRouteAppId,
-    authLoading: loading || !isFormRoute,
+    appId: preferredRouteAppId || selectedAppId,
+    authLoading: loading,
   });
   const view = useMemo(
     () => ({ pathname, userId, actorEpoch, preferredRouteAppId }),
@@ -51,9 +53,9 @@ export function useChatflowInterface(preferredRouteAppId?: string | null) {
       if (activeViewRef.current === view) activeViewRef.current = null;
     };
   }, [view]);
-  // Get node tracking related methods
-  const { startExecution, handleNodeEvent, resetExecution } =
-    useChatflowExecutionStore();
+  const handleNodeEvent = useChatflowExecutionStore(
+    state => state.handleNodeEvent
+  );
 
   // Use the base chat interface, passing the node event handler
   const getAssistantMessageMetadata = useCallback(
@@ -70,8 +72,13 @@ export function useChatflowInterface(preferredRouteAppId?: string | null) {
    * Build the correct chat-messages API payload from query and form data
    */
   const handleChatflowSubmit = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    async (query: string, inputs: Record<string, any>, files?: any[]) => {
+    async (
+      query: string,
+      inputs: ChatflowFormData,
+      files?: UploadPayloadFile[],
+      editSourceId?: string,
+      onInputAccepted?: () => void
+    ) => {
       const input = useChatInputStore.getState();
       if (
         activeViewRef.current !== view ||
@@ -97,16 +104,7 @@ export function useChatflowInterface(preferredRouteAppId?: string | null) {
         )
       )
         return { ok: false, errorCode: 'INVALID_ATTACHMENT_OWNER' };
-      console.log('[useChatflowInterface] Handling Chatflow submit', {
-        query,
-        inputs,
-        files,
-      });
-
       try {
-        // Step 1: Start node execution tracking
-        startExecution();
-
         // Step 2: Build user message content (shown to user, includes query and form data summary)
         const userMessage = formatChatflowMessage(query, inputs);
 
@@ -117,7 +115,9 @@ export function useChatflowInterface(preferredRouteAppId?: string | null) {
         const submitResult = (await chatInterface.handleSubmit(
           userMessage,
           difyFiles,
-          inputs
+          inputs,
+          editSourceId,
+          onInputAccepted
         )) as unknown;
 
         if (isChatSubmitResult(submitResult) && !submitResult.ok) {
@@ -144,7 +144,7 @@ export function useChatflowInterface(preferredRouteAppId?: string | null) {
         throw error;
       }
     },
-    [chatInterface, startExecution, view, formScope, userId, actorEpoch]
+    [chatInterface, view, formScope, userId, actorEpoch]
   );
 
   /**
@@ -258,16 +258,6 @@ export function useChatflowInterface(preferredRouteAppId?: string | null) {
     handleStopProcessing, // Use the overridden stop method
     handleChatflowSubmit,
     formIdentity: JSON.stringify([actorEpoch, userId, preferredRouteAppId]),
-    // Expose node tracking related state and methods
-    nodeTracker: {
-      nodes: useChatflowExecutionStore(state => state.nodes),
-      isExecuting: useChatflowExecutionStore(state => state.isExecuting),
-      executionProgress: useChatflowExecutionStore(
-        state => state.executionProgress
-      ),
-      error: useChatflowExecutionStore(state => state.error),
-      resetExecution,
-    },
   };
 }
 

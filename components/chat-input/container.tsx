@@ -6,9 +6,12 @@ import { cn } from '@lib/utils';
 // Container component - uses intelligent layout system
 interface ChatContainerProps {
   children: React.ReactNode;
+  beforeInput?: React.ReactNode;
+  afterInput?: React.ReactNode;
   isWelcomeScreen?: boolean;
   className?: string;
   widthClass: string;
+  embedded?: boolean;
   // Whether transitioning from conversation interface to welcome interface
   // When true, use flashing effect instead of sliding
   // When false, keep existing sliding effect
@@ -20,9 +23,12 @@ const INPUT_BOTTOM_MARGIN = '1rem';
 
 export const ChatContainer = ({
   children,
+  beforeInput,
+  afterInput,
   isWelcomeScreen = false,
   className,
   widthClass,
+  embedded = false,
   isTransitioningToWelcome = false, // eslint-disable-line @typescript-eslint/no-unused-vars
 }: ChatContainerProps) => {
   const { input: inputPosition } = useWelcomeLayout();
@@ -30,7 +36,7 @@ export const ChatContainer = ({
   // Base styles including absolute positioning and width
   // Simplified transition effects using opacity instead of sliding
   const baseClasses = cn(
-    'absolute left-1/2 w-full', // Position and width
+    embedded ? 'relative mx-auto w-full' : 'absolute left-1/2 w-full',
     widthClass,
     // Use flashing transition effect, only transition opacity
     'transition-opacity duration-100 ease-in-out',
@@ -58,7 +64,12 @@ export const ChatContainer = ({
       };
 
   return (
-    <div className={baseClasses} style={dynamicStyles}>
+    <div
+      data-chat-input-container
+      className={baseClasses}
+      style={embedded ? undefined : dynamicStyles}
+    >
+      {beforeInput}
       <div
         className={cn(
           'flex flex-col rounded-2xl',
@@ -68,6 +79,7 @@ export const ChatContainer = ({
       >
         {children}
       </div>
+      {afterInput}
     </div>
   );
 };

@@ -2,13 +2,12 @@
 import Fastify from 'fastify';
 
 import type { ApiRuntimeConfig } from '../config';
-import { resolveAgentApp } from '../lib/agent-app';
+import { AgentAppError, resolveAgentApp } from '../lib/agent-app';
 import { AgentPolicyError } from '../lib/agent-backends';
 import { executeHumanInputRun } from '../lib/agent-human-input-execution';
 import { moderateInputText } from '../lib/agent-input-moderation';
 import {
   type AgentInteractionRecord,
-  expireInteraction,
   getInteractionForActor,
   getInteractionResponseReplay,
   reserveInteractionResponse,
@@ -23,7 +22,18 @@ import {
 } from '../lib/agent-runs-repository';
 import { registerSubmission, rejectSubmission } from '../lib/agent-submissions';
 import { executeDifyAgentRun } from '../lib/agui/dify-execution';
+import {
+  resolveDifyChatbotInputs,
+  uploadDifyChatbotFile,
+} from '../lib/agui/dify-transport';
+import { normalizeDifyInputCapabilities } from '../lib/dify-input-capabilities';
+import { readDifyUpload, saveDifyUpload } from '../lib/dify-upload-archive';
 import { getHumanInputState } from '../lib/langchain/human-input';
+import {
+  readLangChainInputFileMetadata,
+  resolveLangChainInputCapabilities,
+} from '../lib/langchain/input-files';
+import { queryRowsWithPgSystemContext } from '../lib/pg-context';
 import { resolveIdentityFromSession } from '../lib/session-identity';
 import { agentRunsRoutes } from './agent-runs';
 import { loadTrustedUserProfile } from './dify-proxy-route/trusted-user-context';
@@ -52,6 +62,24 @@ jest.mock('../lib/langchain/human-input', () => ({
 }));
 jest.mock('../lib/agui/dify-execution', () => ({
   executeDifyAgentRun: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock('../lib/agui/dify-transport', () => ({
+  ...jest.requireActual('../lib/agui/dify-transport'),
+  resolveDifyChatbotInputs: jest.fn(),
+  uploadDifyChatbotFile: jest.fn(),
+}));
+jest.mock('../lib/dify-upload-archive', () => ({
+  assertDifyUploadStorage: jest.fn(),
+  readDifyUpload: jest.fn(),
+  saveDifyUpload: jest.fn(),
+}));
+jest.mock('../lib/langchain/input-files', () => ({
+  readLangChainInputFileMetadata: jest.fn(),
+  resolveLangChainInputCapabilities: jest.fn(),
+}));
+jest.mock('../lib/pg-context', () => ({
+  ...jest.requireActual('../lib/pg-context'),
+  queryRowsWithPgSystemContext: jest.fn(),
 }));
 jest.mock('./dify-proxy-route/trusted-user-context', () => ({
   ...jest.requireActual('./dify-proxy-route/trusted-user-context'),
@@ -82,6 +110,21 @@ jest.mock('../lib/capacity-control', () => ({
 const APP = '10000000-0000-4000-8000-000000000001';
 const SUBMISSION = '20000000-0000-4000-8000-000000000001';
 const RUN = '30000000-0000-4000-8000-000000000001';
+const FILE = '40000000-0000-4000-8000-000000000001';
+const fileRow = {
+  id: FILE,
+  slotKey: 'reference',
+  nativeId: 'native-file-id',
+  name: 'source.txt',
+  size: 8,
+  type: 'text/plain',
+};
+const globalDifySlot = {
+  enabled: true,
+  number_limits: 2,
+  allowed_file_types: ['document'],
+  allowed_file_upload_methods: ['local_file'],
+};
 const task = { root_task_id: 'root-task', run_id: null } as never;
 const run = {
   id: RUN,
@@ -251,6 +294,13 @@ describe('human response moderation during a released claim', () => {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  jest
+    .mocked(resolveLangChainInputCapabilities)
+    .mockResolvedValue(normalizeDifyInputCapabilities({}));
+  jest
+    .mocked(resolveDifyChatbotInputs)
+    .mockResolvedValue(normalizeDifyInputCapabilities({}));
+  jest.mocked(queryRowsWithPgSystemContext).mockResolvedValue([]);
   jest.mocked(resolveIdentityFromSession).mockResolvedValue({
     kind: 'ok',
     identity: { userId: 'actor', role: 'user' },
@@ -267,6 +317,34 @@ beforeEach(() => {
   jest.mocked(registerSubmission).mockResolvedValue({ task, replayed: false });
   jest.mocked(moderateInputText).mockResolvedValue({ outcome: 'skip' });
   jest.mocked(reserveRun).mockResolvedValue({ run, replayed: false });
+});
+
+it('returns the configured public introduction through authorized app metadata, not runtime credentials', async () => {
+  const app = await resolveAgentApp(APP, 'actor');
+  jest
+    .mocked(resolveAgentApp)
+    .mockResolvedValue({ ...app, description: 'Configured description' });
+  const server = Fastify({ logger: false });
+  await server.register(agentRunsRoutes, {
+    config: { corsAllowedOrigins: [] } as unknown as ApiRuntimeConfig,
+  });
+  try {
+    const response = await server.inject({
+      method: 'GET',
+      url: `/api/internal/apps/${APP}/agent`,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().app).toEqual({
+      id: APP,
+      name: 'Example',
+      description: 'Configured description',
+      backendType: 'langchain',
+    });
+    expect(response.body).not.toContain(app.apiKey);
+    expect(response.body).not.toContain(app.baseUrl);
+  } finally {
+    await server.close();
+  }
 });
 
 async function request(
@@ -333,6 +411,263 @@ it('selects Dify from trusted config and moderates the actual server-owned query
     })
   );
   expect(executeAgentRun).not.toHaveBeenCalled();
+});
+
+it('passes a normalized Dify field and both attachment target shapes through one admission', async () => {
+  jest.mocked(resolveAgentApp).mockResolvedValue({
+    ...(await resolveAgentApp(APP, 'actor')),
+    backendType: 'dify',
+    interactionProtocol: 'ag-ui/1.0',
+  });
+  const secondId = '40000000-0000-4000-8000-000000000002';
+  jest.mocked(queryRowsWithPgSystemContext).mockResolvedValue([
+    { ...fileRow, slotKey: 'files' },
+    { ...fileRow, id: secondId, nativeId: 'other-native-file-id' },
+  ]);
+  jest.mocked(resolveDifyChatbotInputs).mockResolvedValue(
+    normalizeDifyInputCapabilities({
+      file_upload: globalDifySlot,
+      user_input_form: [
+        {
+          select: {
+            variable: 'format',
+            options: ['short', 'long'],
+            required: true,
+          },
+        },
+        { file: { ...globalDifySlot, variable: 'reference', required: true } },
+      ],
+    })
+  );
+  const attachments = [
+    { fileId: FILE, slotKey: 'files' },
+    { fileId: secondId, slotKey: 'reference' },
+  ];
+  const response = await request('POST', undefined, 'ag-ui/1.0', {
+    inputs: { format: 'short' },
+    attachments,
+  });
+  expect(response.statusCode).toBe(200);
+  expect(registerSubmission).toHaveBeenCalledWith(
+    expect.objectContaining({
+      request: expect.objectContaining({
+        attachments,
+        inputs: { format: 'short' },
+      }),
+    })
+  );
+  expect(reserveRun).toHaveBeenCalledTimes(1);
+  expect(moderateInputText).toHaveBeenCalledWith(
+    expect.objectContaining({ text: 'synthetic input\nshort\nactor\nuser' })
+  );
+  expect(executeDifyAgentRun).toHaveBeenCalledWith(
+    expect.objectContaining({
+      files: [
+        {
+          type: 'document',
+          transfer_method: 'local_file',
+          upload_file_id: 'native-file-id',
+        },
+      ],
+      inputs: expect.objectContaining({
+        format: 'short',
+        reference: {
+          type: 'document',
+          transfer_method: 'local_file',
+          upload_file_id: 'other-native-file-id',
+        },
+      }),
+    })
+  );
+  expect(response.body).not.toContain('native-file-id');
+});
+
+it('requires Dify query text even with a valid attachment reference', async () => {
+  jest.mocked(resolveAgentApp).mockResolvedValue({
+    ...(await resolveAgentApp(APP, 'actor')),
+    backendType: 'dify',
+    interactionProtocol: 'ag-ui/1.0',
+  });
+  const response = await request('POST', undefined, 'ag-ui/1.0', {
+    content: '',
+    attachments: [{ fileId: FILE, slotKey: 'files' }],
+  });
+  expect(response.statusCode).toBe(400);
+  expect(response.json().app_error.code).toBe('INPUT_TEXT_INVALID');
+  expect(reserveRun).not.toHaveBeenCalled();
+});
+
+it('checks LangChain live metadata, sends only native current-turn files, and preserves the empty envelope', async () => {
+  jest.mocked(resolveAgentApp).mockResolvedValue({
+    ...(await resolveAgentApp(APP, 'actor')),
+    assistantId: 'attachment-agent',
+  });
+  jest.mocked(resolveLangChainInputCapabilities).mockResolvedValue({
+    ...normalizeDifyInputCapabilities({}),
+    text: { enabled: true, required: false, target: 'content' },
+    attachmentSlots: [
+      {
+        ...normalizeDifyInputCapabilities({ file_upload: globalDifySlot })
+          .attachmentSlots[0],
+        key: 'reference',
+      },
+    ],
+  });
+  jest.mocked(queryRowsWithPgSystemContext).mockResolvedValue([fileRow]);
+  jest.mocked(readLangChainInputFileMetadata).mockResolvedValue({
+    ...fileRow,
+    id: fileRow.nativeId,
+  });
+  const attachments = [{ fileId: FILE, slotKey: 'reference' }];
+  const response = await request('POST', undefined, 'ag-ui/1.0', {
+    content: '',
+    attachments,
+  });
+  expect(response.statusCode).toBe(200);
+  expect(reserveRun).toHaveBeenCalledWith(
+    expect.objectContaining({ content: '', attachments })
+  );
+  expect(executeAgentRun).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      content: '',
+      inputFiles: [{ fileId: fileRow.nativeId, slotKey: 'reference' }],
+    })
+  );
+  expect((await request('POST', undefined, 'ag-ui/1.0')).statusCode).toBe(200);
+  expect(executeAgentRun).toHaveBeenLastCalledWith(
+    expect.objectContaining({ inputFiles: [] })
+  );
+  jest
+    .mocked(readLangChainInputFileMetadata)
+    .mockRejectedValueOnce(new AgentAppError(404, 'INPUT_FILE_UNAVAILABLE'));
+  const expired = await request('POST', undefined, 'ag-ui/1.0', {
+    attachments,
+  });
+  expect(expired.statusCode).toBe(410);
+  expect(expired.json().app_error.code).toBe('INPUT_FILE_UNAVAILABLE');
+  expect(reserveRun).toHaveBeenCalledTimes(2);
+});
+
+it('rejects unrecognized platform file IDs before admission or upstream metadata reads', async () => {
+  jest.mocked(resolveAgentApp).mockResolvedValue({
+    ...(await resolveAgentApp(APP, 'actor')),
+    assistantId: 'attachment-agent',
+  });
+  jest
+    .mocked(resolveLangChainInputCapabilities)
+    .mockResolvedValue(
+      normalizeDifyInputCapabilities({ file_upload: globalDifySlot })
+    );
+  const response = await request('POST', undefined, 'ag-ui/1.0', {
+    attachments: [{ fileId: FILE, slotKey: 'files' }],
+  });
+  expect(response.statusCode).toBe(404);
+  expect(response.json().app_error.code).toBe('INPUT_FILE_NOT_FOUND');
+  expect(readLangChainInputFileMetadata).not.toHaveBeenCalled();
+  expect(reserveRun).not.toHaveBeenCalled();
+});
+
+it('caps counts and rejects injection or duplicates before native dispatch', async () => {
+  jest.mocked(resolveAgentApp).mockResolvedValue({
+    ...(await resolveAgentApp(APP, 'actor')),
+    assistantId: 'attachment-agent',
+  });
+  jest.mocked(resolveLangChainInputCapabilities).mockResolvedValue(
+    normalizeDifyInputCapabilities({
+      file_upload: { ...globalDifySlot, number_limits: 1 },
+    })
+  );
+  const first = { fileId: FILE, slotKey: 'files' };
+  const second = { ...first, fileId: RUN };
+  for (const extra of [
+    { attachments: [first, second] },
+    { attachments: [first, first] },
+    { attachments: [{ ...first, url: 'https://example.invalid' }] },
+    { inputs: { agentifui_user_id: 'injected' } },
+  ]) {
+    expect(
+      (await request('POST', undefined, 'ag-ui/1.0', extra)).statusCode
+    ).toBe(400);
+  }
+  expect(reserveRun).not.toHaveBeenCalled();
+  expect(executeAgentRun).not.toHaveBeenCalled();
+});
+
+it('uploads via an authenticated multipart route, returns a platform ID, and serves safe archived bytes', async () => {
+  jest.mocked(resolveAgentApp).mockResolvedValue({
+    ...(await resolveAgentApp(APP, 'actor')),
+    backendType: 'dify',
+    interactionProtocol: 'ag-ui/1.0',
+  });
+  jest
+    .mocked(resolveDifyChatbotInputs)
+    .mockResolvedValue(
+      normalizeDifyInputCapabilities({ file_upload: globalDifySlot })
+    );
+  jest.mocked(uploadDifyChatbotFile).mockResolvedValue(fileRow.nativeId);
+  jest
+    .mocked(queryRowsWithPgSystemContext)
+    .mockResolvedValueOnce([{ id: FILE }]);
+  const server = Fastify();
+  await server.register(agentRunsRoutes, {
+    config: { corsAllowedOrigins: [] } as unknown as ApiRuntimeConfig,
+  });
+  const url = `/api/internal/apps/${APP}/agent/files`;
+  try {
+    const form = new FormData();
+    form.set(
+      'file',
+      new File(['<script>'], fileRow.name, { type: 'text/html' })
+    );
+    form.set('slotKey', 'files');
+    const raw = new Response(form);
+    const payload = Buffer.from(await raw.arrayBuffer());
+    const headers = { 'content-type': raw.headers.get('content-type')! };
+    const rejected = await server.inject({
+      method: 'POST',
+      url,
+      payload,
+      headers: { ...headers, 'sec-fetch-site': 'cross-site' },
+    });
+    expect(rejected.statusCode).toBe(403);
+    expect(uploadDifyChatbotFile).not.toHaveBeenCalled();
+    const uploaded = await server.inject({
+      method: 'POST',
+      url,
+      payload,
+      headers,
+    });
+    expect(uploaded.statusCode).toBe(201);
+    const id = uploaded.json().id as string;
+    expect(uploaded.json()).toEqual({
+      id,
+      name: fileRow.name,
+      size: fileRow.size,
+      type: 'text/html',
+    });
+    expect(id).not.toBe(fileRow.nativeId);
+    expect(saveDifyUpload).toHaveBeenCalledWith(
+      { userId: 'actor', serviceInstanceId: APP, fileId: id },
+      expect.any(File)
+    );
+    jest
+      .mocked(queryRowsWithPgSystemContext)
+      .mockResolvedValue([{ ...fileRow, id, type: 'text/html' }]);
+    jest.mocked(readDifyUpload).mockResolvedValue({
+      content: Buffer.from('<script>'),
+      contentType: 'text/html',
+    });
+    const bytes = await server.inject(`${url}/${id}`);
+    expect(bytes.statusCode).toBe(200);
+    expect(bytes.body).toBe('<script>');
+    expect(bytes.headers['content-type']).toBe('application/octet-stream');
+    expect(bytes.headers['cache-control']).toBe('private, no-store');
+    jest.mocked(queryRowsWithPgSystemContext).mockResolvedValueOnce([]);
+    expect((await server.inject(`${url}/${id}`)).statusCode).toBe(404);
+    expect(readDifyUpload).toHaveBeenCalledTimes(1);
+  } finally {
+    await server.close();
+  }
 });
 
 it('rejects Dify protocol omission and moderation blocks without a native dispatch', async () => {

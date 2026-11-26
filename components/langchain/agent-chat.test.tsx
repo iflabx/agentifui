@@ -46,17 +46,26 @@ jest.mock('@lib/hooks/use-chat-width', () => ({
 jest.mock('@components/chat/chat-input-backdrop', () => ({
   ChatInputBackdrop: () => null,
 }));
+jest.mock('@components/file-preview/file-preview-canvas', () => ({
+  FilePreviewCanvas: () => null,
+}));
 jest.mock('@components/chat-input/view', () => ({
   ChatInputView: ({
     value,
     onValueChange,
     onSubmit,
     disabled,
+    beforeInput,
+    attachmentAction,
+    placeholder,
   }: {
     value: string;
     onValueChange: (text: string) => void;
     onSubmit: () => void;
     disabled?: boolean;
+    beforeInput?: React.ReactNode;
+    attachmentAction?: React.ReactNode;
+    placeholder?: string;
   }) => (
     <form
       data-testid="shared-input"
@@ -65,7 +74,10 @@ jest.mock('@components/chat-input/view', () => ({
         onSubmit();
       }}
     >
+      {beforeInput}
+      {attachmentAction}
       <textarea
+        placeholder={placeholder}
         value={value}
         onChange={event => onValueChange(event.target.value)}
         disabled={disabled}
@@ -130,7 +142,7 @@ describe('Agent chat draft', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    useLangchainDraftStore.getState().setActor(null);
+    syncChatDraftActor(null);
     mockActorId = 'user';
     mockAuthLoading = false;
     jest.mocked(useAgentInteractions).mockReturnValue({
@@ -149,7 +161,9 @@ describe('Agent chat draft', () => {
       view: { messages: [], tools: [] },
       draftScope: 'new:0',
       appName: 'Agent',
+      appDescription: 'Agent description',
       textOnly: false,
+      acceptsInputCapabilities: false,
       humanInput: false,
       singleTask: false,
       resultSingleBatch: false,
@@ -174,8 +188,90 @@ describe('Agent chat draft', () => {
   });
 
   it('reserves space for fixed desktop and mobile shell navigation', () => {
-    render(<AgentChat appId="app" conversationId={null} />);
-    expect(screen.getByRole('main')).toHaveClass('pt-16', 'md:pt-12');
+    const view = render(<AgentChat appId="app" conversationId={null} />);
+    const composer = view.container.querySelector('[data-app-chat-composer]');
+    expect(composer).toHaveAttribute('data-app-chat-composer', 'welcome');
+    expect(composer?.parentElement).toHaveClass('pt-12', 'md:pt-10');
+  });
+
+  it('shares the configured introduction and quiet composer without promising unsupported uploads', () => {
+    const base = useAgentChat('app', null, 'user');
+    const view = render(<AgentChat appId="app" conversationId={null} />);
+    expect(screen.getByText('Agent description')).toBeInTheDocument();
+    expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', '');
+    expect(
+      screen.getByRole('button', { name: 'fileTypeSelector.ariaLabel' })
+    ).toBeDisabled();
+    jest.mocked(useAgentChat).mockReturnValue({
+      ...base,
+      busy: true,
+      view: {
+        ...base.view,
+        messages: [{ id: 'optimistic', role: 'user', content: 'Request' }],
+      },
+    });
+    view.rerender(<AgentChat appId="app" conversationId={null} />);
+    expect(screen.getByText('Agent description')).toBeInTheDocument();
+    jest.mocked(useAgentChat).mockReturnValue({
+      ...base,
+      view: { ...base.view, conversationId: 'accepted' },
+    });
+    view.rerender(<AgentChat appId="app" conversationId={null} />);
+    expect(screen.queryByText('Agent description')).not.toBeInTheDocument();
+    jest.mocked(useAgentChat).mockReturnValue(base);
+    view.rerender(<AgentChat appId="app" conversationId={null} />);
+    expect(screen.getByText('Agent description')).toBeInTheDocument();
+  });
+
+  it('refreshes changed input requirements and preserves the text draft', async () => {
+    const base = useAgentChat('app', null, 'user');
+    jest.mocked(useAgentChat).mockReturnValue({
+      ...base,
+      acceptsInputCapabilities: true,
+    });
+    const capabilities = (label: string) => ({
+      version: 1,
+      status: 'ready',
+      text: { enabled: true, required: true, target: 'query' },
+      fields: [{ key: 'topic', label, type: 'text-input', required: true }],
+      attachmentSlots: [],
+    });
+    let label = 'Original topic';
+    syncChatDraftActor('user');
+    const fetchMock = jest
+      .spyOn(global, 'fetch')
+      .mockImplementation(
+        async () =>
+          ({ ok: true, json: async () => capabilities(label) }) as Response
+      );
+    try {
+      const view = render(<AgentChat appId="app" conversationId={null} />);
+      await screen.findByLabelText('Original topic');
+      const input = screen.getByRole('textbox', { name: '' });
+      fireEvent.change(input, { target: { value: 'Keep this question' } });
+      const initialCalls = fetchMock.mock.calls.length;
+      label = 'Updated topic';
+      jest.mocked(useAgentChat).mockReturnValue({
+        ...base,
+        acceptsInputCapabilities: true,
+        error: new AgentRequestError(400, {
+          code: 'INPUT_FIELD_INVALID',
+          userMessage: 'Requirements changed',
+          source: 'frontend',
+          severity: 'warn',
+          retryable: false,
+          requestId: '',
+          occurredAt: '2026-01-01T00:00:00.000Z',
+        }),
+      });
+      view.rerender(<AgentChat appId="app" conversationId={null} />);
+      await screen.findByLabelText('Updated topic');
+      expect(fetchMock).toHaveBeenCalledTimes(initialCalls + 1);
+      expect(input).toHaveValue('Keep this question');
+      expect(send).not.toHaveBeenCalled();
+    } finally {
+      fetchMock.mockRestore();
+    }
   });
 
   it('edits in the original message and preserves the bottom draft on rejection and acceptance', async () => {
@@ -485,8 +581,8 @@ describe('Agent chat draft', () => {
         mockActorId = 'other-user';
       } else if (target === 'epoch') {
         act(() => {
-          useLangchainDraftStore.getState().setActor(null);
-          useLangchainDraftStore.getState().setActor('user');
+          syncChatDraftActor(null);
+          syncChatDraftActor('user');
         });
       }
       rerender(
@@ -556,12 +652,16 @@ describe('Agent chat draft', () => {
         <AgentChat appId="app" conversationId="thread" />
       );
       expect(container.querySelector('.animate-spin')).toBeNull();
-      expect(screen.getByText('status.unknown')).toBeInTheDocument();
+      expect(screen.queryByText('Search')).not.toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: 'view' }));
       expect(screen.getByRole('region', { name: 'title' })).toHaveTextContent(
         'status.unknown'
       );
-      expect(container.querySelector('.animate-spin')).toBeNull();
+      expect(
+        screen
+          .getByRole('region', { name: 'title' })
+          .querySelector('.animate-spin')
+      ).toBeNull();
       expect(restored.tools[0].status).toBe('running');
     }
   );
@@ -594,15 +694,20 @@ describe('Agent chat draft', () => {
     const { container, rerender } = render(
       <AgentChat appId="app" conversationId={null} />
     );
-    expect(container.querySelector('.animate-spin')).not.toBeNull();
+    expect(container.querySelector('.animate-spin')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'view' }));
+    expect(
+      screen
+        .getByRole('region', { name: 'title' })
+        .querySelector('.animate-spin')
+    ).not.toBeNull();
     expect(screen.queryByText('historical')).not.toBeInTheDocument();
     jest.mocked(useAgentChat).mockReturnValue({ ...live, busy: false });
     rerender(<AgentChat appId="app" conversationId={null} />);
     expect(container.querySelector('.animate-spin')).toBeNull();
     expect(screen.getByText('historical')).toBeInTheDocument();
-    expect(screen.getAllByText('status.unknown')).toHaveLength(2);
-    expect(screen.getAllByText('status.completed')).toHaveLength(2);
+    expect(screen.getAllByText('status.unknown')).toHaveLength(1);
+    expect(screen.getAllByText('status.completed')).toHaveLength(1);
   });
 
   it('groups process details by run without changing tool timeline order or exposing raw summaries', () => {
@@ -636,22 +741,43 @@ describe('Agent chat draft', () => {
         ],
       },
     });
-    const { container, rerender } = render(
+    const { rerender } = render(
       <AgentChat appId="app" conversationId={null} />
     );
     expect(screen.getAllByRole('button', { name: 'view' })).toHaveLength(2);
+    expect(screen.queryByText('Search one')).not.toBeInTheDocument();
+    expect(screen.queryByText('Write one')).not.toBeInTheDocument();
     fireEvent.click(screen.getAllByRole('button', { name: 'view' })[0]);
     const process = screen.getByRole('region', { name: 'title' });
     expect(process.textContent).toContain('Search one');
     expect(process.textContent).toContain('Write one');
     expect(process.textContent).not.toContain('Search two');
     expect(process.textContent).not.toContain('unordered');
-    expect(container.textContent).not.toContain('PRIVATE_RESULT');
-    fireEvent.click(screen.getByRole('button', { name: 'close' }));
-    fireEvent.click(screen.getAllByRole('button', { name: 'view' })[1]);
+    expect(document.body.textContent).not.toContain('PRIVATE_RESULT');
+    expect(
+      document.querySelectorAll('[data-execution-process-panel]')
+    ).toHaveLength(1);
+    expect(
+      document.querySelector('[data-execution-process-panel]')
+    ).toHaveClass('fixed', 'md:right-4');
+    fireEvent.click(screen.getByRole('button', { name: 'view' }));
+    expect(screen.getAllByRole('region', { name: 'title' })).toHaveLength(1);
+    expect(
+      screen.getByRole('region', { name: 'title' }).textContent
+    ).not.toContain('Search one');
     expect(screen.getByRole('region', { name: 'title' }).textContent).toContain(
       'unordered'
     );
+    expect(screen.getByRole('region', { name: 'title' }).textContent).toContain(
+      'Search two'
+    );
+    const selectedTrigger = screen.getByRole('button', { name: 'hide' });
+    fireEvent.keyDown(screen.getByRole('region', { name: 'title' }), {
+      key: 'Escape',
+    });
+    expect(screen.queryByRole('region')).not.toBeInTheDocument();
+    expect(selectedTrigger).toHaveFocus();
+    fireEvent.click(selectedTrigger);
     jest.mocked(useAgentChat).mockReturnValue({
       ...base,
       draftScope: 'other-conversation',
@@ -680,6 +806,121 @@ describe('Agent chat draft', () => {
     ).not.toBeInTheDocument();
   });
 
+  it.each(['conversation', 'draft', 'application', 'actor', 'epoch'] as const)(
+    'clears the selected process when the %s scope changes and does not reopen it on return',
+    target => {
+      const base = useAgentChat('app', null, 'user');
+      const state = {
+        ...base,
+        draftScope: 'thread',
+        view: {
+          messages: [],
+          conversationId: 'thread',
+          tools: [
+            {
+              runId: 'run-one',
+              toolCallId: 'same',
+              name: 'Search',
+              status: 'completed',
+            },
+          ],
+        },
+      };
+      jest.mocked(useAgentChat).mockReturnValue(state);
+      const { rerender } = render(
+        <AgentChat appId="app" conversationId="thread" />
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'view' }));
+      expect(screen.getByRole('region', { name: 'title' })).toBeInTheDocument();
+      if (target === 'conversation')
+        jest.mocked(useAgentChat).mockReturnValue({
+          ...state,
+          draftScope: 'other-thread',
+          view: { ...state.view, conversationId: 'other-thread' },
+        });
+      if (target === 'draft')
+        jest.mocked(useAgentChat).mockReturnValue({
+          ...state,
+          draftScope: 'new:next',
+        });
+      if (target === 'actor') mockActorId = 'other-user';
+      if (target === 'epoch')
+        act(() => useLangchainDraftStore.getState().setActor('user', true));
+      rerender(
+        <AgentChat
+          appId={target === 'application' ? 'other-app' : 'app'}
+          conversationId={target === 'conversation' ? 'other-thread' : 'thread'}
+        />
+      );
+      expect(screen.queryByRole('region')).not.toBeInTheDocument();
+      jest.mocked(useAgentChat).mockReturnValue(state);
+      mockActorId = 'user';
+      rerender(<AgentChat appId="app" conversationId="thread" />);
+      expect(screen.queryByRole('region')).not.toBeInTheDocument();
+    }
+  );
+
+  it('keeps the selected process during live updates but clears it when its run leaves the timeline', () => {
+    const base = useAgentChat('app', null, 'user');
+    const state = {
+      ...base,
+      busy: true,
+      view: {
+        messages: [],
+        runId: 'live-run',
+        tools: [
+          {
+            runId: 'live-run',
+            toolCallId: 'first',
+            name: 'Search',
+            status: 'running',
+          },
+        ],
+      },
+    };
+    jest.mocked(useAgentChat).mockReturnValue(state);
+    const { rerender } = render(
+      <AgentChat appId="app" conversationId={null} />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'view' }));
+    const updated = {
+      ...state,
+      view: {
+        ...state.view,
+        tools: [
+          { ...state.view.tools[0], status: 'completed' },
+          {
+            runId: 'live-run',
+            toolCallId: 'second',
+            name: 'Write',
+            status: 'running',
+          },
+        ],
+      },
+    };
+    jest.mocked(useAgentChat).mockReturnValue(updated);
+    rerender(<AgentChat appId="app" conversationId={null} />);
+    expect(
+      document.querySelectorAll('[data-execution-process-panel]')
+    ).toHaveLength(1);
+    expect(screen.getByRole('region', { name: 'title' })).toHaveTextContent(
+      'Write'
+    );
+    jest.mocked(useAgentChat).mockReturnValue({
+      ...state,
+      view: { ...state.view, tools: [] },
+    });
+    rerender(<AgentChat appId="app" conversationId={null} />);
+    expect(screen.queryByRole('region')).not.toBeInTheDocument();
+    jest.mocked(useAgentChat).mockReturnValue(updated);
+    rerender(<AgentChat appId="app" conversationId={null} />);
+    expect(screen.queryByRole('region')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'view' })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    );
+  });
+
   it.each([true, false])(
     'shows the batch limit only for a result-enabled app (%s), without blocking input',
     async resultEnabled => {
@@ -705,9 +946,7 @@ describe('Agent chat draft', () => {
         expect(screen.getByText('resultSingleBatch')).toBeVisible();
       else
         expect(screen.queryByText('resultSingleBatch')).not.toBeInTheDocument();
-      expect(
-        screen.queryByText('confirmationSingleTask')
-      ).not.toBeInTheDocument();
+      expect(screen.queryByText('singleTurn')).not.toBeInTheDocument();
     }
   );
 
@@ -843,33 +1082,68 @@ describe('Agent chat draft', () => {
     );
   });
 
-  it('keeps completed single-task conversations readable and deletable without another question', () => {
-    const original = jest.mocked(useAgentChat).getMockImplementation()!(
-      'app',
-      null
-    );
-    jest.mocked(useAgentChat).mockReturnValue({
-      ...original,
-      humanInput: true,
-      singleTask: true,
-      view: {
-        conversationId: 'conversation',
-        messages: [
-          { id: 'answer', role: 'assistant', content: 'Task complete' },
-        ],
-        tools: [],
-      },
-    });
-    render(<AgentChat appId="app" conversationId="conversation" />);
-    expect(screen.getByTestId('shared-assistant')).toHaveTextContent(
-      'Task complete'
-    );
-    expect(screen.getByRole('button', { name: 'send' })).toBeDisabled();
-    expect(
-      screen.getByRole('button', { name: 'deleteConversation' })
-    ).toBeEnabled();
-    expect(screen.getByText('confirmationSingleTask')).toBeVisible();
-  });
+  it.each([false, true])(
+    'uses the single-turn end panel once the task ends (human input: %s)',
+    humanInput => {
+      const original = jest.mocked(useAgentChat).getMockImplementation()!(
+        'app',
+        null
+      );
+      const saved = {
+        ...original,
+        humanInput,
+        singleTask: true,
+        view: {
+          conversationId: 'conversation',
+          messages: [
+            {
+              id: 'answer',
+              role: 'assistant' as const,
+              content: 'Task complete',
+            },
+          ],
+          tools: [],
+        },
+      };
+      jest.mocked(useAgentChat).mockReturnValue({ ...saved, busy: true });
+      const view = render(
+        <AgentChat appId="app" conversationId="conversation" />
+      );
+      expect(
+        screen.queryByRole('link', { name: 'newTask' })
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'send' })).toBeDisabled();
+
+      const interactionState = useAgentInteractions({} as never);
+      jest.mocked(useAgentChat).mockReturnValue(saved);
+      if (humanInput) {
+        jest
+          .mocked(useAgentInteractions)
+          .mockReturnValue({ ...interactionState, blocked: true });
+        view.rerender(<AgentChat appId="app" conversationId="conversation" />);
+        expect(
+          screen.queryByRole('link', { name: 'newTask' })
+        ).not.toBeInTheDocument();
+        jest.mocked(useAgentInteractions).mockReturnValue(interactionState);
+      }
+      view.rerender(<AgentChat appId="app" conversationId="conversation" />);
+      expect(screen.getByTestId('shared-assistant')).toHaveTextContent(
+        'Task complete'
+      );
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'send' })
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'deleteConversation' })
+      ).toBeEnabled();
+      expect(screen.getByText('singleTurn')).toBeVisible();
+      expect(screen.getByRole('link', { name: 'newTask' })).toHaveAttribute(
+        'href',
+        '/apps/agent-chat/app'
+      );
+    }
+  );
 
   it.each([
     [

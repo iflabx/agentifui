@@ -200,6 +200,13 @@
         "sending": "發送中...",
         "uploading": "上傳中...",
         "uploadFailed": "上傳失敗",
+        "capabilitiesUnavailable": "暫時無法取得輸入要求，請重試。",
+        "capabilitiesChanged": "輸入要求已變更。請檢查參數和附件後再傳送。",
+        "capabilitiesUnsupported": "暫不支援此應用的輸入要求，請檢查應用設定。",
+        "filesRequired": "請新增必要的附件。",
+        "uploadPending": "請等待上傳完成，或移除上傳失敗的檔案。",
+        "localUploadUnavailable": "此用途暫不支援本機上傳。",
+        "chooseAttachmentField": "請點擊附件按鈕選擇檔案用途，再選擇要上傳的檔案。",
         "retryUpload": "重試上傳",
         "removeFile": "移除檔案",
         "fileUploadError": "檔案上傳錯誤",
@@ -236,6 +243,10 @@
         "loadError": "載入檔案類型失敗",
         "reachedLimit": "已達上限 ({currentFiles}/{maxFiles})",
         "maxUpload": "最多上傳 {maxFiles} 個檔案",
+        "attachmentRequired": "請新增 {count} 個附件",
+        "attachmentRemaining": "還需新增 {count} 個附件",
+        "attachmentRange": "請新增 {minCount}–{maxCount} 個附件",
+        "attachmentSelected": "已新增 {count} 個附件 · 最多 {maxCount} 個",
         "noUploadLimit": "無上傳限制"
       },
       "modelSelector": {
@@ -269,6 +280,15 @@
       }
     },
     "chatflow": {
+      "composer": {
+        "singleTurn": "本應用每個對話執行一次任務。如需再次執行，請開始新任務。",
+        "newTask": "開始新任務",
+        "parameters": "對話設定",
+        "requiredRemaining": "尚有 {count} 個必填項目",
+        "initialized": "這些設定適用於目前對話，如需變更請建立新對話。",
+        "initialMissing": "此歷史對話未儲存初始設定摘要。",
+        "initialFiles": "初始檔案仍可在對話訊息中查看。"
+      },
       "loading": {
         "inputConfig": "正在載入輸入設定..."
       },
@@ -603,7 +623,7 @@
             "generation": "文字生成",
             "text": "文字互動"
           },
-          "textOnlyLimit": "純文字入口：不支援附件、引用、語音和自訂變數。",
+          "configuredInputs": "輸入參數與附件依應用程式設定提供。",
           "noDescription": "暫無描述",
           "defaultType": "應用程式"
         },
@@ -1436,6 +1456,19 @@
           }
         },
         "page": {
+          "taskInput": {
+            "label": "任務主文字",
+            "auto": "自動（唯一自由文字欄位）",
+            "parametersOnly": "僅參數",
+            "autoResolved": "自動對應：訊息本文寫入 {variable}。",
+            "explicitResolved": "明確對應：訊息本文寫入 {variable}。",
+            "parametersOnlyNote": "本文已停用，請填寫參數和檔案。",
+            "ambiguous": "有多個自由文字欄位：請選擇主文字變數或僅使用參數。本文已停用。",
+            "noText": "沒有自由文字欄位，本文已停用。",
+            "invalid": "設定的變數 {variable} 不存在或不是自由文字欄位。修正對應前無法執行。",
+            "invalidOption": "無法使用的變數：{variable}",
+            "schemaNote": "依據已儲存的參數結構；從 Dify 同步可重新整理。"
+          },
           "title": {
             "edit": "編輯應用實例",
             "add": "新增應用實例"
@@ -1525,13 +1558,24 @@
             "title": "Dify 參數配置",
             "appTypeNote": "選擇\"模型\"類型的應用會出現在聊天介面的模型選擇器中"
           },
+          "conversationTurns": {
+            "label": "會話輪次（選填）",
+            "default": "沿用應用程式預設",
+            "single": "單輪",
+            "multi": "多輪",
+            "independent": "獨立執行",
+            "note": "只有上游應用程式設計為使用前文時，才選擇多輪。",
+            "independentNote": "可在同一視窗多次執行，每次獨立，不沿用前文。",
+            "humanInputNote": "需要人工確認的智慧代理每個會話只處理一項任務。",
+            "typeMismatch": "Dify 識別為 {type}，未變更已儲存的應用程式類型。"
+          },
           "backend": {
             "label": "后端类型",
             "assistantId": "Assistant ID",
             "resultProfileLabel": "Enable Deep Agent result artifacts",
             "resultProfileNote": "Enable only for an assistant verified to support phase4.result.v1, regardless of its name. Disabling pauses new profile tasks; existing results remain readable.",
             "aguiLabel": "新建應用對話使用公共 AG-UI 聊天",
-            "aguiNote": "僅限應用市集中的 chatbot 應用新建純文字應用對話，不支援檔案、引用、語音及自訂變數；不影響預設模型及模型選擇器。原有舊會話繼續使用相容路徑，已綁定公共會話不會退回。",
+            "aguiNote": "適用於應用市集中 Chatbot 的新對話。輸入參數與附件依應用程式設定提供。既有對話保留原有的互動方式。",
             "langchainNote": "填写服务暴露的 Assistant 标识。首批仅支持文本及只读工具，服务凭证仅由服务端使用。",
             "validation": {
               "instanceIdRequired": "请填写应用标识。",
@@ -2877,7 +2921,7 @@
       "copied": "已複製來源。",
       "copyFailed": "無法複製來源，請選取文字手動複製。"
     },
-    "textOnlyNote": "此會話僅支援純文字，不支援檔案、引用、語音及自訂變數。原有舊會話保留相容功能。",
+    "textOnlyNote": "此應用程式的目前對話不接收附件。",
     "cancelled": "已取消",
     "interrupted": "已中斷",
     "loadMore": "載入更早訊息",
@@ -2920,5 +2964,30 @@
     "confirmationUnknown": "結果尚未確認。請查詢狀態，不要重複提交。",
     "confirmationSingleTask": "此 Agent 每個對話只處理一個任務。其他任務請建立新對話。",
     "confirmationNotDispatched": "本次決定尚未傳送。請核對後手動重試。"
+  },
+  "taskChat": {
+    "loading": "正在載入任務…",
+    "loginRequired": "請先登入",
+    "unavailable": "應用程式無法使用",
+    "independent": "每次傳送獨立執行，不會自動將先前任務作為對話記憶。",
+    "placeholder": "輸入任務內容",
+    "parametersOnly": "請填寫上方參數或上傳所需檔案",
+    "taskTitle": "任務執行",
+    "replayed": "此提交已經存在，不會自動再次執行，請檢查已儲存狀態。",
+    "submitFailed": "無法確認提交結果，再次重試會保留提交識別碼。",
+    "loadOlder": "載入更早任務",
+    "historyFailed": "任務歷史無法使用，請檢查權限並重試。",
+    "retry": "重試",
+    "welcome": "使用下方輸入區開始任務。",
+    "parameterTask": "參數或檔案任務",
+    "noProcess": "沒有已儲存的執行詳情",
+    "running": "執行中",
+    "unknown": "結果尚未確認，上游任務可能仍在執行，系統不會自動重新執行。",
+    "completed": "已完成",
+    "failed": "失敗",
+    "stopped": "已停止",
+    "runAgain": "再次使用這些輸入",
+    "viewResult": "查看完整結果",
+    "recoverTask": "標記中斷並準備再次執行"
   }
 }

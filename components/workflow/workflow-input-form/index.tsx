@@ -1,418 +1,566 @@
 'use client';
 
-import type { DifyUserInputFormItem } from '@lib/services/dify/types';
+import { AppIntroduction } from '@components/chat-input/app-introduction';
+import { AttachmentAction } from '@components/chat-input/attachment-action';
+import { ChatInputView } from '@components/chat-input/view';
 import {
-  filterVisibleUserInputForm,
-  getDifyUserInputFormEntry,
-} from '@lib/services/dify/user-input-form';
-import type { DifyParametersSimplifiedConfig } from '@lib/types/dify-parameters';
+  useAgentInputCapabilities,
+  useRetainedInputCapabilities,
+} from '@lib/hooks/use-agent-input-capabilities';
+import { useChatInputApp } from '@lib/hooks/use-chat-input-app';
+import type { DifyUserInputFormItem } from '@lib/services/dify/types';
+import { getDifyUserInputFormEntry } from '@lib/services/dify/user-input-form';
+import { readTaskDraft, writeTaskDraft } from '@lib/stores/chat-draft-session';
+import { useChatInputStore } from '@lib/stores/chat-input-store';
 import { cn } from '@lib/utils';
-import { AlertCircle, Loader2, Play } from 'lucide-react';
+import { Loader2, Play } from 'lucide-react';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import { useTranslations } from 'next-intl';
 
-import { FileUploadField } from './file-upload-field';
+import { FileUploadField, type FileUploadSelection } from './file-upload-field';
+import {
+  type WorkflowUploadOwner,
+  getSuccessfulFilesPayload,
+  restoreUploadFiles,
+} from './file-upload-field/helpers';
 import { FormField } from './form-field';
-import { validateFormData } from './validation';
+import { capabilityFormFields, validateFormData } from './validation';
 
 type WorkflowFormData = Record<string, unknown>;
-type WorkflowAppConfig = {
-  dify_parameters?: DifyParametersSimplifiedConfig;
-} | null;
 
 interface WorkflowInputFormProps {
   instanceId: string;
-  onExecute: (formData: WorkflowFormData) => Promise<void>;
+  onExecute: (formData: WorkflowFormData) => Promise<void | boolean>;
   isExecuting: boolean;
+  chat?: boolean;
+  onStop?: () => void;
+  showIntroduction?: boolean;
+  draftKey?: string;
 }
 
 export interface WorkflowInputFormRef {
   resetForm: () => void;
+  restoreInputs?: (inputs: WorkflowFormData) => void;
 }
 
-/**
- * Dynamic input form component for workflow
- *
- * Features:
- * - Dynamically render form fields based on user_input_form configuration
- * - Support text, paragraph, dropdown selection, file upload, etc.
- * - Complete form validation and error hint
- * - Unified stone color theme
- * - Support form reset function
- */
 export const WorkflowInputForm = React.forwardRef<
   WorkflowInputFormRef,
   WorkflowInputFormProps
->(({ instanceId, onExecute, isExecuting }, ref) => {
-  const t = useTranslations('pages.workflow.form');
+>((props, ref) => {
+  const {
+    instanceId,
+    onExecute,
+    isExecuting,
+    chat = false,
+    onStop,
+    showIntroduction,
+    draftKey,
+  } = props;
+  const actorEpoch = useChatInputStore(state => state.actorEpoch);
+  return (
+    <ScopedWorkflowInputForm
+      key={JSON.stringify([instanceId, actorEpoch])}
+      ref={ref}
+      instanceId={instanceId}
+      onExecute={onExecute}
+      isExecuting={isExecuting}
+      chat={chat}
+      onStop={onStop}
+      showIntroduction={showIntroduction}
+      draftKey={draftKey}
+    />
+  );
+});
 
-  // --- State management ---
+const ScopedWorkflowInputForm = React.forwardRef<
+  WorkflowInputFormRef,
+  WorkflowInputFormProps
+>((props, ref) => {
+  const {
+    instanceId,
+    onExecute,
+    isExecuting,
+    chat = false,
+    onStop,
+    showIntroduction = false,
+    draftKey,
+  } = props;
+  const t = useTranslations('pages.workflow.form');
+  const tCommon = useTranslations('common');
+  const tChat = useTranslations('pages.chat');
+  const app = useChatInputApp(instanceId, true);
+  const live = useAgentInputCapabilities(app.instance?.id ?? null);
+  const capabilities = live.capabilities;
+  const ready =
+    capabilities?.status === 'ready' && (!chat || capabilities.mode === 'task');
+  const displayedCapabilities = useRetainedInputCapabilities(capabilities);
+  const userInputForm = useMemo(
+    () => capabilityFormFields(displayedCapabilities),
+    [displayedCapabilities]
+  );
   const [formData, setFormData] = useState<WorkflowFormData>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [isLoading, setIsLoading] = useState(true);
-  const [appConfig, setAppConfig] = useState<WorkflowAppConfig>(null);
-  const [initialFormData, setInitialFormData] = useState<WorkflowFormData>({});
-
-  // --- Initialize application configuration ---
+  const [uploadBlocked, setUploadBlocked] = useState<Record<string, boolean>>(
+    {}
+  );
+  const [fileCounts, setFileCounts] = useState<Record<string, number>>({});
+  const inputId = useId();
+  const fileSelections = useRef(new Map<string, FileUploadSelection>());
+  const [dropNotice, setDropNotice] = useState<string | null>(null);
+  const [restoreScope, setRestoreScope] = useState<WorkflowUploadOwner>();
+  const [initialized, setInitialized] = useState(false);
+  const submitting = useRef(false);
+  const defaults = useMemo(
+    () =>
+      Object.fromEntries(
+        userInputForm.map(item => {
+          const { fieldConfig } = getDifyUserInputFormEntry(item);
+          return [fieldConfig!.variable, fieldConfig!.default ?? ''];
+        })
+      ),
+    [userInputForm]
+  );
   useEffect(() => {
-    const initializeApp = async () => {
-      try {
-        setIsLoading(true);
-        console.log(
-          '[Form initialization] Start loading application configuration, instanceId:',
-          instanceId
-        );
-
-        // Directly get the configuration of the specified instanceId from internal API
-        try {
-          const response = await fetch(
-            `/api/internal/apps?instanceId=${encodeURIComponent(instanceId)}`,
-            {
-              method: 'GET',
-              credentials: 'include',
-            }
-          );
-
-          if (!response.ok) {
-            throw new Error(t('errors.instanceNotFound', { instanceId }));
-          }
-
-          const payload = (await response.json()) as {
-            success: boolean;
-            app?: {
-              config?: WorkflowAppConfig;
-            };
-          };
-
-          const serviceInstance = payload.app;
-          if (!payload.success || !serviceInstance) {
-            throw new Error(t('errors.instanceNotFound', { instanceId }));
-          }
-
-          setAppConfig(serviceInstance.config ?? null);
-
-          // Initialize form default value
-          const difyParams = serviceInstance.config
-            ?.dify_parameters as DifyParametersSimplifiedConfig;
-          const userInputForm = filterVisibleUserInputForm(
-            difyParams?.user_input_form
-          );
-          const initialData: WorkflowFormData = {};
-
-          userInputForm.forEach((formItem: DifyUserInputFormItem) => {
-            const { fieldType, fieldConfig } =
-              getDifyUserInputFormEntry(formItem);
-
-            if (fieldConfig) {
-              // Set default value based on field type
-              if (fieldType === 'file' || fieldType === 'file-list') {
-                initialData[fieldConfig.variable] = fieldConfig.default || [];
-              } else if (fieldType === 'number') {
-                const numberDefault = fieldConfig.default;
-                initialData[fieldConfig.variable] =
-                  typeof numberDefault === 'number' ||
-                  typeof numberDefault === 'string'
-                    ? numberDefault
-                    : '';
-              } else {
-                initialData[fieldConfig.variable] = fieldConfig.default || '';
-              }
-            }
-          });
-
-          setFormData(initialData);
-          setInitialFormData(initialData);
-        } catch (configError) {
-          console.warn(
-            '[Form initialization] Failed to get application configuration, using default configuration:',
-            configError
-          );
-
-          // Set default configuration, allow users to continue using
-          const defaultConfig = {
-            dify_parameters: {
-              user_input_form: [
-                {
-                  paragraph: {
-                    type: 'paragraph',
-                    label: t('defaultLabel'),
-                    variable: 'input_text',
-                    required: true,
-                    default: '',
-                  },
-                },
-              ],
-            },
-          };
-
-          setAppConfig(defaultConfig);
-
-          const defaultFormData = { input_text: '' };
-          setFormData(defaultFormData);
-          setInitialFormData(defaultFormData);
-        }
-      } catch (error) {
-        console.error('[Form initialization] Initialization failed:', error);
-
-        // Even if it completely fails, provide a basic form
-        const fallbackConfig = {
-          dify_parameters: {
-            user_input_form: [
-              {
-                paragraph: {
-                  type: 'paragraph',
-                  label: t('defaultLabel'),
-                  variable: 'input_text',
-                  required: true,
-                  default: '',
-                },
-              },
-            ],
-          },
-        };
-        setAppConfig(fallbackConfig);
-
-        const fallbackFormData = { input_text: '' };
-        setFormData(fallbackFormData);
-        setInitialFormData(fallbackFormData);
-      } finally {
-        setIsLoading(false);
+    if (!ready || initialized) return;
+    const actor = useChatInputStore.getState();
+    if (draftKey && !actor.actorId) return;
+    const saved = draftKey ? readTaskDraft(draftKey) : undefined;
+    const restored: WorkflowFormData = { ...defaults };
+    if (saved && actor.actorId) {
+      const owner = {
+        app_id: instanceId,
+        actor_id: actor.actorId,
+        actor_epoch: actor.actorEpoch,
+      };
+      for (const field of capabilities.fields) {
+        const value = saved[field.key];
+        if (typeof value === 'string' || typeof value === 'number')
+          restored[field.key] = value;
       }
-    };
-
-    initializeApp();
-  }, [instanceId, t]);
-
-  // --- Form field update ---
-  const handleFieldChange = (variable: string, value: unknown) => {
-    setFormData(prev => ({
-      ...prev,
-      [variable]: value,
-    }));
-
-    // Clear the error of this field
-    if (errors[variable]) {
-      setErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors[variable];
-        return newErrors;
-      });
+      for (const slot of capabilities.attachmentSlots) {
+        if (slot.target !== 'inputs') continue;
+        const value = saved[slot.key];
+        const files = restoreUploadFiles(
+          Array.isArray(value) ? value : [value],
+          owner,
+          owner
+        );
+        if (files.length) {
+          const single = !(slot.multiple ?? slot.maxCount !== 1);
+          restored[slot.key] = getSuccessfulFilesPayload(
+            files,
+            single,
+            owner
+          ).value;
+        }
+      }
     }
-  };
-
-  // --- Form reset ---
-  const handleReset = useCallback(() => {
-    setFormData({ ...initialFormData });
-    setErrors({});
-  }, [initialFormData]);
-
-  // --- Form submission ---
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (isExecuting) return;
-
-    // Validate the form
-    const userInputForm = filterVisibleUserInputForm(
-      appConfig?.dify_parameters?.user_input_form
+    setFormData(restored);
+    setInitialized(true);
+  }, [ready, initialized, defaults, draftKey, instanceId, capabilities]);
+  useLayoutEffect(() => {
+    if (!draftKey || !initialized) return;
+    const draft = Object.fromEntries(
+      Object.keys(defaults).flatMap(key => {
+        const value = formData[key];
+        const initial = defaults[key];
+        if (Array.isArray(initial)) {
+          if (value == null || (Array.isArray(value) && !value.length))
+            return [];
+        } else if (value === undefined || value === initial) return [];
+        return [[key, value]];
+      })
     );
-    const validationErrors = validateFormData(formData, userInputForm, t);
-
-    if (Object.keys(validationErrors).length > 0) {
-      setErrors(validationErrors);
-      return;
-    }
-
-    // Clear errors and execute
+    writeTaskDraft(draftKey, draft);
+  }, [draftKey, initialized, defaults, formData]);
+  const reset = useCallback(() => {
+    setFormData(
+      Object.fromEntries(
+        Object.entries(defaults).map(([key, value]) => [
+          key,
+          Array.isArray(value) ? [...value] : value,
+        ])
+      )
+    );
     setErrors({});
-    await onExecute(formData);
-  };
-
-  // --- Expose reset method to parent component ---
+  }, [defaults]);
   React.useImperativeHandle(
     ref,
     () => ({
-      resetForm: handleReset,
+      resetForm: reset,
+      restoreInputs: inputs => {
+        const actor = useChatInputStore.getState();
+        if (!actor.actorId) return;
+        const owner = {
+          app_id: instanceId,
+          actor_id: actor.actorId,
+          actor_epoch: actor.actorEpoch,
+        };
+        const restored = structuredClone(inputs);
+        for (const slot of capabilities?.attachmentSlots ?? []) {
+          if (slot.target !== 'inputs') continue;
+          const value = restored[slot.key];
+          const rebind = (file: unknown) =>
+            file &&
+            typeof file === 'object' &&
+            'app_id' in file &&
+            file.app_id === instanceId &&
+            'actor_id' in file &&
+            file.actor_id === actor.actorId
+              ? { ...file, ...owner }
+              : file;
+          restored[slot.key] = Array.isArray(value)
+            ? value.map(rebind)
+            : rebind(value);
+        }
+        setRestoreScope(owner);
+        setFormData(restored);
+        setErrors({});
+      },
     }),
-    [handleReset]
+    [reset, instanceId, capabilities]
   );
-
-  // --- Loading state ---
-  if (isLoading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="space-y-4 text-center">
-          <Loader2
-            className={cn(
-              'mx-auto h-8 w-8 animate-spin',
-              'text-stone-600 dark:text-stone-400'
-            )}
-          />
-          <p
-            className={cn(
-              'font-serif text-sm',
-              'text-stone-600 dark:text-stone-400'
-            )}
-          >
-            {t('loading')}
-          </p>
-        </div>
-      </div>
+  const blocked =
+    !ready ||
+    isExecuting ||
+    capabilities?.attachmentSlots.some(
+      slot => slot.target === 'inputs' && uploadBlocked[slot.key]
+    ) ||
+    Boolean(
+      capabilities?.attachmentSlots.some(
+        slot => slot.target === 'files' && slot.minCount > 0
+      )
     );
-  }
-
-  // --- Get form configuration ---
-  const rawUserInputForm = appConfig?.dify_parameters?.user_input_form || [];
-  const userInputForm = filterVisibleUserInputForm(rawUserInputForm);
-
-  if (rawUserInputForm.length === 0) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="space-y-4 text-center">
-          <AlertCircle
-            className={cn(
-              'mx-auto h-8 w-8',
-              'text-stone-600 dark:text-stone-400'
-            )}
-          />
-          <p
-            className={cn(
-              'font-serif text-sm',
-              'text-stone-600 dark:text-stone-400'
-            )}
-          >
-            {t('noFormConfig')}
-          </p>
-        </div>
-      </div>
+  const submit = async () => {
+    if (blocked || submitting.current) return;
+    const validation = validateFormData(
+      formData,
+      userInputForm,
+      t,
+      capabilities
     );
-  }
-
+    setErrors(validation);
+    if (Object.keys(validation).length) return;
+    submitting.current = true;
+    try {
+      const keys = new Set([
+        ...capabilities!.fields.map(field => field.key),
+        ...capabilities!.attachmentSlots
+          .filter(slot => slot.target === 'inputs')
+          .map(slot => slot.key),
+      ]);
+      const result = await onExecute(
+        structuredClone(
+          Object.fromEntries(
+            Object.entries(formData).filter(([key]) => keys.has(key))
+          )
+        )
+      );
+      if (result === false) {
+        live.retry();
+      } else if (chat) {
+        setFormData(previous => {
+          const next = { ...previous };
+          if (capabilities.text.enabled) next[capabilities.text.target] = '';
+          for (const slot of capabilities.attachmentSlots) {
+            if (slot.target === 'inputs') next[slot.key] = null;
+          }
+          return next;
+        });
+        setDropNotice(null);
+        setRestoreScope(undefined);
+      }
+    } catch {
+      live.retry();
+    } finally {
+      submitting.current = false;
+    }
+  };
+  const retry = app.failed ? app.retry : live.retry;
+  const failed = app.failed || live.error || (capabilities && !ready);
+  const textTarget =
+    chat && capabilities?.text.enabled ? capabilities.text.target : null;
+  const textValue = textTarget ? String(formData[textTarget] ?? '') : '';
+  const valid =
+    ready &&
+    Object.keys(validateFormData(formData, userInputForm, t, capabilities))
+      .length === 0;
+  const uploadFields = userInputForm.filter(item =>
+    ['file', 'file-list'].includes(getDifyUserInputFormEntry(item).fieldType)
+  );
+  const renderUpload = (formItem: DifyUserInputFormItem) => {
+    const { fieldType, fieldConfig } = getDifyUserInputFormEntry(formItem);
+    if (!fieldConfig) return null;
+    const variable = fieldConfig.variable;
+    const slot = displayedCapabilities?.attachmentSlots.find(
+      item => item.target === 'inputs' && item.key === variable
+    );
+    return (
+      <FileUploadField
+        key={variable}
+        selectionRef={selection => {
+          if (selection) fileSelections.current.set(variable, selection);
+          else fileSelections.current.delete(variable);
+        }}
+        config={{}}
+        compact={chat}
+        showCompactLabel={uploadFields.length > 1}
+        inputId={`${inputId}-${variable}`}
+        disabled={isExecuting || !ready}
+        slot={
+          ready
+            ? capabilities.attachmentSlots.find(
+                item => item.target === 'inputs' && item.key === variable
+              )
+            : undefined
+        }
+        value={formData[variable]}
+        restoreScope={restoreScope}
+        onChange={value => {
+          setFormData(previous => ({ ...previous, [variable]: value }));
+          setErrors(previous => ({ ...previous, [variable]: '' }));
+        }}
+        error={errors[variable]}
+        label={fieldConfig.label}
+        instanceId={instanceId}
+        required={slot ? slot.minCount > 0 : fieldConfig.required}
+        isSingleFileMode={fieldType === 'file'}
+        onRequirementsChanged={live.retry}
+        onCountChange={count =>
+          setFileCounts(previous =>
+            previous[variable] === count
+              ? previous
+              : { ...previous, [variable]: count }
+          )
+        }
+        onBlockedChange={value =>
+          setUploadBlocked(previous =>
+            previous[variable] === value
+              ? previous
+              : { ...previous, [variable]: value }
+          )
+        }
+      />
+    );
+  };
+  const fields = userInputForm.some(item => {
+    const { fieldType, fieldConfig } = getDifyUserInputFormEntry(item);
+    return (
+      fieldConfig &&
+      fieldConfig.variable !== textTarget &&
+      (!chat || !['file', 'file-list'].includes(fieldType))
+    );
+  }) ? (
+    <fieldset
+      disabled={isExecuting}
+      inert={isExecuting}
+      className={cn(
+        'no-scrollbar space-y-6 overflow-x-visible overflow-y-auto px-2',
+        chat ? 'max-h-[35dvh]' : 'flex-1'
+      )}
+    >
+      {userInputForm.map((formItem: DifyUserInputFormItem) => {
+        const { fieldType, fieldConfig } = getDifyUserInputFormEntry(formItem);
+        if (!fieldConfig) return null;
+        const variable = fieldConfig.variable;
+        if (variable === textTarget) return null;
+        const onChange = (value: unknown) => {
+          setFormData(prev => ({ ...prev, [variable]: value }));
+          setErrors(prev => ({ ...prev, [variable]: '' }));
+        };
+        if (fieldType === 'file' || fieldType === 'file-list') {
+          return chat ? null : renderUpload(formItem);
+        }
+        return (
+          <FormField
+            key={variable}
+            type={fieldType as 'text-input' | 'number' | 'paragraph' | 'select'}
+            config={fieldConfig}
+            value={
+              (formData[variable] ?? defaults[variable] ?? '') as
+                string | number | string[] | File[]
+            }
+            onChange={onChange}
+            error={errors[variable]}
+          />
+        );
+      })}
+    </fieldset>
+  ) : null;
   return (
-    <div className="flex h-full flex-col">
-      {/* --- Form content --- */}
+    <div
+      className={cn('flex min-h-0 flex-col', !chat && 'h-full')}
+      data-task-composer={chat ? '' : undefined}
+    >
+      {!ready && (
+        <div
+          role={failed ? 'alert' : 'status'}
+          aria-label={failed ? undefined : t('loading')}
+          className="space-y-3 px-2 py-4 font-serif text-sm text-stone-600 dark:text-stone-400"
+        >
+          {failed ? (
+            <>
+              {tChat(
+                capabilities?.status === 'unsupported'
+                  ? 'input.capabilitiesUnsupported'
+                  : 'input.capabilitiesUnavailable'
+              )}
+              <button type="button" onClick={retry} className="ml-3 underline">
+                {tCommon('ui.retry')}
+              </button>
+            </>
+          ) : (
+            <Loader2
+              aria-hidden="true"
+              className="inline h-4 w-4 animate-spin"
+            />
+          )}
+        </div>
+      )}
       <form
-        onSubmit={handleSubmit}
+        onSubmit={event => {
+          event.preventDefault();
+          void submit();
+        }}
         className="hide-all-scrollbars flex min-h-0 flex-1 flex-col"
       >
-        <div className="no-scrollbar flex-1 space-y-6 overflow-x-visible overflow-y-auto px-2">
-          {userInputForm.map(
-            (formItem: DifyUserInputFormItem, index: number) => {
-              const { fieldType, fieldConfig } =
-                getDifyUserInputFormEntry(formItem);
-
-              if (!fieldConfig) return null;
-
-              // Special handling for file upload fields
-              if (fieldType === 'file' || fieldType === 'file-list') {
-                return (
-                  <FileUploadField
-                    key={`${fieldConfig.variable}-${index}`}
-                    config={
-                      fieldConfig as {
-                        enabled?: boolean;
-                        max_length?: number;
-                        number_limits?: number;
-                        allowed_file_types?: string[];
-                        max_file_size_mb?: number;
-                      }
-                    }
-                    value={formData[fieldConfig.variable]}
-                    onChange={value =>
-                      handleFieldChange(fieldConfig.variable, value)
-                    }
-                    error={errors[fieldConfig.variable]}
-                    label={fieldConfig.label}
-                    instanceId={instanceId}
-                    isSingleFileMode={fieldType === 'file'}
-                  />
-                );
+        {!chat && fields}
+        {chat ? (
+          <div
+            onDragOver={event => {
+              if (!event.dataTransfer.types.includes('Files')) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect =
+                ready && !isExecuting ? 'copy' : 'none';
+            }}
+            onDrop={event => {
+              const files = Array.from(event.dataTransfer.files);
+              if (!files.length && !event.dataTransfer.types.includes('Files'))
+                return;
+              event.preventDefault();
+              event.stopPropagation();
+              if (isExecuting) return;
+              if (!ready) {
+                setDropNotice(tChat('input.capabilitiesUnavailable'));
+                return;
               }
-
-              // Other field types
-              return (
-                <FormField
-                  key={`${fieldConfig.variable}-${index}`}
-                  type={
-                    fieldType as
-                      | 'text-input'
-                      | 'number'
-                      | 'paragraph'
-                      | 'select'
-                  }
-                  config={fieldConfig}
-                  value={
-                    formData[fieldConfig.variable] as
-                      | string
-                      | number
-                      | string[]
-                      | File[]
-                  }
-                  onChange={value =>
-                    handleFieldChange(fieldConfig.variable, value)
-                  }
-                  error={errors[fieldConfig.variable]}
-                />
+              const slots = capabilities.attachmentSlots.filter(
+                slot =>
+                  slot.target === 'inputs' &&
+                  slot.methods.includes('local_file') &&
+                  slot.maxCount > 0
               );
-            }
-          )}
-        </div>
-
-        {/* --- Form operation buttons --- */}
-        <div
-          className={cn(
-            'mt-4 flex-shrink-0 border-t bg-gradient-to-t pt-6',
-            'border-stone-200 dark:border-stone-700'
-          )}
-        >
-          <div className="flex gap-3">
-            {/* Reset button */}
-            <button
-              type="button"
-              onClick={handleReset}
-              disabled={isExecuting}
-              className={cn(
-                'rounded-lg px-4 py-2 font-serif text-sm transition-colors',
-                'border',
-                isExecuting ? 'cursor-not-allowed opacity-50' : '',
-                'border-stone-300 text-stone-700 hover:bg-stone-100 hover:text-stone-800 dark:border-stone-600 dark:text-stone-300 dark:hover:bg-stone-700 dark:hover:text-stone-200'
-              )}
-            >
-              {t('reset')}
-            </button>
-
-            {/* Execute button */}
-            <button
-              type="submit"
-              disabled={isExecuting}
-              className={cn(
-                'flex flex-1 items-center justify-center gap-2 rounded-lg px-6 py-2',
-                'font-serif text-sm font-medium transition-colors',
-                isExecuting
-                  ? 'cursor-not-allowed opacity-50'
-                  : 'hover:shadow-lg',
-                'bg-stone-800 text-white hover:bg-stone-700 dark:bg-stone-700 dark:text-stone-100 dark:hover:bg-stone-600'
-              )}
-            >
-              {isExecuting ? (
+              if (slots.length !== 1) {
+                setDropNotice(
+                  tChat(
+                    slots.length
+                      ? 'input.chooseAttachmentField'
+                      : 'fileTypeSelector.notSupported'
+                  )
+                );
+                return;
+              }
+              setDropNotice(null);
+              fileSelections.current.get(slots[0].key)?.selectFiles(files);
+            }}
+          >
+            {dropNotice && (
+              <p role="status" className="mb-2 px-2 text-xs text-stone-500">
+                {dropNotice}
+              </p>
+            )}
+            <ChatInputView
+              embedded
+              beforeInput={
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  {t('executing')}
+                  {showIntroduction && (
+                    <AppIntroduction
+                      name={app.instance?.display_name}
+                      description={app.instance?.description}
+                    />
+                  )}
+                  {fields && <div className="mb-3">{fields}</div>}
                 </>
-              ) : (
-                <>
-                  <Play className="h-4 w-4" />
-                  {t('startExecution')}
-                </>
-              )}
-            </button>
+              }
+              value={textValue}
+              onValueChange={value => {
+                if (textTarget)
+                  setFormData(previous => ({
+                    ...previous,
+                    [textTarget]: value,
+                  }));
+              }}
+              onSubmit={submit}
+              disabled={blocked}
+              textDisabled={!textTarget}
+              canSubmit={valid}
+              isProcessing={isExecuting}
+              onStop={onStop}
+              stopDisabled={false}
+              placeholder=""
+              attachmentPreview={uploadFields.map(renderUpload)}
+              attachmentAction={
+                <AttachmentAction
+                  disabled={!ready || isExecuting}
+                  choices={(displayedCapabilities?.attachmentSlots ?? [])
+                    .filter(slot => slot.target === 'inputs')
+                    .map(slot => ({
+                      id: `${inputId}-${slot.key}`,
+                      slot,
+                      count: fileCounts[slot.key] ?? 0,
+                    }))}
+                  onChoose={choice => {
+                    setDropNotice(null);
+                    document.getElementById(choice.id)?.click();
+                  }}
+                />
+              }
+              sendButtonAriaLabel={t('startExecution')}
+            />
           </div>
-        </div>
+        ) : (
+          <div className="mt-4 flex-shrink-0 border-t border-stone-200 bg-gradient-to-t pt-6 dark:border-stone-700">
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={reset}
+                disabled={isExecuting}
+                className="rounded-lg border border-stone-300 px-4 py-2 font-serif text-sm text-stone-700 dark:border-stone-600 dark:text-stone-300"
+              >
+                {t('reset')}
+              </button>
+              <button
+                type="submit"
+                disabled={blocked}
+                className={cn(
+                  'flex flex-1 items-center justify-center gap-2 rounded-lg bg-stone-800 px-6 py-2 font-serif text-sm font-medium text-white dark:bg-stone-700',
+                  blocked && 'cursor-not-allowed opacity-50'
+                )}
+              >
+                {isExecuting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Play className="h-4 w-4" />
+                )}
+                {isExecuting ? t('executing') : t('startExecution')}
+              </button>
+            </div>
+          </div>
+        )}
       </form>
     </div>
   );
 });
 
 WorkflowInputForm.displayName = 'WorkflowInputForm';
+ScopedWorkflowInputForm.displayName = 'ScopedWorkflowInputForm';

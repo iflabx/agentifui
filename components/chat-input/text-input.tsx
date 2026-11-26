@@ -43,7 +43,7 @@ export const ChatTextInput = forwardRef<
   ) => {
     const t = useTranslations('pages.chat');
     const inputId = useId();
-    const defaultPlaceholder = placeholder || t('input.placeholder');
+    const defaultPlaceholder = placeholder ?? t('input.placeholder');
 
     // Internal reference, used when no external ref is provided
     const internalRef = useRef<HTMLTextAreaElement>(null);

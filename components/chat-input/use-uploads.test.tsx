@@ -3,7 +3,20 @@ import { useAttachmentStore } from '@lib/stores/attachment-store';
 import { syncChatDraftActor } from '@lib/stores/chat-draft-lifecycle';
 import { act, renderHook } from '@testing-library/react';
 
-import { useChatInputUploads } from './use-uploads';
+import type { AgentAttachmentSlot } from '../../packages/shared/src/agent-input';
+import { useChatInputUploads, validateChatAttachments } from './use-uploads';
+
+const slot: AgentAttachmentSlot = {
+  key: 'files',
+  label: 'Files',
+  target: 'files',
+  minCount: 0,
+  maxCount: 3,
+  methods: ['local_file'],
+  allowedTypes: ['document'],
+  extensions: ['txt'],
+  maxBytesByType: { document: 9 },
+};
 
 jest.mock('@lib/services/dify/file-service', () => ({
   uploadDifyFile: jest.fn(),
@@ -13,6 +26,35 @@ jest.mock('@lib/stores/ui/notification-store', () => ({
 }));
 
 describe('scoped input uploads', () => {
+  it('allows omitted conversation variables only in a continuation, without relaxing native files', () => {
+    const capabilities = {
+      version: 1 as const,
+      status: 'ready' as const,
+      mode: 'conversation' as const,
+      text: { enabled: true, required: true, target: 'query' },
+      fields: [],
+      attachmentSlots: [
+        { ...slot, key: 'source', target: 'inputs' as const, minCount: 1 },
+      ],
+    };
+    expect(validateChatAttachments(capabilities, [])).toBe(
+      'INPUT_CAPABILITIES_UNSUPPORTED'
+    );
+    expect(validateChatAttachments(capabilities, [], true)).toBeNull();
+    expect(
+      validateChatAttachments(
+        {
+          ...capabilities,
+          attachmentSlots: [
+            ...capabilities.attachmentSlots,
+            { ...slot, minCount: 1 },
+          ],
+        },
+        [],
+        true
+      )
+    ).toBe('INPUT_FILES_REQUIRED');
+  });
   const t = (key: string) => key;
   const files = () =>
     [
@@ -33,6 +75,7 @@ describe('scoped input uploads', () => {
           scope: 'A',
           currentAppId: 'app-A',
           sessionUserId: 'actor',
+          slot,
           t,
         })
       );
@@ -60,7 +103,7 @@ describe('scoped input uploads', () => {
     expect(useAttachmentStore.getState().files).toEqual([]);
   });
 
-  it('keeps a late upload on its original scope and ignores an older retry', async () => {
+  it('keeps a late upload on its original scope and prevents duplicate in-flight retries', async () => {
     const pending: Array<
       (value: { id: string; preview_url?: string }) => void
     > = [];
@@ -77,6 +120,7 @@ describe('scoped input uploads', () => {
         scope: 'A',
         currentAppId: 'app-A',
         sessionUserId: 'actor',
+        slot,
         t,
       })
     );
@@ -87,11 +131,10 @@ describe('scoped input uploads', () => {
     });
     act(() => useAttachmentStore.getState().setScope('B'));
     await act(async () => {
-      pending[1]({
+      pending[0]({
         id: 'new',
         preview_url: 'https://dify.example/files/new/file-preview?sign=1',
       });
-      pending[0]({ id: 'old' });
     });
     expect(useAttachmentStore.getState().files).toEqual([]);
     expect(useAttachmentStore.getState().getFiles('A')[0].uploadedId).toBe(
@@ -105,5 +148,62 @@ describe('scoped input uploads', () => {
       expect.any(File),
       'actor'
     );
+    expect(uploadDifyFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries failed entries in place without reserving another slot', async () => {
+    jest
+      .mocked(uploadDifyFile)
+      .mockRejectedValueOnce(new Error('temporary'))
+      .mockResolvedValueOnce({ id: 'retry' } as never);
+    const { result } = renderHook(() =>
+      useChatInputUploads({
+        scope: 'A',
+        currentAppId: 'app-A',
+        sessionUserId: 'actor',
+        slot: { ...slot, maxCount: 1 },
+        t,
+      })
+    );
+    await act(async () => result.current.handleFileSelect(files()));
+    const failed = useAttachmentStore.getState().files[0];
+    expect(failed.status).toBe('error');
+    await act(async () => result.current.handleFileSelect(files()));
+    expect(useAttachmentStore.getState().files).toHaveLength(1);
+    await act(async () => {
+      await result.current.handleRetryUpload(failed.id);
+    });
+    expect(useAttachmentStore.getState().files[0]).toMatchObject({
+      id: failed.id,
+      status: 'success',
+      uploadedId: 'retry',
+    });
+    expect(uploadDifyFile).toHaveBeenCalledTimes(2);
+  });
+
+  it('blocks unknown capabilities and revalidates retries after limits change', async () => {
+    const { result, rerender } = renderHook(
+      ({ rule }) =>
+        useChatInputUploads({
+          scope: 'A',
+          currentAppId: 'app-A',
+          sessionUserId: 'actor',
+          slot: rule,
+          t,
+        }),
+      { initialProps: { rule: undefined as AgentAttachmentSlot | undefined } }
+    );
+    act(() => result.current.handleFileSelect(files()));
+    expect(useAttachmentStore.getState().files).toEqual([]);
+    jest.mocked(uploadDifyFile).mockRejectedValueOnce(new Error('temporary'));
+    rerender({ rule: slot });
+    await act(async () => result.current.handleFileSelect(files()));
+    const id = useAttachmentStore.getState().files[0].id;
+    rerender({ rule: { ...slot, maxBytesByType: { document: 8 } } });
+    await act(async () => {
+      await result.current.handleRetryUpload(id);
+    });
+    expect(uploadDifyFile).toHaveBeenCalledTimes(1);
+    expect(useAttachmentStore.getState().files).toHaveLength(1);
   });
 });

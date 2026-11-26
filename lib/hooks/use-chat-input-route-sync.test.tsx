@@ -1,11 +1,13 @@
 import { captureDifyInputSubmission } from '@components/chat-input/submission';
 import { getConversationByExternalId } from '@lib/services/client/conversations-api';
 import { useAttachmentStore } from '@lib/stores/attachment-store';
+import { clearChatInputScopeCache } from '@lib/stores/chat-input-scope-cache';
 import { appDrafts } from '@lib/stores/chat-input-scope-cache';
 import {
   chatInputScope,
   useChatInputStore,
 } from '@lib/stores/chat-input-store';
+import { useChatStore } from '@lib/stores/chat-store';
 import { act, renderHook, waitFor } from '@testing-library/react';
 
 import {
@@ -23,11 +25,79 @@ jest.mock('@lib/services/client/conversations-api', () => ({
 describe('input route scope synchronization', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    sessionStorage.clear();
     mockPathname = '/apps/chatbot/app-A';
     useChatInputStore.getState().setActor(null);
     useChatInputStore.getState().clearAllMessages();
     useAttachmentStore.getState().resetAll();
+    useChatStore.getState().clearMessages();
+    useChatStore.getState().setCurrentConversationId(null);
+    clearChatInputScopeCache();
   });
+
+  it.each([
+    '/chat/new',
+    '/apps/chatbot/app-A',
+    '/apps/agent/app-A',
+    '/apps/chatflow/app-A',
+  ])(
+    'restores the unsent draft and completed file after reloading %s',
+    pathname => {
+      mockPathname = pathname;
+      const open = () =>
+        renderHook(() =>
+          useChatInputRouteSync({ userId: 'actor', appId: 'app-A' })
+        );
+      const first = open();
+      const scope = first.result.current.scope!;
+      act(() => {
+        const input = useChatInputStore.getState();
+        input.setMessage('Unsent question');
+        const attachments = useAttachmentStore.getState();
+        attachments.addFiles([
+          new File(['synthetic'], 'reference.txt', { type: 'text/plain' }),
+          new File(['incomplete'], 'pending.txt', { type: 'text/plain' }),
+        ]);
+        const [completed] = attachments.getFiles(scope);
+        const attempt = attachments.beginUpload(scope, completed.id)!;
+        attachments.finishUpload(scope, completed.id, attempt, {
+          uploadedId: 'uploaded-reference',
+          appId: 'app-A',
+          actorId: 'actor',
+          actorEpoch: input.actorEpoch,
+        });
+      });
+      const reload = () => {
+        useChatInputStore.getState().setActor(null);
+        useAttachmentStore.getState().resetAll();
+        clearChatInputScopeCache();
+        return open();
+      };
+      first.unmount();
+      const reopened = reload();
+      expect(useChatInputStore.getState().message).toBe('Unsent question');
+      const files = useAttachmentStore.getState().files;
+      expect(files).toEqual([
+        expect.objectContaining({
+          name: 'reference.txt',
+          status: 'success',
+          uploadedId: 'uploaded-reference',
+          uploadedActorEpoch: useChatInputStore.getState().actorEpoch,
+        }),
+      ]);
+      expect(files[0].file).toBeUndefined();
+      act(() => {
+        const input = useChatInputStore.getState();
+        input.consumeSnapshot(input.snapshot());
+        const attachments = useAttachmentStore.getState();
+        attachments.consumeFiles(attachments.currentScope, files);
+      });
+      reopened.unmount();
+      reload();
+      expect(useChatInputStore.getState().message).toBe('');
+      expect(useAttachmentStore.getState().files).toEqual([]);
+    }
+  );
 
   it('restores separate application drafts without moving uploaded handles', () => {
     const { rerender } = renderHook(
@@ -164,6 +234,84 @@ describe('input route scope synchronization', () => {
     expect(useChatInputStore.getState().currentRoute).toBe(scope);
     expect(useChatInputStore.getState().message).toBe('Keep on remount');
     expect(useAttachmentStore.getState().files).toEqual(files);
+  });
+
+  it.each(['/apps/chatbot/app-A', '/apps/agent/app-A'])(
+    'starts a fresh introduction on reentering %s after an accepted conversation failed to save',
+    async applicationPath => {
+      mockPathname = applicationPath;
+      const first = renderHook(() =>
+        useChatInputRouteSync({ userId: 'actor', appId: 'app-A' })
+      );
+      const original = first.result.current.scope!;
+      act(() => useChatInputStore.getState().setMessage('Question'));
+      await act(async () => {
+        captureDifyInputSubmission('Question', 'actor')('app-A', {
+          externalId: 'accepted-but-not-saved',
+          taskId: 'accepted-task',
+          conversationPersistencePromise: Promise.resolve(null),
+        });
+      });
+      expect(useChatInputStore.getState().acceptedScopes[original]).toBe(true);
+      first.unmount();
+      mockPathname = '/apps/chatbot/app-B';
+      const other = renderHook(() =>
+        useChatInputRouteSync({ userId: 'actor', appId: 'app-B' })
+      );
+      other.unmount();
+      mockPathname = applicationPath;
+      const reopened = renderHook(() =>
+        useChatInputRouteSync({ userId: 'actor', appId: 'app-A' })
+      );
+      expect(reopened.result.current.scope).not.toBe(original);
+      expect(
+        useChatInputStore.getState().acceptedScopes[
+          reopened.result.current.scope!
+        ]
+      ).toBeFalsy();
+      expect(useChatInputStore.getState().acceptedScopes[original]).toBe(true);
+      expect(getConversationByExternalId).not.toHaveBeenCalled();
+    }
+  );
+
+  it('preserves the accepted application scope during a same-actor authentication refresh', () => {
+    const view = renderHook(
+      ({ authLoading }) =>
+        useChatInputRouteSync({ userId: 'actor', appId: 'app-A', authLoading }),
+      { initialProps: { authLoading: false } }
+    );
+    const original = view.result.current.scope!;
+    act(() => {
+      useChatStore.getState().addMessage({ text: 'Question', isUser: true });
+      useChatInputStore.getState().markAccepted(original);
+    });
+    view.rerender({ authLoading: true });
+    view.rerender({ authLoading: false });
+    expect(view.result.current.scope).toBe(original);
+    expect(useChatInputStore.getState().acceptedScopes[original]).toBe(true);
+  });
+
+  it('keeps an accepted conversation when only the input remounts and resets it when the page clears the conversation', () => {
+    const first = renderHook(() =>
+      useChatInputRouteSync({ userId: 'actor', appId: 'app-A' })
+    );
+    const original = first.result.current.scope!;
+    act(() => {
+      useChatStore.getState().addMessage({ text: 'Question', isUser: true });
+      useChatInputStore.getState().markAccepted(original);
+    });
+    first.unmount();
+    const remounted = renderHook(() =>
+      useChatInputRouteSync({ userId: 'actor', appId: 'app-A' })
+    );
+    expect(remounted.result.current.scope).toBe(original);
+    act(() => useChatStore.getState().clearMessages());
+    expect(remounted.result.current.scope).not.toBe(original);
+    expect(
+      useChatInputStore.getState().acceptedScopes[
+        remounted.result.current.scope!
+      ]
+    ).toBeFalsy();
   });
 
   it('waits for an initially undefined app without allocating or consuming an empty draft', () => {

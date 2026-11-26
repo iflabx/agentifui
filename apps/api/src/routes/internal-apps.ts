@@ -2,8 +2,16 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 
 import type { ApiRuntimeConfig } from '../config';
 import { runAuditedAdminMutation } from '../lib/admin-audit';
+import { AGENT_APP_VISIBILITY_SQL } from '../lib/agent-app';
+import { isDifyAguiSelected, resolveAgentApp } from '../lib/agent-app';
 import { AgentPolicyError, describeBackend } from '../lib/agent-backends';
+import { resolveSharedAgentInputCapabilities } from '../lib/agent-input';
 import { getSubmissionForActor } from '../lib/agent-submissions';
+import { resolveDifyConfig } from '../lib/dify-config';
+import {
+  resolveDifyInputCapabilities,
+  unavailableInputCapabilities,
+} from '../lib/dify-input-capabilities';
 import {
   queryRowsWithPgSystemContext,
   queryRowsWithPgUserContext,
@@ -268,6 +276,75 @@ async function requireActor(
 export const internalAppsRoutes: FastifyPluginAsync<
   InternalAppsRoutesOptions
 > = async (app, options) => {
+  app.get<{ Params: { appId: string } }>(
+    '/api/internal/apps/:appId/input-capabilities',
+    async (request, reply) => {
+      const actor = await requireActor(request, options.config);
+      if (!actor.ok) return reply.status(actor.statusCode).send(actor.payload);
+      reply.header('cache-control', 'private, no-store');
+      if (
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          request.params.appId
+        )
+      )
+        return reply.status(400).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 400,
+            code: 'APP_ID_INVALID',
+            userMessage: 'Invalid application ID',
+          })
+        );
+      const rows = await queryRowsWithPgSystemContext<{
+        instance_id: string;
+        config: Record<string, unknown> | null;
+      }>(
+        `SELECT si.instance_id, si.config FROM service_instances si
+         JOIN providers p ON p.id=si.provider_id AND p.is_active=TRUE
+         WHERE si.id=$1::uuid AND ${AGENT_APP_VISIBILITY_SQL} LIMIT 1`,
+        [request.params.appId, actor.actor.userId]
+      );
+      const row = rows[0];
+      if (!row)
+        return reply.status(404).send(
+          buildRouteErrorPayload({
+            request,
+            statusCode: 404,
+            code: 'APP_INSTANCE_NOT_FOUND',
+            userMessage: 'App instance not found',
+          })
+        );
+      if (
+        row.config?.backend_type === 'langchain' ||
+        isDifyAguiSelected(row.config)
+      ) {
+        try {
+          const agent = await resolveAgentApp(
+            request.params.appId,
+            actor.actor.userId,
+            { allowDify: true }
+          );
+          return await resolveSharedAgentInputCapabilities(agent);
+        } catch {
+          return unavailableInputCapabilities();
+        }
+      }
+      const target = await resolveDifyConfig(row.instance_id, {
+        actorUserId: actor.actor.userId,
+        actorRole: actor.actor.role,
+        serviceInstanceId: request.params.appId,
+      });
+      if (!target) return unavailableInputCapabilities();
+      return resolveDifyInputCapabilities({
+        serviceInstanceId: target.serviceInstanceId,
+        difyApiUrl: target.apiUrl,
+        difyApiKey: target.apiKey,
+        credentialVersion: target.credentialVersion,
+        appType: target.appType,
+        taskInput: target.taskInput,
+      });
+    }
+  );
   app.get<{ Params: { appId: string; submissionId: string } }>(
     '/api/internal/apps/:appId/submissions/:submissionId',
     async (request, reply) => {

@@ -200,6 +200,13 @@
         "sending": "发送中...",
         "uploading": "上传中...",
         "uploadFailed": "上传失败",
+        "capabilitiesUnavailable": "暂时无法获取输入要求，请重试。",
+        "capabilitiesChanged": "输入要求已变化。请检查参数和附件后再发送。",
+        "capabilitiesUnsupported": "暂不支持此应用的输入要求，请检查应用配置。",
+        "filesRequired": "请添加必需的附件。",
+        "uploadPending": "请等待上传完成，或删除上传失败的文件。",
+        "localUploadUnavailable": "此用途暂不支持本地上传。",
+        "chooseAttachmentField": "请点击附件按钮选择文件用途，再选择要上传的文件。",
         "retryUpload": "重试上传",
         "removeFile": "移除文件",
         "fileUploadError": "文件上传错误",
@@ -236,6 +243,10 @@
         "loadError": "加载文件类型失败",
         "reachedLimit": "已达上限 ({currentFiles}/{maxFiles})",
         "maxUpload": "最多上传 {maxFiles} 个文件",
+        "attachmentRequired": "请添加 {count} 个附件",
+        "attachmentRemaining": "还需添加 {count} 个附件",
+        "attachmentRange": "请添加 {minCount}–{maxCount} 个附件",
+        "attachmentSelected": "已添加 {count} 个附件 · 最多 {maxCount} 个",
         "noUploadLimit": "无上传限制"
       },
       "modelSelector": {
@@ -269,6 +280,15 @@
       }
     },
     "chatflow": {
+      "composer": {
+        "singleTurn": "本应用每个会话执行一次任务。如需再次运行，请开始新任务。",
+        "newTask": "开始新任务",
+        "parameters": "会话设置",
+        "requiredRemaining": "还有 {count} 个必填项",
+        "initialized": "这些设置用于当前会话，如需更改请新建对话。",
+        "initialMissing": "此历史会话未保存初始化设置摘要。",
+        "initialFiles": "初始化文件仍可在会话消息中查看。"
+      },
       "loading": {
         "inputConfig": "正在加载输入配置..."
       },
@@ -603,7 +623,7 @@
             "generation": "文本生成",
             "text": "文本交互"
           },
-          "textOnlyLimit": "纯文本入口：不支持附件、引用、语音和自定义变量。",
+          "configuredInputs": "输入参数和附件按应用配置提供。",
           "noDescription": "暂无描述",
           "defaultType": "应用"
         },
@@ -1436,6 +1456,19 @@
           }
         },
         "page": {
+          "taskInput": {
+            "label": "任务主文本",
+            "auto": "自动（唯一自由文本字段）",
+            "parametersOnly": "仅参数",
+            "autoResolved": "自动映射：消息正文写入 {variable}。",
+            "explicitResolved": "显式映射：消息正文写入 {variable}。",
+            "parametersOnlyNote": "正文已禁用，请填写参数和文件。",
+            "ambiguous": "存在多个自由文本字段：请选择主文本变量或仅使用参数。正文已禁用。",
+            "noText": "没有自由文本字段，正文已禁用。",
+            "invalid": "配置的变量 {variable} 不存在或不是自由文本字段。修正映射前无法执行。",
+            "invalidOption": "不可用变量：{variable}",
+            "schemaNote": "基于已保存的参数结构；从 Dify 同步可刷新。"
+          },
           "title": {
             "edit": "编辑应用实例",
             "add": "添加应用实例"
@@ -1525,13 +1558,24 @@
             "title": "Dify 参数配置",
             "appTypeNote": "选择\"模型\"类型的应用会出现在聊天界面的模型选择器中"
           },
+          "conversationTurns": {
+            "label": "会话轮次（可选）",
+            "default": "沿用应用默认",
+            "single": "单轮",
+            "multi": "多轮",
+            "independent": "独立运行",
+            "note": "仅当上游应用设计为使用前文时，才选择多轮。",
+            "independentNote": "可在同一窗口多次运行，每次独立，不沿用前文。",
+            "humanInputNote": "需要人工确认的智能体每个会话只处理一个任务。",
+            "typeMismatch": "Dify 识别为{type}，未更改已保存的应用类型。"
+          },
           "backend": {
             "label": "后端类型",
             "assistantId": "Assistant ID",
             "resultProfileLabel": "启用 Deep Agent 结果产物",
             "resultProfileNote": "仅对已验证支持 phase4.result.v1 的助手启用，不限制助手名称。关闭后暂停新的结果任务，已有结果仍可读取。",
             "aguiLabel": "新建应用对话使用公共 AG-UI 聊天",
-            "aguiNote": "仅限应用市场中的 chatbot 应用新建纯文本应用对话，不支持文件、引用、语音及自定义变量；不影响默认模型和模型选择器。原有旧会话继续使用兼容路径，已绑定公共会话不会回退。",
+            "aguiNote": "适用于应用市场中 Chatbot 的新会话。输入参数和附件按应用配置提供。已有会话保留原交互方式。",
             "langchainNote": "填写服务暴露的 Assistant 标识。首批仅支持文本及只读工具，服务凭证仅由服务端使用。",
             "validation": {
               "instanceIdRequired": "请填写应用标识。",
@@ -2877,7 +2921,7 @@
       "copied": "已复制来源。",
       "copyFailed": "无法复制来源，请选中文字手动复制。"
     },
-    "textOnlyNote": "此会话仅支持纯文本，不支持文件、引用、语音及自定义变量。原有旧会话保留兼容功能。",
+    "textOnlyNote": "此应用的当前会话不接收附件。",
     "cancelled": "已取消",
     "interrupted": "已中断",
     "loadMore": "加载更早消息",
@@ -2920,5 +2964,30 @@
     "confirmationUnknown": "结果尚未确认。请查询状态，不要重复提交。",
     "confirmationSingleTask": "此 Agent 每个会话只处理一个任务。其他任务请新建会话。",
     "confirmationNotDispatched": "本次决定尚未发送。请核对后手动重试。"
+  },
+  "taskChat": {
+    "loading": "正在加载任务…",
+    "loginRequired": "请先登录",
+    "unavailable": "应用不可用",
+    "independent": "每次发送独立运行，不会自动将之前的任务作为对话记忆。",
+    "placeholder": "输入任务内容",
+    "parametersOnly": "请填写上方参数或上传所需文件",
+    "taskTitle": "任务执行",
+    "replayed": "此提交已经存在，不会自动再次运行，请检查已保存状态。",
+    "submitFailed": "无法确认提交结果，再次重试会保留提交标识。",
+    "loadOlder": "加载更早任务",
+    "historyFailed": "任务历史不可用，请检查权限并重试。",
+    "retry": "重试",
+    "welcome": "使用下方输入区开始任务。",
+    "parameterTask": "参数或文件任务",
+    "noProcess": "没有已保存的执行详情",
+    "running": "运行中",
+    "unknown": "结果尚未确认，上游任务可能仍在运行，系统不会自动重新执行。",
+    "completed": "已完成",
+    "failed": "失败",
+    "stopped": "已停止",
+    "runAgain": "再次使用这些输入",
+    "viewResult": "查看完整结果",
+    "recoverTask": "标记中断并准备再次运行"
   }
 }

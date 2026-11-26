@@ -1,5 +1,7 @@
 'use client';
 
+import { useAppChatLayout } from '@components/chat/session/app-chat-layout';
+import { cn } from '@lib/utils';
 import { ArrowUpIcon, Loader2, Square } from 'lucide-react';
 
 import {
@@ -22,6 +24,9 @@ export interface ChatInputViewProps {
   onValueChange: (value: string) => void;
   onSubmit: () => void | Promise<void>;
   disabled?: boolean;
+  embedded?: boolean;
+  textDisabled?: boolean;
+  canSubmit?: boolean;
   stopDisabled?: boolean;
   isProcessing?: boolean;
   onStop?: () => void;
@@ -30,6 +35,9 @@ export interface ChatInputViewProps {
   isWelcomeScreen?: boolean;
   widthClass?: string;
   attachmentPreview?: ReactNode;
+  beforeInput?: ReactNode;
+  afterInput?: ReactNode;
+  scrollableWelcome?: boolean;
   editNotice?: ReactNode;
   attachmentAction?: ReactNode;
   modelSelector?: ReactNode;
@@ -46,6 +54,9 @@ export function ChatInputView({
   onValueChange,
   onSubmit,
   disabled = false,
+  embedded = false,
+  textDisabled = false,
+  canSubmit = Boolean(value.trim()),
   stopDisabled = disabled,
   isProcessing = false,
   onStop,
@@ -54,6 +65,9 @@ export function ChatInputView({
   isWelcomeScreen = false,
   widthClass = 'max-w-3xl',
   attachmentPreview,
+  beforeInput,
+  afterInput,
+  scrollableWelcome = false,
   editNotice,
   attachmentAction,
   modelSelector,
@@ -64,6 +78,7 @@ export function ChatInputView({
   sendButtonAriaLabel,
   onInputRef,
 }: ChatInputViewProps) {
+  const appLayout = useAppChatLayout();
   const t = useTranslations('pages.chat');
   const composing = useRef(false);
   const submitting = useRef(false);
@@ -94,7 +109,7 @@ export function ChatInputView({
       isWaiting ||
       composing.current ||
       submitting.current ||
-      !value.trim()
+      !canSubmit
     )
       return;
     submitting.current = true;
@@ -108,9 +123,13 @@ export function ChatInputView({
   };
   const stopping = isProcessing && Boolean(onStop);
   const busy = isWaiting || pending;
-  return (
+  const welcomeLayout = !appLayout && scrollableWelcome && isWelcomeScreen;
+  const composer = (
     <ChatContainer
-      className={className}
+      embedded={appLayout || embedded || welcomeLayout}
+      beforeInput={beforeInput}
+      afterInput={afterInput}
+      className={cn(welcomeLayout && 'mx-auto my-auto shrink-0', className)}
       widthClass={widthClass}
       isWelcomeScreen={isWelcomeScreen}
       isTransitioningToWelcome={isTransitioningToWelcome}
@@ -124,7 +143,7 @@ export function ChatInputView({
           onChange={event => onValueChange(event.target.value)}
           placeholder={placeholder}
           maxHeight={maxHeight}
-          disabled={disabled}
+          disabled={disabled || textDisabled}
           onHeightChange={updateHeight}
           onCompositionStart={() => {
             composing.current = true;
@@ -147,10 +166,10 @@ export function ChatInputView({
         />
       </ChatTextArea>
       <div className="px-4">
-        <ChatButtonArea>
-          <div className="flex-none">{attachmentAction}</div>
-          <div className="flex flex-1 items-center justify-end space-x-2">
-            {modelSelector}
+        <ChatButtonArea className="flex-wrap gap-y-2">
+          <div className="max-w-full min-w-0">{attachmentAction}</div>
+          <div className="ml-auto flex max-w-full items-center justify-end space-x-2">
+            {modelSelector && <div className="min-w-0">{modelSelector}</div>}
             <ChatButton
               icon={
                 stopping ? (
@@ -162,6 +181,7 @@ export function ChatInputView({
                 )
               }
               variant="submit"
+              className="shrink-0"
               onClick={
                 stopping
                   ? onStop
@@ -172,7 +192,7 @@ export function ChatInputView({
               disabled={
                 stopping
                   ? stopDisabled
-                  : disabled || busy || isProcessing || !value.trim()
+                  : disabled || busy || isProcessing || !canSubmit
               }
               ariaLabel={
                 stopping
@@ -185,5 +205,15 @@ export function ChatInputView({
         </ChatButtonArea>
       </div>
     </ChatContainer>
+  );
+  return welcomeLayout ? (
+    <div
+      data-chat-welcome
+      className="absolute inset-0 flex flex-col overflow-y-auto px-4 py-6"
+    >
+      {composer}
+    </div>
+  ) : (
+    composer
   );
 }

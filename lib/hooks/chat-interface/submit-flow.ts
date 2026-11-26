@@ -11,8 +11,12 @@ import { normalizeCompletedAssistantReply } from '@lib/utils/think-parser';
 import type { MutableRefObject } from 'react';
 
 import { isDefiniteEditRejection, pendingDifyEdit } from './edit-recovery';
-import type { ChatModerationTranslator } from './error-utils';
 import {
+  type ChatModerationTranslator,
+  formatChatUiError,
+} from './error-utils';
+import {
+  collectChatDisplayFiles,
   mapChatUploadFilesToDifyFiles,
   mapChatUploadFilesToMessageAttachments,
 } from './file-mappers';
@@ -141,6 +145,7 @@ function buildAssistantPersistenceFallback(input: {
 
 interface ExecuteChatSubmitInput {
   editSourceId?: string;
+  onUserMessage?: (id: string) => void;
   onAccepted?: (accepted: ChatSubmissionAccepted) => void;
   viewScope?: ChatViewScope;
   message: string;
@@ -233,25 +238,49 @@ export async function executeChatSubmit(
   input.setIsWaitingForResponse(true);
 
   const messageAttachments = mapChatUploadFilesToMessageAttachments(
-    input.files,
+    collectChatDisplayFiles(input.files, input.inputs),
     input.appConfig.appId
   );
-  const userMessage = input.addMessage({
+  const deferFormTransition =
+    input.inputs !== undefined && !input.difyConversationId;
+  const userMessageData: Omit<ChatMessage, 'id'> = {
     text: input.message,
     isUser: true,
+    ...(input.inputs !== undefined &&
+    !input.difyConversationId &&
+    input.appConfig.instance.config?.app_metadata?.dify_apptype === 'chatflow'
+      ? {
+          metadata: {
+            chatflow_initial_inputs: Object.fromEntries(
+              Object.entries(input.inputs).filter(
+                ([, value]) =>
+                  typeof value === 'string' ||
+                  typeof value === 'number' ||
+                  typeof value === 'boolean'
+              )
+            ),
+          },
+        }
+      : {}),
     attachments: messageAttachments,
     persistenceStatus: 'pending',
     sequence_index: 0,
-  });
+  };
+  const userMessage = deferFormTransition
+    ? { ...userMessageData, id: crypto.randomUUID() }
+    : input.addMessage(userMessageData);
+  input.onUserMessage?.(userMessage.id);
 
-  if (input.isWelcomeScreen) {
+  const leaveWelcomeScreen = () => {
+    if (!input.isWelcomeScreen) return;
     input.setIsWelcomeScreen(false);
     if (window.location.pathname === '/chat/new') {
       const temporaryPath = `/chat/temp-${Date.now()}`;
       input.viewScope?.onRouteAdopted(temporaryPath);
       window.history.replaceState({}, '', temporaryPath);
     }
-  }
+  };
+  if (!deferFormTransition) leaveWelcomeScreen();
 
   let assistantMessageId: string | null = null;
   let finalRealConvId: string | undefined;
@@ -263,6 +292,7 @@ export async function executeChatSubmit(
   let assistantFallback: AssistantMessagePersistenceFallback | null = null;
   let getBinding: (() => ChatSubmissionBinding) | undefined;
   let acceptedSubmission = false;
+  let formFailure: ReturnType<typeof formatChatUiError> | undefined;
   const editSubmissionId = input.editSourceId ? crypto.randomUUID() : undefined;
   let editDispatched = false;
   let editResult: ChatSubmitResult['editResult'];
@@ -273,6 +303,10 @@ export async function executeChatSubmit(
     finalDbConvUUID = binding?.dbConversationId || finalDbConvUUID;
   };
   const onAccepted = (accepted: ChatSubmissionAccepted) => {
+    if (deferFormTransition && !acceptedSubmission) {
+      input.addMessage(userMessage);
+      leaveWelcomeScreen();
+    }
     acceptedSubmission = true;
     if (input.editSourceId) {
       const state = useChatStore.getState();
@@ -475,7 +509,16 @@ export async function executeChatSubmit(
     if (!finalDbConvUUID && conversationPersistencePromise) {
       finalDbConvUUID = await conversationPersistencePromise;
     }
-    if (input.editSourceId && !acceptedSubmission) {
+    if (deferFormTransition && !acceptedSubmission) {
+      formFailure = formatChatUiError(
+        error,
+        'Failed to submit chatflow request.',
+        'dify-proxy',
+        {
+          moderationT: input.moderationT,
+        }
+      );
+    } else if (input.editSourceId && !acceptedSubmission) {
       if (!editDispatched || isDefiniteEditRejection(error)) {
         editResult = false;
         if (isCurrent())
@@ -523,7 +566,7 @@ export async function executeChatSubmit(
         }));
     }
 
-    if (!input.editSourceId || acceptedSubmission)
+    if ((!input.editSourceId || acceptedSubmission) && !formFailure)
       await finalizeChatSubmitStream({
         assistantMessageId,
         finalDbConvUUID,
@@ -555,7 +598,8 @@ export async function executeChatSubmit(
     });
   return {
     ok: acceptedSubmission,
-    surfaced: true,
+    surfaced: !formFailure,
+    ...(formFailure || {}),
     ...(input.editSourceId
       ? { editResult: acceptedSubmission ? true : (editResult ?? false) }
       : {}),

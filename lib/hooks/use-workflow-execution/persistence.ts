@@ -8,6 +8,7 @@ import type {
   DifyWorkflowFinishedData,
   DifyWorkflowStreamResponse,
 } from '@lib/services/dify/types';
+import type { WorkflowNode } from '@lib/stores/workflow-execution-store';
 import type { AppExecution, ExecutionStatus } from '@lib/types/database';
 import type { Result } from '@lib/types/result';
 
@@ -21,6 +22,7 @@ type SaveCompleteWorkflowExecutionDataParams = {
   taskId: string | null;
   workflowRunId: string | null;
   nodeExecutionData?: WorkflowNodeSnapshot[];
+  processNodes?: WorkflowNode[];
   instanceId: string;
   updateCurrentExecution: WorkflowExecutionUpdater;
   addExecutionToHistory: (execution: AppExecution) => void;
@@ -229,6 +231,7 @@ export async function saveCompleteWorkflowExecutionData({
   taskId,
   workflowRunId,
   nodeExecutionData = [],
+  processNodes,
   instanceId,
   updateCurrentExecution,
   addExecutionToHistory,
@@ -278,12 +281,15 @@ export async function saveCompleteWorkflowExecutionData({
       elapsed_time: finalResult.elapsed_time ?? undefined,
       error_message: normalizedFinalError?.userMessage || finalResultError,
       completed_at: completedAt,
-      metadata: buildCompleteWorkflowMetadata(
-        finalResult,
-        nodeExecutionData,
-        instanceId,
-        normalizedFinalError
-      ),
+      metadata: {
+        ...buildCompleteWorkflowMetadata(
+          finalResult,
+          nodeExecutionData,
+          instanceId,
+          normalizedFinalError
+        ),
+        ...(processNodes ? { task_process_nodes: processNodes } : {}),
+      },
     });
 
     if (!updateResult.success) {

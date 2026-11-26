@@ -10,15 +10,27 @@ const t = (key: string) => key;
 
 describe('chat input helpers', () => {
   it('maps file types for dify uploads', () => {
-    expect(getDifyFileType({ type: 'image/png' } as never)).toBe('image');
-    expect(getDifyFileType({ type: 'audio/mpeg' } as never)).toBe('audio');
-    expect(getDifyFileType({ type: 'video/mp4' } as never)).toBe('video');
-    expect(getDifyFileType({ type: 'application/pdf' } as never)).toBe(
-      'document'
-    );
-    expect(getDifyFileType({ type: 'application/octet-stream' } as never)).toBe(
-      'custom'
-    );
+    expect(
+      getDifyFileType({ name: 'image.png', type: 'image/png' } as never)
+    ).toBe('image');
+    expect(
+      getDifyFileType({ name: 'audio.mpeg', type: 'audio/mpeg' } as never)
+    ).toBe('audio');
+    expect(
+      getDifyFileType({ name: 'video.mp4', type: 'video/mp4' } as never)
+    ).toBe('video');
+    expect(
+      getDifyFileType({
+        name: 'document.pdf',
+        type: 'application/pdf',
+      } as never)
+    ).toBe('document');
+    expect(
+      getDifyFileType({
+        name: 'custom.bin',
+        type: 'application/octet-stream',
+      } as never)
+    ).toBe('custom');
   });
 
   it('builds submit files from successful uploaded attachments', () => {

@@ -7,8 +7,10 @@ import {
 } from '@components/chat/markdown-block/think-block-header';
 import { useThrottledThinkPreview } from '@lib/hooks/use-throttled-think-preview';
 import { cn } from '@lib/utils';
+import { mapOutsideMarkdownCode } from '@lib/utils/think-markup';
 import {
   type MessageBlock,
+  normalizeCompletedAssistantReply,
   parseStreamingThinkBlocks,
   parseThinkBlocks,
 } from '@lib/utils/think-parser';
@@ -22,11 +24,14 @@ import remarkMath from 'remark-math';
 
 import React, { useMemo, useState } from 'react';
 
+import { useTranslations } from 'next-intl';
+
 interface ThinkAwareMarkdownProps {
   content: string;
   markdownComponents: Components;
   isStreaming?: boolean;
   className?: string;
+  plainText?: boolean;
 }
 
 export { extractMainTextFromThinkAwareContent } from '@lib/utils';
@@ -47,7 +52,7 @@ function getThinkBlockStatus(
   return 'completed';
 }
 
-function preprocessMainContent(content: string): string {
+function preprocessMainContent(content: string, streaming: boolean): string {
   const knownHtmlTags = new Set([
     'div',
     'span',
@@ -92,19 +97,24 @@ function preprocessMainContent(content: string): string {
     'summary',
   ]);
 
-  return content
-    .replace(/<([a-zA-Z][a-zA-Z0-9]*)[^>]*>/g, (match, tagName) => {
-      if (!knownHtmlTags.has(tagName.toLowerCase())) {
-        return match.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      }
-      return match;
-    })
-    .replace(/<\/([a-zA-Z][a-zA-Z0-9]*)[^>]*>/g, (match, tagName) => {
-      if (!knownHtmlTags.has(tagName.toLowerCase())) {
-        return match.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      }
-      return match;
-    });
+  return mapOutsideMarkdownCode(
+    content,
+    text =>
+      text
+        .replace(/<([a-zA-Z][a-zA-Z0-9]*)[^>]*>/g, (match, tagName) => {
+          if (!knownHtmlTags.has(tagName.toLowerCase())) {
+            return match.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          }
+          return match;
+        })
+        .replace(/<\/([a-zA-Z][a-zA-Z0-9]*)[^>]*>/g, (match, tagName) => {
+          if (!knownHtmlTags.has(tagName.toLowerCase())) {
+            return match.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          }
+          return match;
+        }),
+    streaming
+  );
 }
 
 function ThinkBlockItem({
@@ -142,13 +152,20 @@ export function ThinkAwareMarkdown({
   markdownComponents,
   isStreaming = false,
   className,
+  plainText = false,
 }: ThinkAwareMarkdownProps) {
+  const t = useTranslations('pages.chat');
   const blocks = useMemo(
     () =>
       isStreaming
         ? parseStreamingThinkBlocks(content)
-        : parseThinkBlocks(content),
-    [content, isStreaming]
+        : parseThinkBlocks(
+            normalizeCompletedAssistantReply(
+              content,
+              t('messages.incompleteAnswer')
+            ).content
+          ),
+    [content, isStreaming, t]
   );
 
   return (
@@ -167,7 +184,20 @@ export function ThinkAwareMarkdown({
           );
         }
 
-        const processedContent = preprocessMainContent(block.content);
+        if (plainText) {
+          return (
+            <pre
+              key={`text-${index}`}
+              className="font-mono text-sm break-words whitespace-pre-wrap text-gray-700 dark:text-gray-300"
+            >
+              {block.content.trim()}
+            </pre>
+          );
+        }
+        const processedContent = preprocessMainContent(
+          block.content,
+          isStreaming
+        );
         return (
           <ReactMarkdown
             key={`text-${index}`}

@@ -200,6 +200,13 @@
         "sending": "Senden...",
         "uploading": "Hochladen...",
         "uploadFailed": "Upload fehlgeschlagen",
+        "capabilitiesUnavailable": "Eingabeanforderungen konnten nicht geladen werden. Erneut versuchen.",
+        "capabilitiesChanged": "Die Eingabeanforderungen wurden geändert. Prüfen Sie die Felder und Anhänge vor dem erneuten Senden.",
+        "capabilitiesUnsupported": "Diese Eingabeanforderungen werden nicht unterstützt. App-Konfiguration prüfen.",
+        "filesRequired": "Fügen Sie die erforderlichen Anhänge hinzu.",
+        "uploadPending": "Warten Sie auf Uploads oder entfernen Sie fehlgeschlagene Dateien.",
+        "localUploadUnavailable": "Für diesen Zweck sind lokale Uploads nicht verfügbar.",
+        "chooseAttachmentField": "Wählen Sie über die Anhang-Schaltfläche ein Feld und anschließend Ihre Dateien aus.",
         "retryUpload": "Upload wiederholen",
         "removeFile": "Datei entfernen",
         "fileUploadError": "Datei-Upload-Fehler",
@@ -236,6 +243,10 @@
         "loadError": "Laden der Dateitypen fehlgeschlagen",
         "reachedLimit": "Limit erreicht ({currentFiles}/{maxFiles})",
         "maxUpload": "Bis zu {maxFiles} Dateien hochladen",
+        "attachmentRequired": "Zum Fortfahren {count, plural, one {# Anhang} other {# Anhänge}} hinzufügen",
+        "attachmentRemaining": "Noch {count, plural, one {# Anhang} other {# Anhänge}} hinzufügen",
+        "attachmentRange": "Zum Fortfahren {minCount}–{maxCount} Anhänge hinzufügen",
+        "attachmentSelected": "{count, plural, one {# Anhang} other {# Anhänge}} hinzugefügt · Maximal {maxCount}",
         "noUploadLimit": "Kein Upload-Limit"
       },
       "modelSelector": {
@@ -269,6 +280,15 @@
       }
     },
     "chatflow": {
+      "composer": {
+        "singleTurn": "Diese App führt eine Aufgabe pro Gespräch aus. Starten Sie für eine weitere Ausführung eine neue Aufgabe.",
+        "newTask": "Neue Aufgabe starten",
+        "parameters": "Gesprächseinstellungen",
+        "requiredRemaining": "{count} Pflichtfelder fehlen",
+        "initialized": "Diese Einstellungen gelten für dieses Gespräch. Für Änderungen ein neues Gespräch starten.",
+        "initialMissing": "Keine Anfangseinstellungen für dieses ältere Gespräch gespeichert.",
+        "initialFiles": "Anfängliche Dateien bleiben in den Gesprächsnachrichten verfügbar."
+      },
       "loading": {
         "inputConfig": "Eingabekonfiguration wird geladen..."
       },
@@ -603,7 +623,7 @@
             "generation": "Textgenerierung",
             "text": "Textinteraktion"
           },
-          "textOnlyLimit": "Nur Text: keine Anhänge, Quellenverweise, Sprache oder eigenen Variablen.",
+          "configuredInputs": "Eingaben und Anhänge richten sich nach der Anwendungskonfiguration.",
           "noDescription": "Keine Beschreibung",
           "defaultType": "App"
         },
@@ -1436,6 +1456,19 @@
           }
         },
         "page": {
+          "taskInput": {
+            "label": "Haupttext der Aufgabe",
+            "auto": "Automatisch (ein Freitextfeld)",
+            "parametersOnly": "Nur Parameter",
+            "autoResolved": "Automatische Zuordnung: Nachrichtentext an {variable}.",
+            "explicitResolved": "Explizite Zuordnung: Nachrichtentext an {variable}.",
+            "parametersOnlyNote": "Nachrichtentext ist deaktiviert. Verwenden Sie Parameter und Dateien.",
+            "ambiguous": "Mehrere Freitextfelder: Wählen Sie eine Haupttextvariable oder nur Parameter. Nachrichtentext ist deaktiviert.",
+            "noText": "Kein Freitextfeld gefunden. Nachrichtentext ist deaktiviert.",
+            "invalid": "Die Variable {variable} fehlt oder ist kein Freitextfeld. Vor der Ausführung muss die Zuordnung korrigiert werden.",
+            "invalidOption": "Nicht verfügbare Variable: {variable}",
+            "schemaNote": "Basiert auf dem gespeicherten Parameterschema. Zum Aktualisieren mit Dify synchronisieren."
+          },
           "title": {
             "edit": "Anwendungsinstanz bearbeiten",
             "add": "Anwendungsinstanz hinzufügen"
@@ -1525,13 +1558,24 @@
             "title": "Dify-Parameterkonfiguration",
             "appTypeNote": "Anwendungen mit \"Modell\"-Typ erscheinen im Chat-Interface-Modellwähler"
           },
+          "conversationTurns": {
+            "label": "Dialogmodus (optional)",
+            "default": "Anwendungsstandard",
+            "single": "Einzeldialog",
+            "multi": "Mehrstufiger Dialog",
+            "independent": "Unabhängige Ausführungen",
+            "note": "Wählen Sie den mehrstufigen Dialog nur, wenn die vorgelagerte Anwendung früheren Kontext verwendet.",
+            "independentNote": "Im selben Fenster sind mehrere unabhängige Ausführungen ohne gemeinsamen Kontext möglich.",
+            "humanInputNote": "Ein Agent mit menschlicher Bestätigung bearbeitet pro Unterhaltung eine Aufgabe.",
+            "typeMismatch": "Dify meldet {type}. Der gespeicherte Anwendungstyp wurde nicht geändert."
+          },
           "backend": {
             "label": "Backend",
             "assistantId": "Assistant ID",
             "resultProfileLabel": "Enable Deep Agent result artifacts",
             "resultProfileNote": "Enable only for an assistant verified to support phase4.result.v1, regardless of its name. Disabling pauses new profile tasks; existing results remain readable.",
             "aguiLabel": "Neue App-Gespräche im gemeinsamen AG-UI-Chat öffnen",
-            "aguiNote": "Nur neue reine Textgespräche in Chatbot-Apps des Marktplatzes. Dateien, Quellenangaben, Sprache und eigene Variablen werden nicht unterstützt. Standardmodell und Modellauswahl bleiben unverändert. Alte Gespräche behalten den Kompatibilitätspfad; gebundene öffentliche Gespräche wechseln nicht zurück.",
+            "aguiNote": "Gilt für neue Marketplace-Chatbot-Gespräche. Eingaben und Anhänge richten sich nach der Anwendungskonfiguration. Bestehende Gespräche behalten ihren ursprünglichen Modus.",
             "langchainNote": "Use the assistant exposed by this service. Text and read-only tools only; service credentials stay on the server.",
             "validation": {
               "instanceIdRequired": "Enter an application identifier.",
@@ -2877,7 +2921,7 @@
       "copied": "Source copied.",
       "copyFailed": "Could not copy the source. Please select and copy its text."
     },
-    "textOnlyNote": "Dieses Gespräch unterstützt nur Text, keine Dateien, Quellenangaben, Sprache oder eigenen Variablen. Alte Gespräche behalten ihre kompatiblen Funktionen.",
+    "textOnlyNote": "Diese Anwendung akzeptiert in diesem Gespräch keine Anhänge.",
     "cancelled": "Abgebrochen",
     "interrupted": "Unterbrochen",
     "loadMore": "Ältere Nachrichten laden",
@@ -2920,5 +2964,30 @@
     "confirmationUnknown": "Ergebnis noch unbestätigt. Status prüfen, nicht erneut senden.",
     "confirmationSingleTask": "Dieser Agent verarbeitet eine Aufgabe pro Unterhaltung. Starten Sie für weitere Aufgaben eine neue Unterhaltung.",
     "confirmationNotDispatched": "Ihre Entscheidung wurde nicht gesendet. Prüfen Sie sie und versuchen Sie es erneut."
+  },
+  "taskChat": {
+    "loading": "Aufgaben werden geladen…",
+    "loginRequired": "Bitte anmelden",
+    "unavailable": "Anwendung nicht verfügbar",
+    "independent": "Jede Eingabe startet eine unabhängige Aufgabe ohne Erinnerung an frühere Aufgaben.",
+    "placeholder": "Aufgabeneingabe",
+    "parametersOnly": "Parameter ausfüllen oder benötigte Dateien oben anhängen",
+    "taskTitle": "Aufgabenausführung",
+    "replayed": "Diese Übermittlung existiert bereits und wird nicht automatisch wiederholt. Gespeicherten Status prüfen.",
+    "submitFailed": "Übermittlung nicht bestätigt. Ein erneuter Versuch behält die Übermittlungs-ID.",
+    "loadOlder": "Frühere Aufgaben laden",
+    "historyFailed": "Aufgabenverlauf nicht verfügbar. Zugriff prüfen und erneut versuchen.",
+    "retry": "Erneut versuchen",
+    "welcome": "Eine Aufgabe mit der Eingabe unten starten.",
+    "parameterTask": "Parameter- oder Dateiaufgabe",
+    "noProcess": "Keine gespeicherten Ausführungsdetails",
+    "running": "Wird ausgeführt",
+    "unknown": "Ergebnis unbestätigt. Die ursprüngliche Aufgabe läuft möglicherweise noch und wird nicht automatisch neu gestartet.",
+    "completed": "Abgeschlossen",
+    "failed": "Fehlgeschlagen",
+    "stopped": "Gestoppt",
+    "runAgain": "Eingaben erneut verwenden",
+    "viewResult": "Vollständiges Ergebnis",
+    "recoverTask": "Als unterbrochen markieren und nächsten Lauf vorbereiten"
   }
 }

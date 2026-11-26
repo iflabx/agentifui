@@ -1,3 +1,4 @@
+import { definitiveTaskError } from '../submission';
 import { DifyApiError, DifyWorkflowErrorCode } from '../types';
 
 export function createUnsupportedWorkflowPauseError(): Error {
@@ -12,6 +13,10 @@ export function handleWorkflowApiError(
   status: number,
   errorBody: string
 ): Error {
+  const classify = (error: Error) =>
+    status >= 400 && status < 500 && ![408, 409].includes(status)
+      ? definitiveTaskError(error, 'refused')
+      : error;
   try {
     const errorData = JSON.parse(errorBody) as DifyApiError;
     const errorCode = errorData.code as DifyWorkflowErrorCode;
@@ -28,10 +33,12 @@ export function handleWorkflowApiError(
 
     const friendlyMessage =
       errorMessages[errorCode] || errorData.message || 'Unknown error';
-    return new Error(`Dify Workflow API Error (${status}): ${friendlyMessage}`);
+    return classify(
+      new Error(`Dify Workflow API Error (${status}): ${friendlyMessage}`)
+    );
   } catch {
-    return new Error(
-      `Dify Workflow API request failed (${status}): ${errorBody}`
+    return classify(
+      new Error(`Dify Workflow API request failed (${status}): ${errorBody}`)
     );
   }
 }

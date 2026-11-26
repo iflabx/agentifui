@@ -200,6 +200,13 @@
         "sending": "送信中...",
         "uploading": "アップロード中...",
         "uploadFailed": "アップロード失敗",
+        "capabilitiesUnavailable": "入力要件を取得できません。再試行してください。",
+        "capabilitiesChanged": "入力要件が変更されました。再送信する前に項目と添付ファイルを確認してください。",
+        "capabilitiesUnsupported": "この入力要件には対応していません。アプリの設定を確認してください。",
+        "filesRequired": "必要な添付ファイルを追加してください。",
+        "uploadPending": "アップロードを待つか、失敗したファイルを削除してください。",
+        "localUploadUnavailable": "この用途はローカルファイルのアップロードに対応していません。",
+        "chooseAttachmentField": "添付ボタンで用途を選択してから、ファイルを選んでください。",
         "retryUpload": "アップロードを再試行",
         "removeFile": "ファイルを削除",
         "fileUploadError": "ファイルアップロードエラー",
@@ -236,6 +243,10 @@
         "loadError": "ファイルタイプの読み込みに失敗しました",
         "reachedLimit": "制限に達しました ({currentFiles}/{maxFiles})",
         "maxUpload": "最大{maxFiles}個のファイルをアップロード",
+        "attachmentRequired": "添付ファイルを{count}件追加してください",
+        "attachmentRemaining": "添付ファイルをあと{count}件追加してください",
+        "attachmentRange": "添付ファイルを{minCount}～{maxCount}件追加してください",
+        "attachmentSelected": "{count}件の添付ファイルを追加済み · 最大{maxCount}件",
         "noUploadLimit": "アップロード制限なし"
       },
       "modelSelector": {
@@ -269,6 +280,15 @@
       }
     },
     "chatflow": {
+      "composer": {
+        "singleTurn": "このアプリは会話ごとに1つのタスクを実行します。再実行するには新しいタスクを開始してください。",
+        "newTask": "新しいタスクを開始",
+        "parameters": "会話の設定",
+        "requiredRemaining": "必須項目があと {count} 個あります",
+        "initialized": "この会話の設定は固定です。変更するには新しい会話を開始してください。",
+        "initialMissing": "この過去の会話には初期設定の概要が保存されていません。",
+        "initialFiles": "初期ファイルは会話のメッセージから確認できます。"
+      },
       "loading": {
         "inputConfig": "入力設定を読み込み中..."
       },
@@ -603,7 +623,7 @@
             "generation": "テキスト生成",
             "text": "テキスト対話"
           },
-          "textOnlyLimit": "テキスト専用：添付、引用、音声、カスタム変数は利用できません。",
+          "configuredInputs": "入力項目と添付はアプリの設定に従います。",
           "noDescription": "説明なし",
           "defaultType": "アプリ"
         },
@@ -1436,6 +1456,19 @@
           }
         },
         "page": {
+          "taskInput": {
+            "label": "タスクの本文",
+            "auto": "自動（自由テキスト欄が1つ）",
+            "parametersOnly": "パラメーターのみ",
+            "autoResolved": "自動割り当て：本文は {variable} に送信されます。",
+            "explicitResolved": "明示的な割り当て：本文は {variable} に送信されます。",
+            "parametersOnlyNote": "本文は無効です。パラメーターとファイルを入力してください。",
+            "ambiguous": "自由テキスト欄が複数あります。本文の変数を選ぶか、パラメーターのみを使用してください。本文は無効です。",
+            "noText": "自由テキスト欄がないため、本文は無効です。",
+            "invalid": "変数 {variable} が存在しないか、自由テキスト欄ではありません。割り当てを修正するまで実行できません。",
+            "invalidOption": "使用できない変数：{variable}",
+            "schemaNote": "保存済みのパラメーター定義に基づきます。Dify から同期して更新してください。"
+          },
           "title": {
             "edit": "アプリケーションインスタンスを編集",
             "add": "アプリケーションインスタンスを追加"
@@ -1525,13 +1558,24 @@
             "title": "Dify パラメータ設定",
             "appTypeNote": "「モデル」タイプのアプリケーションはチャットインターフェースのモデルセレクターに表示されます"
           },
+          "conversationTurns": {
+            "label": "会話ターン（任意）",
+            "default": "アプリの既定値",
+            "single": "単一ターン",
+            "multi": "複数ターン",
+            "independent": "独立した実行",
+            "note": "上流のアプリが以前の文脈を利用するように設計されている場合のみ、複数ターンを選択してください。",
+            "independentNote": "同じウィンドウで何度でも実行できますが、文脈は引き継ぎません。",
+            "humanInputNote": "人による確認が必要なエージェントは、会話ごとに1つのタスクを処理します。",
+            "typeMismatch": "Dify の判定は {type} です。保存済みのアプリタイプは変更されていません。"
+          },
           "backend": {
             "label": "Backend",
             "assistantId": "Assistant ID",
             "resultProfileLabel": "Enable Deep Agent result artifacts",
             "resultProfileNote": "Enable only for an assistant verified to support phase4.result.v1, regardless of its name. Disabling pauses new profile tasks; existing results remain readable.",
             "aguiLabel": "新しいアプリ会話で共通 AG-UI チャットを使用",
-            "aguiNote": "マーケットプレイスの chatbot アプリで新しいテキスト専用会話のみ有効にします。ファイル、引用、音声、カスタム変数には対応しません。既定モデルとモデル選択は変更しません。既存の旧会話は互換経路を維持し、紐付け済みの共通会話は旧経路に戻りません。",
+            "aguiNote": "マーケットプレイスの Chatbot で新しい会話に適用されます。入力項目と添付はアプリの設定に従います。既存の会話は元の方式を維持します。",
             "langchainNote": "Use the assistant exposed by this service. Text and read-only tools only; service credentials stay on the server.",
             "validation": {
               "instanceIdRequired": "Enter an application identifier.",
@@ -2877,7 +2921,7 @@
       "copied": "Source copied.",
       "copyFailed": "Could not copy the source. Please select and copy its text."
     },
-    "textOnlyNote": "この会話はテキスト専用です。ファイル、引用、音声、カスタム変数には対応しません。既存の旧会話では従来の機能を引き続き利用できます。",
+    "textOnlyNote": "このアプリの現在の会話では添付ファイルを使用できません。",
     "cancelled": "キャンセル済み",
     "interrupted": "中断",
     "loadMore": "以前のメッセージを読み込む",
@@ -2920,5 +2964,30 @@
     "confirmationUnknown": "結果は未確認です。再送信せず、状態を確認してください。",
     "confirmationSingleTask": "このエージェントは会話ごとに1件のタスクを処理します。別のタスクは新しい会話で開始してください。",
     "confirmationNotDispatched": "回答は送信されませんでした。内容を確認して再試行できます。"
+  },
+  "taskChat": {
+    "loading": "タスクを読み込み中…",
+    "loginRequired": "ログインしてください",
+    "unavailable": "アプリを利用できません",
+    "independent": "送信ごとに独立して実行され、過去のタスクは会話の記憶になりません。",
+    "placeholder": "タスク内容を入力",
+    "parametersOnly": "上のパラメーターを入力するか必要なファイルを添付してください",
+    "taskTitle": "タスク実行",
+    "replayed": "この送信は既に存在するため自動で再実行しません。保存済みの状態を確認してください。",
+    "submitFailed": "送信結果を確認できません。再試行時は同じ送信IDを使用します。",
+    "loadOlder": "以前のタスクを読み込む",
+    "historyFailed": "履歴を利用できません。アクセス権を確認して再試行してください。",
+    "retry": "再試行",
+    "welcome": "下の入力欄からタスクを開始してください。",
+    "parameterTask": "パラメーターまたはファイルのタスク",
+    "noProcess": "保存済みの実行詳細はありません",
+    "running": "実行中",
+    "unknown": "結果を確認できません。元のタスクが実行中の可能性があります。自動で再実行しません。",
+    "completed": "完了",
+    "failed": "失敗",
+    "stopped": "停止済み",
+    "runAgain": "同じ入力を再利用",
+    "viewResult": "結果全体を表示",
+    "recoverTask": "中断として記録し次の実行を準備"
   }
 }

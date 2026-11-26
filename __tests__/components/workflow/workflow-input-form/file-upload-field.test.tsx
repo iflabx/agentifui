@@ -45,6 +45,17 @@ describe('FileUploadField', () => {
 
     const { container } = render(
       <FileUploadField
+        slot={{
+          key: 'docs',
+          label: 'Docs',
+          target: 'inputs',
+          minCount: 0,
+          maxCount: 3,
+          methods: ['local_file'],
+          allowedTypes: ['document'],
+          extensions: ['txt'],
+          maxBytesByType: { document: 100 },
+        }}
         config={{
           enabled: true,
           max_length: 1,

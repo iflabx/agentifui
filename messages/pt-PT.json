@@ -200,6 +200,13 @@
         "sending": "A enviar...",
         "uploading": "A carregar...",
         "uploadFailed": "Falha no carregamento",
+        "capabilitiesUnavailable": "Não foi possível carregar os requisitos de entrada. Tente novamente.",
+        "capabilitiesChanged": "Os requisitos de entrada mudaram. Reveja os campos e anexos antes de voltar a enviar.",
+        "capabilitiesUnsupported": "Requisitos de entrada não suportados. Verifique a configuração da aplicação.",
+        "filesRequired": "Adicione os anexos necessários.",
+        "uploadPending": "Aguarde os carregamentos ou remova os ficheiros com falha.",
+        "localUploadUnavailable": "Esta finalidade não permite ficheiros locais.",
+        "chooseAttachmentField": "Use o botão de anexos para escolher um campo e depois selecione os ficheiros.",
         "retryUpload": "Tentar carregar novamente",
         "removeFile": "Remover ficheiro",
         "fileUploadError": "Erro no carregamento do ficheiro",
@@ -236,6 +243,10 @@
         "loadError": "Falha ao carregar os tipos de ficheiro",
         "reachedLimit": "Limite atingido ({currentFiles}/{maxFiles})",
         "maxUpload": "Carregar até {maxFiles} ficheiros",
+        "attachmentRequired": "Adicione {count, plural, one {# anexo} other {# anexos}} para continuar",
+        "attachmentRemaining": "Adicione mais {count, plural, one {# anexo} other {# anexos}} para continuar",
+        "attachmentRange": "Adicione entre {minCount} e {maxCount} anexos para continuar",
+        "attachmentSelected": "{count, plural, one {# anexo adicionado} other {# anexos adicionados}} · Máximo {maxCount}",
         "noUploadLimit": "Sem limite de carregamento"
       },
       "modelSelector": {
@@ -269,6 +280,15 @@
       }
     },
     "chatflow": {
+      "composer": {
+        "singleTurn": "Esta aplicação executa uma tarefa por conversa. Inicie uma nova tarefa para voltar a executar.",
+        "newTask": "Iniciar nova tarefa",
+        "parameters": "Definições da conversa",
+        "requiredRemaining": "Faltam {count} campos obrigatórios",
+        "initialized": "Estas definições aplicam-se a esta conversa. Inicie outra para as alterar.",
+        "initialMissing": "As definições iniciais desta conversa antiga não foram guardadas.",
+        "initialFiles": "Os ficheiros iniciais continuam disponíveis nas mensagens."
+      },
       "loading": {
         "inputConfig": "A carregar a configuração de entrada..."
       },
@@ -603,7 +623,7 @@
             "generation": "Geração de texto",
             "text": "Interação por texto"
           },
-          "textOnlyLimit": "Apenas texto: sem anexos, citações, voz ou variáveis personalizadas.",
+          "configuredInputs": "Os campos e anexos dependem da configuração da aplicação.",
           "noDescription": "Sem descrição",
           "defaultType": "Aplicação"
         },
@@ -1436,6 +1456,19 @@
           }
         },
         "page": {
+          "taskInput": {
+            "label": "Texto principal da tarefa",
+            "auto": "Automático (um único campo de texto livre)",
+            "parametersOnly": "Apenas parâmetros",
+            "autoResolved": "Mapeamento automático: o texto é enviado para {variable}.",
+            "explicitResolved": "Mapeamento explícito: o texto é enviado para {variable}.",
+            "parametersOnlyNote": "O texto está desativado. Utilize parâmetros e ficheiros.",
+            "ambiguous": "Vários campos de texto livre: escolha uma variável principal ou apenas parâmetros. O texto está desativado.",
+            "noText": "Nenhum campo de texto livre. O texto está desativado.",
+            "invalid": "A variável {variable} não existe ou não é de texto livre. Corrija o mapeamento antes de executar.",
+            "invalidOption": "Variável indisponível: {variable}",
+            "schemaNote": "Baseado no esquema de parâmetros guardado; sincronize com o Dify para atualizar."
+          },
           "title": {
             "edit": "Editar Instância da Aplicação",
             "add": "Adicionar Instância da Aplicação"
@@ -1525,13 +1558,24 @@
             "title": "Configuração de Parâmetros Dify",
             "appTypeNote": "Aplicações com o tipo \"Modelo\" aparecerão no seletor de modelos da interface de chat"
           },
+          "conversationTurns": {
+            "label": "Turnos de conversa (opcional)",
+            "default": "Predefinição da aplicação",
+            "single": "Um turno",
+            "multi": "Vários turnos",
+            "independent": "Execuções independentes",
+            "note": "Selecione vários turnos apenas se a aplicação de origem tiver sido concebida para utilizar o contexto anterior.",
+            "independentNote": "Pode executar várias vezes na mesma janela, sem partilhar o contexto.",
+            "humanInputNote": "Um agente com confirmação humana trata uma tarefa por conversa.",
+            "typeMismatch": "O Dify indica {type}. O tipo de aplicação guardado não foi alterado."
+          },
           "backend": {
             "label": "Backend",
             "assistantId": "Assistant ID",
             "resultProfileLabel": "Enable Deep Agent result artifacts",
             "resultProfileNote": "Enable only for an assistant verified to support phase4.result.v1, regardless of its name. Disabling pauses new profile tasks; existing results remain readable.",
             "aguiLabel": "Usar o chat AG-UI comum em novas conversas das aplicações",
-            "aguiNote": "Apenas novas conversas de texto em aplicações chatbot do mercado. Ficheiros, citações, voz e variáveis personalizadas não são suportados. O modelo predefinido e o seletor não mudam. As conversas antigas mantêm o percurso compatível; as conversas públicas associadas não regressam ao percurso anterior.",
+            "aguiNote": "Aplica-se a novas conversas dos chatbots do catálogo. Os campos e anexos dependem da configuração da aplicação. As conversas existentes mantêm o modo original.",
             "langchainNote": "Use the assistant exposed by this service. Text and read-only tools only; service credentials stay on the server.",
             "validation": {
               "instanceIdRequired": "Enter an application identifier.",
@@ -2877,7 +2921,7 @@
       "copied": "Source copied.",
       "copyFailed": "Could not copy the source. Please select and copy its text."
     },
-    "textOnlyNote": "Esta conversa aceita apenas texto, sem ficheiros, citações, voz ou variáveis personalizadas. As conversas antigas mantêm as funcionalidades compatíveis.",
+    "textOnlyNote": "Esta aplicação não aceita anexos nesta conversa.",
     "cancelled": "Cancelado",
     "interrupted": "Interrompido",
     "loadMore": "Carregar mensagens anteriores",
@@ -2920,5 +2964,30 @@
     "confirmationUnknown": "Resultado por confirmar. Consulte o estado sem voltar a enviar.",
     "confirmationSingleTask": "Este agente aceita uma tarefa por conversa. Inicie uma nova conversa para outra tarefa.",
     "confirmationNotDispatched": "A sua decisão não foi enviada. Reveja-a e tente novamente."
+  },
+  "taskChat": {
+    "loading": "A carregar tarefas…",
+    "loginRequired": "Inicie sessão",
+    "unavailable": "Aplicação indisponível",
+    "independent": "Cada envio é independente, sem memória das tarefas anteriores.",
+    "placeholder": "Introduza a tarefa",
+    "parametersOnly": "Preencha os parâmetros ou anexe os ficheiros necessários acima",
+    "taskTitle": "Execução de tarefa",
+    "replayed": "Este envio já existe e não será repetido automaticamente. Verifique o estado guardado.",
+    "submitFailed": "Não foi possível confirmar o envio. A nova tentativa mantém o identificador.",
+    "loadOlder": "Carregar tarefas anteriores",
+    "historyFailed": "Histórico indisponível. Verifique o acesso e tente novamente.",
+    "retry": "Tentar novamente",
+    "welcome": "Inicie uma tarefa com a entrada abaixo.",
+    "parameterTask": "Tarefa com parâmetros ou ficheiros",
+    "noProcess": "Sem detalhes de execução guardados",
+    "running": "Em execução",
+    "unknown": "Resultado não confirmado. A tarefa original pode continuar em execução; não será reiniciada automaticamente.",
+    "completed": "Concluída",
+    "failed": "Falhou",
+    "stopped": "Parada",
+    "runAgain": "Reutilizar estas entradas",
+    "viewResult": "Ver resultado completo",
+    "recoverTask": "Marcar interrompida e preparar outra execução"
   }
 }

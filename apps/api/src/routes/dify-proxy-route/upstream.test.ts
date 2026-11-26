@@ -10,6 +10,7 @@ import {
   markSubmissionSubmitting,
   rejectUnacceptedSubmission,
 } from '../../lib/agent-submissions';
+import { clearDifyInputCapabilitiesCache } from '../../lib/dify-input-capabilities';
 import {
   fetchWithDifyProxyResilience,
   getDifyProxyCircuitSnapshot,
@@ -32,6 +33,12 @@ import { dispatchDifyUpstreamRequest } from './upstream';
 
 jest.mock('../../lib/dify-upload-access', () => ({
   registerDifyUpload: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock('./input-capabilities', () => ({
+  validateDifyInputUpload: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock('../../lib/dify-input-capabilities', () => ({
+  clearDifyInputCapabilitiesCache: jest.fn(),
 }));
 
 jest.mock('../../lib/dify-upload-archive', () => ({
@@ -278,6 +285,25 @@ describe('dispatchDifyUpstreamRequest trusted user context integration', () => {
 
   afterAll(() => {
     global.fetch = originalFetch;
+  });
+
+  it('invalidates stale input requirements after an upstream refusal without resubmitting', async () => {
+    mockedFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ code: 'invalid_param' }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' },
+      })
+    );
+    const reply = createReply();
+    await dispatchDifyUpstreamRequest(
+      createRequest(),
+      reply,
+      createContext(),
+      createTargetConfig({ rootTaskId: 'root' })
+    );
+    expect(reply.status).toHaveBeenCalledWith(400);
+    expect(clearDifyInputCapabilitiesCache).toHaveBeenCalledTimes(1);
+    expect(mockedFetch).toHaveBeenCalledTimes(1);
   });
 
   it('sends only a server-generated prompt upstream, binding the visible record before forwarding acceptance', async () => {

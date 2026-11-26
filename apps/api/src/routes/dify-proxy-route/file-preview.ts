@@ -1,6 +1,8 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { Readable } from 'node:stream';
 
 import { AgentPolicyError } from '../../lib/agent-backends';
+import { agentUploadBodyLimit } from '../../lib/agent-input';
 import {
   canReadDifyUpload,
   hasDifyUploadReference,
@@ -23,7 +25,7 @@ export async function archiveDifyUploadResponse(
   const data = await upstream.json();
   if (
     !(file instanceof Blob) ||
-    typeof data.id !== 'string' ||
+    typeof data?.id !== 'string' ||
     !target.serviceInstanceId
   ) {
     throw new AgentPolicyError(502, 'DIFY_UPLOAD_RESPONSE_INVALID');
@@ -35,21 +37,23 @@ export async function archiveDifyUploadResponse(
       fileId: data.id,
     };
     if (workflow) await saveDifyUpload(scope, file);
-    await registerDifyUpload(scope);
+    await registerDifyUpload(scope, false, {
+      name: file instanceof File ? file.name : String(data.name || ''),
+      size: file.size,
+      type: file.type,
+    });
   } catch {
     throw new AgentPolicyError(503, 'DIFY_UPLOAD_STORAGE_UNAVAILABLE');
   }
   const headers = new Headers(upstream.headers);
   headers.delete('content-length');
   headers.delete('content-encoding');
+  delete data.source_url;
+  delete data.url;
   return new Response(
     JSON.stringify({
       ...data,
-      ...(workflow
-        ? {
-            preview_url: `/api/dify/${encodeURIComponent(context.appId)}/files/${encodeURIComponent(data.id)}/preview`,
-          }
-        : {}),
+      preview_url: `/api/dify/${encodeURIComponent(context.appId)}/files/${encodeURIComponent(data.id)}/preview`,
     }),
     { status: upstream.status, headers }
   );
@@ -89,6 +93,96 @@ export function findDifyFileUrl(
     if (found) return found;
   }
   return null;
+}
+
+export async function readDifySignedFile(
+  target: DifyProxyTargetConfig,
+  filePath: string,
+  signedUrl: string
+) {
+  const signature = new URL(signedUrl).searchParams;
+  const fileUrl = new URL(target.difyApiUrl);
+  const prefix = fileUrl.pathname.replace(/\/+$/, '').replace(/\/v1$/, '');
+  fileUrl.pathname = `${prefix}${filePath}`;
+  fileUrl.search = '';
+  fileUrl.hash = '';
+  for (const name of ['timestamp', 'nonce', 'sign']) {
+    const value = signature.get(name);
+    if (value) fileUrl.searchParams.set(name, value);
+  }
+  if (!fileUrl.searchParams.has('sign')) return null;
+
+  const response = await fetch(fileUrl, {
+    redirect: 'error',
+    cache: 'no-store',
+    signal: AbortSignal.timeout(30000),
+  }).catch(() => {
+    throw new AgentPolicyError(502, 'DIFY_FILE_READ_FAILED');
+  });
+  if (response.status !== 200 || !response.body) {
+    await response.body?.cancel().catch(() => undefined);
+    if ([404, 410].includes(response.status)) return null;
+    throw new AgentPolicyError(502, 'DIFY_FILE_READ_FAILED');
+  }
+  const limit = agentUploadBodyLimit();
+  const contentLength = response.headers.get('content-length');
+  if (contentLength !== null && Number(contentLength) > limit) {
+    await response.body.cancel().catch(() => undefined);
+    throw new AgentPolicyError(502, 'DIFY_FILE_READ_FAILED');
+  }
+  return {
+    body: response.body,
+    contentType: response.headers.get('content-type'),
+    limit,
+  };
+}
+
+async function* boundedFileBytes(
+  body: ReadableStream<Uint8Array>,
+  limit: number
+) {
+  const reader = body.getReader();
+  let bytes = 0;
+  try {
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) return;
+      bytes += chunk.value.byteLength;
+      if (bytes > limit) throw new Error('DIFY_FILE_READ_FAILED');
+      yield chunk.value;
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
+}
+
+function fileReply(reply: FastifyReply, contentType: string | null) {
+  const activeType =
+    /^(?:text\/(?:html|xml)|application\/(?:xhtml\+xml|xml)|image\/svg\+xml)(?:[\s;]|$)/i.test(
+      contentType?.trim() ?? ''
+    );
+  return reply
+    .header('Cache-Control', 'private, no-store')
+    .header('X-Content-Type-Options', 'nosniff')
+    .header('Content-Security-Policy', "default-src 'none'; sandbox")
+    .header('Content-Disposition', 'attachment; filename="attachment"')
+    .header(
+      'Content-Type',
+      activeType || !contentType ? 'application/octet-stream' : contentType
+    );
+}
+
+export async function sendDifyFileStream(
+  reply: FastifyReply,
+  file: NonNullable<Awaited<ReturnType<typeof readDifySignedFile>>>
+) {
+  fileReply(reply, file.contentType).send(
+    Readable.from(boundedFileBytes(file.body, file.limit), {
+      objectMode: false,
+    })
+  );
+  await reply;
 }
 
 async function refreshConversationFileUrl(
@@ -146,6 +240,9 @@ export async function handleOwnedDifyFilePreview(
   ) {
     return false;
   }
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(fileId)) {
+    throw new AgentPolicyError(400, 'DIFY_FILE_CONTEXT_INVALID');
+  }
 
   const scope = {
     userId: context.actor.userId,
@@ -191,20 +288,7 @@ export async function handleOwnedDifyFilePreview(
   }
   if (archived) {
     await confirmLegacyOwnership();
-    const activeType =
-      /^(?:text\/(?:html|xml)|application\/(?:xhtml\+xml|xml)|image\/svg\+xml)(?:;|$)/i.test(
-        archived.contentType
-      );
-    reply
-      .header('Cache-Control', 'private, no-store')
-      .header('X-Content-Type-Options', 'nosniff')
-      .header('Content-Security-Policy', "default-src 'none'; sandbox")
-      .header('Content-Disposition', 'attachment; filename="attachment"')
-      .header(
-        'Content-Type',
-        activeType ? 'application/octet-stream' : archived.contentType
-      )
-      .send(archived.content);
+    fileReply(reply, archived.contentType).send(archived.content);
     return true;
   }
 
@@ -239,13 +323,21 @@ export async function handleOwnedDifyFilePreview(
       fileId
     );
     if (url) {
-      await confirmLegacyOwnership();
-      reply
-        .header('Cache-Control', 'private, no-store')
-        .header('Location', url)
-        .status(302)
-        .send();
-      return true;
+      const file = await readDifySignedFile(
+        target,
+        `/files/${encodeURIComponent(fileId)}/file-preview`,
+        url
+      );
+      if (file) {
+        try {
+          await confirmLegacyOwnership();
+        } catch (error) {
+          await file.body.cancel().catch(() => undefined);
+          throw error;
+        }
+        await sendDifyFileStream(reply, file);
+        return true;
+      }
     }
   }
 

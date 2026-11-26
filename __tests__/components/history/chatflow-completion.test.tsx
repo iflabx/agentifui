@@ -9,7 +9,9 @@ import {
   useChatInputStore,
 } from '@lib/stores/chat-input-store';
 import { useChatStore } from '@lib/stores/chat-store';
+import type { ChatMessage } from '@lib/stores/chat-store';
 import { useChatflowExecutionStore } from '@lib/stores/chatflow-execution-store';
+import { buildChatflowExecutionMetadata } from '@lib/stores/chatflow-execution-store/history';
 import { useCurrentAppStore } from '@lib/stores/current-app-store';
 import {
   act,
@@ -24,6 +26,7 @@ import ChatPage from '../../../app/(shell)/chat/[conversationId]/page';
 let mockId = 'temp-one';
 let mockLoaderMounts = 0;
 let mockActor = 'actor';
+const mockChatflowSubmit = jest.fn();
 
 function useMockInterface() {
   const messages = useChatStore(state => state.messages);
@@ -33,6 +36,7 @@ function useMockInterface() {
     conversationAppId: 'app',
     isProcessing: false,
     handleSubmit: jest.fn(),
+    handleChatflowSubmit: mockChatflowSubmit,
     handleStopProcessing: jest.fn(),
     sendDirectMessage: jest.fn(),
     nodeTracker: execution,
@@ -57,7 +61,10 @@ jest.mock('@lib/hooks/use-chatflow-interface', () => ({
   useChatflowInterface: () => useMockInterface(),
 }));
 jest.mock('@lib/hooks/use-chatflow-detection', () => ({
-  useChatflowDetection: () => ({ isChatflowApp: true }),
+  useChatflowDetection: () => ({
+    isChatflowApp: true,
+    currentConversationApp: { instance_id: 'app' },
+  }),
 }));
 jest.mock('@lib/hooks/use-chat-page-state', () => ({
   useChatPageState: () => ({
@@ -80,7 +87,11 @@ jest.mock('@lib/services/client/messages-api', () => ({
   getMessagePage: jest.fn(),
 }));
 jest.mock('@components/chat', () => ({
-  ChatLoader: function MockChatLoader() {
+  ChatLoader: function MockChatLoader({
+    renderProcess,
+  }: {
+    renderProcess?: (message: ChatMessage) => React.ReactNode;
+  }) {
     const React = jest.requireActual('react');
     React.useEffect(() => {
       mockLoaderMounts += 1;
@@ -89,6 +100,9 @@ jest.mock('@components/chat', () => ({
     return (
       <div data-testid="messages">
         {messages.map(item => item.text).join(' ')}
+        {messages.map(item => (
+          <div key={item.id}>{renderProcess?.(item)}</div>
+        ))}
       </div>
     );
   },
@@ -99,6 +113,19 @@ jest.mock('@components/chat', () => ({
   WelcomeScreen: () => null,
 }));
 jest.mock('@components/chat-input', () => ({ ChatInput: () => null }));
+jest.mock('@components/chatflow/chatflow-input-area', () => ({
+  ChatflowInputArea: ({
+    instanceId,
+    onSubmit,
+  }: {
+    instanceId: string;
+    onSubmit: (query: string, inputs: Record<string, unknown>) => void;
+  }) => (
+    <button onClick={() => onSubmit('continue', {})}>
+      Continue Chatflow {instanceId}
+    </button>
+  ),
+}));
 jest.mock('@components/chat/dynamic-suggested-questions', () => ({
   DynamicSuggestedQuestions: () => null,
 }));
@@ -108,15 +135,8 @@ jest.mock('@components/file-preview/file-preview-canvas', () => ({
 jest.mock('@components/langchain/agent-chat', () => ({
   AgentChat: () => <div>Agent view</div>,
 }));
-jest.mock('@components/chatflow/chatflow-node-tracker', () => ({
-  ChatflowNodeTracker: () => <div>Execution process</div>,
-}));
-jest.mock('@components/chatflow/chatflow-floating-controller', () => ({
-  ChatflowFloatingController: ({
-    onToggleTracker,
-  }: {
-    onToggleTracker: () => void;
-  }) => <button onClick={onToggleTracker}>Toggle process</button>,
+jest.mock('@components/task-chat/task-chat', () => ({
+  TaskChat: () => <div>Task view</div>,
 }));
 
 beforeEach(() => {
@@ -135,7 +155,10 @@ beforeEach(() => {
   useCurrentAppStore.setState({ currentAppId: 'app' });
   useChatStore.setState({
     currentConversationId: 'temp-one',
-    messages: [{ id: 'answer', text: 'Completed summary', isUser: false }],
+    messages: [
+      { id: 'question', text: 'Question', isUser: true },
+      { id: 'answer', text: 'Completed summary', isUser: false },
+    ],
   });
   jest.mocked(getConversationByExternalId).mockResolvedValue({
     success: true,
@@ -161,6 +184,7 @@ it.each([false, true])(
       '/chat/temp-one'
     );
     useChatflowExecutionStore.getState().startExecution();
+    useChatflowExecutionStore.setState({ processMessageId: 'question' });
     useChatflowExecutionStore.getState().addNode({
       id: 'summary',
       title: 'Summary',
@@ -169,9 +193,11 @@ it.each([false, true])(
     });
     const { rerender } = render(<ChatPage />);
     const messages = screen.getByTestId('messages');
-    expect(screen.getByText('Execution process')).toBeInTheDocument();
-    if (closed)
-      fireEvent.click(screen.getByRole('button', { name: 'Toggle process' }));
+    expect(
+      screen.queryByRole('region', { name: 'title' })
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'view' }));
+    if (closed) fireEvent.click(screen.getByRole('button', { name: 'close' }));
     act(() => {
       useChatflowExecutionStore
         .getState()
@@ -192,10 +218,12 @@ it.each([false, true])(
     expect(getConversationByExternalId).not.toHaveBeenCalled();
     expect(getMessagePage).not.toHaveBeenCalled();
     expect(useChatflowExecutionStore.getState().nodes).toHaveLength(1);
-    expect(Boolean(screen.queryByText('Execution process'))).toBe(!closed);
+    expect(Boolean(screen.queryByRole('region', { name: 'title' }))).toBe(
+      !closed
+    );
     if (closed) {
-      fireEvent.click(screen.getByRole('button', { name: 'Toggle process' }));
-      expect(screen.getByText('Execution process')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'view' }));
+      expect(screen.getByRole('region', { name: 'title' })).toBeInTheDocument();
     }
   }
 );
@@ -216,6 +244,42 @@ it('still loads a historical conversation and selects its trusted AG-UI protocol
   );
   expect(screen.queryByTestId('messages')).not.toBeInTheDocument();
   expect(getConversationByExternalId).toHaveBeenCalledWith('historical');
+});
+
+it('reopens each saved Chatflow turn separately and shows missing details without borrowing another turn', async () => {
+  mockId = 'historical';
+  const messagePage = ['first', 'second', 'legacy'].flatMap((id, index) =>
+    (['user', 'assistant'] as const).map((role, offset) => ({
+      id: `${id}-${role}`,
+      content: id,
+      role,
+      created_at: new Date(index * 2000 + offset * 1000).toISOString(),
+      metadata:
+        role === 'assistant' && id !== 'legacy'
+          ? buildChatflowExecutionMetadata({
+              nodes: [{ id: 'step', title: `Step ${id}`, status: 'completed' }],
+              isExecuting: false,
+              error: null,
+              wasStopped: false,
+            })
+          : {},
+    }))
+  );
+  jest.mocked(getMessagePage).mockResolvedValue({
+    success: true,
+    data: { messages: messagePage as never, hasMore: false, nextCursor: null },
+  });
+  render(<ChatPage />);
+  const entries = await screen.findAllByRole('button', { name: 'view' });
+  expect(entries).toHaveLength(2);
+  expect(screen.getByText('empty')).toBeInTheDocument();
+  expect(screen.queryByRole('region')).not.toBeInTheDocument();
+  fireEvent.click(entries[0]);
+  expect(screen.getByRole('region')).toHaveTextContent('Step first');
+  fireEvent.click(entries[1]);
+  expect(screen.getByRole('region')).toHaveTextContent('Step second');
+  expect(screen.queryByText('Step first')).not.toBeInTheDocument();
+  expect(useChatflowExecutionStore.getState().nodes).toEqual([]);
 });
 
 it('does not bypass a failed historical protocol lookup', async () => {

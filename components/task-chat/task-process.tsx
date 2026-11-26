@@ -1,0 +1,141 @@
+'use client';
+
+import {
+  difyProcessItem,
+  processStatus,
+  visibleDifyNodes,
+  workflowSnapshotItems,
+} from '@components/execution-process/adapters';
+import { ExecutionProcessDisclosure } from '@components/execution-process/disclosure';
+import { ExecutionBar } from '@components/workflow/workflow-tracker/execution-bar';
+import {
+  type WorkflowNode,
+  useWorkflowExecutionStore,
+} from '@lib/stores/workflow-execution-store';
+import type { AppExecution } from '@lib/types/database';
+
+import { useState } from 'react';
+
+import { useTranslations } from 'next-intl';
+
+export function savedTaskNodes(
+  metadata: Record<string, unknown>
+): WorkflowNode[] {
+  const nodes = metadata.task_process_nodes;
+  if (!Array.isArray(nodes)) return [];
+  const valid = nodes.every(
+    node =>
+      node &&
+      typeof node === 'object' &&
+      typeof node.id === 'string' &&
+      typeof node.title === 'string' &&
+      typeof node.description === 'string' &&
+      ['pending', 'running', 'completed', 'failed'].includes(node.status) &&
+      ['iterations', 'loops', 'parallelBranches'].every(
+        key =>
+          node[key] === undefined ||
+          (Array.isArray(node[key]) &&
+            node[key].every(
+              (entry: unknown) =>
+                entry &&
+                typeof entry === 'object' &&
+                'id' in entry &&
+                typeof entry.id === 'string' &&
+                'status' in entry &&
+                typeof entry.status === 'string'
+            ))
+      )
+  );
+  return valid ? (nodes as WorkflowNode[]) : [];
+}
+
+export function TaskProcess({
+  execution,
+  live,
+  open,
+  onOpenChange,
+  suspended,
+}: {
+  execution: AppExecution;
+  live: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  suspended?: boolean;
+}) {
+  const t = useTranslations('taskChat');
+  const current = useWorkflowExecutionStore(state => state.nodes);
+  const liveIteration = useWorkflowExecutionStore(
+    state => state.iterationExpandedStates
+  );
+  const liveLoop = useWorkflowExecutionStore(state => state.loopExpandedStates);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const workflow = execution.execution_type === 'workflow';
+  const liveNodes = live && workflow;
+  const nodes = liveNodes ? current : savedTaskNodes(execution.metadata);
+  const visible = visibleDifyNodes(
+    nodes,
+    liveNodes ? liveIteration : expanded,
+    liveNodes ? liveLoop : expanded
+  );
+  const items = nodes.length
+    ? visible.map(node =>
+        difyProcessItem(
+          {
+            ...node,
+            status:
+              !live && ['pending', 'running'].includes(node.status)
+                ? 'unknown'
+                : node.status,
+          },
+          execution.id
+        )
+      )
+    : workflowSnapshotItems(execution.metadata, execution.id);
+  const status =
+    !live &&
+    (['pending', 'running'].includes(execution.status) ||
+      execution.error_message === 'CLIENT_TASK_INTERRUPTED')
+      ? 'unknown'
+      : live
+        ? 'running'
+        : processStatus(execution.status);
+  return (
+    <ExecutionProcessDisclosure
+      items={items}
+      status={status}
+      showEmpty={workflow && !live}
+      placement="panel"
+      open={open}
+      onOpenChange={onOpenChange}
+      suspended={suspended}
+      title={execution.title || t('taskTitle')}
+      historical={!live && items.length > 0}
+      executing={live && workflow}
+      failed={execution.status === 'failed'}
+      renderItem={
+        nodes.length && items.length
+          ? (item, index) => (
+              <ExecutionBar
+                historical={!live}
+                node={visible[index]}
+                item={item}
+                index={index}
+                expansion={
+                  liveNodes
+                    ? undefined
+                    : {
+                        expanded: Boolean(expanded[visible[index].id]),
+                        toggle: () =>
+                          setExpanded(previous => ({
+                            ...previous,
+                            [visible[index].id]: !previous[visible[index].id],
+                          })),
+                      }
+                }
+              />
+            )
+          : undefined
+      }
+    />
+  );
+}

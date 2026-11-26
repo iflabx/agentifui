@@ -17,7 +17,9 @@ import type { InstanceFormProps } from './instance-form-types';
 import {
   changeInstanceAppType,
   changeInstanceDifyAppType,
+  instanceTurnPolicy,
 } from './instance-form-utils';
+import { TaskInputMapping } from './task-input-mapping';
 import { useInstanceFormState } from './use-instance-form-state';
 
 export function InstanceForm(props: InstanceFormProps) {
@@ -50,6 +52,7 @@ export function InstanceForm(props: InstanceFormProps) {
     hasApiKey,
     currentProviderName,
   } = useInstanceFormState(props);
+  const fixedTurnPolicy = instanceTurnPolicy(formData.config);
 
   return (
     <>
@@ -364,6 +367,55 @@ export function InstanceForm(props: InstanceFormProps) {
             />
           )}
 
+          <div>
+            <label
+              htmlFor="instance-conversation-turns"
+              className="mb-2 block font-serif text-sm font-medium text-stone-700 dark:text-stone-300"
+            >
+              {t('conversationTurns.label')}
+            </label>
+            <select
+              id="instance-conversation-turns"
+              value={
+                fixedTurnPolicy ?? formData.config.conversation_turns ?? ''
+              }
+              disabled={Boolean(fixedTurnPolicy) || isSyncing || isProcessing}
+              aria-describedby="instance-conversation-turns-note"
+              className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 font-serif text-sm dark:border-stone-600 dark:bg-stone-800"
+              onChange={event => {
+                const value = event.target.value;
+                setFormData(previous => {
+                  const config = { ...previous.config };
+                  if (value === 'single' || value === 'multi')
+                    config.conversation_turns = value;
+                  else delete config.conversation_turns;
+                  return { ...previous, config };
+                });
+              }}
+            >
+              <option value="">{t('conversationTurns.default')}</option>
+              <option value="single">{t('conversationTurns.single')}</option>
+              <option value="multi">{t('conversationTurns.multi')}</option>
+              {fixedTurnPolicy === 'independent' && (
+                <option value="independent">
+                  {t('conversationTurns.independent')}
+                </option>
+              )}
+            </select>
+            <p
+              id="instance-conversation-turns-note"
+              className="mt-2 text-xs text-stone-500 dark:text-stone-400"
+            >
+              {t(
+                fixedTurnPolicy === 'independent'
+                  ? 'conversationTurns.independentNote'
+                  : fixedTurnPolicy === 'single'
+                    ? 'conversationTurns.humanInputNote'
+                    : 'conversationTurns.note'
+              )}
+            </p>
+          </div>
+
           {!isLangChain &&
             formData.config.app_metadata.app_type === 'marketplace' &&
             formData.config.app_metadata.dify_apptype === 'chatbot' && (
@@ -396,6 +448,24 @@ export function InstanceForm(props: InstanceFormProps) {
                   {t('backend.aguiNote')}
                 </p>
               </div>
+            )}
+
+          {!isLangChain &&
+            ['workflow', 'text-generation'].includes(
+              formData.config.app_metadata.dify_apptype || ''
+            ) && (
+              <TaskInputMapping
+                config={formData.config}
+                disabled={isSyncing || isProcessing}
+                onChange={taskInput =>
+                  setFormData(previous => {
+                    const config = { ...previous.config };
+                    if (taskInput === undefined) delete config.task_input;
+                    else config.task_input = taskInput;
+                    return { ...previous, config };
+                  })
+                }
+              />
             )}
 
           <TagsSelector

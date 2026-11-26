@@ -3,9 +3,10 @@ import {
   handleCreateInstance,
   handleUpdateInstance,
 } from '@components/admin/api-config/instance-save-handlers';
+import { TaskInputMapping } from '@components/admin/api-config/task-input-mapping';
 import { validateDifyFormData } from '@lib/services/dify/validation';
 import type { Provider } from '@lib/types/database';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { toast } from 'sonner';
 
 const mockTranslate = (key: string) => key;
@@ -24,7 +25,13 @@ const mockStore = {
   ],
 };
 
-jest.mock('next-intl', () => ({ useTranslations: () => mockTranslate }));
+jest.mock('next-intl', () => ({
+  useTranslations: (namespace: string) =>
+    namespace.endsWith('.taskInput')
+      ? (key: string, values?: { variable: string }) =>
+          `taskInput.${key}${values ? ` ${values.variable}` : ''}`
+      : mockTranslate,
+}));
 jest.mock('uuid', () => ({ v4: () => 'generated-instance' }));
 jest.mock('@lib/stores/api-config-store', () => ({
   useApiConfigStore: () => mockStore,
@@ -34,6 +41,25 @@ jest.mock('@lib/hooks/use-theme', () => ({
 }));
 jest.mock('@lib/services/dify/validation', () => ({
   validateDifyFormData: jest.fn(() => []),
+}));
+jest.mock('@lib/services/dify/app-browser-service', () => ({
+  getDifyAppInfo: jest.fn(async () => ({
+    name: '',
+    description: '',
+    tags: [],
+  })),
+  getDifyAppParameters: jest.fn(async () => ({
+    user_input_form: [
+      {
+        paragraph: {
+          variable: 'SyncedText',
+          label: 'Synced',
+          required: false,
+          default: '',
+        },
+      },
+    ],
+  })),
 }));
 jest.mock('sonner', () => ({
   toast: {
@@ -45,7 +71,13 @@ jest.mock('sonner', () => ({
 }));
 jest.mock('@components/admin/api-config/dify-parameters-panel', () => ({
   __esModule: true,
-  default: () => <div data-testid="dify-parameters" />,
+  default: ({ onSave }: { onSave: (config: object) => void }) => (
+    <div data-testid="dify-parameters">
+      <button type="button" onClick={() => onSave({ user_input_form: [] })}>
+        Save parameter fixture
+      </button>
+    </div>
+  ),
 }));
 jest.mock('@components/admin/api-config/tags-selector', () => ({
   TagsSelector: () => null,
@@ -174,6 +206,230 @@ describe.each(['dify', 'langchain'] as const)(
     );
   }
 );
+
+describe('task input mapping in the existing instance form', () => {
+  const taskInstance = {
+    ...langchainInstance,
+    config: {
+      backend_type: 'dify' as const,
+      api_url: 'https://agent.example.test',
+      app_metadata: {
+        app_type: 'marketplace' as const,
+        dify_apptype: 'workflow' as const,
+      },
+      dify_parameters: {
+        user_input_form: [
+          {
+            paragraph: {
+              variable: 'ExactText',
+              label: 'Main text',
+              required: true,
+              default: '',
+            },
+          },
+          {
+            'text-input': {
+              variable: 'Context',
+              label: 'Context',
+              required: false,
+              default: '',
+            },
+          },
+          {
+            select: {
+              variable: 'Choice',
+              label: 'Choice',
+              required: false,
+              default: '',
+              options: [],
+            },
+          },
+        ],
+      },
+    },
+  };
+
+  function renderTask(task_input?: { text_variable: string | null }) {
+    const onSave = jest.fn();
+    const view = render(
+      <InstanceForm
+        instance={{
+          ...taskInstance,
+          config: {
+            ...taskInstance.config,
+            ...(task_input ? { task_input } : {}),
+          },
+        }}
+        isEditing
+        onSave={onSave}
+        onCancel={jest.fn()}
+        isProcessing={false}
+      />
+    );
+    return { ...view, onSave };
+  }
+
+  it('offers only exact free-text fields and saves explicit, parameters-only, and automatic choices', () => {
+    const { container, onSave } = renderTask();
+    const select = screen.getByLabelText('taskInput.label');
+    expect(select).toHaveValue('auto');
+    expect(screen.getByText(/ambiguous/)).toBeInTheDocument();
+    expect(
+      screen.queryByRole('option', { name: 'Choice (Choice)' })
+    ).not.toBeInTheDocument();
+    fireEvent.change(select, {
+      target: { value: JSON.stringify('ExactText') },
+    });
+    expect(screen.getByText(/explicitResolved/)).toBeInTheDocument();
+    fireEvent.submit(container.querySelector('form')!);
+    expect(onSave.mock.calls.at(-1)[0].config.task_input).toEqual({
+      text_variable: 'ExactText',
+    });
+    fireEvent.change(select, { target: { value: 'null' } });
+    expect(screen.getByText(/parametersOnlyNote/)).toBeInTheDocument();
+    fireEvent.submit(container.querySelector('form')!);
+    expect(onSave.mock.calls.at(-1)[0].config.task_input).toEqual({
+      text_variable: null,
+    });
+    fireEvent.change(select, { target: { value: 'auto' } });
+    fireEvent.submit(container.querySelector('form')!);
+    expect(onSave.mock.calls.at(-1)[0].config).not.toHaveProperty('task_input');
+  });
+
+  it.each([null, 'ExactText'])(
+    'preserves custom task mapping %p across parameter sync and save',
+    async text_variable => {
+      const { container, onSave } = renderTask({ text_variable });
+      fireEvent.click(screen.getByRole('button', { name: 'syncConfig' }));
+      await waitFor(() =>
+        expect(
+          screen.getByRole('option', { name: 'Synced (SyncedText)' })
+        ).toBeInTheDocument()
+      );
+      expect(screen.getByLabelText('taskInput.label')).toHaveValue(
+        JSON.stringify(text_variable)
+      );
+      if (text_variable !== null)
+        expect(screen.getByText(/invalid /)).toBeInTheDocument();
+      fireEvent.submit(container.querySelector('form')!);
+      expect(onSave.mock.calls.at(-1)[0].config.task_input).toEqual({
+        text_variable,
+      });
+      expect(
+        onSave.mock.calls.at(-1)[0].config.dify_parameters.user_input_form[0]
+          .paragraph.variable
+      ).toBe('SyncedText');
+    }
+  );
+
+  it('retains a stale explicit mapping visibly instead of silently switching to automatic', () => {
+    renderTask({ text_variable: 'stale' });
+    expect(screen.getByLabelText('taskInput.label')).toHaveValue(
+      JSON.stringify('stale')
+    );
+    expect(screen.getByText(/invalid /)).toBeInTheDocument();
+  });
+
+  it.each([null, 'ExactText'])(
+    'retains task mapping %p when saving the existing parameter panel',
+    text_variable => {
+      const { container, onSave } = renderTask({ text_variable });
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Save parameter fixture' })
+      );
+      fireEvent.submit(container.querySelector('form')!);
+      expect(onSave.mock.calls.at(-1)[0].config.task_input).toEqual({
+        text_variable,
+      });
+      expect(
+        onSave.mock.calls.at(-1)[0].config.dify_parameters.user_input_form
+      ).toEqual([]);
+    }
+  );
+
+  it.each(['workflow', 'text-generation'] as const)(
+    'shows resolved automatic mapping for a sole free-text field in %s',
+    dify_apptype => {
+      render(
+        <InstanceForm
+          instance={{
+            ...taskInstance,
+            config: {
+              ...taskInstance.config,
+              app_metadata: {
+                ...taskInstance.config.app_metadata,
+                dify_apptype,
+              },
+              dify_parameters: {
+                user_input_form:
+                  taskInstance.config.dify_parameters.user_input_form.slice(
+                    0,
+                    1
+                  ),
+              },
+            },
+          }}
+          isEditing
+          onSave={jest.fn()}
+          onCancel={jest.fn()}
+          isProcessing={false}
+        />
+      );
+      expect(
+        screen.getByText(/taskInput.autoResolved ExactText/)
+      ).toBeInTheDocument();
+    }
+  );
+
+  it('explains zero-text schemas and disables the control during save or sync', () => {
+    render(
+      <TaskInputMapping
+        config={{
+          api_url: '',
+          app_metadata: { app_type: 'marketplace', tags: [] },
+          dify_parameters: {},
+        }}
+        disabled
+        onChange={jest.fn()}
+      />
+    );
+    expect(screen.getByLabelText('taskInput.label')).toBeDisabled();
+    expect(screen.getByText(/taskInput.noText/)).toBeInTheDocument();
+  });
+
+  it.each(['auto', 'null', 'query', 'Exact.Case'])(
+    'keeps the exact field %p distinct from selector modes',
+    variable => {
+      const onChange = jest.fn();
+      render(
+        <TaskInputMapping
+          config={{
+            api_url: '',
+            app_metadata: { app_type: 'marketplace', tags: [] },
+            dify_parameters: {
+              user_input_form: [
+                {
+                  paragraph: {
+                    variable,
+                    label: 'Field',
+                    required: false,
+                    default: '',
+                  },
+                },
+              ],
+            },
+          }}
+          disabled={false}
+          onChange={onChange}
+        />
+      );
+      fireEvent.change(screen.getByLabelText('taskInput.label'), {
+        target: { value: JSON.stringify(variable) },
+      });
+      expect(onChange).toHaveBeenCalledWith({ text_variable: variable });
+    }
+  );
+});
 
 describe('LangChain admin instance form', () => {
   it.each([false, true])(

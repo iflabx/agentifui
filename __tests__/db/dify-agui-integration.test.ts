@@ -533,6 +533,48 @@ it('keeps edited Dify user text separate from the implicit upstream query', asyn
   ).toBe(6);
 });
 
+it('saves the effective Dify fields and restores them when a turn is edited', async () => {
+  parameters = {
+    user_input_form: [
+      { 'text-input': { variable: 'topic', required: true } },
+      { 'text-input': { variable: 'style', default: 'brief' } },
+    ],
+  };
+  const first = await stored(
+    await submit('first', { extra: { inputs: { topic: 'Synthetic topic' } } })
+  );
+  expect(calls.map(call => call.path)).toEqual([
+    '/info',
+    '/parameters',
+    '/chat-messages',
+  ]);
+  const original = (await get(`conversations/${first.conversation_id}`)).json();
+  expect(original.messages[0].metadata.input_fields).toEqual({
+    topic: 'Synthetic topic',
+    style: 'brief',
+  });
+  parameters = {
+    user_input_form: [
+      { 'text-input': { variable: 'topic', required: true } },
+      { 'text-input': { variable: 'style', default: 'detailed' } },
+    ],
+  };
+  const edited = await submit('replacement', {
+    conversationId: first.conversation_id,
+    extra: { editSourceId: first.user_message_id },
+  });
+  expect((await stored(edited)).execution_status).toBe('success');
+  expect(generations().at(-1)?.body.inputs).toMatchObject({
+    topic: 'Synthetic topic',
+    style: 'brief',
+  });
+  expect(calls.filter(call => call.path === '/parameters')).toHaveLength(2);
+  const history = (await get(`conversations/${first.conversation_id}`)).json();
+  expect(history.messages[0].metadata.input_fields).toEqual(
+    original.messages[0].metadata.input_fields
+  );
+});
+
 it('saves two negotiated turns once with trusted native identity and complete local history across API replicas', async () => {
   const first = await submit('first');
   expect(first.statusCode).toBe(200);
@@ -1012,17 +1054,16 @@ it.each([
   async value => {
     parameters = value;
     const response = await submit('unsupported-parameters');
-    const run = await stored(response);
-    expect(run).toMatchObject({
-      execution_status: 'error',
-      persistence_status: 'saved',
-      error_code: 'DIFY_PARAMETERS_UNSUPPORTED',
-    });
+    expect([400, 409]).toContain(response.statusCode);
+    expect(response.json().app_error.code).toMatch(
+      /INPUT_FIELD_REQUIRED|DIFY_PARAMETERS_UNSUPPORTED/
+    );
+    expect(await stored(response)).toBeUndefined();
     expect(generations()).toHaveLength(0);
   }
 );
 
-it('keeps optional native media unavailable in the explicitly selected text-only interaction, without changing the old Dify path', async () => {
+it('accepts text when optional native media has no declared file constraints', async () => {
   parameters = {
     user_input_form: [],
     file_upload: { enabled: true },
@@ -1036,7 +1077,8 @@ it('keeps optional native media unavailable in the explicitly selected text-only
     headers: { cookie: `session_token=${tokens[0]}` },
   });
   expect(descriptor.json()).toMatchObject({
-    interactionMode: 'text-only',
+    interactionMode: 'configured',
+    acceptsInputCapabilities: true,
     newConversationsEnabled: true,
     capabilities: { files: false, cancellation: false, humanInput: false },
   });

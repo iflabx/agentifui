@@ -1,3 +1,7 @@
+import {
+  agentPath,
+  readAgentRequestError,
+} from '@lib/services/client/langchain-api';
 import { previewDifyFile } from '@lib/services/dify/file-service';
 import type { DifyFilePreviewResponse } from '@lib/services/dify/types';
 import type { MessageAttachment } from '@lib/stores/chat-store';
@@ -31,6 +35,39 @@ interface FilePreviewState {
 
 let previewGeneration = 0;
 
+async function fetchPreview(
+  file: MessageAttachment,
+  appId: string,
+  fileId: string,
+  download: boolean
+): Promise<DifyFilePreviewResponse> {
+  if (file.source !== 'agent-input')
+    return previewDifyFile(appId, fileId, {
+      as_attachment: download,
+      ...(file.source === 'dify-output'
+        ? { resultMessageId: file.resultMessageId }
+        : {}),
+    });
+  const response = await fetch(
+    agentPath(appId, `/files/${encodeURIComponent(fileId)}`),
+    {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal: AbortSignal.timeout(30000),
+    }
+  );
+  if (!response.ok) throw await readAgentRequestError(response);
+  return {
+    content: await response.blob(),
+    headers: {
+      contentType:
+        response.headers.get('content-type') || 'application/octet-stream',
+      contentDisposition:
+        response.headers.get('content-disposition') ?? undefined,
+    },
+  };
+}
+
 export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
   // Basic State
   isPreviewOpen: false,
@@ -52,7 +89,11 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
     // Preserve the file's original app context first; only fall back to the caller appId.
     const finalAppId = file.app_id || appId;
 
-    if (!finalAppId || !previewFileId) {
+    if (
+      !finalAppId ||
+      !previewFileId ||
+      (file.source === 'dify-output' && !file.resultMessageId)
+    ) {
       set({
         error: !finalAppId
           ? 'No application ID available for file preview'
@@ -72,7 +113,7 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
     const cacheStore = useFilePreviewCacheStore.getState();
 
     // Try to get from cache first
-    const cachedEntry = cacheStore.get(cacheKey);
+    const cachedEntry = file.source ? undefined : cacheStore.get(cacheKey);
 
     if (cachedEntry) {
       // Cache hit - use cached content
@@ -99,22 +140,18 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
 
     try {
       // Call the previewDifyFile API
-      const response = await previewDifyFile(
+      const response = await fetchPreview(
+        previewFile,
         finalAppId,
         previewFileId,
-        {
-          as_attachment: false,
-          preview_url: previewFile.preview_url,
-        } // Preview mode
+        false
       );
       if (generation !== previewGeneration) return;
 
       // Store in cache
-      const cached = cacheStore.set(
-        cacheKey,
-        response.content,
-        response.headers
-      );
+      const cached =
+        !file.source &&
+        cacheStore.set(cacheKey, response.content, response.headers);
 
       // Log cache status for debugging (only in development)
       if (process.env.NODE_ENV === 'development') {
@@ -170,7 +207,12 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
       '';
 
     const finalAppId = currentPreviewFile.app_id;
-    if (!finalAppId || !previewFileId) {
+    if (
+      !finalAppId ||
+      !previewFileId ||
+      (currentPreviewFile.source === 'dify-output' &&
+        !currentPreviewFile.resultMessageId)
+    ) {
       set({
         error: !finalAppId
           ? 'No application ID available for file download'
@@ -181,13 +223,11 @@ export const useFilePreviewStore = create<FilePreviewState>((set, get) => ({
 
     try {
       // Call the API with attachment mode
-      const response = await previewDifyFile(
+      const response = await fetchPreview(
+        currentPreviewFile,
         finalAppId,
         previewFileId,
-        {
-          as_attachment: true,
-          preview_url: currentPreviewFile.preview_url,
-        } // Download mode
+        true
       );
       if (generation !== previewGeneration) return;
 

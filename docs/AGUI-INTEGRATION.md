@@ -15,7 +15,7 @@ SDK, and upstream service versions are separate compatibility concerns.
 
 LangChain and a bounded Dify chatbot path now support an explicitly negotiated
 AG-UI event stream on the existing trusted product API. The shared agent chat
-uses that stream for LangChain and explicitly opted-in Dify text-only chatbot
+uses that stream for LangChain and explicitly opted-in Dify marketplace chatbot
 applications. LangChain requests without negotiation retain the legacy protocol;
 the existing Dify proxy and its browser-managed persistence remain unchanged
 for conversations that have not migrated.
@@ -126,8 +126,10 @@ the complete-view bounds do not authorize increasing upstream execution limits.
 Authenticated product clients can POST to
 `/api/internal/apps/:appId/agent/runs` with
 `X-AgentifUI-Protocol: ag-ui/1.0`. The body remains
-`{ submissionId, conversationId?, content }`; this is not a general AG-UI
-`RunAgentInput` endpoint. Unknown protocol selections fail before admission.
+`{ submissionId, conversationId?, content }` for ordinary text. Compatible apps
+also accept declared `inputs` and `attachments: [{ fileId, slotKey }]` where
+supported. These are product fields, not a general AG-UI `RunAgentInput`
+endpoint. Unknown protocol selections fail before admission.
 Browser-supplied history, native identifiers, tools, and output scope are rejected.
 
 The same session identity, application authorization, moderation, quota,
@@ -196,23 +198,23 @@ configuration, not a browser profile. `agui/runtime.ts` selects the bounded
 production implementation; the disconnected adapter prototype remains a fixture.
 The descriptor reports the negotiated path's capabilities and server persistence,
 not a global change to Dify's legacy proxy capabilities. Dify native run query,
-stop, files, tools, workflow execution and human responses are not enabled here.
+stop, executable tools, workflow execution and human responses are not enabled here.
 
 Before each Dify generation, the server calls `/info` with the resolved application
 credential and requires `mode: chat`, then checks `/parameters` for an understood
-input form and required values satisfiable by trusted inputs or native defaults.
-Local application labels are not proof of
-native mode. Unexpected agent/workflow/media events still fail the bounded path;
-there is no automatic profile switch, legacy fallback, or second generation.
-Applications requiring custom variables or attachments must use the existing
-path. Optional native file, citation, and speech settings do not enable those
-features in the explicitly selected text-only interaction: the admin opt-in and
-chat page disclose this limitation, and the public descriptor advertises only
-implemented capabilities. Leave applications needing those features on their
-existing path; this is not a full-mode migration or a native configuration change.
-The negotiated request body does not accept `inputs` or native identifiers.
-Trusted profile inputs and the native `user` are built server-side; moderation
-covers both the current query and those inputs.
+input form. Local application labels are not proof of native mode. Supported
+scalar fields and local-file slots come from the effective capability response
+at `GET /api/internal/apps/:appId/input-capabilities`. Clients upload a `file`
+with its `slotKey` to `POST /api/internal/apps/:appId/agent/files` and pass the
+returned platform file ID with that slot when sending. Authorized history file
+reads use `GET /api/internal/apps/:appId/agent/files/:fileId` on the same origin.
+The server validates parameters and attachments again before native dispatch,
+resolves native file references and supplies the native `user`. Moderation covers
+the query and applicable text fields. Native IDs are not client inputs.
+
+Unsupported fields or features such as native citations and speech do not become
+available merely because Dify enables them. There is no automatic profile switch,
+legacy fallback, or second generation. This is not a full-mode migration.
 
 Migration `20261114180000_allow_trusted_dify_conversations.sql` extends only the
 binding backend-type constraint. Existing LangChain defaults, ownership, RLS,

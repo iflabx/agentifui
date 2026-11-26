@@ -19,9 +19,10 @@ import {
 import { DifyRunOutput } from './dify-output';
 import {
   DifyChatIdentity,
+  type DifyChatInputs,
+  type DifyInputFile,
   DifyRuntimeError,
   streamDifyChatbot,
-  verifyDifyChatbot,
 } from './dify-transport';
 import { projectedAssistantMessages } from './runtime-result';
 
@@ -41,7 +42,9 @@ export async function executeDifyAgentRun(input: {
   app: AgentApp;
   run: AgentRunRecord;
   content: string;
-  inputs: Record<string, string>;
+  inputs: DifyChatInputs;
+  files?: DifyInputFile[];
+  difyModeUnsupported?: boolean;
   emit: (event: Event) => void;
   report: (context: { runId: string; code: string }) => void;
 }): Promise<void> {
@@ -59,13 +62,15 @@ export async function executeDifyAgentRun(input: {
       await loadRunDisplayHistory(run),
       input.emit
     );
-    await verifyDifyChatbot(input.app, input.inputs);
+    if (input.difyModeUnsupported)
+      throw new DifyRuntimeError('DIFY_MODE_UNSUPPORTED');
     const identity = new DifyChatIdentity(run.thread_id);
     for await (const event of streamDifyChatbot({
       app: input.app,
       userId: run.user_id,
       content: input.content,
       inputs: input.inputs,
+      files: input.files,
       nativeConversationId: run.thread_id,
       beforeDispatch: async () => {
         await markSubmissionSubmitting(input.rootTaskId);

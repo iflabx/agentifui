@@ -37,6 +37,43 @@ export async function handleMessageAction(
     return toErrorResponse('Unauthorized', 401);
   }
 
+  if (action === 'messages.getChatflowInitialInputs') {
+    const conversationId = readString(payload?.conversationId);
+    if (!conversationId) return toErrorResponse('Missing conversationId', 400);
+    if (
+      !(await loadConversationOwnedByActor(
+        conversationId,
+        actorUserId,
+        'chatflow-inputs'
+      ))
+    )
+      return toErrorResponse('Conversation not found', 404);
+    const rows = await queryRowsWithPgSystemContext<{
+      inputs: Record<string, unknown>;
+    }>(
+      `SELECT metadata -> 'chatflow_initial_inputs' AS inputs
+       FROM messages
+       WHERE conversation_id = $1::uuid AND role = 'user'
+         AND jsonb_typeof(metadata -> 'chatflow_initial_inputs') = 'object'
+         AND COALESCE(metadata ->> 'edit_pending', 'false') <> 'true'
+       ORDER BY created_at ASC, COALESCE(sequence_index, 0) ASC, id ASC
+       LIMIT 1`,
+      [conversationId]
+    );
+    return toSuccessResponse(
+      rows[0]
+        ? Object.fromEntries(
+            Object.entries(rows[0].inputs).filter(
+              ([, value]) =>
+                typeof value === 'string' ||
+                typeof value === 'number' ||
+                typeof value === 'boolean'
+            )
+          )
+        : null
+    );
+  }
+
   if (action === 'messages.getLatest' || action === 'messages.getPage') {
     const conversationId = readString(payload?.conversationId);
     const paginated = action === 'messages.getPage';

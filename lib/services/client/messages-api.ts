@@ -30,6 +30,14 @@ export type ConversationMessagePage = {
   nextCursor: string | null;
 };
 
+export function getChatflowInitialInputs(
+  conversationId: string
+): Promise<Result<Record<string, unknown> | null>> {
+  return callInternalDataAction('messages.getChatflowInitialInputs', {
+    conversationId,
+  });
+}
+
 export function getMessagePage(
   conversationId: string,
   options: { limit: number; beforeMessageId?: string }

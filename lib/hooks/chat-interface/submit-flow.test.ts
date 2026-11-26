@@ -1,3 +1,4 @@
+import { AppRequestError } from '@lib/errors/app-error';
 import { useChatStore } from '@lib/stores/chat-store';
 
 import type { ChatResolvedAppConfig } from './app-config';
@@ -16,6 +17,8 @@ const mockApplyChatCompletionMetadata = jest.fn();
 const mockConsumeChatAnswerStream = jest.fn();
 
 jest.mock('./file-mappers', () => ({
+  collectChatDisplayFiles:
+    jest.requireActual('./file-mappers').collectChatDisplayFiles,
   mapChatUploadFilesToDifyFiles: (...args: unknown[]) =>
     mockMapChatUploadFilesToDifyFiles(...args),
   mapChatUploadFilesToMessageAttachments: (...args: unknown[]) =>
@@ -325,6 +328,92 @@ describe('executeChatSubmit', () => {
 
     expect(callOrder).toEqual(['persist', 'sync']);
     expect(mockHandleChatSubmitStreamError).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])(
+    'keeps the first structured form mounted until acceptance and preserves a refused draft (welcome=%s)',
+    async isWelcomeScreen => {
+      const { input } = createInput();
+      mockStartNewChatConversation.mockImplementationOnce(async () => {
+        expect(input.addMessage).not.toHaveBeenCalled();
+        expect(input.setIsWelcomeScreen).not.toHaveBeenCalled();
+        throw new AppRequestError('Input requirements changed', 400);
+      });
+      const result = await executeChatSubmit({
+        ...input,
+        isWelcomeScreen,
+        inputs: { Exact_Key: 'keep' },
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        surfaced: false,
+        errorMessage: expect.any(String),
+      });
+      expect(input.addMessage).not.toHaveBeenCalled();
+      expect(input.setIsWelcomeScreen).not.toHaveBeenCalled();
+      expect(mockHandleChatSubmitStreamError).not.toHaveBeenCalled();
+      expect(mockFinalizeChatSubmitStream).not.toHaveBeenCalled();
+    }
+  );
+
+  it('adds the structured user message with display attachments only after acceptance', async () => {
+    const { input } = createInput();
+    mockStartNewChatConversation.mockImplementationOnce(async options => {
+      expect(input.addMessage).not.toHaveBeenCalled();
+      expect(options.payload.files).toBeUndefined();
+      options.onAccepted({ externalId: 'native', taskId: 'task' });
+      expect(input.addMessage).toHaveBeenCalledWith(options.userMessage);
+      return {
+        answerStream: (async function* () {})(),
+        finalDbConvUUID: 'db-1',
+      };
+    });
+    const attached = {
+      upload_file_id: 'input-file',
+      name: 'source.txt',
+      type: 'document',
+    };
+    const result = await executeChatSubmit({
+      ...input,
+      isWelcomeScreen: true,
+      inputs: { Exact_File: attached },
+    });
+    expect(result.ok).toBe(true);
+    expect(mockMapChatUploadFilesToMessageAttachments).toHaveBeenCalledWith(
+      [attached],
+      'app-1'
+    );
+    expect(input.setIsWelcomeScreen).toHaveBeenCalledWith(false);
+  });
+
+  it('saves only initial scalar Chatflow settings in message metadata, not upload internals', async () => {
+    const { input } = createInput();
+    mockStartNewChatConversation.mockImplementationOnce(async options => {
+      options.onAccepted({ externalId: 'native', taskId: 'task' });
+      return { answerStream: (async function* () {})() };
+    });
+    await executeChatSubmit({
+      ...input,
+      appConfig: {
+        ...appConfig,
+        instance: {
+          ...appConfig.instance,
+          config: { app_metadata: { dify_apptype: 'chatflow' } },
+        },
+      } as ChatResolvedAppConfig,
+      inputs: {
+        topic: 'Saved topic',
+        count: 0,
+        document: { upload_file_id: 'upload', actor_epoch: 7 },
+      },
+    });
+    expect(input.addMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: {
+          chatflow_initial_inputs: { topic: 'Saved topic', count: 0 },
+        },
+      })
+    );
   });
 
   it('passes an assistant fallback snapshot into persistence', async () => {

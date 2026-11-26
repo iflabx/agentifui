@@ -21,11 +21,13 @@ export interface DifyProxyRequestContext {
 }
 
 export interface DifyProxyTargetConfig {
+  singleTurn?: boolean;
   serviceInstanceId?: string;
   appInstanceId?: string;
   rootTaskId?: string;
   messageEdit?: DifyMessageEdit;
   credentialVersion?: string;
+  taskInput?: { text_variable?: string | null };
   difyApiKey: string;
   difyApiUrl: string;
   appType?: string;

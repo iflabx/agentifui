@@ -2,6 +2,11 @@ import { getConversationByExternalId } from '@lib/services/client/conversations-
 import { useAttachmentStore } from '@lib/stores/attachment-store';
 import { syncChatDraftActor } from '@lib/stores/chat-draft-lifecycle';
 import {
+  composerDraftKey,
+  readComposerDraft,
+  writeComposerDraft,
+} from '@lib/stores/chat-draft-session';
+import {
   acceptedDrafts,
   appDrafts,
   chatInputNavigation,
@@ -11,6 +16,7 @@ import {
   chatInputScope,
   useChatInputStore,
 } from '@lib/stores/chat-input-store';
+import { useChatStore } from '@lib/stores/chat-store';
 import { usePendingConversationStore } from '@lib/stores/pending-conversation-store';
 
 import { useLayoutEffect, useRef, useState } from 'react';
@@ -21,6 +27,7 @@ function migrateDraft(source: string, target: string) {
   const input = useChatInputStore.getState();
   const attachments = useAttachmentStore.getState();
   if (input.resolveScope(source) === input.resolveScope(target)) return;
+  attachments.restoreFiles(target);
   if (input.messagesByRoute[target] || attachments.getFiles(target).length)
     return;
   if (input.migrateScope(source, target))
@@ -90,6 +97,9 @@ export function useChatInputRouteSync({
   authLoading = false,
 }: InputContext = {}) {
   const pathname = usePathname() ?? '';
+  const emptyConversation = useChatStore(
+    state => state.messages.length === 0 && state.currentConversationId === null
+  );
   const externalRouteId = pathname.match(/^\/chat\/([^/]+)$/)?.[1];
   const persistedId = usePendingConversationStore(
     state =>
@@ -178,7 +188,7 @@ export function useChatInputRouteSync({
         .catch(() => undefined);
     } else {
       const routeApp = pathname.match(
-        /^\/apps\/(?:chatbot|chatflow)\/([^/]+)$/
+        /^\/apps\/(?:chatbot|agent|chatflow)\/([^/]+)$/
       )?.[1];
       const resolvedApp = routeApp ? decodeURIComponent(routeApp) : appId;
       const prior = previous.current;
@@ -200,12 +210,33 @@ export function useChatInputRouteSync({
         });
       } else {
         const key = JSON.stringify([actorEpoch, userId, resolvedApp, pathname]);
-        const saved = enteredNewChat ? undefined : appDrafts.get(key);
+        const draftKey = composerDraftKey(
+          userId,
+          useChatInputStore.getState().actorSessionId,
+          'chat-new-route',
+          resolvedApp,
+          pathname
+        );
+        const storedTarget = readComposerDraft(draftKey);
+        const saved = enteredNewChat
+          ? undefined
+          : (appDrafts.get(key) ??
+            (typeof storedTarget === 'string' &&
+            storedTarget.startsWith('newdraft:')
+              ? storedTarget
+              : undefined));
         const savedScope = saved
           ? chatInputScope(actorEpoch, userId, resolvedApp, saved)
           : undefined;
+        const resetAcceptedDraft = Boolean(
+          savedScope &&
+          emptyConversation &&
+          /^\/apps\/(?:chatbot|agent)\/[^/]+$/.test(pathname) &&
+          input.acceptedScopes[input.resolveScope(savedScope)]
+        );
         const existing =
           savedScope &&
+          !resetAcceptedDraft &&
           (useChatInputStore.getState().resolveScope(savedScope) ===
             savedScope ||
             (externalId?.startsWith('temp-') && pendingDrafts.has(savedScope)))
@@ -213,13 +244,14 @@ export function useChatInputRouteSync({
             : undefined;
         const target = existing || `newdraft:${crypto.randomUUID()}`;
         appDrafts.set(key, target);
+        writeComposerDraft(draftKey, target);
         activate(resolvedApp, target);
       }
     }
     return () => {
       generation.current += 1;
     };
-  }, [pathname, userId, appId, authLoading, persistedId]);
+  }, [pathname, userId, appId, authLoading, persistedId, emptyConversation]);
 
   const ready = Boolean(
     !authLoading &&

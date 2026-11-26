@@ -1,5 +1,11 @@
 import { formatBytes } from '@lib/utils';
 
+import {
+  type AgentAttachmentSlot,
+  inputFileExtensionsForSlot,
+  inputFileType,
+} from '../../../../packages/shared/src/agent-input';
+
 export interface WorkflowUploadOwner {
   app_id: string;
   actor_id: string;
@@ -21,7 +27,8 @@ export function isWorkflowUploadOwner(
 
 export interface UploadFile extends Partial<WorkflowUploadOwner> {
   id: string;
-  file: File;
+  file?: File;
+  reference?: Record<string, unknown>;
   name: string;
   size: number;
   type: string;
@@ -66,9 +73,48 @@ export function createUploadFiles(files: File[]): UploadFile[] {
   }));
 }
 
+export function restoreUploadFiles(
+  values: unknown[],
+  owner: WorkflowUploadOwner,
+  restoreScope?: WorkflowUploadOwner
+): UploadFile[] {
+  const allowHistoricalEpoch =
+    restoreScope && isWorkflowUploadOwner(restoreScope, owner);
+  const seen = new Set<string>();
+  return values.flatMap(value => {
+    if (!isProcessedFileItem(value)) return [];
+    const reference = value as Record<string, unknown>;
+    const uploadedId = reference.upload_file_id as string;
+    if (
+      !uploadedId ||
+      seen.has(uploadedId) ||
+      reference.app_id !== owner.app_id ||
+      reference.actor_id !== owner.actor_id ||
+      (!allowHistoricalEpoch && !isWorkflowUploadOwner(reference, owner))
+    )
+      return [];
+    seen.add(uploadedId);
+    return [
+      {
+        ...owner,
+        id: `saved-${uploadedId}`,
+        uploadedId,
+        reference: { ...reference, ...owner },
+        name: typeof reference.name === 'string' ? reference.name : uploadedId,
+        size: typeof reference.size === 'number' ? reference.size : NaN,
+        type:
+          typeof reference.mime_type === 'string' ? reference.mime_type : '',
+        status: 'success' as const,
+        progress: 100,
+      },
+    ];
+  });
+}
+
 export function getDifyFileType(
-  file: Pick<UploadFile, 'type'>
+  file: Pick<UploadFile, 'type'> & { name?: string }
 ): 'image' | 'document' | 'audio' | 'video' | 'custom' {
+  if (file.name) return inputFileType(file.name, file.type);
   const mime = file.type.toLowerCase();
   if (mime.startsWith('image/')) return 'image';
   if (mime.startsWith('audio/')) return 'audio';
@@ -102,22 +148,28 @@ export function getSuccessfulFilesPayload(
         file.uploadedId &&
         (!owner || isWorkflowUploadOwner(file, owner))
     )
-    .map(file => ({
-      type: getDifyFileType(file),
-      transfer_method: 'local_file' as const,
-      upload_file_id: file.uploadedId as string,
-      name: file.name,
-      size: file.size,
-      mime_type: file.type,
-      ...(file.app_id && file.actor_id && typeof file.actor_epoch === 'number'
-        ? {
-            app_id: file.app_id,
-            actor_id: file.actor_id,
-            actor_epoch: file.actor_epoch,
+    .map(file =>
+      file.reference
+        ? { ...file.reference }
+        : {
+            type: getDifyFileType(file),
+            transfer_method: 'local_file' as const,
+            upload_file_id: file.uploadedId as string,
+            name: file.name,
+            size: file.size,
+            mime_type: file.type,
+            ...(file.app_id &&
+            file.actor_id &&
+            typeof file.actor_epoch === 'number'
+              ? {
+                  app_id: file.app_id,
+                  actor_id: file.actor_id,
+                  actor_epoch: file.actor_epoch,
+                }
+              : {}),
+            ...(file.previewUrl ? { preview_url: file.previewUrl } : {}),
           }
-        : {}),
-      ...(file.previewUrl ? { preview_url: file.previewUrl } : {}),
-    }));
+    );
 
   return {
     successIds: successfulFiles
@@ -129,62 +181,42 @@ export function getSuccessfulFilesPayload(
 }
 
 export function getMaxFiles(
-  config: FileUploadFieldConfig,
+  slot: AgentAttachmentSlot | undefined,
   isSingleFileMode: boolean
 ) {
-  return isSingleFileMode ? 1 : config.max_length || config.number_limits || 1;
+  return slot
+    ? Math.min(slot.maxCount, isSingleFileMode ? 1 : slot.maxCount)
+    : 0;
 }
 
-export function getFileTypeInfo(config: FileUploadFieldConfig, t: TranslateFn) {
-  const types = config.allowed_file_types;
-  if (!types || types.length === 0) {
-    return {
-      hint: t('supportAllTypes'),
-      accept: undefined,
-    };
-  }
-
-  const typeMap: Record<string, { name: string; accept: string }> = {
-    image: {
-      name: t('fileTypes.image'),
-      accept: 'image/*,.jpg,.jpeg,.png,.gif,.bmp,.svg,.webp,.ico,.tiff,.tif',
-    },
-    document: {
-      name: t('fileTypes.document'),
-      accept:
-        '.txt,.md,.mdx,.markdown,.pdf,.html,.xlsx,.xls,.doc,.docx,.csv,.eml,.msg,.pptx,.ppt,.xml,.epub',
-    },
-    audio: {
-      name: t('fileTypes.audio'),
-      accept: 'audio/*,.mp3,.wav,.flac,.aac,.ogg,.wma,.m4a,.opus',
-    },
-    video: {
-      name: t('fileTypes.video'),
-      accept: 'video/*,.mp4,.avi,.mkv,.mov,.wmv,.flv,.webm,.m4v,.3gp',
-    },
-    custom: { name: t('fileTypes.custom'), accept: '*/*' },
-  };
-
-  const supportedTypes = types
-    .map(type => typeMap[type]?.name || type)
-    .filter(Boolean);
-  const acceptStrings = types
-    .map(type => typeMap[type]?.accept)
-    .filter(Boolean);
-
+export function getFileTypeInfo(
+  slot: AgentAttachmentSlot | undefined,
+  t: TranslateFn
+) {
+  const extensions = slot ? inputFileExtensionsForSlot(slot) : [];
   return {
-    hint:
-      supportedTypes.length > 0
-        ? t('supportTypes', { types: supportedTypes.join('、') })
-        : t('supportAllTypes'),
-    accept: acceptStrings.length > 0 ? acceptStrings.join(',') : undefined,
+    hint: t('supportTypes', {
+      types: extensions.map(extension => `.${extension}`).join(', '),
+    }),
+    accept: extensions.map(extension => `.${extension}`).join(','),
   };
 }
 
-export function getFileSizeHint(config: FileUploadFieldConfig, t: TranslateFn) {
-  return config.max_file_size_mb
-    ? t('maxFileSize', { size: config.max_file_size_mb })
-    : '';
+export function getFileSizeHint(
+  slot: AgentAttachmentSlot | undefined,
+  t: TranslateFn
+) {
+  return (
+    slot?.allowedTypes
+      .map(type => {
+        const limit = slot.maxBytesByType[type];
+        return limit === undefined
+          ? ''
+          : `${t(`fileTypes.${type}`)}: ${formatBytes(limit)}`;
+      })
+      .filter(Boolean)
+      .join(', ') ?? ''
+  );
 }
 
 export function getFileSummary(uploadFile: UploadFile) {

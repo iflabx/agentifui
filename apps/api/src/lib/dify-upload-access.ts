@@ -3,14 +3,50 @@ import { queryRowsWithPgSystemContext } from './pg-context';
 
 export async function registerDifyUpload(
   scope: DifyUploadScope,
-  boundOnce = false
+  boundOnce = false,
+  metadata?: { name: string; size: number; type: string }
 ): Promise<void> {
   await queryRowsWithPgSystemContext(
-    `INSERT INTO dify_upload_access(user_id,service_instance_id,file_id,bound_once)
-    VALUES($1::uuid,$2::uuid,$3,$4) ON CONFLICT(user_id,service_instance_id,file_id)
-    DO UPDATE SET bound_once=dify_upload_access.bound_once OR EXCLUDED.bound_once`,
-    [scope.userId, scope.serviceInstanceId, scope.fileId, boundOnce]
+    `INSERT INTO dify_upload_access(user_id,service_instance_id,file_id,bound_once,file_name,byte_size,mime_type)
+    VALUES($1::uuid,$2::uuid,$3,$4,$5,$6,$7) ON CONFLICT(user_id,service_instance_id,file_id)
+    DO UPDATE SET bound_once=dify_upload_access.bound_once OR EXCLUDED.bound_once,
+      file_name=COALESCE(dify_upload_access.file_name,EXCLUDED.file_name),
+      byte_size=COALESCE(dify_upload_access.byte_size,EXCLUDED.byte_size),
+      mime_type=COALESCE(dify_upload_access.mime_type,EXCLUDED.mime_type)`,
+    [
+      scope.userId,
+      scope.serviceInstanceId,
+      scope.fileId,
+      boundOnce,
+      metadata?.name ?? null,
+      metadata?.size ?? null,
+      metadata?.type ?? null,
+    ]
   );
+}
+
+export async function loadDifyUploadMetadata(scope: DifyUploadScope): Promise<{
+  name: string;
+  size: number;
+  type: string;
+} | null> {
+  if (!(await canReadDifyUpload(scope))) return null;
+  const rows = await queryRowsWithPgSystemContext<{
+    file_name: string | null;
+    byte_size: string | number | null;
+    mime_type: string | null;
+  }>(
+    `SELECT file_name,byte_size,mime_type FROM dify_upload_access
+     WHERE user_id=$1::uuid AND service_instance_id=$2::uuid AND file_id=$3`,
+    [scope.userId, scope.serviceInstanceId, scope.fileId]
+  );
+  const row = rows[0];
+  if (!row?.file_name || row.byte_size === null) return null;
+  return {
+    name: row.file_name,
+    size: Number(row.byte_size),
+    type: row.mime_type || '',
+  };
 }
 
 export async function canReadDifyUpload(
@@ -40,7 +76,10 @@ async function checkDifyUploadAccess(
         AND $5::uuid IS NULL AND ($4::uuid IS NULL OR c.id=$4::uuid)
         AND $3 IN(SELECT dify_upload_file_ids(m.metadata)))
     OR EXISTS (SELECT 1 FROM app_executions e WHERE e.user_id=$1::uuid AND e.service_instance_id=$2::uuid
-      AND e.status<>'deleted' AND $4::uuid IS NULL AND ($5::uuid IS NULL OR e.id=$5::uuid)
+      AND e.status<>'deleted' AND ($4::uuid IS NULL OR e.conversation_id=$4::uuid) AND ($5::uuid IS NULL OR e.id=$5::uuid)
+      AND (e.conversation_id IS NULL OR EXISTS (SELECT 1 FROM conversations execution_conversation
+        WHERE execution_conversation.id=e.conversation_id AND execution_conversation.status='active'
+          AND execution_conversation.user_id=$1::uuid AND execution_conversation.app_id=$2::text))
       AND $3 IN(SELECT dify_upload_file_ids(e.inputs)))
     OR ($6 AND $4::uuid IS NULL AND $5::uuid IS NULL AND EXISTS(SELECT 1 FROM dify_upload_access
       WHERE user_id=$1::uuid AND service_instance_id=$2::uuid AND file_id=$3 AND NOT bound_once))

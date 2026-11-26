@@ -160,50 +160,54 @@ describe('text generation persistence', () => {
     expect(mockedUpdateExecutionStatus).not.toHaveBeenCalled();
   });
 
-  it('retries complete save with compact metadata when detailed save fails', async () => {
-    const updateCurrentExecution = jest.fn();
-    const addExecutionToHistory = jest.fn();
-    const updatedExecution = {
-      id: 'exec-2',
-      status: 'completed',
-      outputs: { generated_text: 'Final answer' },
-    } as Partial<AppExecution> as AppExecution;
+  it.each([false, true])(
+    'retries complete save with compact metadata when detailed save fails (preserve status: %p)',
+    async preserveStatusOnSaveFailure => {
+      const updateCurrentExecution = jest.fn();
+      const addExecutionToHistory = jest.fn();
+      const updatedExecution = {
+        id: 'exec-2',
+        status: 'completed',
+        outputs: { generated_text: 'Final answer' },
+      } as Partial<AppExecution> as AppExecution;
 
-    mockedUpdateCompleteExecutionData
-      .mockResolvedValueOnce({
-        success: false,
-        error: new Error('detailed failed'),
-      })
-      .mockResolvedValueOnce({
+      mockedUpdateCompleteExecutionData
+        .mockResolvedValueOnce({
+          success: false,
+          error: new Error('detailed failed'),
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          data: updatedExecution,
+        });
+
+      const result = await saveCompleteTextGenerationData({
+        executionId: 'exec-2',
+        finalResult: {
+          usage: { total_tokens: 8 },
+        },
+        taskId: 'task-2',
+        messageId: 'msg-2',
+        generatedText: '<think>reasoning</think>\n\nFinal answer',
+        instanceId: 'app-2',
+        preserveStatusOnSaveFailure,
+        updateCurrentExecution,
+        addExecutionToHistory,
+      });
+
+      expect(result).toEqual({
         success: true,
         data: updatedExecution,
       });
-
-    const result = await saveCompleteTextGenerationData({
-      executionId: 'exec-2',
-      finalResult: {
-        usage: { total_tokens: 8 },
-      },
-      taskId: 'task-2',
-      messageId: 'msg-2',
-      generatedText: '<think>reasoning</think>\n\nFinal answer',
-      instanceId: 'app-2',
-      updateCurrentExecution,
-      addExecutionToHistory,
-    });
-
-    expect(result).toEqual({
-      success: true,
-      data: updatedExecution,
-    });
-    expect(mockedUpdateCompleteExecutionData).toHaveBeenCalledTimes(2);
-    expect(
-      mockedUpdateCompleteExecutionData.mock.calls[1]?.[1].outputs
-    ).toEqual({
-      generated_text: 'Final answer',
-    });
-    expect(mockedUpdateExecutionStatus).not.toHaveBeenCalled();
-  });
+      expect(mockedUpdateCompleteExecutionData).toHaveBeenCalledTimes(2);
+      expect(
+        mockedUpdateCompleteExecutionData.mock.calls[1]?.[1].outputs
+      ).toEqual({
+        generated_text: 'Final answer',
+      });
+      expect(mockedUpdateExecutionStatus).not.toHaveBeenCalled();
+    }
+  );
 
   it('marks execution failed when both complete-save attempts fail', async () => {
     const updateCurrentExecution = jest.fn();
@@ -253,6 +257,37 @@ describe('text generation persistence', () => {
     );
     expect(addExecutionToHistory).not.toHaveBeenCalled();
     expect(mockedConversationEmit).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves task status without callbacks when both complete-save attempts fail', async () => {
+    const updateCurrentExecution = jest.fn();
+    const addExecutionToHistory = jest.fn();
+    mockedUpdateCompleteExecutionData.mockResolvedValue({
+      success: false,
+      error: new Error('result save unavailable'),
+    });
+
+    const result = await saveCompleteTextGenerationData({
+      executionId: 'exec-task',
+      finalResult: { usage: { total_tokens: 6 } },
+      taskId: 'task-1',
+      messageId: 'msg-1',
+      generatedText: 'Completed upstream answer',
+      instanceId: 'app-1',
+      preserveStatusOnSaveFailure: true,
+      updateCurrentExecution,
+      addExecutionToHistory,
+    });
+
+    expect(result).toEqual({
+      success: false,
+      error: new Error('Text generation output could not be fully persisted'),
+    });
+    expect(mockedUpdateCompleteExecutionData).toHaveBeenCalledTimes(2);
+    expect(mockedUpdateExecutionStatus).not.toHaveBeenCalled();
+    expect(updateCurrentExecution).not.toHaveBeenCalled();
+    expect(addExecutionToHistory).not.toHaveBeenCalled();
+    expect(mockedConversationEmit).not.toHaveBeenCalled();
   });
 
   it('strips think content before saving stopped text generation output', async () => {

@@ -6,6 +6,8 @@ import { Check, ChevronDown } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 
 interface CustomSelectProps {
+  id?: string;
+  labelId?: string;
   value: string;
   onChange: (value: string) => void;
   options: string[];
@@ -24,6 +26,8 @@ interface CustomSelectProps {
  * - Unified stone color theme
  */
 export function CustomSelect({
+  id,
+  labelId,
   value,
   onChange,
   options,
@@ -35,6 +39,7 @@ export function CustomSelect({
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const selectRef = useRef<HTMLDivElement>(null);
   const optionsRef = useRef<HTMLDivElement>(null);
+  const listboxId = React.useId();
 
   // Click outside to close the dropdown
   useEffect(() => {
@@ -143,11 +148,14 @@ export function CustomSelect({
   return (
     <div ref={selectRef} className="relative">
       <div
+        id={id}
+        aria-labelledby={labelId}
         onClick={() => setIsOpen(!isOpen)}
         className={triggerClasses}
         tabIndex={0}
         role="combobox"
         aria-expanded={isOpen}
+        aria-controls={listboxId}
         aria-haspopup="listbox"
       >
         <span
@@ -168,7 +176,7 @@ export function CustomSelect({
       </div>
 
       <div className={dropdownClasses}>
-        <div ref={optionsRef} role="listbox">
+        <div id={listboxId} ref={optionsRef} role="listbox">
           {options.map((option, index) => {
             const isSelected = option === value;
             return (

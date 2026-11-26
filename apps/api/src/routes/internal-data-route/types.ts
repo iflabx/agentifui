@@ -62,6 +62,8 @@ export interface AppExecutionRow {
   id: string;
   user_id: string;
   service_instance_id: string;
+  conversation_id?: string | null;
+  submission_id?: string | null;
   execution_type: string;
   external_execution_id: string | null;
   task_id: string | null;
@@ -227,6 +229,7 @@ export const LOCAL_CONVERSATION_ACTIONS = new Set([
 ]);
 
 export const LOCAL_MESSAGE_ACTIONS = new Set([
+  'messages.getChatflowInitialInputs',
   'messages.getLatest',
   'messages.getPage',
   'messages.findDuplicate',
@@ -236,6 +239,8 @@ export const LOCAL_MESSAGE_ACTIONS = new Set([
 ]);
 
 export const LOCAL_APP_EXECUTION_ACTIONS = new Set([
+  'appExecutions.reserveTask',
+  'appExecutions.getByConversation',
   'appExecutions.getUserExecutions',
   'appExecutions.getByServiceInstance',
   'appExecutions.getById',
@@ -369,6 +374,9 @@ export const ADMIN_ACTIONS = new Set([
 ]);
 
 export const AUTH_ACTIONS = new Set([
+  'messages.getChatflowInitialInputs',
+  'appExecutions.reserveTask',
+  'appExecutions.getByConversation',
   'groups.getUserAccessibleApps',
   'groups.checkUserAppPermission',
   'groups.incrementAppUsage',

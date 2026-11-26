@@ -108,7 +108,7 @@ describe('useFilePreviewStore', () => {
     );
   });
 
-  it('downloads with the same stable upload ID and URL used for preview', async () => {
+  it('downloads by stable upload ID, ignoring an old backend preview URL', async () => {
     mockedPreviewDifyFile.mockRejectedValueOnce(
       new Error('stop before creating browser URL')
     );
@@ -116,7 +116,7 @@ describe('useFilePreviewStore', () => {
       currentPreviewFile: createAttachment({
         app_id: 'attachment-app',
         preview_file_id: 'message-file-id',
-        preview_url: '/api/dify/attachment-app/files/file-1/preview',
+        preview_url: 'https://dify.example/files/file-1/file-preview?sign=old',
       }),
     });
     await useFilePreviewStore.getState().downloadFile();
@@ -125,7 +125,6 @@ describe('useFilePreviewStore', () => {
       'file-1',
       {
         as_attachment: true,
-        preview_url: '/api/dify/attachment-app/files/file-1/preview',
       }
     );
   });

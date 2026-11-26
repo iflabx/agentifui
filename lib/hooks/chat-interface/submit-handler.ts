@@ -10,6 +10,7 @@ import { appDrafts } from '@lib/stores/chat-input-scope-cache';
 import { useChatInputStore } from '@lib/stores/chat-input-store';
 import type { ChatMessage } from '@lib/stores/chat-store';
 import { selectIsProcessing, useChatStore } from '@lib/stores/chat-store';
+import { useChatflowExecutionStore } from '@lib/stores/chatflow-execution-store';
 import type { ChatflowExecutionView } from '@lib/stores/chatflow-execution-store/types';
 import { useCurrentAppStore } from '@lib/stores/current-app-store';
 import type { PendingConversation } from '@lib/stores/pending-conversation-store';
@@ -210,7 +211,8 @@ export function useChatSubmitHandler({
       message: string,
       files?: unknown[],
       inputs?: Record<string, unknown>,
-      editSourceId?: string
+      editSourceId?: string,
+      onInputAccepted?: () => void
     ) => {
       if (isSubmittingRef.current) {
         console.warn('[handleSubmit] Submission blocked: already submitting.');
@@ -342,6 +344,7 @@ export function useChatSubmitHandler({
 
       const unregister = registerChatInputSubmission(owner.draftScope);
       if (onNodeEvent && currentPathname) {
+        useChatflowExecutionStore.getState().startExecution();
         executionView = bindChatflowExecutionView(
           {
             actorId: currentUserId,
@@ -363,7 +366,18 @@ export function useChatSubmitHandler({
         });
         return await executeChatSubmit({
           editSourceId,
-          onAccepted: accepted => acceptInput(appConfig.appId, accepted),
+          onUserMessage: id => {
+            if (
+              executionView &&
+              useChatflowExecutionStore.getState().view === executionView &&
+              isCurrent()
+            )
+              useChatflowExecutionStore.setState({ processMessageId: id });
+          },
+          onAccepted: accepted => {
+            acceptInput(appConfig.appId, accepted);
+            onInputAccepted?.();
+          },
           viewScope,
           message,
           files: submittedFiles,

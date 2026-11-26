@@ -21,6 +21,17 @@ beforeEach(() => {
 });
 
 describe('trusted agent app configuration', () => {
+  it('reads the display description without changing the runtime fingerprint', async () => {
+    jest
+      .mocked(queryRowsWithPgSystemContext)
+      .mockResolvedValueOnce([
+        { ...row, description: 'Configured description' },
+      ]);
+    const app = await resolveAgentApp(row.id, 'actor');
+    expect(app.description).toBe('Configured description');
+    const unchanged = await resolveAgentApp(row.id, 'actor');
+    expect(app.fingerprint).toBe(unchanged.fingerprint);
+  });
   it.each([true, false, undefined])(
     'preserves result-profile intent %s independently of the assistant name',
     async enabled => {

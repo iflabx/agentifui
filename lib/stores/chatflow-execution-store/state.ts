@@ -12,6 +12,8 @@ export const CHATFLOW_EMPTY_PROGRESS: ChatflowExecutionProgress = {
 export function createChatflowExecutionBaseState(): Pick<
   ChatflowExecutionState,
   | 'view'
+  | 'processMessageId'
+  | 'openProcessMessageId'
   | 'nodes'
   | 'currentNodeId'
   | 'isExecuting'
@@ -26,6 +28,8 @@ export function createChatflowExecutionBaseState(): Pick<
 > {
   return {
     view: null,
+    processMessageId: null,
+    openProcessMessageId: null,
     nodes: [],
     currentNodeId: null,
     isExecuting: false,
@@ -43,6 +47,9 @@ export function createChatflowExecutionBaseState(): Pick<
 export function createChatflowExecutionStartState(): Partial<ChatflowExecutionState> {
   return {
     isExecuting: true,
+    processMessageId: null,
+    iterationExpandedStates: {},
+    loopExpandedStates: {},
     error: null,
     canRetry: false,
     nodes: [],
@@ -55,6 +62,8 @@ export function createChatflowExecutionStartState(): Partial<ChatflowExecutionSt
 export function createChatflowExecutionResetState(): Partial<ChatflowExecutionState> {
   return {
     view: null,
+    processMessageId: null,
+    openProcessMessageId: null,
     nodes: [],
     currentNodeId: null,
     isExecuting: false,

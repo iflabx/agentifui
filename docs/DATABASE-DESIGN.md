@@ -155,6 +155,14 @@ Important details:
 - `messages.user_id -> profiles.id`
 - `app_executions.user_id -> profiles.id`
 - `app_executions.service_instance_id -> service_instances.id`
+- `app_executions.conversation_id -> conversations.id` is nullable for legacy
+  executions and cascades on physical conversation deletion. Task conversations
+  use server-managed `metadata.runtime = "dify-task"`; execution inputs, outputs
+  and process snapshots are projected as chat rounds, not copied into `messages`.
+- New task submissions have a `submission_id` unique per user and application.
+  Conversation history pages by `(created_at, id)` rather than mutable status time.
+- Task conversation soft deletion also soft-deletes its executions transactionally.
+  Late results cannot restore deleted executions or their input-file access.
 - message ordering uses `created_at`, `sequence_index`, and `id` for stable sorting
 - indexes exist for conversation timelines, app execution lookup, and provider usage tracing
 
@@ -196,6 +204,15 @@ conversation, root/resume relationships, pending credentials and quota records.
 The human-input migrations add `waiting` to execution status and a guarded
 pre-dispatch claim-release path. A waiting task, a closed event-stream segment
 and a completed task are not interchangeable states.
+
+`20261124100000_add_agent_input_files.sql` adds two RLS-protected tables for
+shared Agent input files. `agent_input_files` associates a platform file ID
+with the user, service instance, backend, configuration fingerprint, native
+reference and slot. `agent_input_file_messages` links a file to saved messages.
+After binding, reads require an eligible owned message in an active conversation
+with the same backend binding. Neither table stores file bytes or replaces the
+existing native Dify upload registry. Dify uses protected application storage
+for these uploads; LangChain bytes remain upstream.
 
 Legacy Dify conversations retain their compatible browser-managed persistence;
 the negotiated Dify and LangChain paths use the server writer. Read/refresh/history

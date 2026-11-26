@@ -169,9 +169,10 @@ function WorkflowLayoutSession({ instanceId }: WorkflowLayoutProps) {
         handledExecutionIdRef.current = null;
         clearHistoricalExecutionState();
         clearRequestedExecutionId();
-        await executeWorkflow(formData);
+        return await executeWorkflow(formData);
       } catch (error) {
         console.error('[Workflow layout] Execution failed:', error);
+        return false;
       }
     },
     [clearHistoricalExecutionState, clearRequestedExecutionId, executeWorkflow]

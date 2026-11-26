@@ -1,3 +1,4 @@
+import { isSingleConversation } from '@agentifui/shared';
 import { createDecipheriv, createHash } from 'node:crypto';
 
 import { resolveBackendType } from './agent-backends';
@@ -29,11 +30,14 @@ export interface DifyAppConfig {
   displayName?: string;
   description?: string;
   appType?: string;
+  singleTurn?: boolean;
+  taskInput?: { text_variable?: string | null };
 }
 
 interface ResolveDifyConfigOptions {
   actorUserId?: string | null;
   actorRole?: string | null;
+  serviceInstanceId?: string;
 }
 
 function normalizeActorUserId(
@@ -100,7 +104,8 @@ function readDifyAppType(
 async function resolveScopedServiceInstance(
   appId: string,
   actorUserId: string,
-  actorRole: string
+  actorRole: string,
+  serviceInstanceId?: string
 ): Promise<ServiceInstanceSummaryRow | null> {
   const directRows =
     await queryRowsWithPgUserContext<ServiceInstanceSummaryRow>(
@@ -111,10 +116,10 @@ async function resolveScopedServiceInstance(
         si.id::text AS id,
         si.instance_id
       FROM service_instances si
-      WHERE si.instance_id = $1
+      WHERE ${serviceInstanceId ? 'si.id = $1::uuid' : 'si.instance_id = $1'}
       LIMIT 1
     `,
-      [appId],
+      [serviceInstanceId || appId],
       { statementTimeoutMs: 5000 }
     );
 
@@ -124,13 +129,15 @@ async function resolveScopedServiceInstance(
 async function resolveServiceInstanceWithProvider(
   appId: string,
   actorUserId: string | null,
-  actorRole: string
+  actorRole: string,
+  serviceInstanceId?: string
 ): Promise<ServiceInstanceWithProviderRow | null> {
   if (actorUserId) {
     const scoped = await resolveScopedServiceInstance(
       appId,
       actorUserId,
-      actorRole
+      actorRole,
+      serviceInstanceId
     );
     if (!scoped) {
       return null;
@@ -225,7 +232,8 @@ export async function resolveDifyConfig(
   const serviceInstance = await resolveServiceInstanceWithProvider(
     trimmedAppId,
     actorUserId,
-    actorRole
+    actorRole,
+    options.serviceInstanceId
   );
   if (
     !serviceInstance ||
@@ -273,5 +281,10 @@ export async function resolveDifyConfig(
     displayName: serviceInstance.display_name || serviceInstance.instance_id,
     description: serviceInstance.description || undefined,
     appType: readDifyAppType(serviceInstance.config),
+    ...(isSingleConversation(serviceInstance.config?.conversation_turns)
+      ? { singleTurn: true }
+      : {}),
+    taskInput: serviceInstance.config?.task_input as
+      { text_variable?: string | null } | undefined,
   };
 }

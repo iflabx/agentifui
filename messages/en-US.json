@@ -200,6 +200,13 @@
         "sending": "Sending...",
         "uploading": "Uploading...",
         "uploadFailed": "Upload failed",
+        "capabilitiesUnavailable": "Unable to load input requirements. Retry.",
+        "capabilitiesChanged": "Input requirements have changed. Review the fields and attachments before sending again.",
+        "capabilitiesUnsupported": "Input requirements are not supported. Check the app configuration.",
+        "filesRequired": "Add the required attachments.",
+        "uploadPending": "Wait for uploads or remove failed files.",
+        "localUploadUnavailable": "This attachment purpose does not support local uploads.",
+        "chooseAttachmentField": "Use the attachment button to choose a field, then select your files.",
         "retryUpload": "Retry upload",
         "removeFile": "Remove file",
         "fileUploadError": "File upload error",
@@ -236,6 +243,10 @@
         "loadError": "Failed to load file types",
         "reachedLimit": "Limit reached ({currentFiles}/{maxFiles})",
         "maxUpload": "Upload up to {maxFiles} files",
+        "attachmentRequired": "Add {count, plural, one {# attachment} other {# attachments}} to continue",
+        "attachmentRemaining": "Add {count, plural, one {# more attachment} other {# more attachments}} to continue",
+        "attachmentRange": "Add {minCount}–{maxCount} attachments to continue",
+        "attachmentSelected": "{count, plural, one {# attachment} other {# attachments}} added · Up to {maxCount}",
         "noUploadLimit": "No upload limit"
       },
       "modelSelector": {
@@ -269,6 +280,15 @@
       }
     },
     "chatflow": {
+      "composer": {
+        "singleTurn": "This app runs one task per conversation. Start a new task to run it again.",
+        "newTask": "Start new task",
+        "parameters": "Conversation settings",
+        "requiredRemaining": "{count} required fields remaining",
+        "initialized": "These settings apply to this conversation. Start a new chat to change them.",
+        "initialMissing": "Initial settings were not saved for this older conversation.",
+        "initialFiles": "Initial files remain available in the conversation messages."
+      },
       "loading": {
         "inputConfig": "Loading input configuration..."
       },
@@ -603,7 +623,7 @@
             "generation": "Text generation",
             "text": "Text interaction"
           },
-          "textOnlyLimit": "Text-only entry: no attachments, citations, voice or custom variables.",
+          "configuredInputs": "Available inputs and attachments follow the application configuration.",
           "noDescription": "No description",
           "defaultType": "App"
         },
@@ -1436,6 +1456,19 @@
           }
         },
         "page": {
+          "taskInput": {
+            "label": "Task main text",
+            "auto": "Automatic (one free-text field)",
+            "parametersOnly": "Parameters only",
+            "autoResolved": "Automatic mapping: message text goes to {variable}.",
+            "explicitResolved": "Explicit mapping: message text goes to {variable}.",
+            "parametersOnlyNote": "Message text is disabled; fill parameters and files instead.",
+            "ambiguous": "Multiple free-text fields: choose a main text variable or use parameters only. Message text is disabled.",
+            "noText": "No free-text field found. Message text is disabled.",
+            "invalid": "Configured variable {variable} is missing or is not a free-text field. Execution is unavailable until the mapping is corrected.",
+            "invalidOption": "Unavailable variable: {variable}",
+            "schemaNote": "Based on the saved parameter schema; synchronize from Dify to refresh."
+          },
           "title": {
             "edit": "Edit Application Instance",
             "add": "Add Application Instance"
@@ -1525,13 +1558,24 @@
             "title": "Dify Parameter Configuration",
             "appTypeNote": "Applications with \"Model\" type will appear in the chat interface model selector"
           },
+          "conversationTurns": {
+            "label": "Conversation turns (optional)",
+            "default": "Application default",
+            "single": "Single turn",
+            "multi": "Multi-turn",
+            "independent": "Independent runs",
+            "note": "Only select multi-turn if the upstream application is designed to use prior context.",
+            "independentNote": "This application supports multiple independent runs in one window, without carrying context forward.",
+            "humanInputNote": "An agent with human confirmation handles one task per conversation.",
+            "typeMismatch": "Dify reports {type}. The saved application type was not changed."
+          },
           "backend": {
             "label": "Backend",
             "assistantId": "Assistant ID",
             "resultProfileLabel": "Enable Deep Agent result artifacts",
             "resultProfileNote": "Enable only for an assistant verified to support phase4.result.v1, regardless of its name. Disabling pauses new profile tasks; existing results remain readable.",
             "aguiLabel": "Use public AG-UI chat for new app conversations",
-            "aguiNote": "Only new text-only app conversations in marketplace chatbot apps are enabled. Files, citations, speech and custom variables are not supported. The default model and model selector are unchanged. Existing legacy conversations keep their compatibility path; bound public conversations never fall back.",
+            "aguiNote": "Applies to new marketplace Chatbot conversations. Available inputs and attachments follow the application configuration. Existing conversations keep their original interaction mode.",
             "langchainNote": "Use the assistant exposed by this service. Text and read-only tools only; service credentials stay on the server.",
             "validation": {
               "instanceIdRequired": "Enter an application identifier.",
@@ -2853,7 +2897,7 @@
   "langchain": {
     "resultSingleBatch": "This app publishes one batch of results per conversation. Start a new conversation to generate another batch.",
     "resultProfilePaused": "New tasks are currently paused for this app. You can still view existing records.",
-    "textOnlyNote": "This conversation is text-only. Files, citations, speech and custom variables are not supported. Existing legacy conversations retain their compatible features.",
+    "textOnlyNote": "This application does not accept attachments in this conversation.",
     "cancelled": "Cancelled",
     "interrupted": "Interrupted",
     "loadMore": "Load earlier messages",
@@ -2920,5 +2964,30 @@
       "copied": "Source copied.",
       "copyFailed": "Could not copy the source. Please select and copy its text."
     }
+  },
+  "taskChat": {
+    "loading": "Loading tasks…",
+    "loginRequired": "Please sign in",
+    "unavailable": "Application unavailable",
+    "independent": "Each send runs independently; previous tasks are not conversation memory.",
+    "placeholder": "Enter task input",
+    "parametersOnly": "Fill the parameters or attach required files above",
+    "taskTitle": "Task execution",
+    "replayed": "This submission already exists. It will not be run again automatically. Check its saved status.",
+    "submitFailed": "Submission could not be confirmed. Retry preserves the submission ID.",
+    "loadOlder": "Load earlier tasks",
+    "historyFailed": "Task history is unavailable. Check access and retry.",
+    "retry": "Retry",
+    "welcome": "Start a task using the input below.",
+    "parameterTask": "Parameter or file task",
+    "noProcess": "No saved execution details",
+    "running": "Running",
+    "unknown": "Outcome unconfirmed. The upstream task may still be running; it will not be restarted automatically.",
+    "completed": "Completed",
+    "failed": "Failed",
+    "stopped": "Stopped",
+    "runAgain": "Use these inputs again",
+    "viewResult": "View full result",
+    "recoverTask": "Mark interrupted and prepare another run"
   }
 }

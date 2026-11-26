@@ -1,6 +1,15 @@
 import { create } from 'zustand';
 
 import type { MessageEditSource } from '../../packages/shared/src/message-edit';
+import { type AttachmentFile, useAttachmentStore } from './attachment-store';
+import {
+  composerDraftKey,
+  parseDraftScope,
+  readComposerDraft,
+  scopedComposerDraftKey,
+  writeComposerDraft,
+} from './chat-draft-session';
+import { useChatInputStore } from './chat-input-store';
 
 export interface LangchainDraftSnapshot {
   editSource?: MessageEditSource;
@@ -16,6 +25,8 @@ export interface PendingAgentSubmission {
   submissionId: string;
   content: string;
   snapshot?: LangchainDraftSnapshot;
+  fileDrafts?: { scope: string; files: AttachmentFile[] }[];
+  inputFiles?: { id: string; name: string; size: number; type: string }[];
 }
 
 interface LangchainDraftState {
@@ -60,6 +71,13 @@ export function langchainDraftScope(
   return JSON.stringify([epoch, actor, app, target]);
 }
 
+function agentTextKey(scope: string, state: LangchainDraftState) {
+  return scopedComposerDraftKey('agent-text', scope, {
+    ...state,
+    actorSessionId: useChatInputStore.getState().actorSessionId,
+  });
+}
+
 export const useLangchainDraftStore = create<LangchainDraftState>(
   (set, get) => ({
     actorId: null,
@@ -89,6 +107,9 @@ export const useLangchainDraftStore = create<LangchainDraftState>(
       );
       if (!pending) return;
       if (accepted && pending.snapshot) state.consumeSnapshot(pending.snapshot);
+      if (accepted)
+        for (const entry of pending.fileDrafts ?? [])
+          useAttachmentStore.getState().consumeFiles(entry.scope, entry.files);
       const next = { ...get().pendingSubmissions };
       delete next[JSON.stringify([pending.appId, pending.target])];
       set({ pendingSubmissions: next });
@@ -107,25 +128,56 @@ export const useLangchainDraftStore = create<LangchainDraftState>(
     selectScope: (appId, target, fresh) => {
       const state = get();
       if (!state.actorId) return null;
+      const actorId = state.actorId;
+      const sessionId = useChatInputStore.getState().actorSessionId;
       const scope = langchainDraftScope(
         state.actorEpoch,
-        state.actorId,
+        actorId,
         appId,
         target
       );
-      if (!target.startsWith('new:'))
-        return state.conversationScopes[scope] || scope;
-      const key = JSON.stringify([state.actorEpoch, state.actorId, appId]);
-      if (!fresh && state.activeNewScopes[key])
-        return state.activeNewScopes[key];
-      const newScope = langchainDraftScope(
-        state.actorEpoch,
-        state.actorId,
-        appId,
-        `new:${crypto.randomUUID()}`
+      const newSession = target.startsWith('new:');
+      const saved = readComposerDraft(
+        composerDraftKey(
+          actorId,
+          sessionId,
+          newSession ? 'agent-new' : 'agent-conversation',
+          appId,
+          newSession ? null : target
+        )
       );
-      set({ activeNewScopes: { ...state.activeNewScopes, [key]: newScope } });
-      return newScope;
+      const remembered =
+        typeof saved === 'string' && saved.startsWith('new:')
+          ? langchainDraftScope(state.actorEpoch, actorId, appId, saved)
+          : undefined;
+      const key = JSON.stringify([state.actorEpoch, actorId, appId]);
+      let selected = state.conversationScopes[scope] || remembered || scope;
+      if (newSession) {
+        selected =
+          (!fresh && (state.activeNewScopes[key] || remembered)) ||
+          langchainDraftScope(
+            state.actorEpoch,
+            actorId,
+            appId,
+            `new:${crypto.randomUUID()}`
+          );
+        writeComposerDraft(
+          composerDraftKey(actorId, sessionId, 'agent-new', appId, null),
+          parseDraftScope(selected)[3]
+        );
+        set({ activeNewScopes: { ...state.activeNewScopes, [key]: selected } });
+      }
+      if (!get().drafts[selected]) {
+        const text = readComposerDraft(agentTextKey(selected, state));
+        if (typeof text === 'string' && text)
+          set(current => ({
+            drafts: {
+              ...current.drafts,
+              [selected]: { scope: selected, text, revision: 0 },
+            },
+          }));
+      }
+      return selected;
     },
     bindConversation: (scope, appId, conversationId) => {
       const state = get();
@@ -140,7 +192,24 @@ export const useLangchainDraftStore = create<LangchainDraftState>(
       );
       if (state.conversationScopes[target] === scope) return;
       const activeNewScopes = { ...state.activeNewScopes };
-      if (activeNewScopes[key] === scope) delete activeNewScopes[key];
+      const sessionId = useChatInputStore.getState().actorSessionId;
+      if (activeNewScopes[key] === scope) {
+        delete activeNewScopes[key];
+        writeComposerDraft(
+          composerDraftKey(state.actorId, sessionId, 'agent-new', appId, null),
+          undefined
+        );
+      }
+      writeComposerDraft(
+        composerDraftKey(
+          state.actorId,
+          sessionId,
+          'agent-conversation',
+          appId,
+          conversationId
+        ),
+        parseDraftScope(scope)[3]
+      );
       set({
         activeNewScopes,
         conversationScopes: { ...state.conversationScopes, [target]: scope },
@@ -151,6 +220,7 @@ export const useLangchainDraftStore = create<LangchainDraftState>(
       const prefix =
         JSON.stringify([state.actorEpoch, state.actorId]).slice(0, -1) + ',';
       if (!state.actorId || !scope.startsWith(prefix)) return;
+      writeComposerDraft(agentTextKey(scope, state), text || undefined);
       set({
         drafts: {
           ...state.drafts,

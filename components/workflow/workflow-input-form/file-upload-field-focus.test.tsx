@@ -5,7 +5,20 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react';
 
 import { StrictMode } from 'react';
 
+import type { AgentAttachmentSlot } from '../../../packages/shared/src/agent-input';
 import { FileUploadField } from './file-upload-field';
+
+const slot: AgentAttachmentSlot = {
+  key: 'docs',
+  label: 'Docs',
+  target: 'inputs',
+  minCount: 1,
+  maxCount: 1,
+  methods: ['local_file'],
+  allowedTypes: ['document'],
+  extensions: ['txt'],
+  maxBytesByType: { document: 100 },
+};
 
 jest.mock('@lib/auth/better-auth/http-client', () => ({
   getCurrentSession: jest.fn(),
@@ -33,6 +46,7 @@ describe('file picker focus authentication refresh', () => {
     const view = render(
       <StrictMode>
         <FileUploadField
+          slot={slot}
           config={{}}
           instanceId="app"
           value={null}

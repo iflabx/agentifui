@@ -1,3 +1,5 @@
+import type { AgentInputCapabilities } from '@agentifui/shared';
+
 import {
   type AgentDeliverables,
   MAX_RESULT_ARTIFACT_BYTES,
@@ -11,6 +13,15 @@ import {
   isLangChainId,
   parseAGUIStream,
 } from './ag-ui';
+import {
+  LANGCHAIN_INPUT_PROFILE,
+  type LangChainInputFileRef,
+  type LangChainInputPath,
+  isLangChainInputFileId,
+  langChainInputPath,
+  parseLangChainInputProfile,
+  validateLangChainTurnInput,
+} from './input-profile';
 
 export { LangChainUpstreamError } from './ag-ui';
 export type { AGUIEvent } from './ag-ui';
@@ -20,6 +31,7 @@ export interface LangChainConfig {
   apiKey: string;
   assistantId?: string;
   resultProfileEnabled?: boolean;
+  scope?: { actorId: string; appId: string };
 }
 
 export interface LangChainTurn {
@@ -27,6 +39,7 @@ export interface LangChainTurn {
   runId: string;
   messageId: string;
   content: string;
+  inputFiles?: LangChainInputFileRef[];
   signal?: AbortSignal;
   beforeDispatch?: () => Promise<void>;
   onDispatch?: () => void;
@@ -43,7 +56,8 @@ export interface LangChainRun {
 
 export interface LangChainCapabilities {
   assistantId: string;
-  aguiPath?: '/ag-ui' | '/ag-ui/deep';
+  aguiPath?: '/ag-ui' | '/ag-ui/deep' | LangChainInputPath;
+  inputCapabilities?: AgentInputCapabilities;
   resultProfile?: string;
   resultFormats?: string[];
 }
@@ -83,12 +97,29 @@ function requestConfig(config: LangChainConfig, path: string) {
   ) {
     throw new LangChainUpstreamError('INVALID_REQUEST');
   }
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${config.apiKey}`,
+    'Content-Type': 'application/json',
+  };
+  if (
+    path !== '/capabilities' &&
+    (config.scope || langChainInputPath(config.assistantId ?? ''))
+  ) {
+    const { actorId, appId } = config.scope ?? {};
+    if (
+      typeof actorId !== 'string' ||
+      typeof appId !== 'string' ||
+      !/^[A-Za-z0-9_.-]{1,128}$/.test(actorId) ||
+      !/^[A-Za-z0-9_.-]{1,128}$/.test(appId)
+    ) {
+      throw new LangChainUpstreamError('INVALID_REQUEST');
+    }
+    headers['X-AgentifUI-Actor'] = actorId;
+    headers['X-AgentifUI-App'] = appId;
+  }
   return {
     url: `${base.toString().replace(/\/+$/, '')}${path}`,
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`,
-      'Content-Type': 'application/json',
-    },
+    headers,
   };
 }
 
@@ -101,7 +132,7 @@ function requireIds(...values: unknown[]) {
 async function withRequest<T>(
   config: LangChainConfig,
   path: string,
-  init: RequestInit,
+  init: RequestInit & { headers?: Record<string, string> },
   signal: AbortSignal | undefined,
   timeoutMs: number,
   consume: (response: Response, signal: AbortSignal) => Promise<T>
@@ -120,9 +151,14 @@ async function withRequest<T>(
   }, timeoutMs);
   let response: Response | undefined;
   try {
+    const headers: Record<string, string> = { ...request.headers };
+    if (init.body instanceof FormData) delete headers['Content-Type'];
+    new Headers(init.headers).forEach((value, key) => {
+      headers[key] = value;
+    });
     response = await fetch(request.url, {
       ...init,
-      headers: { ...request.headers, ...init.headers },
+      headers,
       signal: controller.signal,
       redirect: 'error',
     });
@@ -219,6 +255,7 @@ async function readBytes(
     while (true) {
       if (signal.aborted) throw new LangChainUpstreamError('UPSTREAM_ABORTED');
       const result = await reader.read();
+      if (signal.aborted) throw new LangChainUpstreamError('UPSTREAM_ABORTED');
       if (result.done) break;
       bytes += result.value.byteLength;
       if (bytes > maxBytes)
@@ -251,6 +288,97 @@ export async function nativeJSON(
     signal,
     JSON_TIMEOUT_MS,
     (response, signal) => readJSON(response, signal, true)
+  );
+}
+
+export async function getThreadState(
+  config: LangChainConfig,
+  threadId: string,
+  signal?: AbortSignal
+): Promise<Record<string, unknown>> {
+  requireIds(threadId);
+  return withRequest(
+    config,
+    `/threads/${encodeURIComponent(threadId)}/state`,
+    { method: 'GET' },
+    signal,
+    JSON_TIMEOUT_MS,
+    (response, upstreamSignal) => readJSON(response, upstreamSignal)
+  );
+}
+
+function inputFilePath(config: LangChainConfig, fileId?: string) {
+  const assistant = config.assistantId;
+  if (
+    !assistant ||
+    !langChainInputPath(assistant) ||
+    (fileId !== undefined && !isLangChainInputFileId(fileId))
+  ) {
+    throw new LangChainUpstreamError('INVALID_REQUEST');
+  }
+  const path = `/assistants/${encodeURIComponent(assistant)}/files`;
+  return fileId === undefined ? path : `${path}/${fileId}`;
+}
+
+export async function uploadNativeInputFile(
+  config: LangChainConfig,
+  slotKey: string,
+  file: File
+): Promise<Record<string, unknown>> {
+  const body = new FormData();
+  body.append('slotKey', slotKey);
+  body.append('file', file);
+  return withRequest(
+    config,
+    inputFilePath(config),
+    { method: 'POST', body },
+    undefined,
+    35000,
+    (response, signal) => readJSON(response, signal)
+  );
+}
+
+export async function getNativeInputFileMetadata(
+  config: LangChainConfig,
+  fileId: string
+): Promise<Record<string, unknown>> {
+  return withRequest(
+    config,
+    inputFilePath(config, fileId),
+    { method: 'GET' },
+    undefined,
+    JSON_TIMEOUT_MS,
+    (response, signal) => readJSON(response, signal)
+  );
+}
+
+export async function getNativeInputFileContent(
+  config: LangChainConfig,
+  fileId: string,
+  expected: { size: number; type: string }
+): Promise<Uint8Array> {
+  return withRequest(
+    config,
+    `${inputFilePath(config, fileId)}/content`,
+    { method: 'GET' },
+    undefined,
+    JSON_TIMEOUT_MS,
+    async (response, signal) => {
+      if (
+        response.headers
+          .get('content-type')
+          ?.split(';')[0]
+          .trim()
+          .toLowerCase() !== expected.type
+      ) {
+        throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
+      }
+      const bytes = await readBytes(response, signal, expected.size);
+      if (bytes.byteLength !== expected.size) {
+        throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
+      }
+      return bytes;
+    }
   );
 }
 
@@ -382,7 +510,9 @@ export async function getCapabilities(
       const selectedId = config.assistantId ?? advertisedId;
       if (!isLangChainId(selectedId))
         throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
+      const inputPath = langChainInputPath(selectedId);
       if (
+        !inputPath &&
         agents.length === 0 &&
         config.assistantId &&
         advertisedAssistantId !== config.assistantId
@@ -391,17 +521,31 @@ export async function getCapabilities(
           assistantId: advertisedAssistantId,
         };
       }
-      const selected = agents.find(
+      const matching = agents.filter(
         value =>
           value &&
           typeof value === 'object' &&
           (value as Record<string, unknown>).assistant_id === selectedId
-      ) as Record<string, unknown> | undefined;
+      ) as Record<string, unknown>[];
+      const selected = matching[0];
+      if (matching.length > 1)
+        throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
+      if (inputPath && selected?.ag_ui_path !== inputPath)
+        throw new LangChainUpstreamError('INPUT_PROFILE_UNSUPPORTED');
       if (agents.length > 0 && !selected)
         throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
       const rawPath = selected?.ag_ui_path ?? '/ag-ui';
-      if (rawPath !== '/ag-ui' && rawPath !== '/ag-ui/deep')
+      if (
+        rawPath !== '/ag-ui' &&
+        rawPath !== '/ag-ui/deep' &&
+        !(inputPath && rawPath === inputPath)
+      )
         throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
+      if (!inputPath && selected && Object.hasOwn(selected, 'inputs'))
+        throw new LangChainUpstreamError('INPUT_PROFILE_UNSUPPORTED');
+      const inputCapabilities = inputPath
+        ? parseLangChainInputProfile(selected?.inputs)
+        : undefined;
       const resultProfile = selected?.result_profile;
       if (resultProfile !== undefined && typeof resultProfile !== 'string')
         throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
@@ -414,7 +558,14 @@ export async function getCapabilities(
         throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');
       const capabilities: LangChainCapabilities = {
         assistantId: selectedId,
-        ...(selected ? { aguiPath: rawPath } : {}),
+        ...(selected
+          ? {
+              aguiPath:
+                inputPath ||
+                (rawPath === '/ag-ui/deep' ? '/ag-ui/deep' : '/ag-ui'),
+            }
+          : {}),
+        ...(inputCapabilities ? { inputCapabilities } : {}),
         ...(resultProfile ? { resultProfile } : {}),
         ...(Array.isArray(resultFormats)
           ? { resultFormats: resultFormats as string[] }
@@ -534,26 +685,8 @@ export async function* streamTurn(
   turn: LangChainTurn
 ): AsyncGenerator<AGUIEvent> {
   requireIds(turn.threadId, turn.runId, turn.messageId);
-  if (
-    typeof turn.content !== 'string' ||
-    !turn.content.trim() ||
-    [...turn.content].length > 16000
-  ) {
-    throw new LangChainUpstreamError('INVALID_REQUEST');
-  }
-  const body = JSON.stringify({
-    threadId: turn.threadId,
-    runId: turn.runId,
-    messages: [{ id: turn.messageId, role: 'user', content: turn.content }],
-    state: {},
-    tools: [],
-    context: [],
-    forwardedProps: {},
-  });
-  if (Buffer.byteLength(body, 'utf8') > 64 * 1024) {
-    throw new LangChainUpstreamError('INVALID_REQUEST');
-  }
-  let aguiPath: '/ag-ui' | '/ag-ui/deep' = '/ag-ui';
+  let aguiPath: NonNullable<LangChainCapabilities['aguiPath']> = '/ag-ui';
+  let inputCapabilities: AgentInputCapabilities | undefined;
   if (
     config.assistantId !== undefined ||
     config.resultProfileEnabled !== undefined
@@ -565,12 +698,37 @@ export async function* streamTurn(
     )
       throw new LangChainUpstreamError('INVALID_REQUEST');
     if (
-      config.resultProfileEnabled === false ||
+      (config.resultProfileEnabled === false &&
+        !capabilities.inputCapabilities) ||
       supportsResultArtifacts(capabilities) !==
         (config.resultProfileEnabled === true)
     )
       throw new LangChainUpstreamError('INVALID_REQUEST');
     aguiPath = capabilities.aguiPath ?? '/ag-ui';
+    inputCapabilities = capabilities.inputCapabilities;
+  }
+  validateLangChainTurnInput(inputCapabilities, turn.content, turn.inputFiles);
+  const body = JSON.stringify({
+    threadId: turn.threadId,
+    runId: turn.runId,
+    messages: [{ id: turn.messageId, role: 'user', content: turn.content }],
+    state: {},
+    tools: [],
+    context: [],
+    forwardedProps: inputCapabilities
+      ? {
+          agentifuiInput: {
+            profile: LANGCHAIN_INPUT_PROFILE,
+            attachments: turn.inputFiles!.map(({ fileId, slotKey }) => ({
+              fileId,
+              slotKey,
+            })),
+          },
+        }
+      : {},
+  });
+  if (Buffer.byteLength(body, 'utf8') > 64 * 1024) {
+    throw new LangChainUpstreamError('INVALID_REQUEST');
   }
   const request = requestConfig(config, aguiPath);
   await turn.beforeDispatch?.();

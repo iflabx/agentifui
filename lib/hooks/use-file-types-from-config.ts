@@ -3,137 +3,99 @@
 import { FILE_TYPE_CONFIG, FileTypeKey } from '@lib/constants/file-types';
 import { useCurrentAppStore } from '@lib/stores/current-app-store';
 import type { ServiceInstance } from '@lib/types/database';
-import { DifyFileUploadConfig } from '@lib/types/dify-parameters';
+import { formatBytes } from '@lib/utils';
 
-import React from 'react';
-import { useMemo } from 'react';
+import React, { useMemo } from 'react';
+
+import {
+  type AgentAttachmentSlot,
+  INPUT_FILE_EXTENSIONS,
+  validateInputFile,
+} from '../../packages/shared/src/agent-input';
+import { useAgentInputCapabilities } from './use-agent-input-capabilities';
 
 export interface FileType {
   title: string;
   extensions: string[];
   icon: React.ReactNode;
   acceptString: string;
-  maxSize: string; // File size limit
+  maxSize: string;
 }
 
 export interface FileUploadConfig {
-  enabled: boolean; // Whether file upload is enabled
-  maxFiles: number; // Maximum number of files
-  supportedMethods: ('local_file' | 'remote_url')[]; // Supported upload methods
-  hasFileTypes: boolean; // Whether there are enabled file types
-  allowedExtensions: string[]; // Supported file extensions from database
+  enabled: boolean;
+  maxFiles: number;
+  supportedMethods: ('local_file' | 'remote_url')[];
+  hasFileTypes: boolean;
+  allowedExtensions: string[];
 }
 
-const generateAcceptString = (extensions: string[]): string => {
-  return extensions.map(ext => `.${ext}`).join(',');
-};
-
-const normalizeExtension = (extension: string): string =>
-  extension.trim().replace(/^\./, '').toLowerCase();
-
-const FILE_TYPE_MAPPING: Record<string, FileTypeKey> = {
-  document: 'document',
-  image: 'image',
-  audio: 'audio',
-  video: 'video',
-  custom: 'other',
-};
+export function fileTypesForSlot(slot?: AgentAttachmentSlot): FileType[] {
+  if (!slot || slot.maxCount === 0 || !slot.methods.includes('local_file'))
+    return [];
+  return slot.allowedTypes.flatMap(type => {
+    const extensions = (
+      type === 'custom' ? slot.extensions : INPUT_FILE_EXTENSIONS[type]
+    ).filter(
+      extension =>
+        !validateInputFile(slot, {
+          name: `file.${extension}`,
+          size: 0,
+          type: type === 'video' ? 'video/mpeg' : undefined,
+        })
+    );
+    const limit = slot.maxBytesByType[type];
+    if (!extensions.length || limit === undefined) return [];
+    const title: FileTypeKey = type === 'custom' ? 'other' : type;
+    return [
+      {
+        title,
+        extensions: [...extensions],
+        icon: React.createElement(FILE_TYPE_CONFIG[title].icon, {
+          className: 'h-4 w-4',
+        }),
+        acceptString: extensions.map(extension => `.${extension}`).join(','),
+        maxSize: formatBytes(limit),
+      },
+    ];
+  });
+}
 
 export function useFileTypesFromConfig(
   resolvedInstance?: ServiceInstance | null
 ) {
   const selected = useCurrentAppStore();
-  const currentAppInstance =
+  const instance =
     resolvedInstance === undefined
       ? selected.currentAppInstance
       : resolvedInstance;
-
-  const { fileTypes, uploadConfig } = useMemo(() => {
-    if (!currentAppInstance?.config?.dify_parameters?.file_upload) {
-      return {
-        fileTypes: [],
-        uploadConfig: {
-          enabled: false,
-          maxFiles: 0,
-          supportedMethods: [],
-          hasFileTypes: false,
-          allowedExtensions: [],
-        },
-      };
-    }
-
-    const fileUploadConfig =
-      currentAppInstance.config.dify_parameters.file_upload;
-
-    const actualConfig = fileUploadConfig as DifyFileUploadConfig;
-
-    if (!actualConfig.enabled) {
-      return {
-        fileTypes: [],
-        uploadConfig: {
-          enabled: false,
-          maxFiles: 0,
-          supportedMethods: [],
-          hasFileTypes: false,
-          allowedExtensions: [],
-        },
-      };
-    }
-
-    const enabledTypes: FileType[] = [];
-    const maxFiles = actualConfig.number_limits || 0;
-    const supportedMethods: ('local_file' | 'remote_url')[] = [
-      ...((actualConfig.allowed_file_upload_methods as (
-        'local_file' | 'remote_url'
-      )[]) || []),
-    ];
-    const allowedFileTypes = actualConfig.allowed_file_types || [];
-    const allowedExtensions = actualConfig.allowed_file_extensions || [];
-    const normalizedAllowedExtensions = new Set(
-      allowedExtensions.map(normalizeExtension).filter(Boolean)
-    );
-    const hasExtensionAllowlist = normalizedAllowedExtensions.size > 0;
-
-    allowedFileTypes.forEach((fileTypeKey: string) => {
-      const configKey = FILE_TYPE_MAPPING[fileTypeKey] || fileTypeKey;
-      const config = FILE_TYPE_CONFIG[configKey as FileTypeKey];
-      if (config) {
-        const extensions = hasExtensionAllowlist
-          ? config.extensions.filter(extension =>
-              normalizedAllowedExtensions.has(normalizeExtension(extension))
-            )
-          : [...config.extensions];
-
-        if (extensions.length === 0) {
-          return;
-        }
-
-        enabledTypes.push({
-          title: configKey,
-          extensions,
-          icon: React.createElement(config.icon, { className: 'h-4 w-4' }),
-          acceptString: generateAcceptString(extensions),
-          maxSize: config.maxSize,
-        });
-      } else {
-      }
-    });
-
-    const uploadConfig: FileUploadConfig = {
-      enabled: enabledTypes.length > 0 && maxFiles > 0,
-      maxFiles,
-      supportedMethods,
-      hasFileTypes: enabledTypes.length > 0,
-      allowedExtensions,
-    };
-
-    return { fileTypes: enabledTypes, uploadConfig };
-  }, [currentAppInstance]);
-
+  const live = useAgentInputCapabilities(instance?.id ?? null);
+  const capabilities = useMemo(
+    () =>
+      live.capabilities &&
+      instance?.config?.interaction_protocol === 'ag-ui/1.0'
+        ? { ...live.capabilities, attachmentSlots: [] }
+        : live.capabilities,
+    [live.capabilities, instance?.config?.interaction_protocol]
+  );
+  const slots =
+    capabilities?.status === 'ready'
+      ? capabilities.attachmentSlots.filter(slot => slot.target === 'files')
+      : [];
+  const slot = slots.length === 1 ? slots[0] : undefined;
+  const fileTypes = useMemo(() => fileTypesForSlot(slot), [slot]);
   return {
+    ...live,
+    capabilities,
+    slot,
     fileTypes,
-    uploadConfig,
-    isLoading: false,
-    error: null,
+    uploadConfig: {
+      enabled: fileTypes.length > 0,
+      maxFiles: slot?.maxCount ?? 0,
+      supportedMethods:
+        slot?.methods.filter(method => method === 'local_file') ?? [],
+      hasFileTypes: fileTypes.length > 0,
+      allowedExtensions: slot?.extensions ?? [],
+    } satisfies FileUploadConfig,
   };
 }

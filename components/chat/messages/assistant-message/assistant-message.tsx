@@ -34,8 +34,11 @@ import {
   ThinkBlockStatus,
 } from '@components/chat/markdown-block/think-block-header';
 import { AssistantMessageActions } from '@components/chat/message-actions';
+import { FileAttachmentDisplay } from '@components/chat/messages/user-message/file-attachment-display';
 import { ReferenceSources } from '@components/chat/reference-sources';
 import { useThrottledThinkPreview } from '@lib/hooks/use-throttled-think-preview';
+import { difyResultFilePath } from '@lib/services/dify/file-service';
+import type { MessageAttachment } from '@lib/stores/chat-store';
 import { cn } from '@lib/utils';
 import {
   MessageBlock,
@@ -147,6 +150,8 @@ interface AssistantMessageProps {
   isStreaming: boolean;
   wasManuallyStopped: boolean;
   metadata?: Record<string, any>; // Message metadata
+  resultFiles?: MessageAttachment[];
+  resultAppId?: string;
   className?: string;
   onRegenerate?: () => void;
   onFeedback?: (isPositive: boolean) => void;
@@ -172,11 +177,43 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = React.memo(
     isStreaming,
     wasManuallyStopped,
     metadata,
+    resultFiles,
+    resultAppId,
     className,
     onRegenerate,
     onFeedback,
   }) => {
     const t = useTranslations('pages.chat');
+    const resolveResultLink = (value: string) => {
+      if (!resultAppId) return value;
+      try {
+        const url = new URL(value, 'http://relative.invalid');
+        if (!['http:', 'https:'].includes(url.protocol)) return value;
+        const key =
+          /\/files\/tools\/([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\.[a-z0-9]{1,12})$/i.exec(
+            url.pathname
+          )?.[1];
+        if (
+          !key ||
+          !['timestamp', 'nonce', 'sign'].every(name =>
+            url.searchParams.get(name)
+          )
+        )
+          return value;
+        const attachment = resultFiles?.find(
+          item => item.source === 'dify-output' && item.upload_file_id === key
+        );
+        return attachment?.resultMessageId
+          ? difyResultFilePath(
+              resultAppId,
+              attachment.resultMessageId,
+              attachment.upload_file_id
+            )
+          : undefined;
+      } catch {
+        return value;
+      }
+    };
 
     const normalizedContent = useMemo(() => {
       if (isStreaming || wasManuallyStopped) {
@@ -335,7 +372,8 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = React.memo(
       },
       a({ children, href, ...props }: any) {
         // Ensure href is a string
-        const linkUrl = typeof href === 'string' ? href : '';
+        const linkUrl = typeof href === 'string' ? resolveResultLink(href) : '';
+        if (linkUrl === undefined) return <span>{children}</span>;
 
         // If the link contains an image, render as image link
         const hasImageChild = React.Children.toArray(children).some(
@@ -388,7 +426,7 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = React.memo(
         // Regular link
         return (
           <a
-            href={href}
+            href={linkUrl}
             className={cn(
               'underline',
               'text-sky-600 hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300'
@@ -416,7 +454,7 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = React.memo(
       // If image is inside a link, skip rendering here (handled by parent <a>)
       img({ src, alt, node, ...props }: any) {
         // Ensure src is a string
-        const imageUrl = typeof src === 'string' ? src : '';
+        const imageUrl = typeof src === 'string' ? resolveResultLink(src) : '';
 
         // If inside a link, skip rendering
         const isInsideLink = node?.parent?.tagName === 'a';
@@ -424,6 +462,8 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = React.memo(
         if (isInsideLink) {
           return null;
         }
+        if (imageUrl === undefined)
+          return <span>{alt || t('messages.imageLink')}</span>;
 
         // Render image as a link
         return (
@@ -510,6 +550,14 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = React.memo(
           );
         })}
 
+        {resultAppId && Boolean(resultFiles?.length) && (
+          <FileAttachmentDisplay
+            attachments={resultFiles ?? []}
+            appId={resultAppId}
+            className="justify-start"
+          />
+        )}
+
         {/* Reference sources and attribution - Show at the bottom if exists */}
         {(metadata?.dify_retriever_resources ||
           metadata?.dify_metadata?.retriever_resources) && (
@@ -538,7 +586,7 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = React.memo(
               (
                 metadata?.dify_retriever_resources ||
                 metadata?.dify_metadata?.retriever_resources
-              )?.length > 0
+              )?.length > 0 || resultFiles?.length
                 ? 'mt-0'
                 : '-mt-4'
             )}

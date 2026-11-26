@@ -3,7 +3,6 @@
 import { TypeWriter } from '@components/ui/typewriter';
 import { useCurrentApp } from '@lib/hooks/use-current-app';
 import { useDateFormatter } from '@lib/hooks/use-date-formatter';
-import { useWelcomeLayout } from '@lib/hooks/use-welcome-layout';
 import { useTypewriterStore } from '@lib/stores/ui/typewriter-store';
 import { cn } from '@lib/utils';
 
@@ -72,13 +71,6 @@ export const WelcomeScreen = ({ className, username }: WelcomeScreenProps) => {
       };
     }
   }, [finalText.length]);
-
-  // Get welcome text position and title style from layout hook
-  const {
-    welcomeText: welcomePosition,
-    welcomeTextTitle,
-    needsCompactLayout,
-  } = useWelcomeLayout();
 
   // Get opening statement config directly from current app instance
   // No API call, only DB
@@ -178,23 +170,10 @@ export const WelcomeScreen = ({ className, username }: WelcomeScreenProps) => {
   };
 
   return (
-    <div
-      className={cn(
-        'welcome-screen flex flex-col items-center justify-center text-center',
-        className
-      )}
-      style={welcomePosition}
-    >
+    <div className={cn('welcome-screen mb-4 px-4 text-center', className)}>
       <div className="w-full">
         {/* Main title container: uses highest priority width settings provided by Hook */}
-        <h2
-          className={cn(
-            'mx-auto mb-2 font-bold',
-            needsCompactLayout ? 'text-xl' : 'text-2xl',
-            'leading-tight'
-          )}
-          style={welcomeTextTitle}
-        >
+        <h2 className="text-xl leading-tight font-bold break-words sm:text-2xl">
           {/* Optimized: Intelligent typewriter effect with dynamic speed adjustment based on text length */}
           {/* Short text: slow typing for ceremonial feel; Long text: fast typing to avoid waiting */}
           {/* Added key property to restart typewriter animation on app switch */}
@@ -206,10 +185,6 @@ export const WelcomeScreen = ({ className, username }: WelcomeScreenProps) => {
             delay={typewriterConfig.delay} // Dynamic delay
             waitingEffect={finalText.endsWith('...')}
             onComplete={handleTypewriterComplete} // Typewriter complete callback
-            className={cn(
-              'leading-tight font-bold',
-              needsCompactLayout ? 'text-xl' : 'text-3xl'
-            )}
           />
         </h2>
       </div>

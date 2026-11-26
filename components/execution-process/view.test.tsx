@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { useFilePreviewStore } from '@lib/stores/ui/file-preview-store';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import { useState } from 'react';
 
@@ -13,6 +14,82 @@ const items: ExecutionProcessItem[] = [
 ];
 
 describe('shared execution process UI', () => {
+  it('opens one controlled right-side panel at a time and returns focus on Escape', () => {
+    function Panels() {
+      const [selected, setSelected] = useState<string | null>(null);
+      return (
+        <>
+          {['first', 'second'].map(id => (
+            <ExecutionProcessDisclosure
+              key={id}
+              items={[{ ...items[0], title: `Activity ${id}` }]}
+              placement="panel"
+              title={`Task ${id}`}
+              open={selected === id}
+              onOpenChange={open => setSelected(open ? id : null)}
+            />
+          ))}
+        </>
+      );
+    }
+    const { container } = render(<Panels />);
+    fireEvent.click(
+      screen.getAllByRole('button', { name: 'executionProcess.view' })[0]
+    );
+    expect(screen.getByText('Task first')).toBeInTheDocument();
+    const firstPanel = document.querySelector<HTMLDivElement>(
+      '[data-execution-process-panel]'
+    );
+    expect(firstPanel).toHaveClass('fixed', 'md:right-4', 'bottom-0');
+    expect(firstPanel?.parentElement).toBe(document.body);
+    expect(container).not.toContainElement(firstPanel);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'executionProcess.view' })
+    );
+    expect(screen.queryByText('Task first')).not.toBeInTheDocument();
+    expect(screen.getByText('Task second')).toBeInTheDocument();
+    expect(
+      document.querySelectorAll('[data-execution-process-panel]')
+    ).toHaveLength(1);
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    expect(document.querySelector('[data-execution-process-panel]')).toBeNull();
+    expect(
+      screen.getAllByRole('button', { name: 'executionProcess.view' })[1]
+    ).toHaveFocus();
+  });
+
+  it('allows a running panel to wait for its first activity', () => {
+    render(
+      <ExecutionProcessDisclosure items={[]} executing placement="panel" />
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'executionProcess.view' })
+    );
+    expect(screen.getByText('executionProcess.waiting')).toBeInTheDocument();
+  });
+  it('suspends the selected process for file preview without stealing focus on return', () => {
+    render(
+      <>
+        <ExecutionProcessDisclosure items={items} placement="panel" />
+        <button type="button">Preview opener</button>
+      </>
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'executionProcess.view' })
+    );
+    expect(screen.getByRole('region')).toBeInTheDocument();
+    try {
+      act(() => useFilePreviewStore.setState({ isPreviewOpen: true }));
+      expect(screen.queryByRole('region')).not.toBeInTheDocument();
+      const opener = screen.getByRole('button', { name: 'Preview opener' });
+      opener.focus();
+      act(() => useFilePreviewStore.setState({ isPreviewOpen: false }));
+      expect(screen.getByRole('region')).toBeInTheDocument();
+      expect(opener).toHaveFocus();
+    } finally {
+      act(() => useFilePreviewStore.setState({ isPreviewOpen: false }));
+    }
+  });
   it('shows activities and controlled states without a fictional percentage', () => {
     const { container } = render(<ExecutionProcessView items={items} />);
     expect(

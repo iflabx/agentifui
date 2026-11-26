@@ -1,6 +1,6 @@
 'use client';
 
-import { TextGenerationLayout } from '@components/text-generation/text-generation-layout';
+import { TaskChat } from '@components/task-chat/task-chat';
 import { useCurrentApp } from '@lib/hooks/use-current-app';
 import { useAppListStore } from '@lib/stores/app-list-store';
 import { useSidebarStore } from '@lib/stores/sidebar-store';
@@ -10,7 +10,7 @@ import { FileText, Loader2 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 interface TextGenerationPageProps {
   params: Promise<{
@@ -34,6 +34,7 @@ export default function TextGenerationPage({
 }: TextGenerationPageProps) {
   const { instanceId } = React.use(params);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const t = useTranslations('pages.apps');
 
   // --- app related state ---
@@ -225,8 +226,13 @@ export default function TextGenerationPage({
 
   return (
     <div className="relative flex h-full w-full flex-col bg-stone-100 text-stone-900 dark:bg-stone-800 dark:text-gray-100">
-      <div className="min-h-0 flex-1 pt-12">
-        <TextGenerationLayout instanceId={instanceId} />
+      <div className="min-h-0 flex-1">
+        <TaskChat
+          instanceId={instanceId}
+          taskType="text-generation"
+          conversationId={searchParams?.get('conversationId')}
+          executionId={searchParams?.get('executionId')}
+        />
       </div>
     </div>
   );

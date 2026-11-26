@@ -6,7 +6,7 @@ import {
 } from '@agentifui/shared';
 import { randomUUID } from 'node:crypto';
 
-import type { AgentApp } from './agent-app';
+import { type AgentApp, langChainConfigForActor } from './agent-app';
 import { AgentPolicyError } from './agent-backends';
 import { executeHumanInputRun } from './agent-human-input-execution';
 import {
@@ -33,6 +33,7 @@ import {
 } from './agent-submissions';
 import { LangChainRunOutput } from './agui/langchain-output';
 import { projectedAssistantMessages } from './agui/runtime-result';
+import type { LangChainInputFileRef } from './langchain/input-profile';
 import {
   LangChainUpstreamError,
   createThread,
@@ -161,6 +162,7 @@ export async function executeAgentRun(input: {
   app: AgentApp;
   run: AgentRunRecord;
   content: string;
+  inputFiles?: LangChainInputFileRef[];
   emit: (event: AgentClientEvent) => void;
   agui?: { emit: (event: Event) => void };
   report: (context: {
@@ -169,7 +171,10 @@ export async function executeAgentRun(input: {
     orphanThreadId?: string;
   }) => void;
 }): Promise<void> {
-  if (input.app.humanInput) return executeHumanInputRun(input);
+  const config = langChainConfigForActor(input.app, input.run.user_id);
+  const scoped = config.scope !== undefined;
+  if (input.app.humanInput && !scoped && input.inputFiles === undefined)
+    return executeHumanInputRun(input);
   let run = input.run;
   const messages = new Map<string, AgentSavedMessage>();
   const tools = new Map<string, AgentToolSummary>();
@@ -188,21 +193,27 @@ export async function executeAgentRun(input: {
     else input.emit(event);
   };
   try {
+    if (input.app.humanInput || scoped !== (input.inputFiles !== undefined)) {
+      throw new LangChainUpstreamError('INVALID_REQUEST');
+    }
     if (input.agui) {
       const history = await loadRunDisplayHistory(run);
       output = new LangChainRunOutput(run, history, input.agui.emit);
     }
-    knownThreadId = run.thread_id || (await createThread(input.app)).threadId;
+    knownThreadId = run.thread_id || (await createThread(config)).threadId;
     try {
       run = await bindThread(run.id, knownThreadId);
     } catch {
       run = await bindThread(run.id, knownThreadId);
     }
-    for await (const event of streamTurn(input.app, {
+    for await (const event of streamTurn(config, {
       threadId: knownThreadId,
       runId: run.id,
       messageId: run.user_message_id,
       content: input.content,
+      ...(input.inputFiles === undefined
+        ? {}
+        : { inputFiles: input.inputFiles }),
       beforeDispatch: async () => {
         if (input.rootTaskId) await markSubmissionSubmitting(input.rootTaskId);
         claimed = true;
@@ -211,15 +222,18 @@ export async function executeAgentRun(input: {
         submitting = true;
       },
     })) {
-      if (!accepted && event.type !== 'RUN_ERROR') {
+      if (event.type === 'CUSTOM') {
+        run = await recordNativeRun(run.id, event.value.run_id);
+      }
+      if (
+        !accepted &&
+        (scoped ? event.type === 'CUSTOM' : event.type !== 'RUN_ERROR')
+      ) {
         if (input.rootTaskId)
           await confirmSubmission(input.rootTaskId, 'accepted');
         accepted = true;
       }
       switch (event.type) {
-        case 'CUSTOM':
-          run = await recordNativeRun(run.id, event.value.run_id);
-          break;
         case 'TEXT_MESSAGE_START': {
           if (messages.size >= 64)
             throw new LangChainUpstreamError('UPSTREAM_PROTOCOL_ERROR');

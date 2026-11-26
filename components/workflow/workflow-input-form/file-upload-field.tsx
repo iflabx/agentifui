@@ -1,5 +1,6 @@
 'use client';
 
+import { AttachmentPreviewItem } from '@components/chat-input/attachment-preview-item';
 import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
 import { uploadDifyFile } from '@lib/services/dify/file-service';
 import { useChatInputStore } from '@lib/stores/chat-input-store';
@@ -9,8 +10,11 @@ import { AlertCircle } from 'lucide-react';
 import {
   type ChangeEvent,
   type DragEvent,
+  type Ref,
+  type SetStateAction,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -20,16 +24,20 @@ import {
 import { useTranslations } from 'next-intl';
 
 import {
+  type AgentAttachmentSlot,
+  validateInputFile,
+} from '../../../packages/shared/src/agent-input';
+import {
   type FileUploadFieldConfig,
   type UploadFile,
   type WorkflowUploadOwner,
   createUploadFiles,
-  getDifyFileType,
   getFileSizeHint,
   getFileTypeInfo,
   getMaxFiles,
   getSuccessfulFilesPayload,
   isProcessedFileItem,
+  restoreUploadFiles,
 } from './file-upload-field/helpers';
 import { FileUploadDropzone } from './file-upload-field/upload-dropzone';
 import { UploadFileItem } from './file-upload-field/upload-file-item';
@@ -42,6 +50,21 @@ interface FileUploadFieldProps {
   label?: string;
   instanceId: string;
   isSingleFileMode?: boolean;
+  slot?: AgentAttachmentSlot;
+  required?: boolean;
+  onBlockedChange?: (blocked: boolean) => void;
+  onRequirementsChanged?: () => void;
+  restoreScope?: WorkflowUploadOwner;
+  compact?: boolean;
+  showCompactLabel?: boolean;
+  inputId?: string;
+  disabled?: boolean;
+  onCountChange?: (count: number) => void;
+  selectionRef?: Ref<FileUploadSelection>;
+}
+
+export interface FileUploadSelection {
+  selectFiles: (files: File[]) => void;
 }
 
 export function FileUploadField(props: FileUploadFieldProps) {
@@ -60,24 +83,44 @@ export function FileUploadField(props: FileUploadFieldProps) {
 }
 
 function ScopedFileUploadField({
-  config,
   value,
   onChange,
   error,
   label,
   instanceId,
   isSingleFileMode = false,
+  slot,
+  required,
+  onBlockedChange,
+  onRequirementsChanged,
+  restoreScope,
   userId,
   actorEpoch,
   loading,
+  compact = false,
+  showCompactLabel = false,
+  inputId,
+  disabled = false,
+  onCountChange,
+  selectionRef,
 }: FileUploadFieldProps & {
   userId: string | undefined;
   actorEpoch: number;
   loading: boolean;
 }) {
   const t = useTranslations('pages.workflow.fileUpload');
+  const tChat = useTranslations('pages.chat');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([]);
+  const [uploadFiles, setUploadFilesState] = useState<UploadFile[]>([]);
+  const uploadFilesRef = useRef<UploadFile[]>([]);
+  const setUploadFiles = useCallback((update: SetStateAction<UploadFile[]>) => {
+    const next =
+      typeof update === 'function' ? update(uploadFilesRef.current) : update;
+    uploadFilesRef.current = next;
+    setUploadFilesState(next);
+  }, []);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
+  const lastEmittedValue = useRef<unknown>(Symbol());
   const lastSuccessIdsRef = useRef('');
   const attempts = useRef(new Map<string, symbol | null>());
   const activeViewRef = useRef(false);
@@ -102,8 +145,18 @@ function ScopedFileUploadField({
     };
   }, [actorEpoch, userId]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!activeViewRef.current || !owner) return;
+    const actor = useChatInputStore.getState();
+    if (
+      actor.actorId !== owner.actor_id ||
+      actor.actorEpoch !== owner.actor_epoch
+    )
+      return;
+    if (value === lastEmittedValue.current) return;
     if (!value || (Array.isArray(value) && value.length === 0)) {
+      attempts.current.clear();
+      setSelectionError(null);
       setUploadFiles([]);
       return;
     }
@@ -117,6 +170,27 @@ function ScopedFileUploadField({
       isProcessedFileItem(item)
     );
     if (isProcessedFiles) {
+      const restored = restoreUploadFiles(valueArray, owner, restoreScope);
+      const current = uploadFilesRef.current;
+      const sameReferences =
+        restored.length ===
+          current.filter(file => file.status === 'success').length &&
+        restored.every(file =>
+          current.some(
+            existing =>
+              existing.status === 'success' &&
+              existing.uploadedId === file.uploadedId
+          )
+        );
+      if (sameReferences) return;
+      attempts.current.clear();
+      lastSuccessIdsRef.current = getSuccessfulFilesPayload(
+        restored,
+        isSingleFileMode,
+        owner
+      ).successIds;
+      setSelectionError(null);
+      setUploadFiles(restored);
       return;
     }
 
@@ -124,19 +198,22 @@ function ScopedFileUploadField({
       valueArray.filter((file): file is File => file instanceof File)
     );
     if (convertedFiles.length > 0) {
+      attempts.current.clear();
+      convertedFiles.forEach(file => attempts.current.set(file.id, null));
       setUploadFiles(convertedFiles);
     }
-  }, [value]);
+  }, [value, setUploadFiles, owner, restoreScope, isSingleFileMode]);
 
   useLayoutEffect(() => {
     if (!activeViewRef.current || !owner || loading) return;
     const payload = getSuccessfulFilesPayload(
-      uploadFiles,
+      uploadFilesRef.current,
       isSingleFileMode,
       owner
     );
     if (lastSuccessIdsRef.current !== payload.successIds) {
       lastSuccessIdsRef.current = payload.successIds;
+      lastEmittedValue.current = payload.value;
       onChange(payload.value);
     }
   }, [uploadFiles, isSingleFileMode, onChange, owner, loading]);
@@ -167,13 +244,14 @@ function ScopedFileUploadField({
         )
       );
     },
-    []
+    [setUploadFiles]
   );
 
   const uploadFileToDify = useCallback(
     async (uploadFile: UploadFile) => {
       const input = useChatInputStore.getState();
       if (
+        disabled ||
         !activeViewRef.current ||
         loading ||
         !userId ||
@@ -182,6 +260,13 @@ function ScopedFileUploadField({
         attempts.current.get(uploadFile.id) !== null ||
         input.actorId !== userId ||
         input.actorEpoch !== actorEpoch
+      )
+        return;
+      if (
+        !uploadFile.file ||
+        !slot ||
+        validateInputFile(slot, uploadFile.file) ||
+        uploadFilesRef.current.length > slot.maxCount
       )
         return;
       const uploadOwner = {
@@ -227,13 +312,24 @@ function ScopedFileUploadField({
         const errorMessage =
           (uploadError as Error).message || t('uploadFailed');
         updateFileStatus(uploadFile.id, 'error', undefined, errorMessage);
+        onRequirementsChanged?.();
         console.error(
           `[Workflow file upload] Upload failed: ${uploadFile.name}`,
           uploadError
         );
       }
     },
-    [instanceId, userId, actorEpoch, loading, t, updateFileStatus]
+    [
+      instanceId,
+      userId,
+      actorEpoch,
+      loading,
+      t,
+      updateFileStatus,
+      slot,
+      onRequirementsChanged,
+      disabled,
+    ]
   );
 
   useEffect(() => {
@@ -247,19 +343,39 @@ function ScopedFileUploadField({
     (newFiles: File[]) => {
       const input = useChatInputStore.getState();
       if (
+        disabled ||
         !activeViewRef.current ||
         !owner ||
         input.actorId !== owner.actor_id ||
         input.actorEpoch !== owner.actor_epoch
       )
         return;
-      const newUploadFiles = createUploadFiles(newFiles);
+      if (!slot) {
+        setSelectionError('INPUT_CAPABILITIES_UNAVAILABLE');
+        return;
+      }
+      const additions = [...new Set(newFiles)].filter(
+        file => !uploadFilesRef.current.some(entry => entry.file === file)
+      );
+      const nextError =
+        uploadFilesRef.current.length + additions.length >
+        getMaxFiles(slot, isSingleFileMode)
+          ? 'INPUT_TOO_MANY_FILES'
+          : (additions
+              .map(file => validateInputFile(slot, file))
+              .find(Boolean) ?? null);
+      if (nextError) {
+        setSelectionError(nextError);
+        return;
+      }
+      setSelectionError(null);
+      const newUploadFiles = createUploadFiles(additions);
       newUploadFiles.forEach(uploadFile => {
         attempts.current.set(uploadFile.id, null);
       });
       setUploadFiles(prev => [...prev, ...newUploadFiles]);
     },
-    [owner]
+    [owner, slot, isSingleFileMode, setUploadFiles, disabled]
   );
 
   const handleFileInputChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -270,16 +386,33 @@ function ScopedFileUploadField({
     }
   };
 
+  useImperativeHandle(selectionRef, () => ({ selectFiles: handleFileSelect }), [
+    handleFileSelect,
+  ]);
+
   const handleRemoveFile = (id: string) => {
-    if (!activeViewRef.current) return;
+    if (disabled || !activeViewRef.current) return;
     attempts.current.delete(id);
     setUploadFiles(prev => prev.filter(file => file.id !== id));
+    setSelectionError(null);
   };
 
   const handleRetryUpload = useCallback(
     (id: string) => {
+      if (disabled) return;
       const uploadFile = uploadFiles.find(file => file.id === id);
-      if (uploadFile && uploadFile.status === 'error') {
+      if (uploadFile?.file && uploadFile.status === 'error') {
+        const nextError = !slot
+          ? 'INPUT_CAPABILITIES_UNAVAILABLE'
+          : validateInputFile(slot, uploadFile.file);
+        if (
+          nextError ||
+          (slot && uploadFilesRef.current.length > slot.maxCount)
+        ) {
+          setSelectionError(nextError || 'INPUT_TOO_MANY_FILES');
+          return;
+        }
+        setSelectionError(null);
         attempts.current.set(id, null);
         setUploadFiles(prev =>
           prev.map(file =>
@@ -290,7 +423,7 @@ function ScopedFileUploadField({
         );
       }
     },
-    [uploadFiles]
+    [uploadFiles, slot, setUploadFiles, disabled]
   );
 
   const handleDrop = (event: DragEvent) => {
@@ -305,21 +438,119 @@ function ScopedFileUploadField({
     event.preventDefault();
   };
 
-  if (config?.enabled === false) {
-    return null;
-  }
-
   const isUploading = uploadFiles.some(file => file.status === 'uploading');
   const successCount = uploadFiles.filter(
     file => file.status === 'success'
   ).length;
-  const maxFiles = getMaxFiles(config, isSingleFileMode);
-  const canUploadMore = uploadFiles.length < maxFiles;
-  const fileTypeInfo = getFileTypeInfo(config, t);
-  const fileSizeHint = getFileSizeHint(config, t);
+  const maxFiles = getMaxFiles(slot, isSingleFileMode);
+  const canUploadMore = Boolean(
+    slot?.methods.includes('local_file') && uploadFiles.length < maxFiles
+  );
+  const fileTypeInfo = getFileTypeInfo(slot, t);
+  const fileSizeHint = getFileSizeHint(slot, t);
+  const capabilityError = !slot
+    ? uploadFiles.length
+      ? 'INPUT_CAPABILITIES_UNAVAILABLE'
+      : null
+    : uploadFiles.length > maxFiles
+      ? 'INPUT_TOO_MANY_FILES'
+      : uploadFiles
+          .map(file => validateInputFile(slot, file.file ?? file))
+          .find(Boolean);
+  const blocked =
+    Boolean(capabilityError) ||
+    uploadFiles.some(file => file.status !== 'success');
+  useLayoutEffect(() => {
+    onBlockedChange?.(blocked);
+  }, [blocked, onBlockedChange]);
+  useLayoutEffect(() => {
+    onCountChange?.(uploadFiles.length);
+  }, [uploadFiles.length, onCountChange]);
+  const errorCode = error || selectionError || capabilityError;
+  const displayedError =
+    errorCode === 'INPUT_CAPABILITIES_UNAVAILABLE'
+      ? tChat('input.capabilitiesUnavailable')
+      : errorCode === 'INPUT_TOO_MANY_FILES'
+        ? tChat('fileTypeSelector.maxFilesReached', { maxFiles })
+        : errorCode === 'INPUT_FILE_SIZE'
+          ? tChat('fileUpload.fileTooLarge')
+          : errorCode === 'INPUT_FILE_TYPE'
+            ? tChat('fileUpload.unsupportedFormat')
+            : errorCode;
+
+  if (compact)
+    return (
+      <div
+        className={
+          uploadFiles.length || displayedError ? 'px-3 pt-3 pb-2' : undefined
+        }
+      >
+        <input
+          id={inputId}
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          aria-label={label}
+          accept={fileTypeInfo.accept}
+          multiple={!isSingleFileMode && maxFiles - uploadFiles.length > 1}
+          disabled={disabled || !owner || !canUploadMore}
+          onChange={handleFileInputChange}
+        />
+        {uploadFiles.length > 0 && (
+          <div role="group" aria-label={label}>
+            {showCompactLabel && label && (
+              <p className="mb-1 text-xs text-stone-500 dark:text-stone-400">
+                {label}
+              </p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              {uploadFiles.map(file => (
+                <AttachmentPreviewItem
+                  key={file.id}
+                  attachment={file}
+                  disabled={disabled}
+                  onRemove={handleRemoveFile}
+                  onRetry={handleRetryUpload}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+        {displayedError && (
+          <p
+            role="alert"
+            className="mt-2 text-sm text-amber-700 dark:text-amber-300"
+          >
+            {displayedError}
+          </p>
+        )}
+      </div>
+    );
 
   return (
     <div className="space-y-4">
+      {(!slot ||
+        !slot.methods.includes('local_file') ||
+        slot.maxCount === 0) && (
+        <p
+          role="status"
+          className="font-serif text-sm text-stone-600 dark:text-stone-400"
+        >
+          {tChat(
+            !slot
+              ? 'input.capabilitiesUnavailable'
+              : 'fileTypeSelector.notSupported'
+          )}
+        </p>
+      )}
+      {uploadFiles.some(file => file.status !== 'success') && (
+        <p
+          role="status"
+          className="font-serif text-sm text-amber-700 dark:text-amber-300"
+        >
+          {tChat('input.uploadPending')}
+        </p>
+      )}
       {label && (
         <div className="flex items-center gap-3">
           <div
@@ -335,6 +566,7 @@ function ScopedFileUploadField({
             )}
           >
             {label}
+            {required && <span className="ml-1 text-red-500">*</span>}
             {successCount > 0 && (
               <span
                 className={cn(
@@ -352,7 +584,7 @@ function ScopedFileUploadField({
       <FileUploadDropzone
         accept={fileTypeInfo.accept}
         canUploadMore={canUploadMore}
-        error={error}
+        error={displayedError || undefined}
         fileInputRef={fileInputRef}
         fileSizeHint={fileSizeHint}
         fileTypeHint={fileTypeInfo.hint}
@@ -362,11 +594,11 @@ function ScopedFileUploadField({
         onDragOver={handleDragOver}
         onDrop={handleDrop}
         onInputChange={handleFileInputChange}
-        remaining={maxFiles - uploadFiles.length}
+        remaining={Math.max(0, maxFiles - uploadFiles.length)}
         t={t}
       />
 
-      {uploadFiles.length >= maxFiles && (
+      {maxFiles > 0 && uploadFiles.length >= maxFiles && (
         <div
           className={cn(
             'flex items-center gap-3 rounded-xl border px-4 py-3 shadow-lg',
@@ -427,7 +659,7 @@ function ScopedFileUploadField({
         </div>
       )}
 
-      {error && (
+      {displayedError && (
         <div
           className={cn(
             'flex items-center gap-3 rounded-xl border p-4 shadow-lg',
@@ -441,7 +673,7 @@ function ScopedFileUploadField({
               'text-red-700 dark:text-red-300'
             )}
           >
-            {error}
+            {displayedError}
           </p>
         </div>
       )}

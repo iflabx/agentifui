@@ -142,6 +142,8 @@ export interface Provider {
 // ServiceInstanceConfig type definition
 // Used to standardize the structure of ServiceInstance.config
 export interface ServiceInstanceConfig {
+  conversation_turns?: import('../../packages/shared/src/conversation-turns').ConversationTurns;
+  task_input?: { text_variable: string | null };
   backend_type?: 'dify' | 'langchain';
   interaction_protocol?: 'ag-ui/1.0';
   langchain?: {
@@ -189,6 +191,7 @@ export interface ServiceInstanceConfig {
   // These parameters can now be configured directly in the database
   // Uses standard Dify API interface specification
   dify_parameters?: {
+    user_input_form?: import('../services/dify/types').DifyUserInputFormItem[];
     // Opening statement configuration
     opening_statement?: string;
 
@@ -401,6 +404,8 @@ export interface AppExecution {
   id: string;
   user_id: string;
   service_instance_id: string;
+  conversation_id?: string | null;
+  submission_id?: string | null;
   execution_type: ExecutionType;
   external_execution_id: string | null; // workflow_run_id or message_id
   task_id: string | null; // Dify returned task_id (mainly for workflow)

@@ -23,15 +23,17 @@ of the other two by itself.
 | -------------------------------------------------- | ------------------------------------------ | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
 | Dify model entry                                   | Regular chat's model selector              | Existing compatible Dify chat path               | Browser-managed local conversation/message saving                                                      |
 | Dify marketplace chatbot, legacy Agent or chatflow | `/apps`                                    | Existing compatible app-specific chat            | Browser-managed local conversation/message saving                                                      |
-| Dify workflow                                      | `/apps`                                    | Structured input, execution tracker and results  | Separate execution-history/result flow, not ordinary conversational history                            |
-| Dify text generation                               | `/apps`                                    | Form input and generated output                  | Application execution records/results, not a multi-turn chat promise                                   |
-| Opted-in Dify marketplace chatbot                  | `/apps`, shared chat                       | Negotiated AG-UI, text-only                      | Server-managed conversation/run saving; existing unmigrated conversations retain their compatible path |
+| Dify workflow                                      | `/apps`                                    | Structured inputs and independent chat rounds    | Local conversation groups execution records; no upstream chat memory                                   |
+| Dify text generation                               | `/apps`                                    | Form input and independent chat rounds           | Local conversation groups execution records; no upstream chat memory                                   |
+| Opted-in Dify marketplace chatbot                  | `/apps`, shared chat                       | Negotiated AG-UI, compatible fields and uploads  | Server-managed conversation/run saving; existing unmigrated conversations retain their compatible path |
 | Ordinary compatible LangChain Agent                | `/apps`, shared chat                       | Text chat with safe supported activity summaries | Server-managed conversation/run saving; legacy product stream and negotiated AG-UI compatibility       |
+| LangChain input-file profile                       | Separate explicitly configured application | Supported document inputs and tool summaries     | Server-managed messages and file references; file bytes remain upstream                                |
 | LangChain native human-input profile               | Separate explicitly configured application | One task and one approve/reject interruption     | Server-managed run, pending interaction, decision and result state                                     |
 | LangChain frozen-result profile                    | Separate explicitly configured application | Report/CSV preview, download and source excerpts | Server-managed history/immutable manifest; frozen bytes remain at the upstream                         |
 
 The shared Dify opt-in is for eligible marketplace **chatbots**, not model entries,
-chatflows, workflows or arbitrary required-input/file applications. It is not a
+chatflows or workflows. Supported fields and uploads depend on the chatbot's
+effective capabilities. It is not a
 bulk migration of all Dify history. Each conversation has one persistence owner;
 do not enable both browser and server writers to make an integration work.
 
@@ -47,19 +49,19 @@ history reads; preview/download still depend on upstream retention and availabil
 not universal support. **No** means this path does not currently implement the
 feature; enabling it upstream does not make it appear in AgentifUI.
 
-| Capability                              | Existing Dify paths                                   | Shared Dify AG-UI chatbot               | Ordinary LangChain                      | LangChain human input                               |
-| --------------------------------------- | ----------------------------------------------------- | --------------------------------------- | --------------------------------------- | --------------------------------------------------- |
-| Streaming text                          | Conditional on mode                                   | Supported                               | Supported                               | Supported during task/resume                        |
-| Multi-turn chat                         | Conversational modes only                             | Supported                               | Supported                               | No; new task requires new conversation              |
-| Reopen saved chat                       | Conversational modes; execution history is separate   | Supported                               | Supported                               | Supported, including saved decision state           |
-| Structured input and file upload        | Conditional on app/mode and limits                    | No; text-only                           | No general file input                   | No arbitrary forms/files                            |
-| Tool activity                           | Mode-specific displays, not one shared tool contract  | No                                      | Validated names/status summaries        | Supported safe summaries, not raw arguments/results |
-| Approve/reject pause                    | No supported Dify human-input profile                 | No                                      | No                                      | Explicit native-profile opt-in                      |
-| Native stop/cancellation                | Path-specific; some actions are administrator-only    | No                                      | No                                      | No general execution cancellation                   |
-| Native run-status query                 | Path-specific follow-up APIs and access restrictions  | No native run-query capability          | Supported service contract              | Native run/state/list reconciliation                |
-| Edit/regenerate/feedback                | Only where the UI path wires the corresponding action | Not inherited from legacy Dify controls | Not inherited from legacy Dify controls | Not a second decision or regeneration mechanism     |
-| General durable stream/crash recovery   | Not promised                                          | No                                      | No                                      | No                                                  |
-| General managed file-artifact lifecycle | Not promised by file upload or text export            | No                                      | No                                      | No                                                  |
+| Capability                              | Existing Dify paths                                                      | Shared Dify AG-UI chatbot               | Ordinary LangChain                         | LangChain human input                               |
+| --------------------------------------- | ------------------------------------------------------------------------ | --------------------------------------- | ------------------------------------------ | --------------------------------------------------- |
+| Streaming text                          | Conditional on mode                                                      | Supported                               | Supported                                  | Supported during task/resume                        |
+| Multi-turn chat                         | Conversational modes and configured turn policy                          | Conditional on turn policy              | Conditional on turn policy                 | No; new task requires new conversation              |
+| Reopen saved chat                       | Conversations and grouped task rounds; legacy task links remain readable | Supported                               | Supported                                  | Supported, including saved decision state           |
+| Structured input and file upload        | Conditional on app/mode and limits                                       | Compatible fields and local file slots  | Only with the supported input-file profile | No arbitrary forms/files                            |
+| Tool activity                           | Mode-specific displays, not one shared tool contract                     | No                                      | Validated names/status summaries           | Supported safe summaries, not raw arguments/results |
+| Approve/reject pause                    | No supported Dify human-input profile                                    | No                                      | No                                         | Explicit native-profile opt-in                      |
+| Native stop/cancellation                | Path-specific; some actions are administrator-only                       | No                                      | No                                         | No general execution cancellation                   |
+| Native run-status query                 | Path-specific follow-up APIs and access restrictions                     | No native run-query capability          | Supported service contract                 | Native run/state/list reconciliation                |
+| Edit/regenerate/feedback                | Only where the UI path wires the corresponding action                    | Not inherited from legacy Dify controls | Not inherited from legacy Dify controls    | Not a second decision or regeneration mechanism     |
+| General durable stream/crash recovery   | Not promised                                                             | No                                      | No                                         | No                                                  |
+| General managed file-artifact lifecycle | Not promised by file upload or text export                               | No                                      | No                                         | No                                                  |
 
 Native run queries differ from authorized **local** run/save lookup. A Dify
 AG-UI app can retain local saved-result state without implementing a native run
@@ -85,6 +87,13 @@ message/tool anchors; older unordered records are labeled as summaries. Workflow
 execution history can show saved node summaries, including the existing failure
 snapshot formats. These summaries are read-only, not a complete nested execution
 replay; unfinished snapshot nodes have unknown outcomes rather than live timers.
+New native Workflow task rounds also retain their own captured iteration/loop
+and parallel process hierarchy when available. The common chat UI groups these
+independent executions locally; it does not add upstream conversational memory.
+If a request was dispatched but no trustworthy terminal result is available,
+the task is shown as unknown/interrupted, not automatically rerun. Recovering its
+inputs and submitting a new run are separate user actions; recovery does not
+cancel a possibly still-running upstream task.
 Chatflow process tracking remains transient and is not reconstructed after refresh.
 Missing snapshots show no process record, never another live task's steps.
 

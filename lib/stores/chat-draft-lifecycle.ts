@@ -1,4 +1,5 @@
 import { useAttachmentStore } from './attachment-store';
+import { clearComposerDrafts } from './chat-draft-session';
 import { clearChatInputScopeCache } from './chat-input-scope-cache';
 import { useChatInputStore } from './chat-input-store';
 import { useLangchainDraftStore } from './langchain-draft-store';
@@ -12,6 +13,7 @@ export function syncChatDraftActor(
   const input = useChatInputStore.getState();
   const langchain = useLangchainDraftStore.getState();
   const inputChanged = input.setActor(actorId, sessionId);
+  if (!actorId || (inputChanged && input.actorId)) clearComposerDrafts();
   if (!inputChanged && langchain.actorId === actorId) return;
   langchain.setActor(actorId, inputChanged);
   usePendingConversationStore.setState({ pendingConversations: new Map() });

@@ -1,6 +1,6 @@
 'use client';
 
-import { WorkflowLayout } from '@components/workflow/workflow-layout';
+import { TaskChat } from '@components/task-chat/task-chat';
 import { useCurrentApp } from '@lib/hooks/use-current-app';
 import { useAppListStore } from '@lib/stores/app-list-store';
 import { useSidebarStore } from '@lib/stores/sidebar-store';
@@ -10,7 +10,7 @@ import { Blocks, Loader2 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 interface WorkflowPageProps {
   params: Promise<{
@@ -33,6 +33,7 @@ interface WorkflowPageProps {
 export default function WorkflowPage({ params }: WorkflowPageProps) {
   const { instanceId } = React.use(params);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const t = useTranslations('pages.apps');
 
   // --- app related state ---
@@ -235,8 +236,13 @@ export default function WorkflowPage({ params }: WorkflowPageProps) {
         'text-stone-900 dark:text-gray-100'
       )}
     >
-      <div className="h-full overflow-hidden pt-12">
-        <WorkflowLayout instanceId={instanceId} />
+      <div className="h-full overflow-hidden">
+        <TaskChat
+          instanceId={instanceId}
+          taskType="workflow"
+          conversationId={searchParams?.get('conversationId')}
+          executionId={searchParams?.get('executionId')}
+        />
       </div>
     </div>
   );

@@ -31,6 +31,8 @@ import { useCallback, useRef, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
 
+import { isSingleConversation } from '../../packages/shared/src/conversation-turns';
+import { AppIntroduction } from './app-introduction';
 import { AttachmentPreviewBar } from './attachment-preview-bar';
 import { ChatButton } from './button';
 import { useEditResend, useRegisterDifyEdit } from './edit-resend';
@@ -38,7 +40,8 @@ import { FileTypeSelector } from './file-type-selector';
 import { useFocusManager } from './focus-manager';
 import { buildSubmitFiles } from './helpers';
 import { ModelSelectorButton } from './model-selector-button';
-import { useChatInputUploads } from './use-uploads';
+import { SingleTurnEnd } from './single-turn-end';
+import { useChatInputUploads, validateChatAttachments } from './use-uploads';
 import { ChatInputView } from './view';
 
 interface ChatInputProps {
@@ -58,6 +61,8 @@ interface ChatInputProps {
   isTransitioningToWelcome?: boolean;
   requireModelValidation?: boolean;
   showModelSelector?: boolean;
+  beforeInput?: React.ReactNode;
+  afterInput?: React.ReactNode;
 }
 
 export const ChatInput = ({
@@ -73,6 +78,8 @@ export const ChatInput = ({
   isTransitioningToWelcome = false,
   requireModelValidation = true,
   showModelSelector = true,
+  beforeInput,
+  afterInput,
 }: ChatInputProps) => {
   const t = useTranslations('pages.chat');
   const tModeration = useTranslations('errors.system.moderation');
@@ -88,6 +95,11 @@ export const ChatInput = ({
   const { message, setMessage, isWelcomeScreen, currentRoute } =
     useChatInputStore();
   const attachments = useAttachmentStore(state => state.files);
+  const continuingConversation = Boolean(
+    route.ready &&
+    currentRoute !== 'default' &&
+    JSON.parse(currentRoute)[3]?.startsWith('conversation:')
+  );
   const messages = useChatStore(state => state.messages);
   const {
     instance: inputApp,
@@ -95,6 +107,31 @@ export const ChatInput = ({
     retry: retryInputApp,
   } = useChatInputApp(route.appId, route.ready);
   const fileConfig = useFileTypes(inputApp);
+  const accepted = useChatInputStore(state =>
+    Boolean(state.acceptedScopes[state.resolveScope(currentRoute)])
+  );
+  const singleTurnFinished =
+    route.ready &&
+    (continuingConversation || accepted) &&
+    isSingleConversation(inputApp?.config?.conversation_turns);
+  const showIntroduction =
+    !showModelSelector && route.ready && !continuingConversation && !accepted;
+  const capabilitiesReady = Boolean(
+    inputApp && fileConfig.capabilities?.status === 'ready'
+  );
+  const capabilityFailed = Boolean(
+    fileConfig.error ||
+    (fileConfig.capabilities && fileConfig.capabilities.status !== 'ready')
+  );
+  const attachmentError = validateChatAttachments(
+    fileConfig.capabilities,
+    attachments,
+    continuingConversation
+  );
+  const submissionBlocked =
+    !capabilitiesReady ||
+    Boolean(attachmentError) ||
+    !fileConfig.capabilities?.text.enabled;
   const apps = useAppListStore(state => state.apps);
   const [submittingScope, setSubmittingScope] = useState<string | null>(null);
   const canonicalSubmittingScope = useChatInputStore(state =>
@@ -126,6 +163,13 @@ export const ChatInput = ({
     barHeight.current = height;
     useChatLayoutStore.getState().setInputHeight(height + textHeight.current);
   }, []);
+  const updateEndHeight = useCallback(
+    (height: number) => {
+      barHeight.current = 0;
+      updateTextHeight(height);
+    },
+    [updateTextHeight]
+  );
   const validModel =
     !requireModelValidation ||
     !showModelSelector ||
@@ -148,6 +192,7 @@ export const ChatInput = ({
   const waiting = isWaiting || isWaitingForResponse || localSubmitting;
   const editScope =
     route.ready &&
+    !singleTurnFinished &&
     currentRoute !== 'default' &&
     JSON.parse(currentRoute)[3]?.startsWith('conversation:')
       ? currentRoute
@@ -157,7 +202,12 @@ export const ChatInput = ({
       item.db_id ? [item.id, item.db_id] : [item.id]
     ),
     scope: editScope,
-    blocked: disabled || waiting || isProcessing,
+    blocked:
+      disabled ||
+      !capabilitiesReady ||
+      !fileConfig.capabilities?.text.enabled ||
+      waiting ||
+      isProcessing,
     onSubmit: async (text, source) => {
       const current = useChatInputStore.getState();
       if (
@@ -195,6 +245,8 @@ export const ChatInput = ({
     currentAppId: inputApp ? route.appId : null,
     sessionUserId: session?.user?.id,
     t,
+    slot: fileConfig.slot,
+    onRequirementsChanged: fileConfig.retry,
   });
 
   const handleLocalSubmit = async () => {
@@ -202,6 +254,8 @@ export const ChatInput = ({
     const snapshot = input.snapshot();
     if (
       disabled ||
+      singleTurnFinished ||
+      submissionBlocked ||
       edit.active ||
       waiting ||
       isProcessing ||
@@ -212,6 +266,15 @@ export const ChatInput = ({
     )
       return;
     const files = [...useAttachmentStore.getState().getFiles(snapshot.scope)];
+    if (
+      validateChatAttachments(
+        fileConfig.capabilities,
+        files,
+        continuingConversation
+      ) ||
+      files.some(file => file.status !== 'success' || !file.uploadedId)
+    )
+      return;
     const userId = session!.user.id;
     const appId = route.appId!;
     locks.current.add(snapshot.scope);
@@ -229,6 +292,7 @@ export const ChatInput = ({
       const result = await onSubmit(snapshot.message, buildSubmitFiles(files));
       if (isChatSubmitResult(result) && result.ok) consume();
       if (isChatSubmitResult(result) && !result.ok) {
+        fileConfig.retry();
         const failure =
           localizeChatModerationMessage(
             {
@@ -247,6 +311,7 @@ export const ChatInput = ({
             .showNotification(failure, moderated ? 'warning' : 'error', 5000);
       }
     } catch (error) {
+      fileConfig.retry();
       const { errorMessage, errorCode, requestId } = formatChatUiError(
         error,
         t('input.messageSendFailed'),
@@ -286,6 +351,22 @@ export const ChatInput = ({
     }
   };
 
+  if (singleTurnFinished && !waiting && !isProcessing) {
+    const type = inputApp?.config?.app_metadata?.dify_apptype;
+    const newTask =
+      inputApp?.config?.app_metadata?.app_type !== 'marketplace' || !route.appId
+        ? '/chat/new'
+        : `/apps/${type === 'agent' ? 'agent' : 'chatbot'}/${encodeURIComponent(route.appId)}`;
+    return (
+      <SingleTurnEnd
+        href={newTask}
+        className={className}
+        widthClass={widthClass}
+        onHeightChange={updateEndHeight}
+      />
+    );
+  }
+
   return (
     <>
       <ChatInputView
@@ -294,18 +375,65 @@ export const ChatInput = ({
         onValueChange={setMessage}
         onSubmit={handleLocalSubmit}
         disabled={disabled || edit.active}
+        textDisabled={singleTurnFinished}
         stopDisabled={disabled}
         isProcessing={isProcessing}
         onStop={onStop}
-        isWaiting={waiting || blockedAttachments}
+        isWaiting={waiting || blockedAttachments || submissionBlocked}
         className={className}
-        placeholder={placeholder}
+        placeholder={showModelSelector ? placeholder : ''}
+        scrollableWelcome={!showModelSelector}
+        afterInput={afterInput}
+        beforeInput={
+          beforeInput ??
+          (showIntroduction && inputApp ? (
+            <div className="max-h-[40dvh] overflow-y-auto">
+              <AppIntroduction
+                name={inputApp.display_name}
+                description={inputApp.description}
+              />
+              {inputApp.config?.dify_parameters?.opening_statement?.trim() && (
+                <p className="mb-4 px-4 text-sm whitespace-pre-wrap text-stone-500 dark:text-stone-400">
+                  {inputApp.config.dify_parameters.opening_statement}
+                </p>
+              )}
+            </div>
+          ) : undefined)
+        }
         maxHeight={maxHeight}
         isWelcomeScreen={externalIsWelcomeScreen || isWelcomeScreen}
         widthClass={widthClass}
         isTransitioningToWelcome={isTransitioningToWelcome}
         onHeightChange={updateTextHeight}
         onInputRef={inputRef}
+        editNotice={
+          inputAppFailed ||
+          capabilityFailed ||
+          (capabilitiesReady && attachmentError) ? (
+            <div
+              role="alert"
+              className="px-3 py-2 text-sm text-amber-700 dark:text-amber-300"
+            >
+              {inputAppFailed || capabilityFailed
+                ? t(
+                    fileConfig.capabilities?.status === 'unsupported'
+                      ? 'input.capabilitiesUnsupported'
+                      : 'input.capabilitiesUnavailable'
+                  )
+                : attachmentError === 'INPUT_TOO_MANY_FILES'
+                  ? t('fileTypeSelector.maxFilesReached', {
+                      maxFiles: fileConfig.slot?.maxCount ?? 0,
+                    })
+                  : attachmentError === 'INPUT_FILE_TYPE'
+                    ? t('fileUpload.unsupportedFormat')
+                    : attachmentError === 'INPUT_FILE_SIZE'
+                      ? t('fileUpload.fileTooLarge')
+                      : attachmentError === 'INPUT_FILES_REQUIRED'
+                        ? t('input.filesRequired')
+                        : t('input.capabilitiesUnsupported')}
+            </div>
+          ) : undefined
+        }
         attachmentPreview={
           route.ready ? (
             <AttachmentPreviewBar
@@ -320,10 +448,10 @@ export const ChatInput = ({
           ) : undefined
         }
         attachmentAction={
-          inputAppFailed ? (
+          inputAppFailed || capabilityFailed ? (
             <ChatButton
-              onClick={retryInputApp}
-              ariaLabel={`${tCommon('ui.retry')}: ${t('input.uploadFailed')}`}
+              onClick={inputAppFailed ? retryInputApp : fileConfig.retry}
+              ariaLabel={`${tCommon('ui.retry')}: ${t('input.capabilitiesUnavailable')}`}
               icon={<RotateCcw className="h-4 w-4" />}
             />
           ) : route.ready && inputApp ? (
@@ -336,7 +464,11 @@ export const ChatInput = ({
             />
           ) : undefined
         }
-        modelSelector={showModelSelector ? <ModelSelectorButton /> : undefined}
+        modelSelector={
+          showModelSelector ? (
+            <ModelSelectorButton disabled={waiting || isProcessing} />
+          ) : undefined
+        }
       />
     </>
   );

@@ -42,7 +42,8 @@ native interrupt profile is described below; stream replay remains unsupported.
 5. Choose public, group-only or private visibility. Here, public means visible to
    signed-in users; generation still requires an active account.
 6. Open the application from the application list. Its page includes local
-   conversation history and supports text input only.
+   conversation history. Ordinary assistants remain text-only unless the
+   [input-file profile](#optional-input-file-profile) is supported and advertised.
 
 The generic, non-secret instance configuration is:
 
@@ -75,7 +76,8 @@ The server uses `Authorization: Bearer <service-token>` and never follows redire
 | `GET /threads/{thread_id}/runs/{run_id}` | Return the native thread/run IDs and execution status                  |
 
 Each AG-UI request includes `threadId`, a new correlation `runId`, one user
-message with an ID, and empty `state`, `tools`, `context` and `forwardedProps`.
+message with an ID, and empty `state`, `tools` and `context`. Ordinary requests
+also have empty `forwardedProps`.
 The service owns execution memory; AgentifUI never resends the entire local
 history. Inputs are limited to 16,000 characters and a 64 KiB encoded request.
 
@@ -94,9 +96,9 @@ timeout, malformed framing or inconsistent identifiers cannot produce a local
 successful result. The parser bounds frames, stream size and event counts.
 
 Tool parameters and raw tool results are not rendered. The first version shows
-only validated tool names and execution status. Files, frontend tools, arbitrary
-state synchronization, resumable streams and execution cancellation are not
-supported. Human input requires the separate native profile below, not this
+only validated tool names and execution status. Frontend tools, arbitrary state
+synchronization, resumable streams and execution cancellation are not supported.
+Human input requires the separate native profile below, not this
 legacy bridge. Do not enable corresponding UI capabilities
 merely because the upstream schema advertises additional endpoints.
 
@@ -212,6 +214,31 @@ See [AG-UI Integration](AGUI-INTEGRATION.md#human-input-product-boundary) for th
 product endpoints, states and compatibility boundary. This is a controlled
 single-interrupt profile, not a general approval engine or an exactly-once
 guarantee for arbitrary upstream side effects.
+
+## Optional Input File Profile
+
+`agentifui-input-files/1` is a platform-specific extension, not a standard
+AG-UI file protocol. It is selected only for supported assistants: use
+`attachment-agent` with `/ag-ui/attachments` or `attachment-pair-agent` with
+`/ag-ui/attachments/pair`. The capability response must advertise the matching
+assistant and input profile. The validated `reference` slot determines the
+minimum and maximum count and allowed formats (`.txt`, `.md`, `.csv`); files
+must be nonempty and at most 2 MiB each, or smaller if the service declares a
+lower limit. It is separate from the human-input and frozen-result profiles.
+
+The service accepts `POST /assistants/{assistant_id}/files` with multipart
+`file` and `slotKey`, serves metadata at `GET /assistants/{assistant_id}/files/{file_id}`,
+and serves bytes at the same path with `/content` appended. Scoped requests use
+server-supplied `X-AgentifUI-Actor` and `X-AgentifUI-App` headers. The service
+must enforce this scope for uploads, reads and native thread/run requests. Runs
+send native `{ fileId, slotKey }` references in `forwardedProps.agentifuiInput.attachments`,
+with `profile` in the same object. A supported text-only turn sends an empty
+attachment list. Unscoped legacy threads are not reused for this profile.
+
+AgentifUI keeps file metadata and authorized message references; the LangChain
+service keeps the bytes. Users preview or download through the AgentifUI origin.
+Upstream retention still applies, so an expired file may no longer be readable
+even when the message remains in history.
 
 ## Optional Frozen Result Profile
 
