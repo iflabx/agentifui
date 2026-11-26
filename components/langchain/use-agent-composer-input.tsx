@@ -170,9 +170,11 @@ export function useAgentComposerInput({
   const fields = capabilities?.fields ?? [];
   const ready = enabled && capabilities?.status === 'ready';
   useLayoutEffect(() => {
-    if (scope)
+    if (scope) {
+      useAttachmentStore.getState().setScope(scope);
       for (const choice of choices)
         useAttachmentStore.getState().restoreFiles(choice.scope);
+    }
   });
   const isCurrentActor = () => {
     const current = useLangchainDraftStore.getState();
