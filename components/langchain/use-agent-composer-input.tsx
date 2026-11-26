@@ -317,7 +317,9 @@ export function useAgentComposerInput({
             key={entry.id}
             id={entry.id}
             type="file"
-            hidden
+            aria-hidden="true"
+            tabIndex={-1}
+            className="sr-only"
             multiple={entry.slot.maxCount > 1}
             accept={attachmentAccept(entry.slot)}
             onChange={event => {
