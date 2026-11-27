@@ -1,6 +1,12 @@
 import { FilePreviewCanvas } from '@components/file-preview/file-preview-canvas';
 import { PreviewShell } from '@components/file-preview/preview-shell';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 
 import { useState } from 'react';
 
@@ -180,12 +186,14 @@ it('dismisses mobile previews through the backdrop', async () => {
   trigger.focus();
   fireEvent.click(trigger);
   await tick();
+  const dialog = screen.getByRole('dialog');
   const backdrop = document.querySelector('[data-state="open"].bg-black\\/30')!;
   fireEvent.pointerDown(backdrop);
-  await tick();
-  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  expect(trigger).toHaveFocus();
-  expect(document.body.style.pointerEvents).not.toBe('none');
+  await waitFor(() => {
+    expect(dialog).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    expect(document.body.style.pointerEvents).not.toBe('none');
+  });
 });
 
 it('preserves the original trigger across desktop/mobile breakpoint changes', async () => {
