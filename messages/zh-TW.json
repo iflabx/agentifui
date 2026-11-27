@@ -2710,6 +2710,22 @@
     "about": "關於"
   },
   "history": {
+    "messageSearch": {
+      "title": "已儲存的訊息",
+      "untitled": "未命名對話",
+      "tooLong": "搜尋詞最多 120 個字元。",
+      "loading": "正在載入已儲存的訊息…",
+      "failed": "搜尋失敗，請重試。",
+      "empty": "沒有符合的訊息。",
+      "retry": "重試",
+      "more": "載入更多",
+      "back": "返回歷史記錄",
+      "openConversation": "開啟完整對話",
+      "savedMessage": "已儲存的訊息",
+      "unavailable": "此訊息已無法使用。",
+      "user": "使用者",
+      "assistant": "助理"
+    },
     "title": "歷史對話",
     "loading": "會話記錄載入中...",
     "noRecords": "暫無會話歷史",

@@ -2710,6 +2710,22 @@
     "about": "关于"
   },
   "history": {
+    "messageSearch": {
+      "title": "已保存的消息",
+      "untitled": "未命名会话",
+      "tooLong": "搜索词最多 120 个字符。",
+      "loading": "正在加载已保存的消息…",
+      "failed": "搜索失败，请重试。",
+      "empty": "没有匹配的消息。",
+      "retry": "重试",
+      "more": "加载更多",
+      "back": "返回历史记录",
+      "openConversation": "打开完整会话",
+      "savedMessage": "已保存的消息",
+      "unavailable": "此消息已不可用。",
+      "user": "用户",
+      "assistant": "助手"
+    },
     "title": "历史对话",
     "loading": "会话记录加载中...",
     "noRecords": "暂无会话历史",

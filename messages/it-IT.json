@@ -2710,6 +2710,22 @@
     "about": "Informazioni"
   },
   "history": {
+    "messageSearch": {
+      "title": "Messaggi salvati",
+      "untitled": "Conversazione senza titolo",
+      "tooLong": "La ricerca è limitata a 120 caratteri.",
+      "loading": "Caricamento dei messaggi salvati…",
+      "failed": "Ricerca non riuscita. Riprova.",
+      "empty": "Nessun messaggio corrispondente.",
+      "retry": "Riprova",
+      "more": "Carica altri",
+      "back": "Torna alla cronologia",
+      "openConversation": "Apri la conversazione",
+      "savedMessage": "Messaggio salvato",
+      "unavailable": "Questo messaggio non è più disponibile.",
+      "user": "Utente",
+      "assistant": "Assistente"
+    },
     "title": "Cronologia Chat",
     "loading": "Caricamento record conversazioni...",
     "noRecords": "Nessuna cronologia conversazioni",

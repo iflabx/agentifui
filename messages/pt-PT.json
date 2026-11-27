@@ -2710,6 +2710,22 @@
     "about": "Sobre"
   },
   "history": {
+    "messageSearch": {
+      "title": "Mensagens guardadas",
+      "untitled": "Conversa sem título",
+      "tooLong": "A pesquisa está limitada a 120 caracteres.",
+      "loading": "A carregar mensagens guardadas…",
+      "failed": "A pesquisa falhou. Tente novamente.",
+      "empty": "Nenhuma mensagem correspondente.",
+      "retry": "Tentar novamente",
+      "more": "Carregar mais",
+      "back": "Voltar ao histórico",
+      "openConversation": "Abrir conversa",
+      "savedMessage": "Mensagem guardada",
+      "unavailable": "Esta mensagem já não está disponível.",
+      "user": "Utilizador",
+      "assistant": "Assistente"
+    },
     "title": "Histórico de Chats",
     "loading": "A carregar registos de conversas...",
     "noRecords": "Nenhum histórico de conversas",

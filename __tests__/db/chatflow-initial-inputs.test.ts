@@ -159,3 +159,110 @@ it.each(['permission', 'provider', 'deleted', 'other-actor'])(
     }
   }
 );
+
+it('finds older saved messages, paginates tied timestamps and opens the exact message', async () => {
+  const allHits: string[] = [];
+  let beforeMessageId: string | undefined;
+  for (const expectedCount of [20, 20, 8]) {
+    const response = await handleMessageAction(
+      'messages.searchHistory',
+      { query: 'LaTeR TuRn', beforeMessageId },
+      actor
+    );
+    expect(response?.statusCode).toBe(200);
+    const data = (
+      response?.payload as {
+        data: {
+          hits: { id: string; conversationId: string; snippet: string }[];
+          nextCursor: string | null;
+        };
+      }
+    ).data;
+    expect(data.hits).toHaveLength(expectedCount);
+    allHits.push(...data.hits.map(hit => hit.id));
+    const { id, conversationId } = data.hits.at(-1)!;
+    const match = await handleMessageAction(
+      'messages.getHistoryMatch',
+      { conversationId, messageId: id },
+      actor
+    );
+    expect(match?.payload).toMatchObject({
+      success: true,
+      data: { id, conversationId, content: 'Synthetic later turn' },
+    });
+    beforeMessageId = data.nextCursor ?? undefined;
+  }
+  expect(new Set(allHits).size).toBe(48);
+  expect(beforeMessageId).toBeUndefined();
+});
+
+it('does not search removed revisions, pending edits or SQL wildcard patterns', async () => {
+  const pendingId = randomUUID();
+  await database.query(
+    `INSERT INTO messages(id,conversation_id,user_id,role,content,metadata)
+      VALUES ($1,$2,$3,'user','Pending revision 只在测试出现','{"edit_pending":true}')`,
+    [pendingId, conversations[0], actor]
+  );
+  try {
+    for (const query of ['Hidden original', '只在测试出现', '%_']) {
+      const response = await handleMessageAction(
+        'messages.searchHistory',
+        { query },
+        actor
+      );
+      expect(response?.payload).toEqual({
+        success: true,
+        data: { hits: [], nextCursor: null },
+      });
+    }
+    const match = await handleMessageAction(
+      'messages.getHistoryMatch',
+      { conversationId: conversations[0], messageId: pendingId },
+      actor
+    );
+    expect(match?.statusCode).toBe(404);
+  } finally {
+    await database.query('DELETE FROM messages WHERE id=$1', [pendingId]);
+  }
+});
+
+it('rechecks ownership, application permission and deletion for search and direct links', async () => {
+  const conversationId = conversations[1];
+  const { rows } = await database.query<{ id: string }>(
+    "SELECT id FROM messages WHERE conversation_id=$1 AND content='Synthetic later turn' LIMIT 1",
+    [conversationId]
+  );
+  const messageId = rows[0].id;
+  async function expectInaccessible(viewer: string) {
+    const search = await handleMessageAction(
+      'messages.searchHistory',
+      { query: 'later turn' },
+      viewer
+    );
+    expect(search?.payload).toEqual({
+      success: true,
+      data: { hits: [], nextCursor: null },
+    });
+    const match = await handleMessageAction(
+      'messages.getHistoryMatch',
+      { conversationId, messageId },
+      viewer
+    );
+    expect(match?.statusCode).toBe(404);
+  }
+  await expectInaccessible(randomUUID());
+  await database.query(
+    'UPDATE group_app_permissions SET is_enabled=false WHERE group_id=$1',
+    [group]
+  );
+  await expectInaccessible(actor);
+  await database.query(
+    'UPDATE group_app_permissions SET is_enabled=true WHERE group_id=$1',
+    [group]
+  );
+  await database.query(
+    "UPDATE conversations SET status='deleted' WHERE id=ANY($1::uuid[])",
+    [conversations]
+  );
+  await expectInaccessible(actor);
+});

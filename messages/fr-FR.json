@@ -2710,6 +2710,22 @@
     "about": "À propos"
   },
   "history": {
+    "messageSearch": {
+      "title": "Messages enregistrés",
+      "untitled": "Conversation sans titre",
+      "tooLong": "La recherche est limitée à 120 caractères.",
+      "loading": "Chargement des messages enregistrés…",
+      "failed": "La recherche a échoué. Réessayez.",
+      "empty": "Aucun message correspondant.",
+      "retry": "Réessayer",
+      "more": "Charger plus",
+      "back": "Retour à l’historique",
+      "openConversation": "Ouvrir la conversation",
+      "savedMessage": "Message enregistré",
+      "unavailable": "Ce message n’est plus disponible.",
+      "user": "Utilisateur",
+      "assistant": "Assistant"
+    },
     "title": "Historique des chats",
     "loading": "Chargement des enregistrements de conversation...",
     "noRecords": "Aucun historique de conversation",

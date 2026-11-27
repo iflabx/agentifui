@@ -247,9 +247,13 @@ Not every path displays all of these states.
 ## 4. Find And Manage History
 
 Open **History** at `/chat/history` or select a conversation from the sidebar.
-The current history search filters conversation titles and available last-message
-previews; it is not a guaranteed full-text search of all messages. You can rename conversations and use the history
-selection controls to delete one or multiple entries after confirmation.
+The search box filters conversation titles and last-message previews, and also
+lists matching saved message text. Select a message result to open the exact
+saved message in a read-only view, then choose **Open conversation** to return
+to the full chat. This searches messages saved by AgentifUI, not upstream-only
+history, workflow execution records, or attachment contents and names.
+You can rename conversations and use the history selection controls to delete
+one or multiple entries after confirmation.
 
 Sign in with the same account to see its saved history. Logging out does not
 delete saved conversations. After logging in again, reopen the history rather

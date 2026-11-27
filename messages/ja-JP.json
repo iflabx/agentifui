@@ -2710,6 +2710,22 @@
     "about": "概要"
   },
   "history": {
+    "messageSearch": {
+      "title": "保存済みメッセージ",
+      "untitled": "無題の会話",
+      "tooLong": "検索語は120文字までです。",
+      "loading": "保存済みメッセージを読み込み中…",
+      "failed": "検索に失敗しました。再試行してください。",
+      "empty": "一致するメッセージがありません。",
+      "retry": "再試行",
+      "more": "もっと読み込む",
+      "back": "履歴に戻る",
+      "openConversation": "会話を開く",
+      "savedMessage": "保存済みメッセージ",
+      "unavailable": "このメッセージは利用できません。",
+      "user": "ユーザー",
+      "assistant": "アシスタント"
+    },
     "title": "チャット履歴",
     "loading": "会話記録を読み込み中...",
     "noRecords": "会話履歴がありません",

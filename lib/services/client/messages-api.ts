@@ -30,6 +30,45 @@ export type ConversationMessagePage = {
   nextCursor: string | null;
 };
 
+export interface HistoryMessageIdentity {
+  id: string;
+  conversationId: string;
+  title: string | null;
+  role: 'user' | 'assistant';
+}
+
+export interface HistoryMessagePage {
+  hits: Array<HistoryMessageIdentity & { snippet: string }>;
+  nextCursor: string | null;
+}
+
+export interface HistoryMessageMatch extends HistoryMessageIdentity {
+  content: string;
+  externalId: string | null;
+  appId: string | null;
+  agent: boolean;
+}
+
+export function searchHistoryMessages(query: string, beforeMessageId?: string) {
+  return callInternalDataAction<HistoryMessagePage>('messages.searchHistory', {
+    query,
+    beforeMessageId,
+  });
+}
+
+export function getHistoryMessageMatch(
+  conversationId: string,
+  messageId: string
+) {
+  return callInternalDataAction<HistoryMessageMatch>(
+    'messages.getHistoryMatch',
+    {
+      conversationId,
+      messageId,
+    }
+  );
+}
+
 export function getChatflowInitialInputs(
   conversationId: string
 ): Promise<Result<Record<string, unknown> | null>> {

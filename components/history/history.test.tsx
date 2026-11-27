@@ -2,9 +2,16 @@ import { ConfirmDialog, InputDialog } from '@components/ui';
 import { useAllConversations } from '@lib/hooks/use-all-conversations';
 import { conversationEvents } from '@lib/hooks/use-combined-conversations';
 import { agentRequest } from '@lib/services/client/langchain-api';
+import { searchHistoryMessages } from '@lib/services/client/messages-api';
 import { syncChatDraftActor } from '@lib/stores/chat-draft-lifecycle';
 import type { Conversation } from '@lib/types/database';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 
 import type { ReactNode } from 'react';
 
@@ -31,8 +38,23 @@ jest.mock('@lib/hooks/use-combined-conversations', () => ({
 jest.mock('@lib/services/client/langchain-api', () => ({
   agentRequest: jest.fn(),
 }));
+jest.mock('@lib/services/client/messages-api', () => ({
+  searchHistoryMessages: jest.fn(),
+}));
 jest.mock('@components/ui', () => ({
-  SearchInput: () => null,
+  SearchInput: ({
+    value,
+    onValueChange,
+  }: {
+    value: string;
+    onValueChange: (value: string) => void;
+  }) => (
+    <input
+      aria-label="History search"
+      value={value}
+      onChange={event => onValueChange(event.target.value)}
+    />
+  ),
   InputDialog: jest.fn(
     ({ isOpen, defaultValue }: { isOpen: boolean; defaultValue: string }) =>
       isOpen ? <div role="dialog">{defaultValue}</div> : null
@@ -87,6 +109,50 @@ beforeEach(() => {
 });
 
 afterEach(() => jest.restoreAllMocks());
+
+it('keeps message pages scoped to the current search and links to the saved message', async () => {
+  const search = jest.mocked(searchHistoryMessages);
+  const makePage = (id: string, nextCursor: string | null = null) => ({
+    success: true as const,
+    data: {
+      hits: [
+        {
+          id,
+          conversationId: 'conversation',
+          title: 'Original conversation',
+          role: 'assistant' as const,
+          snippet: `Match for ${id}`,
+        },
+      ],
+      nextCursor,
+    },
+  });
+  let finishOldSearch!: (result: Awaited<ReturnType<typeof search>>) => void;
+  search
+    .mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          finishOldSearch = resolve;
+        })
+    )
+    .mockResolvedValueOnce(makePage('latest', 'latest'))
+    .mockResolvedValueOnce(makePage('earlier'));
+  render(<History />);
+  const input = screen.getByRole('textbox', { name: 'History search' });
+  fireEvent.change(input, { target: { value: 'old' } });
+  await waitFor(() => expect(search).toHaveBeenCalledWith('old', undefined));
+  fireEvent.change(input, { target: { value: 'current' } });
+  const match = await screen.findByRole('link', { name: /Match for latest/ });
+  expect(match).toHaveAttribute('href', '/chat/conversation/message/latest');
+  await act(async () => finishOldSearch(makePage('stale')));
+  expect(screen.queryByText('Match for stale')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'more' }));
+  expect(await screen.findByText('Match for earlier')).toBeInTheDocument();
+  expect(screen.getByText('Match for latest')).toBeInTheDocument();
+  expect(search).toHaveBeenLastCalledWith('current', 'latest');
+  act(() => syncChatDraftActor('second', 'login-two'));
+  expect(screen.queryByText('Match for latest')).not.toBeInTheDocument();
+});
 
 it.each(['second', 'first'])(
   'discards an open private history dialog on a new login for %s',

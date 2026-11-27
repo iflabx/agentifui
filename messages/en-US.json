@@ -2710,6 +2710,22 @@
     "about": "About"
   },
   "history": {
+    "messageSearch": {
+      "title": "Saved messages",
+      "untitled": "Untitled conversation",
+      "tooLong": "Search is limited to 120 characters.",
+      "loading": "Loading saved messages…",
+      "failed": "Search failed. Please try again.",
+      "empty": "No matching messages.",
+      "retry": "Retry",
+      "more": "Load more",
+      "back": "Back to history",
+      "openConversation": "Open conversation",
+      "savedMessage": "Saved message",
+      "unavailable": "This message is no longer available.",
+      "user": "User",
+      "assistant": "Assistant"
+    },
     "title": "Chat History",
     "loading": "Loading conversation records...",
     "noRecords": "No conversation history",
