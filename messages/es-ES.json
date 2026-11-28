@@ -2710,6 +2710,23 @@
     "about": "Acerca de"
   },
   "history": {
+    "messageSearch": {
+      "returnToLatest": "Ir a los mensajes recientes",
+      "title": "Mensajes guardados",
+      "untitled": "Conversación sin título",
+      "tooLong": "La búsqueda admite hasta 120 caracteres.",
+      "loading": "Cargando mensajes guardados…",
+      "failed": "La búsqueda ha fallado. Inténtalo de nuevo.",
+      "empty": "No hay mensajes que coincidan.",
+      "retry": "Reintentar",
+      "more": "Cargar más",
+      "back": "Volver al historial",
+      "openConversation": "Abrir conversación",
+      "savedMessage": "Mensaje guardado",
+      "unavailable": "Este mensaje ya no está disponible.",
+      "user": "Usuario",
+      "assistant": "Asistente"
+    },
     "title": "Historial de Chat",
     "loading": "Cargando registros de conversación...",
     "noRecords": "Sin historial de conversaciones",

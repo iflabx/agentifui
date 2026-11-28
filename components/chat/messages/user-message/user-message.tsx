@@ -1,6 +1,7 @@
 'use client';
 
 import { UserMessageActions } from '@components/chat/message-actions';
+import { highlightMessageText } from '@components/chat/message-text-highlight';
 import { useMobile, useMounted } from '@lib/hooks';
 import { MessageAttachment } from '@lib/stores/chat-store';
 import { cn } from '@lib/utils';
@@ -15,6 +16,7 @@ interface UserMessageProps {
   conversationAppId?: string | null;
   id: string;
   className?: string;
+  highlightQuery?: string;
   onCopy?: () => void;
   onEdit?: () => void;
   editDisabled?: boolean;
@@ -27,6 +29,7 @@ export const UserMessage: React.FC<UserMessageProps> = ({
   conversationAppId = null,
   id,
   className,
+  highlightQuery,
   onEdit,
   editDisabled,
   editor,
@@ -68,7 +71,7 @@ export const UserMessage: React.FC<UserMessageProps> = ({
               className
             )}
           >
-            {content}
+            {highlightMessageText(content, highlightQuery)}
           </div>
         )}
 

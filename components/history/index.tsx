@@ -23,6 +23,7 @@ import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 
 import { HistoryList } from './history-list';
+import { HistoryMessageSearch } from './history-message-search';
 import { HistorySelectionBar } from './history-selection-bar';
 
 // History conversation page component
@@ -44,6 +45,7 @@ function ActorHistory({ actorEpoch }: { actorEpoch: number }) {
     mounted.current && useChatInputStore.getState().actorEpoch === actorEpoch;
   const t = useTranslations('history');
   const [searchQuery, setSearchQuery] = React.useState('');
+  const [historyRevision, setHistoryRevision] = React.useState(0);
   const router = useRouter();
   const { widthClass, paddingClass } = useChatWidth();
 
@@ -94,6 +96,7 @@ function ActorHistory({ actorEpoch }: { actorEpoch: number }) {
   React.useEffect(() => {
     const unsubscribe = conversationEvents.subscribe(() => {
       refresh();
+      setHistoryRevision(revision => revision + 1);
     });
 
     return () => {
@@ -389,6 +392,12 @@ function ActorHistory({ actorEpoch }: { actorEpoch: number }) {
             paddingClass
           )}
         >
+          {!isSelectionMode && searchQuery.trim() && (
+            <HistoryMessageSearch
+              key={JSON.stringify([searchQuery.trim(), historyRevision])}
+              query={searchQuery.trim()}
+            />
+          )}
           <HistoryList
             conversations={filteredConversations}
             isLoading={isLoading}

@@ -12,6 +12,7 @@ import { DynamicSuggestedQuestions } from '@components/chat/dynamic-suggested-qu
 import { ChatSessionView } from '@components/chat/session/chat-session-view';
 import { ChatflowInputArea } from '@components/chatflow/chatflow-input-area';
 import { useChatflowMessageProcess } from '@components/chatflow/use-chatflow-message-process';
+import { HistoryMessageView } from '@components/history/history-message';
 import { AgentChat } from '@components/langchain/agent-chat';
 import { TaskChat } from '@components/task-chat/task-chat';
 import { useAuthSession } from '@lib/auth/better-auth/react-hooks';
@@ -34,11 +35,24 @@ import { useFilePreviewStore } from '@lib/stores/ui/file-preview-store';
 import { useEffect, useLayoutEffect, useState } from 'react';
 
 import { useTranslations } from 'next-intl';
-import { useParams, usePathname } from 'next/navigation';
+import { useParams, usePathname, useSearchParams } from 'next/navigation';
 
 export default function ChatPage() {
   const params = useParams<{ conversationId: string }>();
   const id = params?.conversationId ?? '';
+  const messageId = useSearchParams()?.get('messageId');
+  if (id && messageId)
+    return (
+      <HistoryMessageView
+        conversationId={id}
+        messageId={messageId}
+        focusInConversation
+      />
+    );
+  return <LiveChatPage id={id} />;
+}
+
+function LiveChatPage({ id }: { id: string }) {
   const { session, loading } = useAuthSession();
   const actorId = session?.user.id;
   const pathname = usePathname() ?? '';

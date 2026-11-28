@@ -78,7 +78,9 @@ export async function ensureActionPermission(
     const resolved = await resolveActorIdentity(
       request,
       config,
-      action.startsWith('appExecutions.')
+      action.startsWith('appExecutions.') ||
+        action === 'messages.searchHistory' ||
+        action === 'messages.getHistoryMatch'
     );
     if (!resolved.ok) {
       return { error: resolved.error };
@@ -140,10 +142,23 @@ export const unboundConversationSql = `NOT EXISTS (
  ) AND COALESCE(conversations.metadata ->> 'runtime', '') <> 'dify-task'`;
 
 export function boundConversationAccessSql(
-  actorParameter: '$1' | '$2'
+  actorParameter: '$1' | '$2',
+  requireLegacyAppAccess = false
 ): string {
   return `(
-    ${unboundConversationSql}
+    (${unboundConversationSql}${
+      requireLegacyAppAccess
+        ? `
+      AND (conversations.app_id IS NULL OR ${appAccessSql(
+        `(SELECT legacy_instance.id FROM service_instances legacy_instance
+          WHERE legacy_instance.id::text = conversations.app_id
+            OR legacy_instance.instance_id = conversations.app_id
+          ORDER BY (legacy_instance.id::text = conversations.app_id) DESC, legacy_instance.id
+          LIMIT 1)`,
+        `${actorParameter}::uuid`
+      )})`
+        : ''
+    })
     OR (
       conversations.metadata ->> 'runtime' = 'dify-task'
       AND conversations.status = 'active'

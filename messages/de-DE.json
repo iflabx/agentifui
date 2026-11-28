@@ -2710,6 +2710,23 @@
     "about": "Über"
   },
   "history": {
+    "messageSearch": {
+      "returnToLatest": "Zu den neuesten Nachrichten",
+      "title": "Gespeicherte Nachrichten",
+      "untitled": "Unbenannte Unterhaltung",
+      "tooLong": "Die Suche ist auf 120 Zeichen begrenzt.",
+      "loading": "Gespeicherte Nachrichten werden geladen…",
+      "failed": "Die Suche ist fehlgeschlagen. Bitte erneut versuchen.",
+      "empty": "Keine passenden Nachrichten.",
+      "retry": "Erneut versuchen",
+      "more": "Mehr laden",
+      "back": "Zurück zum Verlauf",
+      "openConversation": "Unterhaltung öffnen",
+      "savedMessage": "Gespeicherte Nachricht",
+      "unavailable": "Diese Nachricht ist nicht mehr verfügbar.",
+      "user": "Benutzer",
+      "assistant": "Assistent"
+    },
     "title": "Chat-Verlauf",
     "loading": "Unterhaltungseinträge werden geladen...",
     "noRecords": "Kein Unterhaltungsverlauf",

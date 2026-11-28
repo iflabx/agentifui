@@ -18,6 +18,7 @@ import {
   toErrorResponse,
   toSuccessResponse,
 } from './helpers';
+import { getHistoryMatch, searchHistory } from './message-history';
 import {
   type ApiActionResponse,
   LOCAL_MESSAGE_ACTIONS,
@@ -36,6 +37,11 @@ export async function handleMessageAction(
   if (!actorUserId) {
     return toErrorResponse('Unauthorized', 401);
   }
+
+  if (action === 'messages.searchHistory')
+    return searchHistory(actorUserId, payload);
+  if (action === 'messages.getHistoryMatch')
+    return getHistoryMatch(actorUserId, payload);
 
   if (action === 'messages.getChatflowInitialInputs') {
     const conversationId = readString(payload?.conversationId);
