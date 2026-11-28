@@ -77,14 +77,8 @@ function pick(row: RealtimeRow | null, fields: string[]): RealtimeRow | null {
 }
 
 export function realtimeConversationAccessSql(): string {
-  return `${boundConversationAccessSql('$2')} AND (NOT ${unboundConversationSql} OR EXISTS (
-    SELECT 1 FROM service_instances instance JOIN providers provider ON provider.id=instance.provider_id
-    JOIN profiles actor ON actor.id=$2::uuid
-    WHERE conversations.app_id IN(instance.id::text,instance.instance_id)
-      AND provider.is_active AND actor.status='active'
-      AND (actor.role='admin' OR instance.visibility='public' OR (instance.visibility='group_only' AND EXISTS (
-        SELECT 1 FROM group_app_permissions permission JOIN group_members member ON member.group_id=permission.group_id
-        WHERE permission.service_instance_id=instance.id AND permission.is_enabled AND member.user_id=actor.id)))))`;
+  return `${boundConversationAccessSql('$2')} AND
+    (NOT (${unboundConversationSql}) OR conversations.app_id IS NOT NULL)`;
 }
 
 export async function projectAuthorizedRealtimeEvent(

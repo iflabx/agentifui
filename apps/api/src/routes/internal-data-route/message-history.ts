@@ -11,7 +11,7 @@ function visibleMessageSql() {
     conversations.user_id = $1::uuid
     AND conversations.status = 'active'
     AND EXISTS (SELECT 1 FROM profiles WHERE id = $1::uuid AND status = 'active')
-    AND ${boundConversationAccessSql('$1', true)}
+    AND ${boundConversationAccessSql('$1')}
     AND messages.role IN ('user', 'assistant')
     AND COALESCE(messages.metadata ->> 'edit_hidden', 'false') <> 'true'
     AND COALESCE(messages.metadata ->> 'edit_pending', 'false') <> 'true'

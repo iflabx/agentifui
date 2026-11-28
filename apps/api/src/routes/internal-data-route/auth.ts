@@ -1,4 +1,5 @@
 import type { FastifyRequest } from 'fastify';
+import type { PoolClient } from 'pg';
 
 import type { ApiRuntimeConfig } from '../../config';
 import { queryRowsWithPgSystemContext } from '../../lib/pg-context';
@@ -102,36 +103,25 @@ export async function ensureActionPermission(
 export async function loadConversationOwnedByActor(
   conversationId: string,
   actorUserId: string,
-  access: 'read' | 'write' | 'chatflow-inputs' = 'read'
+  access: 'read' | 'write' | 'chatflow-inputs' = 'read',
+  client?: Pick<PoolClient, 'query'>
 ): Promise<boolean> {
-  const rows = await queryRowsWithPgSystemContext<{ id: string }>(
-    `
+  const sql = `
       SELECT id::text
       FROM conversations
       WHERE id = $1::uuid
         AND user_id = $2::uuid
-        AND ${
-          access === 'chatflow-inputs'
-            ? `
-          ${unboundConversationSql}
-          AND conversations.status = 'active'
-          AND ${appAccessSql(
-            `(SELECT initial_instance.id FROM service_instances initial_instance
-            WHERE initial_instance.id::text = conversations.app_id
-              OR initial_instance.instance_id = conversations.app_id
-            ORDER BY (initial_instance.id::text = conversations.app_id) DESC LIMIT 1)`,
-            '$2::uuid'
-          )}
-        `
-            : access === 'write'
-              ? unboundConversationSql
-              : boundConversationAccessSql('$2')
-        }
+        AND conversations.status = 'active'
+        AND ${access === 'read' ? boundConversationAccessSql('$2') : unboundConversationAccessSql('$2')}
+        ${access === 'chatflow-inputs' ? 'AND conversations.app_id IS NOT NULL' : ''}
       LIMIT 1
-    `,
-    [conversationId, actorUserId],
-    { statementTimeoutMs: 5000 }
-  );
+    `;
+  const params = [conversationId, actorUserId];
+  const rows = client
+    ? (await client.query<{ id: string }>(sql, params)).rows
+    : await queryRowsWithPgSystemContext<{ id: string }>(sql, params, {
+        statementTimeoutMs: 5000,
+      });
 
   return Boolean(rows[0]?.id);
 }
@@ -141,24 +131,23 @@ export const unboundConversationSql = `NOT EXISTS (
   WHERE binding.conversation_id = conversations.id
  ) AND COALESCE(conversations.metadata ->> 'runtime', '') <> 'dify-task'`;
 
+function unboundConversationAccessSql(actorParameter: '$1' | '$2'): string {
+  return `(${unboundConversationSql}
+    AND (conversations.app_id IS NULL OR ${appAccessSql(
+      `(SELECT legacy_instance.id FROM service_instances legacy_instance
+        WHERE legacy_instance.id::text = conversations.app_id
+          OR legacy_instance.instance_id = conversations.app_id
+        ORDER BY (legacy_instance.id::text = conversations.app_id) DESC, legacy_instance.id
+        LIMIT 1)`,
+      `${actorParameter}::uuid`
+    )}))`;
+}
+
 export function boundConversationAccessSql(
-  actorParameter: '$1' | '$2',
-  requireLegacyAppAccess = false
+  actorParameter: '$1' | '$2'
 ): string {
   return `(
-    (${unboundConversationSql}${
-      requireLegacyAppAccess
-        ? `
-      AND (conversations.app_id IS NULL OR ${appAccessSql(
-        `(SELECT legacy_instance.id FROM service_instances legacy_instance
-          WHERE legacy_instance.id::text = conversations.app_id
-            OR legacy_instance.instance_id = conversations.app_id
-          ORDER BY (legacy_instance.id::text = conversations.app_id) DESC, legacy_instance.id
-          LIMIT 1)`,
-        `${actorParameter}::uuid`
-      )})`
-        : ''
-    })
+    ${unboundConversationAccessSql(actorParameter)}
     OR (
       conversations.metadata ->> 'runtime' = 'dify-task'
       AND conversations.status = 'active'

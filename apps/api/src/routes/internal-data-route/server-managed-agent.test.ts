@@ -161,7 +161,7 @@ describe('trusted backend conversation boundary', () => {
     const sql = systemQuery.mock.calls[0][0];
     expect(sql).toContain('NOT EXISTS');
     expect(sql).toContain('FROM backend_conversations binding');
-    expect(sql).not.toContain('OR EXISTS');
+    expect(sql).not.toContain('instance.id = binding.service_instance_id');
   });
 
   it.each(['messages.getLatest', 'messages.getPage'])(

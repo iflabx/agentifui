@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 
 import { getPgPool } from '../../apps/api/src/lib/pg-context';
+import { handleConversationAction } from '../../apps/api/src/routes/internal-data-route/conversation-actions';
 import { handleMessageAction } from '../../apps/api/src/routes/internal-data-route/message-actions';
 import { resolveTestDatabaseUrl } from './helpers/test-database-url';
 import { createTestRole, dropTestRole } from './helpers/test-role';
@@ -50,7 +51,7 @@ beforeAll(async () => {
   );
   for (const [index, conversation] of conversations.entries()) {
     await database.query(
-      "INSERT INTO conversations(id,user_id,app_id,title,status) VALUES($1,$2,$3,'Synthetic native Chatflow','active')",
+      "INSERT INTO conversations(id,user_id,app_id,title,status,external_id) VALUES($1::uuid,$2,$3,'Synthetic native Chatflow','active',$1::uuid::text)",
       [conversation, actor, index ? name : application]
     );
     await database.query(
@@ -289,4 +290,126 @@ it('rechecks ownership, application permission and deletion for search and direc
     [conversations]
   );
   await expectInaccessible(actor);
+});
+
+it.each(['permission', 'deleted'])(
+  'applies history access consistently to legacy app conversations after %s',
+  async kind => {
+    const list = () =>
+      handleConversationAction('conversations.getUserConversations', {}, actor);
+    const lookup = (conversationId: string) =>
+      handleConversationAction(
+        'conversations.getConversationByExternalId',
+        { externalId: conversationId },
+        actor
+      );
+    expect((await list())?.payload).toMatchObject({ data: { total: 2 } });
+    for (const conversationId of conversations) {
+      expect((await lookup(conversationId))?.payload).toMatchObject({
+        data: { id: conversationId },
+      });
+      for (const action of ['messages.getLatest', 'messages.getPage'])
+        expect(
+          (await handleMessageAction(action, { conversationId }, actor))
+            ?.statusCode
+        ).toBe(200);
+    }
+    if (kind === 'permission') {
+      await database.query(
+        'UPDATE group_app_permissions SET is_enabled=false WHERE group_id=$1',
+        [group]
+      );
+    } else {
+      for (const conversationId of conversations)
+        expect(
+          (
+            await handleConversationAction(
+              'conversations.deleteConversation',
+              { conversationId },
+              actor
+            )
+          )?.payload
+        ).toMatchObject({ data: true });
+    }
+    for (const conversationId of conversations) {
+      for (const action of ['messages.getLatest', 'messages.getPage'])
+        expect(
+          (await handleMessageAction(action, { conversationId }, actor))
+            ?.statusCode
+        ).toBe(404);
+      expect((await lookup(conversationId))?.payload).toMatchObject({
+        data: null,
+      });
+      expect(
+        (
+          await handleMessageAction(
+            'messages.save',
+            {
+              message: {
+                conversation_id: conversationId,
+                role: 'user',
+                content: 'Late save',
+              },
+            },
+            actor
+          )
+        )?.statusCode
+      ).toBe(404);
+    }
+    expect((await list())?.payload).toMatchObject({
+      data: { conversations: [], total: 0 },
+    });
+  }
+);
+
+it('keeps unassociated personal history readable by the owner until deletion', async () => {
+  const conversationId = randomUUID();
+  await database.query(
+    'INSERT INTO conversations(id,user_id,app_id,title) VALUES($1,$2,NULL,$3)',
+    [conversationId, actor, 'Synthetic personal history']
+  );
+  try {
+    expect(
+      (
+        await handleMessageAction(
+          'messages.save',
+          {
+            message: {
+              conversation_id: conversationId,
+              role: 'user',
+              content: 'Personal turn',
+            },
+          },
+          actor
+        )
+      )?.statusCode
+    ).toBe(200);
+    expect(
+      (
+        await handleMessageAction(
+          'messages.getLatest',
+          { conversationId },
+          actor
+        )
+      )?.payload
+    ).toMatchObject({ data: [{ content: 'Personal turn' }] });
+    await handleConversationAction(
+      'conversations.deleteConversation',
+      { conversationId },
+      actor
+    );
+    expect(
+      (
+        await handleMessageAction(
+          'messages.getLatest',
+          { conversationId },
+          actor
+        )
+      )?.statusCode
+    ).toBe(404);
+  } finally {
+    await database.query('DELETE FROM conversations WHERE id=$1', [
+      conversationId,
+    ]);
+  }
 });
