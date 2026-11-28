@@ -143,7 +143,10 @@ it('keeps message pages scoped to the current search and links to the saved mess
   await waitFor(() => expect(search).toHaveBeenCalledWith('old', undefined));
   fireEvent.change(input, { target: { value: 'current [a]' } });
   const match = await screen.findByRole('link', { name: /match for latest/ });
-  expect(match).toHaveAttribute('href', '/chat/conversation?messageId=latest');
+  expect(match).toHaveAttribute(
+    'href',
+    '/chat/conversation?messageId=latest#match=current+%5Ba%5D'
+  );
   expect(match.querySelector('mark')).toHaveTextContent('Current [a]');
   await act(async () => finishOldSearch(makePage('stale')));
   expect(screen.queryByText(/match for stale/)).not.toBeInTheDocument();

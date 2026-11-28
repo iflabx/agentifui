@@ -1,5 +1,6 @@
 'use client';
 
+import { highlightMessageText } from '@components/chat/message-text-highlight';
 import { ChatMessage } from '@components/chat/session/chat-message';
 import { ChatSessionView } from '@components/chat/session/chat-session-view';
 import { agentConversationPath } from '@components/langchain/routing';
@@ -9,10 +10,22 @@ import {
 } from '@lib/services/client/messages-api';
 import { useChatInputStore } from '@lib/stores/chat-input-store';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
+
+function subscribeToFragment(onChange: () => void) {
+  window.addEventListener('hashchange', onChange);
+  return () => window.removeEventListener('hashchange', onChange);
+}
+
+function readHighlightQuery() {
+  const query = new URLSearchParams(window.location.hash.slice(1))
+    .get('match')
+    ?.trim();
+  return query && [...query].length <= 120 ? query : undefined;
+}
 
 export function HistoryMessageView({
   conversationId,
@@ -51,6 +64,11 @@ function HistoryMessage({
   const t = useTranslations('history.messageSearch');
   const [result, setResult] = useState<HistoryMessageMatch | null>();
   const target = useRef<HTMLElement>(null);
+  const highlightQuery = useSyncExternalStore(
+    subscribeToFragment,
+    readHighlightQuery,
+    () => undefined
+  );
 
   useEffect(() => {
     let active = true;
@@ -118,7 +136,7 @@ function HistoryMessage({
             {focusInConversation && (
               <Link
                 className="text-sm underline"
-                href={`/chat/${encodeURIComponent(conversationId)}/message/${encodeURIComponent(messageId)}`}
+                href={`/chat/${encodeURIComponent(conversationId)}/message/${encodeURIComponent(messageId)}${highlightQuery ? `#${new URLSearchParams({ match: highlightQuery })}` : ''}`}
               >
                 {t('savedMessage')}
               </Link>
@@ -136,23 +154,20 @@ function HistoryMessage({
                   tabIndex={matched ? -1 : undefined}
                   aria-label={t(message.role)}
                   data-history-match={matched || undefined}
-                  className={
-                    matched
-                      ? 'relative before:absolute before:start-0 before:top-2 before:h-5 before:w-0.5 before:rounded-full before:bg-stone-500 dark:before:bg-stone-400'
-                      : undefined
-                  }
                 >
                   {message.role === 'user' ? (
                     <ChatMessage
                       role="user"
                       id={message.id}
                       content={message.content}
+                      highlightQuery={matched ? highlightQuery : undefined}
                     />
                   ) : (
                     <ChatMessage
                       role="assistant"
                       id={message.id}
                       content={message.content}
+                      highlightQuery={matched ? highlightQuery : undefined}
                       isStreaming={false}
                       wasManuallyStopped={false}
                     />
@@ -170,7 +185,7 @@ function HistoryMessage({
           >
             <h2 className="mb-2 text-sm font-medium">{t(result.role)}</h2>
             <p className="wrap-anywhere whitespace-pre-wrap">
-              {result.content}
+              {highlightMessageText(result.content, highlightQuery)}
             </p>
           </article>
         )}

@@ -34,6 +34,7 @@ import {
   ThinkBlockStatus,
 } from '@components/chat/markdown-block/think-block-header';
 import { AssistantMessageActions } from '@components/chat/message-actions';
+import { rehypeHighlightMessage } from '@components/chat/message-text-highlight';
 import { FileAttachmentDisplay } from '@components/chat/messages/user-message/file-attachment-display';
 import { ReferenceSources } from '@components/chat/reference-sources';
 import { useThrottledThinkPreview } from '@lib/hooks/use-throttled-think-preview';
@@ -153,6 +154,7 @@ interface AssistantMessageProps {
   resultFiles?: MessageAttachment[];
   resultAppId?: string;
   className?: string;
+  highlightQuery?: string;
   onRegenerate?: () => void;
   onFeedback?: (isPositive: boolean) => void;
 }
@@ -180,6 +182,7 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = React.memo(
     resultFiles,
     resultAppId,
     className,
+    highlightQuery,
     onRegenerate,
     onFeedback,
   }) => {
@@ -539,7 +542,14 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = React.memo(
                 {displayedContent => (
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm, remarkMath]}
-                    rehypePlugins={[rehypeKatex]}
+                    rehypePlugins={
+                      highlightQuery
+                        ? [
+                            rehypeKatex,
+                            [rehypeHighlightMessage, highlightQuery],
+                          ]
+                        : [rehypeKatex]
+                    }
                     components={mainMarkdownComponents}
                   >
                     {displayedContent}
