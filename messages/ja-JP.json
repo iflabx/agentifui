@@ -2711,6 +2711,7 @@
   },
   "history": {
     "messageSearch": {
+      "returnToLatest": "最新のメッセージに戻る",
       "title": "保存済みメッセージ",
       "untitled": "無題の会話",
       "tooLong": "検索語は120文字までです。",

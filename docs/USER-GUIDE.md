@@ -248,9 +248,9 @@ Not every path displays all of these states.
 
 Open **History** at `/chat/history` or select a conversation from the sidebar.
 The search box filters conversation titles and last-message previews, and also
-lists matching saved message text. Select a message result to open the exact
-saved message in a read-only view, then choose **Open conversation** to return
-to the full chat. This searches messages saved by AgentifUI, not upstream-only
+lists matching saved message text and highlights the match. Select a result to
+jump to the message and its nearby context in the original conversation.
+Choose **Back to latest** to resume the chat. This searches messages saved by AgentifUI, not upstream-only
 history, workflow execution records, or attachment contents and names.
 You can rename conversations and use the history selection controls to delete
 one or multiple entries after confirmation.

@@ -47,6 +47,7 @@ export interface HistoryMessageMatch extends HistoryMessageIdentity {
   externalId: string | null;
   appId: string | null;
   agent: boolean;
+  nearby?: Array<Pick<HistoryMessageMatch, 'id' | 'role' | 'content'>> | null;
 }
 
 export function searchHistoryMessages(query: string, beforeMessageId?: string) {
@@ -58,13 +59,15 @@ export function searchHistoryMessages(query: string, beforeMessageId?: string) {
 
 export function getHistoryMessageMatch(
   conversationId: string,
-  messageId: string
+  messageId: string,
+  includeNearby?: boolean
 ) {
   return callInternalDataAction<HistoryMessageMatch>(
     'messages.getHistoryMatch',
     {
       conversationId,
       messageId,
+      includeNearby,
     }
   );
 }

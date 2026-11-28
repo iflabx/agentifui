@@ -2711,6 +2711,7 @@
   },
   "history": {
     "messageSearch": {
+      "returnToLatest": "回到最新訊息",
       "title": "已儲存的訊息",
       "untitled": "未命名對話",
       "tooLong": "搜尋詞最多 120 個字元。",

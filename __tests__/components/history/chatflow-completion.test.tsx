@@ -46,8 +46,12 @@ function useMockInterface() {
 jest.mock('next/navigation', () => ({
   useParams: () => ({ conversationId: mockId }),
   usePathname: () => `/chat/${mockId}`,
+  useSearchParams: () => new URLSearchParams(),
 }));
 jest.mock('next-intl', () => ({ useTranslations: () => (key: string) => key }));
+jest.mock('@components/chat/session/chat-message', () => ({
+  ChatMessage: () => null,
+}));
 jest.mock('@lib/auth/better-auth/react-hooks', () => ({
   useAuthSession: () => ({
     session: { user: { id: mockActor } },

@@ -2711,6 +2711,7 @@
   },
   "history": {
     "messageSearch": {
+      "returnToLatest": "Torna ai messaggi recenti",
       "title": "Messaggi salvati",
       "untitled": "Conversazione senza titolo",
       "tooLong": "La ricerca è limitata a 120 caratteri.",

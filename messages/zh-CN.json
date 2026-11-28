@@ -2711,6 +2711,7 @@
   },
   "history": {
     "messageSearch": {
+      "returnToLatest": "回到最新消息",
       "title": "已保存的消息",
       "untitled": "未命名会话",
       "tooLong": "搜索词最多 120 个字符。",

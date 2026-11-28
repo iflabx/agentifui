@@ -2711,6 +2711,7 @@
   },
   "history": {
     "messageSearch": {
+      "returnToLatest": "Back to latest",
       "title": "Saved messages",
       "untitled": "Untitled conversation",
       "tooLong": "Search is limited to 120 characters.",

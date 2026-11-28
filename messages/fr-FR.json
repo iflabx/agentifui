@@ -2711,6 +2711,7 @@
   },
   "history": {
     "messageSearch": {
+      "returnToLatest": "Revenir aux derniers messages",
       "title": "Messages enregistrés",
       "untitled": "Conversation sans titre",
       "tooLong": "La recherche est limitée à 120 caractères.",

@@ -121,7 +121,7 @@ it('keeps message pages scoped to the current search and links to the saved mess
           conversationId: 'conversation',
           title: 'Original conversation',
           role: 'assistant' as const,
-          snippet: `Match for ${id}`,
+          snippet: `Current [a] match for ${id}`,
         },
       ],
       nextCursor,
@@ -141,17 +141,18 @@ it('keeps message pages scoped to the current search and links to the saved mess
   const input = screen.getByRole('textbox', { name: 'History search' });
   fireEvent.change(input, { target: { value: 'old' } });
   await waitFor(() => expect(search).toHaveBeenCalledWith('old', undefined));
-  fireEvent.change(input, { target: { value: 'current' } });
-  const match = await screen.findByRole('link', { name: /Match for latest/ });
-  expect(match).toHaveAttribute('href', '/chat/conversation/message/latest');
+  fireEvent.change(input, { target: { value: 'current [a]' } });
+  const match = await screen.findByRole('link', { name: /match for latest/ });
+  expect(match).toHaveAttribute('href', '/chat/conversation?messageId=latest');
+  expect(match.querySelector('mark')).toHaveTextContent('Current [a]');
   await act(async () => finishOldSearch(makePage('stale')));
-  expect(screen.queryByText('Match for stale')).not.toBeInTheDocument();
+  expect(screen.queryByText(/match for stale/)).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'more' }));
-  expect(await screen.findByText('Match for earlier')).toBeInTheDocument();
-  expect(screen.getByText('Match for latest')).toBeInTheDocument();
-  expect(search).toHaveBeenLastCalledWith('current', 'latest');
+  expect(await screen.findByText(/match for earlier/)).toBeInTheDocument();
+  expect(screen.getByText(/match for latest/)).toBeInTheDocument();
+  expect(search).toHaveBeenLastCalledWith('current [a]', 'latest');
   act(() => syncChatDraftActor('second', 'login-two'));
-  expect(screen.queryByText('Match for latest')).not.toBeInTheDocument();
+  expect(screen.queryByText(/match for latest/)).not.toBeInTheDocument();
 });
 
 it.each(['second', 'first'])(

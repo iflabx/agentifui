@@ -10,6 +10,21 @@ import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 
+function highlightFirstMatch(snippet: string, query: string) {
+  const literal = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = new RegExp(literal, 'iu').exec(snippet);
+  if (!match) return snippet;
+  return (
+    <>
+      {snippet.slice(0, match.index)}
+      <mark className="rounded-sm bg-amber-100 text-stone-900 dark:bg-amber-900 dark:text-amber-50">
+        {match[0]}
+      </mark>
+      {snippet.slice(match.index + match[0].length)}
+    </>
+  );
+}
+
 export function HistoryMessageSearch({ query }: { query: string }) {
   const t = useTranslations('history.messageSearch');
   const [page, setPage] = useState<HistoryMessagePage>({
@@ -62,13 +77,13 @@ export function HistoryMessageSearch({ query }: { query: string }) {
             <li key={hit.id}>
               <Link
                 className="block rounded-lg border border-stone-200 px-3 py-2 hover:bg-stone-50 dark:border-stone-700 dark:hover:bg-stone-700"
-                href={`/chat/${encodeURIComponent(hit.conversationId)}/message/${encodeURIComponent(hit.id)}`}
+                href={`/chat/${encodeURIComponent(hit.conversationId)}?messageId=${encodeURIComponent(hit.id)}`}
               >
                 <span className="block truncate text-sm font-medium">
                   {hit.title || t('untitled')}
                 </span>
                 <span className="block text-sm wrap-anywhere text-stone-600 dark:text-stone-300">
-                  {hit.snippet}
+                  {highlightFirstMatch(hit.snippet, query)}
                 </span>
               </Link>
             </li>

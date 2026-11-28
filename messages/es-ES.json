@@ -2711,6 +2711,7 @@
   },
   "history": {
     "messageSearch": {
+      "returnToLatest": "Ir a los mensajes recientes",
       "title": "Mensajes guardados",
       "untitled": "Conversación sin título",
       "tooLong": "La búsqueda admite hasta 120 caracteres.",

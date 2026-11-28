@@ -226,6 +226,30 @@ it('does not search removed revisions, pending edits or SQL wildcard patterns', 
   }
 });
 
+it('loads a bounded window around a saved hit without including hidden revisions', async () => {
+  const conversationId = conversations[0];
+  const { rows } = await database.query<{ id: string }>(
+    `SELECT id FROM messages WHERE conversation_id=$1 AND content='Synthetic later turn'
+     ORDER BY created_at, coalesce(sequence_index,0), id`,
+    [conversationId]
+  );
+  for (const position of [0, 10]) {
+    const messageId = rows[position].id;
+    const response = await handleMessageAction(
+      'messages.getHistoryMatch',
+      { conversationId, messageId, includeNearby: true },
+      actor
+    );
+    expect(response?.payload).toMatchObject({
+      success: true,
+      data: {
+        id: messageId,
+        nearby: rows.slice(Math.max(0, position - 5), position + 6),
+      },
+    });
+  }
+});
+
 it('rechecks ownership, application permission and deletion for search and direct links', async () => {
   const conversationId = conversations[1];
   const { rows } = await database.query<{ id: string }>(

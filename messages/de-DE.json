@@ -2711,6 +2711,7 @@
   },
   "history": {
     "messageSearch": {
+      "returnToLatest": "Zu den neuesten Nachrichten",
       "title": "Gespeicherte Nachrichten",
       "untitled": "Unbenannte Unterhaltung",
       "tooLong": "Die Suche ist auf 120 Zeichen begrenzt.",

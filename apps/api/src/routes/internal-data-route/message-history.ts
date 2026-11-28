@@ -97,6 +97,8 @@ export async function getHistoryMatch(
       externalId: string | null;
       appId: string | null;
       agent: boolean;
+      nearby:
+        { id: string; role: 'user' | 'assistant'; content: string }[] | null;
     }
   >(
     `
@@ -104,6 +106,38 @@ export async function getHistoryMatch(
       conversations.external_id AS "externalId", conversations.app_id AS "appId",
       EXISTS (SELECT 1 FROM backend_conversations binding
         WHERE binding.conversation_id = conversations.id) AS agent
+      ${
+        payload?.includeNearby === true
+          ? `,
+      (
+        SELECT jsonb_agg(jsonb_build_object('id', nearby.id, 'role', nearby.role, 'content', nearby.content)
+          ORDER BY nearby.created_at, nearby.turn_order, nearby.id)
+        FROM (
+          (SELECT sibling.id, sibling.role, sibling.content, sibling.created_at,
+                  COALESCE(sibling.sequence_index, 0) AS turn_order
+           FROM messages sibling
+           WHERE sibling.conversation_id = messages.conversation_id
+             AND sibling.role IN ('user', 'assistant')
+             AND COALESCE(sibling.metadata->>'edit_hidden', 'false') <> 'true'
+             AND COALESCE(sibling.metadata->>'edit_pending', 'false') <> 'true'
+             AND (sibling.created_at, COALESCE(sibling.sequence_index, 0), sibling.id)
+               <= (messages.created_at, COALESCE(messages.sequence_index, 0), messages.id)
+           ORDER BY sibling.created_at DESC, turn_order DESC, sibling.id DESC LIMIT 6)
+          UNION ALL
+          (SELECT sibling.id, sibling.role, sibling.content, sibling.created_at,
+                  COALESCE(sibling.sequence_index, 0) AS turn_order
+           FROM messages sibling
+           WHERE sibling.conversation_id = messages.conversation_id
+             AND sibling.role IN ('user', 'assistant')
+             AND COALESCE(sibling.metadata->>'edit_hidden', 'false') <> 'true'
+             AND COALESCE(sibling.metadata->>'edit_pending', 'false') <> 'true'
+             AND (sibling.created_at, COALESCE(sibling.sequence_index, 0), sibling.id)
+               > (messages.created_at, COALESCE(messages.sequence_index, 0), messages.id)
+           ORDER BY sibling.created_at, turn_order, sibling.id LIMIT 5)
+        ) nearby
+      ) AS nearby`
+          : ''
+      }
     FROM conversations
     JOIN messages ON messages.conversation_id = conversations.id
     WHERE conversations.id = $2::uuid AND messages.id = $3::uuid
