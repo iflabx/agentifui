@@ -138,7 +138,7 @@ function HistoryMessage({
                   data-history-match={matched || undefined}
                   className={
                     matched
-                      ? 'rounded-xl bg-amber-50 px-3 py-2 ring-2 ring-amber-500 dark:bg-amber-950/40'
+                      ? 'relative before:absolute before:start-0 before:top-2 before:h-5 before:w-0.5 before:rounded-full before:bg-stone-500 dark:before:bg-stone-400'
                       : undefined
                   }
                 >
