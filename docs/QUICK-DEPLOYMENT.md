@@ -300,7 +300,9 @@ What `pnpm run deploy` does:
 4. optionally executes the explicit incremental migration command
 5. replaces only the two application registrations with the target config, verifies actual process directories and runs bounded Web/API smoke checks
 
-Installation/build/migration failure leaves the running applications untouched. Switching allows a brief interruption. Complete the business checks in section 7, update auxiliary jobs to the chosen version, then run `pm2 save`. A smoke result alone does not prove login or business correctness.
+Installation, build or migration failure stops the deployment before switching the PM2 processes. It does not roll back changes to shared data: content preparation can update the shared runtime before the build completes, and a failed migration command can leave SQL changes that already committed. Before retrying, check the pre-upgrade content snapshot, identify any applied SQL and confirm compatibility with the still-running version. Use the recorded recovery plan if either needs to be restored.
+
+Switching allows a brief interruption. Complete the business checks in section 7, update auxiliary jobs to the chosen version, then run `pm2 save`. A smoke result alone does not prove login or business correctness.
 
 Useful switches:
 

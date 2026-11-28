@@ -256,6 +256,15 @@ export async function handleMessageAction(
 
     const rows = await runWithPgSystemContext(async client => {
       await lockMessageEditConversation(client, conversationId);
+      if (
+        !(await loadConversationOwnedByActor(
+          conversationId,
+          actorUserId,
+          'write',
+          client
+        ))
+      )
+        return null;
       const clientMessageId =
         typeof metadata.client_message_id === 'string'
           ? metadata.client_message_id
@@ -340,6 +349,7 @@ export async function handleMessageAction(
       return inserted.rows;
     });
 
+    if (!rows) return toErrorResponse('Conversation not found', 404);
     const saved = rows[0] ? sanitizeMessage(rows[0]) : null;
 
     if (saved && role === 'assistant') {
@@ -351,7 +361,7 @@ export async function handleMessageAction(
             SET
               last_message_preview = $2,
               updated_at = NOW()
-            WHERE id = $1::uuid
+            WHERE id = $1::uuid AND status = 'active'
           `,
           [conversationId, preview]
         );
